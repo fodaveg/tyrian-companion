@@ -1,7 +1,7 @@
 import { GOLD_CURRENCY_ID, valueLiveTotals } from './live-session-reducer';
 import { manualBuildIdentityInput } from './manual-build-model';
 import { canonicalJson, sha256Utf8 } from '../core/canonical-sha256';
-import { liveItemRateEligible, type LiveSessionRuntimeRecord } from './live-session-model';
+import { liveItemRateEligible, type LivePriceBasis, type LiveSessionRuntimeRecord } from './live-session-model';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
 
 export const LIVE_COMPARISON_MINIMUM_SESSIONS = 2;
@@ -87,9 +87,12 @@ export function buildLiveSessionComparison(sessions: readonly StoredLiveSessionP
 		groups: [...groups.values()].map(comparisonGroup) };
 }
 
-/** A display tick may update connection time, but it never adds an active session to a final sample. */
-export function provisionalLiveComparison(record: LiveSessionRuntimeRecord | null, connectionMs: number): LiveComparisonRow | null {
-	return record?.phase === 'active' ? comparisonRow({ ...record, valuation: valueLiveTotals(record.totals, record.prices, record.priceCapturedAt, record.currencyTrackedIds.includes(GOLD_CURRENCY_ID)) }, null, connectionMs) : null;
+/**
+ * A display tick may update connection time, but it never adds an active session to a final sample. `priceBasis` is the one of
+ * the session `record` belongs to (`LiveSessionLifecycle.getSessionFormat()`): the record cannot say what its prices are.
+ */
+export function provisionalLiveComparison(record: LiveSessionRuntimeRecord | null, connectionMs: number, priceBasis: LivePriceBasis): LiveComparisonRow | null {
+	return record?.phase === 'active' ? comparisonRow({ ...record, valuation: valueLiveTotals(record.totals, record.prices, record.priceCapturedAt, record.currencyTrackedIds.includes(GOLD_CURRENCY_ID), priceBasis) }, null, connectionMs) : null;
 }
 
 function comparisonRow(session: Evidence, endedAt: string | null, connectionMs: number): LiveComparisonRow {

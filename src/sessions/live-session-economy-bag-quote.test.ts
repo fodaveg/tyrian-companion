@@ -16,6 +16,8 @@ function harness(options: { phase?: string; canEmit?: boolean; restored?: boolea
 		getRuntime: () => ({ phase: state.phase, sessionId: 's1', totals: [], prices: options.restored ? [{ itemId: BAG, unitCopper: 293 }] : [],
 			priceCapturedAt: options.restored ? new Date(now - 60_000).toISOString() : null }),
 		updatePrices: vi.fn(async () => {}), updateAlert: vi.fn(async () => null), getAwaitingPriceEntries: () => [],
+		// The session of these tests keeps net prices per unit: its restored quote is what one bag nets (293 c of a 345 c bid).
+		getSessionFormat: () => ({ noteVersion: 1, priceBasis: 'instant_sell_net' }),
 	};
 	const economy = new LiveSessionEconomy({
 		lifecycle: lifecycle as never, gateway: gateway as never, rateLimit: new RateLimitCoordinator({ now: () => now }),

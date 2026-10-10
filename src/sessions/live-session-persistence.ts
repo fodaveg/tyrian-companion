@@ -1,5 +1,6 @@
 import type { LiveSessionSummaryState } from './live-session-summary-state';
-import type { LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
+import { isLiveSessionFormat, LIVE_SESSION_FORMAT_KEY, liveSessionFormatMark } from './live-session-format';
+import type { LiveSessionFormat, LiveSessionRuntimeRecord, LiveJournalEntryV1 } from './live-session-model';
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import type { SessionRuntimeMutationResult, SessionRuntimeLoadResult } from './session-runtime-store';
 import { SESSION_RUNTIME_KEY, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
@@ -14,8 +15,15 @@ export interface LiveSessionPersistence {
 	/**
 	 * `expected`, when given, is the stored record this write was made from: unless that is still exactly what is stored, in
 	 * the transaction that writes, the answer is `stale` and nothing is written. The first save of a takeover gives it.
+	 * `format`, when given, is the format the session of `record` starts with: its mark is written in the same transaction as the
+	 * record (both or neither). Only the save that starts a session gives it.
 	 */
-	saveLive(record: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult>;
+	saveLive(record: LiveSessionRuntimeRecord, journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord, format?: LiveSessionFormat): Promise<SessionRuntimeMutationResult>;
+	/**
+	 * The format the session `sessionId` started with (`liveSessionFormatOf`): the legacy one when no mark names it. Rejects when
+	 * storage cannot read the mark, and when the mark of that session does not validate: either way nothing says how to read it.
+	 */
+	loadSessionFormat(sessionId: string): Promise<LiveSessionFormat>;
 	readLiveJournal(sessionId: string): Promise<LiveJournalEntryV1[]>;
 	markLiveAlertsProcessed(sessionId: string, epoch: string, cursor: number): Promise<boolean>;
 	replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean>;
@@ -43,16 +51,25 @@ export function isSealedJournalQueue(value: unknown): value is SealedJournal[] {
 	return Array.isArray(value) && value.every((row) => typeof row === 'object' && row !== null && typeof (row as SealedJournal).sessionId === 'string' && typeof (row as SealedJournal).receiptPath === 'string');
 }
 
-/** One transaction commits the bounded runtime cursor and appends the sample's ledger together. */
+/**
+ * One transaction commits the bounded runtime cursor and appends the sample's ledger together. With `format` (the save that
+ * starts a session) the same transaction writes the mark of that session's format under its own key of the runtime store: the
+ * record and its mark land together or not at all, also when the answer never reaches the caller.
+ */
 export async function commitLiveRuntime(database: IDBDatabase, next: LiveSessionRuntimeRecord,
-	journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
+	journal?: LiveJournalEntryV1, expected?: LiveSessionRuntimeRecord, format?: LiveSessionFormat): Promise<SessionRuntimeMutationResult> {
 	if (!isLiveSessionRuntimeRecord(next) || journal && (!isLiveJournalEntry(journal) || journal.sessionId !== next.sessionId
-		|| journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)) return { status: 'error', code: 'corrupt' };
+		|| journal.epoch !== next.lastSample?.epoch || journal.cursor !== next.lastSample.cursor)
+		|| format !== undefined && !isLiveSessionFormat(format)) return { status: 'error', code: 'corrupt' };
 	return await new Promise((resolve) => {
 		let result: SessionRuntimeMutationResult = { status: 'error', code: 'unavailable' };
 		const transaction = startIndexedDbTransaction(database, [SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME], 'readwrite');
 		const runtime = transaction.objectStore(SESSION_RUNTIME_STORE_NAME);
 		const entries = transaction.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME);
+		const putRecord = (): void => {
+			runtime.put(structuredClone(next), SESSION_RUNTIME_KEY);
+			if (format !== undefined) runtime.put(liveSessionFormatMark(next.sessionId, format), LIVE_SESSION_FORMAT_KEY);
+		};
 		const request = runtime.get(SESSION_RUNTIME_KEY);
 		request.onsuccess = () => {
 			const current: unknown = request.result;
@@ -62,7 +79,7 @@ export async function commitLiveRuntime(database: IDBDatabase, next: LiveSession
 			// A new fence may replace anything older, so the fence alone lets a takeover write over what the last owner
 			// wrote after the takeover read it. Whoever says what it read is refused when that is no longer what is stored.
 			if (expected !== undefined && JSON.stringify(current) !== JSON.stringify(expected)) { result = { status: 'stale' }; return; }
-			if (!journal) { runtime.put(structuredClone(next), SESSION_RUNTIME_KEY); result = { status: 'saved' }; return; }
+			if (!journal) { putRecord(); result = { status: 'saved' }; return; }
 			const key = journalKey(journal);
 			const existing = entries.get(key);
 			existing.onsuccess = () => {
@@ -72,7 +89,7 @@ export async function commitLiveRuntime(database: IDBDatabase, next: LiveSession
 					result = isLiveJournalEntry(existing.result) && identicalJournal(existing.result, journal)
 						? { status: 'saved' } : { status: 'error', code: 'corrupt' }; return;
 				}
-				runtime.put(structuredClone(next), SESSION_RUNTIME_KEY);
+				putRecord();
 				entries.add(structuredClone(journal), key); result = { status: 'saved' };
 			};
 		};

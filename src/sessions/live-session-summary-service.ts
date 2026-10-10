@@ -1,4 +1,4 @@
-import type { LiveJournalEntryV1, LiveSessionCharacterV1, LiveSessionRuntimeRecord } from './live-session-model';
+import type { LiveJournalEntryV1, LiveSessionCharacterV1, LiveSessionFormat, LiveSessionRuntimeRecord } from './live-session-model';
 import { prepareLiveSessionPayload } from './live-session-note-model';
 import { summaryMainMap, summaryNamedEntities, type SummaryEntityIds, type SummaryItemMetaMap } from './live-session-summary-figures';
 import { readComparablePerHour, type SummaryHistoryVault } from './live-session-summary-history';
@@ -35,6 +35,8 @@ export interface LiveSessionSummaryServiceOptions {
 	vault: LiveSessionSummaryVault & SummaryHistoryVault;
 	runtime(): LiveSessionRuntimeRecord | null;
 	journal(): readonly LiveJournalEntryV1[];
+	/** The format of the session `runtime()` gives (`LiveSessionLifecycle.getSessionFormat()`): the summary is worked out from the same payload its full note carries. */
+	format(): LiveSessionFormat;
 	locale(): 'es' | 'en';
 	outputFolder(): string;
 	/** Names already in memory, keyed `item:<id>` / `currency:<id>`. An entity nobody has named has NO key: never its id as a name. */
@@ -121,7 +123,7 @@ export class LiveSessionSummaryService {
 		progress.running = true; progress.attempts += 1; progress.lastAttemptAt = now;
 		try {
 			const locale = this.options.locale(); const outputFolder = this.options.outputFolder();
-			const session = await prepareLiveSessionPayload({ record, journal: this.options.journal(), locale, outputFolder });
+			const session = await prepareLiveSessionPayload({ record, journal: this.options.journal(), format: this.options.format(), locale, outputFolder });
 			if (session === null) { progress.done = true; this.report({ status: 'invalid', reason: 'invalid_live_evidence', attempt: progress.attempts }); return; }
 			const itemIds = session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => row.idNumber);
 			const mapIds = [...new Set(session.mapIntervals.flatMap((interval) => interval.mapId === null ? [] : [interval.mapId]))];

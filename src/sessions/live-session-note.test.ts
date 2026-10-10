@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FARMING_PREPARATION } from './farming-goal-preparation';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionRuntimeRecord } from './live-session-model';
 import { reduceLiveInventorySample } from './live-session-reducer';
+import { LEGACY_LIVE_SESSION_FORMAT, liveSessionFormatOf } from './live-session-format';
 import { isStoredLiveSessionPayload, prepareLiveSessionPayload, type LiveSessionNoteInput } from './live-session-note-model';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
@@ -41,12 +42,13 @@ function fixture(quantities = [0,2,4], currencies?: readonly {one: number;two: n
 	}
 	record = { ...record,phase: 'complete',endedAt: iso(quantities.length - 1),prices: [{ itemId: 12147,unitCopper: 10 }],priceCapturedAt: iso(0) };
 	// Madrid in October (UTC+2), fixed: the title carries the local hour of the start, and the snapshot must not depend on the machine's zone.
-	return { record,journal,locale: 'es',outputFolder: 'Tyrian Companion',displayNames: { 'item:12147': 'Champiñón' },utcOffsetMinutes: () => 120 };
+	// The format these fixtures and their snapshots were written in: a session from before the format mark, which keeps every sample
+	// and net prices per unit whatever LIVE_SESSION_NOTE_WRITE_VERSION says a new session gets.
+	return { record,journal,format: { ...LEGACY_LIVE_SESSION_FORMAT },locale: 'es',outputFolder: 'Tyrian Companion',displayNames: { 'item:12147': 'Champiñón' },utcOffsetMinutes: () => 120 };
 }
 function iso(seconds: number): string { return new Date(AT + seconds * 1000).toISOString(); }
 async function rendered(input = fixture()) {
-	// Pinned to the format these fixtures and their snapshots were written in, whatever LIVE_SESSION_NOTE_WRITE_VERSION says.
-	const result = await renderLiveSessionNote({...input,payloadVersion: 1});
+	const result = await renderLiveSessionNote(input);
 	if (result.status !== 'ok') throw new Error(result.reason);
 	return result;
 }
@@ -157,7 +159,7 @@ describe('portable live session notes', () => {
 		expect(isStoredLiveSessionPayload(payload)).toBe(false);
 		expect(await prepareLiveSessionPayload(input)).toBeNull();
 		input.record.phase = 'active'; input.record.endedAt = null;
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)})).toBeNull();
 	});
 	it('rejects truncated journal, signed-summary mismatch, causal claims and unknown nested keys', async () => {
 		const input = fixture();
@@ -257,7 +259,7 @@ describe('the title of the full note', () => {
 		expect(listed.status === 'ok' && { refs: listed.sessions.map((entry) => entry.sessionRef),setAside: listed.setAside }).toEqual({refs: [session.sessionRef],setAside: []});
 	});
 	it('leaves a note already written with the title it has: the same session again is unchanged, and an update replaces only the blocks', async () => {
-		const input: LiveSessionNoteInput = {...fixture(),payloadVersion: 1}; const {note} = await rendered(input); const path = note.preferredPath;
+		const input: LiveSessionNoteInput = fixture(); const {note} = await rendered(input); const path = note.preferredPath;
 		const bodyOf = (content: string): string => content.slice(content.indexOf('\n---\n',4));
 		// A note of 0.6.18 exactly as it was created.
 		const created = note.content.replace(h1(note.content),OLD_TITLE);
@@ -319,7 +321,7 @@ describe('the changes of map in the full note', () => {
 		expect(await inspectLiveSessionNote(old)).toEqual({status: 'ok',session});
 	});
 	it('a note already written gains the lines when its session is written again: no conflict, «Mis notas» and the human frontmatter stay, same data', async () => {
-		const input: LiveSessionNoteInput = {...mapped(),payloadVersion: 1}; const {note,session} = await rendered(input); const path = note.preferredPath;
+		const input: LiveSessionNoteInput = mapped(); const {note,session} = await rendered(input); const path = note.preferredPath;
 		const written = `${await asBefore(note)}\nLo que apunté a mano.\n`.replace('---\n','---\naliases: [Mía]\n');
 		const vault = new TestVault(); vault.contents.set(path,written); const writer = new SessionNoteWriter(vault);
 		expect(await writer.writeLive(input)).toEqual({status: 'written',path});
@@ -337,12 +339,16 @@ describe('the changes of map in the full note', () => {
 });
 
 describe('portable payload byte compatibility', () => {
-	it('writes, when nobody names a payload version, exactly the version 1 bytes of the golden fixtures (turning the writer on is a deliberate edit of this test)', async () => {
-		const pinned = await rendered(); const byDefault = await renderLiveSessionNote(fixture());
-		if (byDefault.status !== 'ok') throw new Error(byDefault.reason);
-		expect(byDefault.note.content).toContain('tc_payload_version: 1\n');
-		expect(byDefault.note.content).toBe(pinned.note.content);
-		expect(byDefault.session.version).toBe(1);
+	it('writes a session that has no format mark (one from before the mark) in exactly the version 1 bytes of the golden fixtures, whatever a new session gets', async () => {
+		const pinned = await rendered(); const unmarked = await renderLiveSessionNote({...fixture(),format: liveSessionFormatOf(undefined,'sensitive-local-session-id')});
+		if (unmarked.status !== 'ok') throw new Error(unmarked.reason);
+		expect(unmarked.note.content).toContain('tc_payload_version: 1\n');
+		expect(unmarked.note.content).toBe(pinned.note.content);
+		expect(unmarked.session.version).toBe(1);
+		// The mark of another session says nothing about this one.
+		const foreign = await renderLiveSessionNote({...fixture(),format: liveSessionFormatOf({version: 1,sessionId: 'another',noteVersion: 2,priceBasis: 'instant_sell_gross'},'sensitive-local-session-id')});
+		if (foreign.status !== 'ok') throw new Error(foreign.reason);
+		expect(foreign.note.content).toBe(pinned.note.content);
 	});
 	it('keeps payload and export bytes for notes that predate a manual build descriptor', async () => {
 		const input = fixture(); const {session,note} = await rendered(input);
@@ -352,7 +358,7 @@ describe('portable payload byte compatibility', () => {
 			fingerprints[`${kind}_${format}`] = await sha256Text(serializeLiveSessionExport(session,kind,format));
 		}
 		input.record.phase = 'active'; input.record.endedAt = null;
-		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3),payloadVersion: 1});
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt: iso(3)});
 		if (snapshot === null) throw new Error('fixture');
 		expect(snapshot).not.toHaveProperty('declaredBuild');
 		for (const format of ['json','csv'] as const) fingerprints[`active_${format}`] = await sha256Text(serializeLiveSessionExport(snapshot,'timeline',format));
@@ -365,7 +371,7 @@ describe('explicit active export snapshots', () => {
 		const input = fixture(Array.from({length: 1001},(_,i) => i * 2)); input.record.phase = 'active'; input.record.endedAt = null;
 		input.record.gaps = [{version: 1,fromAt: iso(1000),toAt: null,reason: 'disconnect',channels: ['items']}];
 		const before = structuredClone(input.record);
-		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(1002)});
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(1002)});
 		expect(snapshot).not.toBeNull(); if (snapshot === null) throw new Error('fixture');
 		expect(snapshot).toMatchObject({endedAt: null,capturedAt: iso(1002),exportState: 'active_snapshot',observationCount: 1000,sampleCount: 1001});
 		expect(snapshot.gaps[0]?.toAt).toBeNull(); expect(snapshot.valuation.coinNetCopper).toBeNull();
@@ -381,8 +387,8 @@ describe('explicit active export snapshots', () => {
 	});
 	it('creates a new immutable snapshot path when the active capture changes, keeping previous exports', async () => {
 		const input = fixture(); input.record.phase = 'active'; input.record.endedAt = null;
-		const first = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(2)});
-		const second = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)});
+		const first = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(2)});
+		const second = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)});
 		if (first === null || second === null) throw new Error('fixture');
 		const vault = new TestVault(); const service = new LiveSessionHistoryService(historyVault(vault));
 		const a = await service.export('Tyrian Companion','timeline','json',first); const b = await service.export('Tyrian Companion','timeline','json',second);
@@ -397,14 +403,14 @@ describe('explicit active export snapshots', () => {
 		delete entry.outbox;
 		expect(await prepareLiveSessionPayload(input)).toBeNull();
 		input.record.phase = 'active'; input.record.endedAt = null;
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)})).toBeNull();
 	});
 	it('rejects stale or truncated captures rather than inventing timestamps, quantities or a complete phase', async () => {
 		const input = fixture(); input.record.phase = 'active'; input.record.endedAt = null;
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(1)})).toBeNull();
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal.slice(0,2),capturedAt: iso(3)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(1)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal.slice(0,2),format: input.format,capturedAt: iso(3)})).toBeNull();
 		input.record.endedAt = iso(2);
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)})).toBeNull();
 	});
 });
 
@@ -492,7 +498,7 @@ describe('partial currency history', () => {
 		expect(json.session.totals).toEqual(payload.totals); expect(json.session.observedCurrenciesMs).toBe(1000);
 		expect(serializeLiveSessionExport(payload,'timeline','csv').match(/^"observation",/gmu)).toHaveLength(3);
 		input.record.phase = 'active'; input.record.endedAt = null;
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(4)})).not.toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(4)})).not.toBeNull();
 	});
 });
 
@@ -525,7 +531,7 @@ describe('portable manual build declaration', () => {
 			expect(serializeLiveSessionExport(session,kind,'csv')).toContain(canonicalJson(build).replace(/"/gu,'""'));
 		}
 		input.record.phase = 'active'; input.record.endedAt = null;
-		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)});
+		const snapshot = await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)});
 		if (snapshot === null) throw new Error('fixture'); expect(snapshot.declaredBuild).toEqual(build);
 		expect(serializeLiveSessionExport(snapshot,'timeline','csv')).toContain(canonicalJson(build).replace(/"/gu,'""'));
 		const saved = await new LiveSessionHistoryService(historyVault(vault)).export('Tyrian Companion','timeline','json',snapshot);
@@ -549,7 +555,7 @@ describe('portable manual build declaration', () => {
 			expect(knownUnknown).not.toBe(absent); expect(await sha256Text(knownUnknown)).not.toBe(await sha256Text(absent));
 		}
 		input.record.phase = 'active'; input.record.endedAt = null;
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toHaveProperty('declaredBuild',null);
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)})).toHaveProperty('declaredBuild',null);
 	});
 	it.each(['unknown_key','bad_code','different_configuration','missing_label','undefined'] as const)('rejects %s declarations on every boundary without rewriting an existing human note', async (kind) => {
 		const input = fixture(); const build = declaredBuild(); Object.assign(input.record,{declaredBuild: build});
@@ -574,7 +580,7 @@ describe('portable manual build declaration', () => {
 		const service = new LiveSessionHistoryService(historyVault(vault));
 		expect((await service.export(input.outputFolder,'timeline','json',invalid as typeof session)).status).toBe('invalid');
 		input.record.phase = 'active'; input.record.endedAt = null;
-		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,capturedAt: iso(3)})).toBeNull();
+		expect(await prepareLiveSessionExportSnapshot({record: input.record,journal: input.journal,format: input.format,capturedAt:iso(3)})).toBeNull();
 		expect(vault.contents).toEqual(before);
 	});
 });

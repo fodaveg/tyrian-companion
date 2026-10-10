@@ -37,7 +37,7 @@ async function completedNote(id: string, declaredBuild?: DeclaredBuildV1 | null)
 		const next = reduceLiveInventorySample(record, sample); record = next.record; journal.push(next.journal);
 	}
 	record = { ...record, phase: 'complete', endedAt: iso(2), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 2000 }] };
-	const rendered = await renderLiveSessionNote({ record, journal, locale: 'es', outputFolder: 'Sessions' });
+	const rendered = await renderLiveSessionNote({ record, journal, format: { noteVersion: 1, priceBasis: 'instant_sell_net' }, locale: 'es', outputFolder: 'Sessions' });
 	if (rendered.status !== 'ok') throw new Error(rendered.reason);
 	return rendered.note.content;
 }

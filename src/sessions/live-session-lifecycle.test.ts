@@ -136,7 +136,7 @@ describe('passive live session lifecycle', () => {
 		f.setNow(AT+5000); await f.service.open({...f.source,epoch:'AwMDAwMDAwMDAwMDAwMDAw',context:{...f.source.context,mapId:900}});
 		await f.service.presence(false);
 		expect(f.service.getRuntime()?.mapIntervals).toMatchObject([{mapId:866,toMs:AT+5000}]);
-		f.onComplete.mockImplementation(async () => (await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'})).status === 'ok' ? 'Sessions/live.md' : null as unknown as string);
+		f.onComplete.mockImplementation(async () => (await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),format:f.service.getSessionFormat(),locale:'es',outputFolder:'Tyrian'})).status === 'ok' ? 'Sessions/live.md' : null as unknown as string);
 		f.setNow(AT+1000+600_000); await f.tick();
 		expect(f.service.getRuntime(), 'closes at the last evidence with a receipt').toMatchObject({phase:'complete',endedAt:new Date(AT+1000).toISOString(),summaryReceipt:{path:'Sessions/live.md'}});
 		await expect(f.service.start('Test'), 'and the next session can start').resolves.not.toBeNull(); await f.service.dispose();
@@ -302,7 +302,7 @@ describe('passive live session lifecycle', () => {
 			expect(ended.mapIntervals).toHaveLength(256); expect(ended.mapIntervals[0]).toEqual(seeded[3]);
 			expect(ended.mapIntervals[255]).toEqual({mapId:866,fromMs:AT+10*CYCLE,toMs:AT+10*CYCLE+MIN});
 			expect(isLiveSessionRuntimeRecord(ended)).toBe(true);
-			const payload = await prepareLiveSessionPayload({record:ended,journal:service.getJournal(),locale:'es',outputFolder:'Tyrian'});
+			const payload = await prepareLiveSessionPayload({record:ended,journal:service.getJournal(),format:service.getSessionFormat(),locale:'es',outputFolder:'Tyrian'});
 			expect(payload?.mapIntervals).toHaveLength(256); expect(payload?.mapCoveragePartial).toBe(true); await service.dispose();
 		});
 	});
@@ -318,7 +318,7 @@ describe('passive live session lifecycle', () => {
 		}
 		async function saved(f: Awaited<ReturnType<typeof session>>) {
 			f.setNow(AT+10_000_000); await f.service.stop(AT+10_000_000);
-			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'});
+			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),format:f.service.getSessionFormat(),locale:'es',outputFolder:'Tyrian'});
 			if (rendered.status !== 'ok') throw new Error('The note did not render.'); return liveSessionViewFromStored(rendered.session,AT+11_000_000);
 		}
 		it('14 min 59 s: no rate in the tab, in farm1 or in the saved note; the counts stay', async () => {
@@ -360,7 +360,7 @@ describe('passive live session lifecycle', () => {
 		expect(points.at(-1), 'ends at the exact current value').toMatchObject({observedAt:new Date(AT+1500_000).toISOString(),itemQuantityNet:150,knownNetValueCopper:null,netItemValueKnownCopper:150*85});
 		expect(points.length).toBeLessThanOrEqual(600);
 		expect(points.map((point) => point.observedAt), 'in order').toEqual([...points.map((point) => point.observedAt)].sort());
-		const rebuilt = buildLiveChart(f.service.getJournal(),f.service.getRuntime());
+		const rebuilt = buildLiveChart(f.service.getJournal(),{...f.service.getRuntime()!,priceBasis:f.service.getSessionFormat().priceBasis});
 		expect(rebuilt, 'built at once = built sample by sample').toEqual(points);
 		await f.service.dispose();
 	});
@@ -695,7 +695,7 @@ describe('passive live session lifecycle', () => {
 			const { f, svc, setNow, beat } = suspended();
 			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); setNow(AT+1000); await svc.commit(f.sample(1,2)); await svc.presence(true);
 			const T0 = AT+1000; setNow(AT+2*3_600_000);
-			f.onComplete.mockImplementation(async () => (await renderLiveSessionNote({record:svc.getRuntime()!,journal:svc.getJournal(),locale:'es',outputFolder:'Tyrian'})).status === 'ok' ? 'Sessions/live.md' : null as unknown as string);
+			f.onComplete.mockImplementation(async () => (await renderLiveSessionNote({record:svc.getRuntime()!,journal:svc.getJournal(),format:svc.getSessionFormat(),locale:'es',outputFolder:'Tyrian'})).status === 'ok' ? 'Sessions/live.md' : null as unknown as string);
 			await svc.presence(false,T0); await expect(svc.stop(T0,'session')).resolves.toBe(false); await svc.presence(false,T0);
 			for (let index = 0; index < 4; index += 1) { setNow(AT+2*3_600_000+(index+1)*5_000); await beat(); }
 			setNow(AT+2*3_600_000+700_000); await beat(); await beat();
@@ -732,7 +732,7 @@ describe('passive live session lifecycle', () => {
 			const t = AT + index * 100_000; f.setNow(t); await f.service.start('Test'); await f.service.open({...f.source,epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`});
 			await f.service.commit(f.sample(0,0,{epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`})); f.setNow(t+1000);
 			await f.service.commit(f.sample(1,2,{epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`})); f.setNow(t+2000); await f.service.stop(t+2000);
-			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),locale:'es',outputFolder:'Tyrian'});
+			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),format:f.service.getSessionFormat(),locale:'es',outputFolder:'Tyrian'});
 			if (rendered.status !== 'ok') throw new Error('The note did not render.'); contents.set(name,rendered.note.content);
 		}
 		const size = contents.get('a.md')!.length; const reads: string[] = [];
@@ -773,11 +773,11 @@ describe('passive live session lifecycle', () => {
 		f.setNow(AT + 6000); await expect(f.service.stop(AT + 6000)).resolves.toBe(true);
 		const record = f.service.getRuntime()!; const journal = f.service.getJournal();
 		expect(record.observedItemsMs).toBe(5000);
-		const rendered = await renderLiveSessionNote({ record, journal, locale: 'es', outputFolder: 'Tyrian' });
+		const rendered = await renderLiveSessionNote({ record, journal, format: f.service.getSessionFormat(), locale: 'es', outputFolder: 'Tyrian' });
 		expect(rendered, 'the finished session renders its note').toMatchObject({ status: 'ok', session: { observedItemsMs: 4853, observationCount: 5 } });
 		if (rendered.status !== 'ok') throw new Error('unreachable');
 		await expect(inspectLiveSessionNote(rendered.note.content), 'and the note reads back as valid evidence').resolves.toMatchObject({ status: 'ok' });
-		await expect(prepareLiveSessionSnapshot({ record, journal }, new Date(AT + 7000).toISOString()), 'and so does its export')
+		await expect(prepareLiveSessionSnapshot({ record, journal, format: f.service.getSessionFormat() }, new Date(AT + 7000).toISOString()), 'and so does its export')
 			.resolves.toMatchObject({ exportState: 'completed_session', observedItemsMs: 4853 });
 		await f.service.dispose();
 	});
@@ -798,7 +798,7 @@ describe('passive live session lifecycle', () => {
 		f.setNow(AT + 5000); await expect(f.service.stop(AT + 999)).resolves.toBe(true);
 		const record = f.service.getRuntime()!; const journal = f.service.getJournal();
 		expect(record).toMatchObject({ endedAt: new Date(AT + 999).toISOString(), lastObservationAt: new Date(AT + 1000).toISOString() });
-		const rendered = await renderLiveSessionNote({ record, journal, locale: 'es', outputFolder: 'Tyrian' });
+		const rendered = await renderLiveSessionNote({ record, journal, format: f.service.getSessionFormat(), locale: 'es', outputFolder: 'Tyrian' });
 		expect(rendered, 'the finished session renders its note').toMatchObject({ status: 'ok', session: { endedAt: new Date(AT + 1000).toISOString(), observationCount: 1 } });
 		if (rendered.status !== 'ok') throw new Error('unreachable');
 		await expect(inspectLiveSessionNote(rendered.note.content), 'and the note reads back as valid evidence').resolves.toMatchObject({ status: 'ok' });
@@ -813,7 +813,7 @@ describe('passive live session lifecycle', () => {
 		f.setNow(AT + 5000); await expect(f.service.stop(AT + 1000 - late)).resolves.toBe(true);
 		const record = f.service.getRuntime()!;
 		expect(record).toMatchObject({ endedAt: new Date(AT + 1000 - late).toISOString(), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 1000 - late }] });
-		const session = await prepareLiveSessionPayload({ record, journal: f.service.getJournal(), locale: 'es', outputFolder: 'Tyrian' });
+		const session = await prepareLiveSessionPayload({ record, journal: f.service.getJournal(), format: f.service.getSessionFormat(), locale: 'es', outputFolder: 'Tyrian' });
 		if (session === null) throw new Error('No payload.');
 		expect(session).toMatchObject({ endedAt: new Date(AT + 1000).toISOString(), mapIntervals: [{ mapId: 866, toMs: AT + 1000 - late }] });
 		const summary = await renderLiveSessionSummary({ session, locale: 'es', outputFolder: 'Tyrian', fullNotePath: 'Tyrian/sessions/live.md', itemMeta: { 12147: { flags: [], type: 'CraftingMaterial' } }, utcOffsetMinutes: () => 120 });
@@ -1246,7 +1246,7 @@ describe('durable live alert outbox', () => {
 		f.setNow(AT+2000); await f.service.commit(listed(2,4)); f.setNow(AT+3000); await f.service.commit(listed(3,6));
 		const points = f.service.getView().chartPoints.map((point) => point.knownNetValueCopper);
 		expect(f.service.getRuntime()?.currencyTrackedIds).toContain(1);
-		expect(points, 'every point is valued with the gold now tracked').toEqual(buildLiveChart(f.service.getJournal(),f.service.getRuntime()).map((point) => point.knownNetValueCopper));
+		expect(points, 'every point is valued with the gold now tracked').toEqual(buildLiveChart(f.service.getJournal(),{...f.service.getRuntime()!,priceBasis:f.service.getSessionFormat().priceBasis}).map((point) => point.knownNetValueCopper));
 		expect(points.every((value) => value !== null)).toBe(true); await f.service.dispose();
 	});
 	it('a held item quoted outside the entry in flight enters the valuation', async () => {
@@ -1419,7 +1419,7 @@ describe('characters seen by a live session', () => {
 		await f.service.commit({ ...f.sample(1, 7, { sourceElapsedMs: 1_000 }), epoch: SECOND_EPOCH });
 		await f.service.stop(AT + 120_000);
 		const record = f.service.getRuntime()!; const journal = f.service.getJournal();
-		const session = await prepareLiveSessionPayload({ record, journal, locale: 'es', outputFolder: 'Tyrian Companion' });
+		const session = await prepareLiveSessionPayload({ record, journal, format: f.service.getSessionFormat(), locale: 'es', outputFolder: 'Tyrian Companion' });
 		expect(session).not.toBeNull();
 		const note = await renderLiveSessionSummary({ session: session!, locale: 'es', outputFolder: 'Tyrian Companion', fullNotePath: 'x.md',
 			characters: f.service.getCharacters(), utcOffsetMinutes: () => 0 });

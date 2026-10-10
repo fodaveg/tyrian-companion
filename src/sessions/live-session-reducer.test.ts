@@ -45,7 +45,7 @@ describe('live inventory ledger', () => {
 		expect(first.journal.observations).toMatchObject([{ before: 0, after: 2, delta: 2, cause: 'unknown' }]);
 		expect(second.journal.observations).toMatchObject([{ before: 2, after: 4, delta: 2 }]);
 		expect(second.record.totals).toEqual([{ kind: 'item', idNumber: 12147, positive: 4, negative: 0, net: 4 }]);
-		expect(valueLiveTotals(second.record.totals, [{ itemId: 12147, unitCopper: 10 }], second.record.lastSample!.observedAt, false))
+		expect(valueLiveTotals(second.record.totals, [{ itemId: 12147, unitCopper: 10 }], second.record.lastSample!.observedAt, false, 'instant_sell_net'))
 			.toMatchObject({ positiveItemValueKnownCopper: 40, netItemValueKnownCopper: 40, coinNetCopper: null, knownNetValueCopper: null });
 	});
 	it('records signed decreases without inferring a sale, and aggregate moves produce no observation', () => {
@@ -54,7 +54,7 @@ describe('live inventory ledger', () => {
 		expect(moved.journal.observations).toEqual([]);
 		const loss = reduceLiveInventorySample(moved.record, sample(2, 2));
 		expect(loss.journal.observations).toMatchObject([{ delta: -2, cause: 'unknown' }]);
-		expect(valueLiveTotals(loss.record.totals, [], null, false)).toMatchObject({ unpricedItemIds: [12147], knownNetValueCopper: null });
+		expect(valueLiveTotals(loss.record.totals, [], null, false, 'instant_sell_net')).toMatchObject({ unpricedItemIds: [12147], knownNetValueCopper: null });
 	});
 	it('reconnect baseline preserves old totals but never acquires the missing five items', () => {
 		let current = reduceLiveInventorySample(initial(), sample(0, 0)).record;
@@ -146,7 +146,7 @@ describe('live inventory ledger', () => {
 			rows: [{ kind: 'item', idNumber: 12147, quantity }, { kind: 'currency', idNumber: 1, quantity: gold },
 				...(other === null ? [] : [{ kind: 'currency' as const, idNumber: 2, quantity: other }])] });
 		const price = [{ itemId: 12147, unitCopper: 10 }];
-		const value = (record: LiveSessionRuntimeRecord) => valueLiveTotals(record.totals, price, null, record.currencyTrackedIds.includes(1));
+		const value = (record: LiveSessionRuntimeRecord) => valueLiveTotals(record.totals, price, null, record.currencyTrackedIds.includes(1), 'instant_sell_net');
 		const run = (...samples: LiveInventorySampleV1[]) => samples.reduce((record, next) => reduceLiveInventorySample(record, next).record, initial());
 		it('session without coins stays null', () => {
 			expect(value(run(sample(0, 0), sample(1, 2)))).toMatchObject({ coinNetCopper: null, knownNetValueCopper: null, netItemValueKnownCopper: 20 });
@@ -178,7 +178,7 @@ describe('live inventory ledger', () => {
 		it('overflowing gold arithmetic throws like the item path', () => {
 			const totals = [{ kind: 'currency' as const, idNumber: 1, positive: 1, negative: 0, net: Number.MAX_SAFE_INTEGER },
 				{ kind: 'item' as const, idNumber: 12147, positive: 1, negative: 0, net: 1 }];
-			expect(() => valueLiveTotals(totals, price, null, true)).toThrow('overflow');
+			expect(() => valueLiveTotals(totals, price, null, true, 'instant_sell_net')).toThrow('overflow');
 		});
 	});
 

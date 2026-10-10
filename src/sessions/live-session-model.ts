@@ -67,20 +67,30 @@ export type LivePriceBasis = 'instant_sell_net' | 'instant_sell_gross';
  */
 export type LiveSessionPayloadVersion = 1 | 2;
 /**
- * The format this build WRITES, and with it whether the lifecycle keeps the samples that changed nothing (2) or every one (1) and
- * which price basis the runtime keeps (`livePriceBasisOf`). It stays 1 until the readers that understand 2 have been out long
- * enough: with 1, the payload written is byte for byte what 0.6.16 wrote. The readable text around it is not part of that: the title
- * (0.6.19) and the lines of the maps under the summary are presentation, which no reader takes anything from.
+ * The format the sessions this build STARTS are kept and written in, and nothing else: a session that already exists keeps the
+ * format it started with until it is closed and its note saved (`LiveSessionFormat`). With 1 a new session is byte for byte what
+ * 0.6.16 wrote; the readable text around the payload is not part of that (the title since 0.6.19 and the lines of the maps under
+ * the summary are presentation, which no reader takes anything from).
  */
 export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 1;
 /**
- * The price basis of a build that writes notes of `version`: what its runtime record keeps in `prices` (the record has no field to
- * say it, and its key set is closed) and what the note it writes states. Net per unit for 1, the only basis a version 1 note can
+ * The price basis a session that starts in note format `version` keeps: net per unit for 1, the only basis a version 1 note can
  * carry; gross per unit for 2.
  */
 export function livePriceBasisOf(version: LiveSessionPayloadVersion): LivePriceBasis {
 	return version === 2 ? 'instant_sell_gross' : 'instant_sell_net';
 }
+/**
+ * What ONE live session is kept and written as. Both are fixed when the session starts and never change while it lives:
+ * - `noteVersion`: whether its journal keeps every sample (1) or only the ones that changed something (2), and the payload format
+ *   its note is written in;
+ * - `priceBasis`: what the unit prices of its runtime record mean, which is the basis every figure of the session is valued in
+ *   while it runs and the one its note states.
+ * The runtime record has no field for either and its key set is closed, so they are saved beside it, by session id
+ * (`live-session-format.ts`). Whoever values a record or asks for its note says the format of THAT session; nothing takes it from
+ * `LIVE_SESSION_NOTE_WRITE_VERSION`, which only names what a new session gets.
+ */
+export interface LiveSessionFormat { noteVersion: LiveSessionPayloadVersion; priceBasis: LivePriceBasis }
 /** A price row has no basis of its own: every row of a valuation or of a runtime record is in the same one. */
 export interface LivePriceV1 { itemId: number; unitCopper: number | null }
 export interface LiveValuationV1 {
@@ -146,4 +156,5 @@ export interface LiveSessionAlertViewV1 {
 	state: LiveAlertOutboxV1['state']; skipReason: LiveAlertOutboxV1['skipReason'];
 	sentTo: IngameBridgeClient[]; receipt: IngameAlertReceipt | null; deliveryReport: AlertDeliveryReport | null;
 }
-export interface LiveSessionCaptureV1 {record:LiveSessionRuntimeRecord;journal:LiveJournalEntryV1[];capturedAt:string}
+/** `format` is the one of the captured session: what its journal and its prices have to be read as. */
+export interface LiveSessionCaptureV1 {record:LiveSessionRuntimeRecord;journal:LiveJournalEntryV1[];capturedAt:string;format:LiveSessionFormat}

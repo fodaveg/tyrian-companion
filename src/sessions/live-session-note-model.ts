@@ -3,13 +3,14 @@ import { isStoredLiveNoteOutbox, prepareLiveNoteOutbox, type LiveNoteOutboxInput
 import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import { isFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
-import { LIVE_SESSION_NOTE_WRITE_VERSION, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1,
-	type LiveObservationV1, type LivePriceBasis, type LiveSessionPayloadVersion, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
-import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, liveRuntimePriceBasis, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
+import { isLiveSessionFormat } from './live-session-format';
+import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1, type LiveObservationV1, type LivePriceBasis,
+	type LiveSessionFormat, type LiveSessionPayloadVersion, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
+import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
 import { isLiveObservation } from './live-session-validation';
 import { sha256Text } from './session-note-renderer';
 
-/** The payload formats and the one this build writes are defined with the model, which the reducer reads too; they are used from here. */
+/** The payload formats and the one a new session of this build gets are defined with the model; they are used from here. */
 export { LIVE_SESSION_NOTE_WRITE_VERSION, type LiveSessionPayloadVersion } from './live-session-model';
 export const LIVE_SESSION_MAX_PAYLOAD_VERSION = 2;
 
@@ -36,10 +37,11 @@ export interface LiveSessionNoteInput {
 	record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[];
 	locale: 'es' | 'en'; outputFolder: string; displayNames?: Readonly<Record<string, string>>;
 	/**
-	 * The payload format to write; `LIVE_SESSION_NOTE_WRITE_VERSION` when absent. It does not convert prices: 1 states the record's
-	 * prices as net per unit (the only basis that format has) and 2 states them in the basis the runtime keeps (`liveRuntimePriceBasis`).
+	 * The format of the session `record` belongs to (`LiveSessionLifecycle.getSessionFormat()`, or the one it hands to its note
+	 * writer): the payload version to write and the basis the record's prices are in, which the valuation states as it is. It has
+	 * no default and nothing here converts prices: the record cannot say its own format, so whoever asks for the note says it.
 	 */
-	payloadVersion?: LiveSessionPayloadVersion;
+	format: LiveSessionFormat;
 	/** Offset of the machine's time zone from UTC, in minutes, at that instant: the title is written with it. Defaults to the system's. */
 	utcOffsetMinutes?: UtcOffsetMinutes;
 }
@@ -120,7 +122,7 @@ function observedWithin(observedMs: number, gaps: readonly LiveGapV1[], channel:
 }
 
 /** The caller supplies one coherent durable record/journal capture and its actual host timestamp. */
-export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal' | 'payloadVersion'>,
+export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInput,'record' | 'journal' | 'format'>,
 	capturedAt: string): Promise<LiveSessionSnapshotV1 | null> {
 	if (!date(capturedAt) || (input.record.phase === 'active') !== (input.record.endedAt === null)) return null;
 	const endedAt = publishedEnd(input.record);
@@ -136,7 +138,7 @@ export async function prepareLiveSessionSnapshot(input: Pick<LiveSessionNoteInpu
  * `boundary` is where the published window closes: the session's end, or the capture of a
  * snapshot taken while it runs.
  */
-async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal' | 'payloadVersion'>, boundary: string): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
+async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'record' | 'journal' | 'format'>, boundary: string): Promise<Omit<StoredLiveSessionPayloadV1,'endedAt'> | null> {
 	const live = input.record;
 	let declaredBuild: Pick<StoredLiveSessionPayloadV1,'declaredBuild'> = {};
 	if ('declaredBuild' in live) {
@@ -144,10 +146,11 @@ async function prepareLiveSessionEvidence(input: Pick<LiveSessionNoteInput,'reco
 		else if (isDeclaredBuild(live.declaredBuild)) declaredBuild = {declaredBuild: structuredClone(live.declaredBuild)};
 		else return null;
 	}
-	const version = input.payloadVersion ?? LIVE_SESSION_NOTE_WRITE_VERSION;
-	// The valuation states the basis the record's prices are in, which is the runtime's. Version 1 has one basis only, the net price
-	// per unit a 0.6.16 accepts, so asking for that format is saying the prices at hand are net.
-	const basis: LivePriceBasis = version === 1 ? 'instant_sell_net' : liveRuntimePriceBasis();
+	// The session's own format, as it was fixed when it started. A pair that is not a format (version 1 with gross prices, which
+	// no 0.6.16 could read) gives no evidence at all: the prices are never restated in another basis to make it fit.
+	if (!isLiveSessionFormat(input.format)) return null;
+	const version: LiveSessionPayloadVersion = input.format.noteVersion;
+	const basis: LivePriceBasis = input.format.priceBasis;
 	// Version 2 keeps no entry for a sample that changed nothing, whether or not the journal at hand still has it.
 	const entries = (input.journal as readonly (LiveJournalEntryV1 & {outbox: LiveNoteOutboxInput[]})[])
 		.filter((entry) => version === 1 || !isEmptySample(entry));

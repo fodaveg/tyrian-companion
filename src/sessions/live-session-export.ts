@@ -6,7 +6,8 @@ import { normalizeSessionOutputFolder } from './session-note-model';
 import { serializeCsvCell, type SessionHistoryVault } from './session-history';
 
 export type LiveSessionExportPayload = StoredLiveSessionPayloadV1 | LiveSessionSnapshotV1;
-export interface LiveSessionExportSnapshotInput extends Pick<LiveSessionNoteInput,'record' | 'journal' | 'payloadVersion'> { capturedAt: string }
+/** `format` is the one of the captured session (`LiveSessionLifecycle.capture()` gives it with the record). */
+export interface LiveSessionExportSnapshotInput extends Pick<LiveSessionNoteInput,'record' | 'journal' | 'format'> { capturedAt: string }
 /** Point-in-time export factory, independent of completed schema7 note generation. */
 export async function prepareLiveSessionExportSnapshot(input: LiveSessionExportSnapshotInput): Promise<LiveSessionSnapshotV1 | null> {
 	return await prepareLiveSessionSnapshot(input,input.capturedAt);

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { LiveChartPointV1, LiveJournalEntryV1, LiveObservationV1, LiveSessionRuntimeRecord } from './live-session-model';
+import type { LiveChartPointV1, LiveJournalEntryV1, LiveObservationV1, LivePriceBasis, LiveSessionRuntimeRecord } from './live-session-model';
 import { buildLiveChart, GOLD_CURRENCY_ID, liveChartPoint, LiveChartBuilder, liveObservationTotals, valueLiveTotals } from './live-session-reducer';
 
-type PricedRecord = Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'>;
+type PricedRecord = Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> & { priceBasis: LivePriceBasis };
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 
 /** The point the old per-entry rebuild gave EVERY entry (copy and sort every total, revalue); the chart now keeps a subset of them, unchanged. */
@@ -10,7 +10,7 @@ function legacyChart(journal: readonly LiveJournalEntryV1[], record: PricedRecor
 	const all: LiveChartPointV1[] = []; let totals: ReturnType<typeof liveObservationTotals> = [];
 	for (const entry of journal) {
 		totals = liveObservationTotals(totals, entry.observations);
-		const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false);
+		const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, record?.priceBasis ?? 'instant_sell_net');
 		all.push({ observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
 			netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore });
 	}
@@ -30,7 +30,7 @@ function journal(size: number): LiveJournalEntryV1[] {
 			observations, breakBefore: index % 13 === 0, alertsProcessed: true, outbox: [] };
 	});
 }
-const record = (gold: boolean, prices: PricedRecord['prices']): PricedRecord => ({ prices, priceCapturedAt: prices.length > 0 ? new Date(AT).toISOString() : null, currencyTrackedIds: gold ? [1] : [] });
+const record = (gold: boolean, prices: PricedRecord['prices']): PricedRecord => ({ prices, priceCapturedAt: prices.length > 0 ? new Date(AT).toISOString() : null, currencyTrackedIds: gold ? [1] : [], priceBasis: 'instant_sell_net' });
 
 describe('incremental live chart', () => {
 	const prices = [{ itemId: 30, unitCopper: 15 }, { itemId: 12147, unitCopper: null }, { itemId: 9, unitCopper: 1234 }];
