@@ -313,19 +313,26 @@ export class TyrianCompanionSettingTab {
 		this.refreshForSettingsChange();
 	}
 
+	private vaultRelocationApplying(): boolean {
+		return this.plugin.isApplyingVaultRelocation?.() === true;
+	}
+
 	private definitions(): CategorizedSettingDefinition[] {
 		return [
 			// DU-02: only while the vault changed path and the user has not answered.
 			{
 				group: 'main',
 				visible: () => this.plugin.getVaultRelocation?.().pending === true,
-				name: this.t('settings.vaultRelocation.name'), desc: this.t('settings.vaultRelocation.desc'),
+				name: this.t('settings.vaultRelocation.name'),
+				desc: this.t(this.vaultRelocationApplying() ? 'settings.vaultRelocation.applying' : 'settings.vaultRelocation.desc'),
 				render: (setting) => {
+					// While the answer is applied both buttons are off: the other option cannot be chosen halfway.
+					const applying = this.vaultRelocationApplying();
 					setting.addButton((button) => button
-						.setButtonText(this.t('settings.vaultRelocation.adopt')).setCta()
+						.setButtonText(this.t('settings.vaultRelocation.adopt')).setCta().setDisabled(applying)
 						.onClick(async () => { await this.answerVaultRelocation('adopt'); }));
 					setting.addButton((button) => button
-						.setButtonText(this.t('settings.vaultRelocation.fresh'))
+						.setButtonText(this.t('settings.vaultRelocation.fresh')).setDisabled(applying)
 						.onClick(async () => { await this.answerVaultRelocation('fresh'); }));
 				},
 			},

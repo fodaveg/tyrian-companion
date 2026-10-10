@@ -72,6 +72,8 @@ export interface SettingsPanelActions {
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
 	/** DU-02, optional: whether the vault changed path and the user has not chosen what to do with the old data. */
 	getVaultRelocation?(): { pending: boolean };
+	/** DU-02, optional: an answer is being applied; Settings shows it and disables both actions. */
+	isApplyingVaultRelocation?(): boolean;
 	resolveVaultRelocation?(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult>;
 	/**
 	 * Optional: absent means FALSE, the reverse of `managedAssetsSupported`. True shows the row

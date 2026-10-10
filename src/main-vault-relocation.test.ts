@@ -36,6 +36,7 @@ interface RelocationHarness {
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
 	getCollectorMode(): CollectorMode;
 	getVaultRelocation(): { pending: boolean };
+	isApplyingVaultRelocation(): boolean;
 	resolveVaultRelocation(choice: 'adopt' | 'fresh'): Promise<{ status: string; preferences?: number; mode?: CollectorMode | null }>;
 	readonly host: TyrianHost;
 }
@@ -452,36 +453,6 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await plugin.shutdownRuntime();
 	});
 
-	it('an answer whose storage does not answer in time fails, stays pending, and the next click tries again', async () => {
-		const world = device();
-		const first = await boot(world, '/vaults/old', {});
-		const oldId = first.vaultId ?? '';
-		await first.shutdownRuntime();
-		await savePreferences(world, oldId);
-		const plugin = await boot(world, '/vaults/new', {});
-		// Ten-second deadlines fire at once; everything that answers does so well before.
-		vi.stubGlobal('window', {
-			indexedDB: world.factory, setInterval: vi.fn(() => 1), clearInterval: vi.fn(),
-			setTimeout: (callback: () => void, delay: number) => globalThis.setTimeout(callback, delay >= 10_000 ? 30 : delay),
-			clearTimeout: (handle: number) => { globalThis.clearTimeout(handle); },
-		});
-		const open = world.factory.open.bind(world.factory);
-		const mute = vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
-			if (name === INVENTORY_PREFERENCES_DB_NAME) return {} as IDBOpenDBRequest;
-			return open(name, version);
-		});
-
-		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
-		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
-
-		// The attempt that was waiting on the muted database fails by itself; only then does the next click start a new one.
-		await sleep(150);
-		mute.mockRestore();
-		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', preferences: 1 });
-		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
-		await plugin.shutdownRuntime();
-	});
-
 	it('after adopting preferences the in-memory inventory preferences are loaded again', async () => {
 		const world = device();
 		const first = await boot(world, '/vaults/old', {});
@@ -518,54 +489,6 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		expect(second.getCollectorMode()).toBe('consult');
 		expect(await readStoredCollectorMode(world.factory, newId)).toBeNull();
 		await second.shutdownRuntime();
-	});
-
-	it('an answer that runs past its deadline is joined by the next click: one adoption, one notice, the real counts', async () => {
-		const world = device();
-		const first = await boot(world, '/vaults/old', {});
-		const oldId = first.vaultId ?? '';
-		await first.shutdownRuntime();
-		await savePreferences(world, oldId);
-		const plugin = await boot(world, '/vaults/new', {});
-		fastDeadlines(world);
-		const prefs = preferencesRuntime(plugin);
-		const real = prefs.loadCached.bind(prefs);
-		vi.spyOn(prefs, 'loadCached').mockImplementationOnce(async () => { await sleep(50); return await real(); });
-		const before = world.notices.length;
-
-		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
-		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
-		const joined = await plugin.resolveVaultRelocation('adopt');
-
-		expect(joined).toMatchObject({ status: 'adopted', preferences: 1 });
-		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
-		expect(world.notices).toHaveLength(before + 1);
-		expect(world.notices.at(-1)).toMatch(/1 inventory preference/u);
-		await plugin.shutdownRuntime();
-	});
-
-	it('an abandoned answer that finishes later announces its real result once, and the click after it finds nothing pending', async () => {
-		const world = device();
-		const first = await boot(world, '/vaults/old', {});
-		const oldId = first.vaultId ?? '';
-		await first.shutdownRuntime();
-		await savePreferences(world, oldId);
-		const plugin = await boot(world, '/vaults/new', {});
-		fastDeadlines(world);
-		const prefs = preferencesRuntime(plugin);
-		const real = prefs.loadCached.bind(prefs);
-		vi.spyOn(prefs, 'loadCached').mockImplementationOnce(async () => { await sleep(120); return await real(); });
-		const before = world.notices.length;
-
-		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
-		await sleep(300);
-		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
-		expect(world.notices).toHaveLength(before + 1);
-		expect(world.notices.at(-1)).toMatch(/1 inventory preference/u);
-
-		expect(await plugin.resolveVaultRelocation('fresh')).toEqual({ status: 'none' });
-		expect(world.notices).toHaveLength(before + 1);
-		await plugin.shutdownRuntime();
 	});
 
 	it('a failed reload of the in-memory preferences is retried by the next click, which reloads them again', async () => {
@@ -610,6 +533,104 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		} finally {
 			process.off('unhandledRejection', onUnhandled);
 		}
+	});
+
+	it('while an answer is applied Settings can see it, and a call that names the other option gets the same answer', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		const prefs = preferencesRuntime(plugin);
+		const real = prefs.loadCached.bind(prefs);
+		vi.spyOn(prefs, 'loadCached').mockImplementationOnce(async () => { await sleep(80); return await real(); });
+		const before = world.notices.length;
+
+		const adopting = plugin.resolveVaultRelocation('adopt');
+		expect(plugin.isApplyingVaultRelocation()).toBe(true);
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+		const switching = plugin.resolveVaultRelocation('fresh');
+
+		const [one, two] = await Promise.all([adopting, switching]);
+		expect(one).toMatchObject({ status: 'adopted', preferences: 1 });
+		expect(two).toEqual(one);
+		expect(plugin.isApplyingVaultRelocation()).toBe(false);
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		expect(world.notices).toHaveLength(before + 1);
+		await plugin.shutdownRuntime();
+	});
+
+	it('an answer that fails at the registry leaves the question open and no mode that a later answer could take for the user\'s', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		const plugin = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const newId = plugin.vaultId ?? '';
+		await sleep(20);
+		const open = world.factory.open.bind(world.factory);
+		const broken = vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
+			if (name !== VAULT_REGISTRY_DB) return open(name, version);
+			const request = { result: undefined, error: null } as unknown as IDBOpenDBRequest;
+			globalThis.setTimeout(() => { (request.onerror as (() => void) | null)?.(); }, 0);
+			return request;
+		});
+
+		await expect(plugin.resolveVaultRelocation('fresh')).rejects.toThrow();
+
+		expect(world.local.get(IDENTITY_KEY)).toEqual({ vaultId: newId, pendingFrom: oldId });
+		expect(await readStoredCollectorMode(world.factory, newId)).toBeNull();
+		expect(plugin.isApplyingVaultRelocation()).toBe(false);
+		broken.mockRestore();
+		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', mode: 'collector' });
+		expect(plugin.getCollectorMode()).toBe('collector');
+		await plugin.shutdownRuntime();
+	});
+
+	it('an answer still applying when the plugin unloads ends without touching state, views or notices', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		const prefs = preferencesRuntime(plugin);
+		const real = prefs.loadCached.bind(prefs);
+		vi.spyOn(prefs, 'loadCached').mockImplementationOnce(async () => { await sleep(120); return await real(); });
+		const apply = vi.spyOn(plugin as unknown as { applyCollectorModeChange(): Promise<void> }, 'applyCollectorModeChange');
+		const answer = plugin.resolveVaultRelocation('adopt');
+
+		await plugin.shutdownRuntime();
+		const noticesAtUnload = world.notices.length;
+
+		expect(await answer).toEqual({ status: 'none' });
+		expect(apply).not.toHaveBeenCalled();
+		expect(world.notices).toHaveLength(noticesAtUnload);
+		expect(plugin.getCollectorMode()).toBe('consult');
+		expect(world.local.get(IDENTITY_KEY)).toMatchObject({ pendingFrom: oldId });
+	});
+
+	it('back at the original path, with the registry failing, the open question is dropped instead of asked about itself', async () => {
+		const world = device();
+		await (await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' })).shutdownRuntime();
+		const away = await boot(world, '/vaults/b', { apiKeySecret: 'gw2-main' });
+		expect(away.getVaultRelocation()).toEqual({ pending: true });
+		await away.shutdownRuntime();
+		const open = world.factory.open.bind(world.factory);
+		const broken = vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
+			if (name !== VAULT_REGISTRY_DB) return open(name, version);
+			const request = { result: undefined, error: null } as unknown as IDBOpenDBRequest;
+			globalThis.setTimeout(() => { (request.onerror as (() => void) | null)?.(); }, 0);
+			return request;
+		});
+
+		const back = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
+		broken.mockRestore();
+
+		expect(back.getVaultRelocation()).toEqual({ pending: false });
+		expect(back.getCollectorMode()).toBe('collector');
+		await back.shutdownRuntime();
 	});
 
 	it('a host without per-device local storage behaves as before', async () => {

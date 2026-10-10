@@ -747,6 +747,7 @@ describe('vault relocation row (DU-02)', () => {
 				const button = {
 					setButtonText: (text: string) => { entry.text = text; return button; },
 					setCta: () => button,
+					setDisabled: () => button,
 					onClick: (handler: () => Promise<void> | void) => { entry.click = handler; return button; },
 				};
 				render(button);
@@ -786,6 +787,34 @@ describe('vault relocation row (DU-02)', () => {
 		expect(plugin.resolveVaultRelocation.mock.calls).toEqual([['adopt'], ['fresh']]);
 		plugin.pending = false;
 		expect(tab.getMountedSettingNames('main')).not.toContain(ROW);
+	});
+
+	it('shows "Applying…" and disables both buttons while an answer is applied', () => {
+		const plugin = Object.assign(settingsPlugin(), {
+			applying: true,
+			getVaultRelocation: () => ({ pending: true }),
+			isApplyingVaultRelocation: () => plugin.applying,
+			resolveVaultRelocation: vi.fn(async () => ({ status: 'fresh' as const })),
+		});
+		const { tab } = tabFor(plugin);
+		const disabled: boolean[] = [];
+		const definition = rowOf(tab) as RenderableSettingDefinition & { desc: string };
+		const setting = {
+			addButton: (render: (button: unknown) => unknown) => {
+				const button = {
+					setButtonText: () => button, setCta: () => button, onClick: () => button,
+					setDisabled: (value: boolean) => { disabled.push(value); return button; },
+				};
+				render(button);
+				return setting;
+			},
+		};
+		definition.render(setting as never);
+
+		expect(disabled).toEqual([true, true]);
+		expect(definition.desc).toBe('Applying…');
+		plugin.applying = false;
+		expect((rowOf(tab) as RenderableSettingDefinition & { desc: string }).desc).not.toBe('Applying…');
 	});
 
 	it('tells the user when the answer fails and leaves the question for the next click', async () => {

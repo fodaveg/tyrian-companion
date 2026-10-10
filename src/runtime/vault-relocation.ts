@@ -25,7 +25,8 @@
  * and once answered, each copy's own local storage settles every later opening without a question. NOT covered: a
  * vault from before the token that is moved outside Obsidian on its first start with it (nothing remembers it); a
  * copy opened for the first time that is never answered (it asks on every start, in consult, until it is answered); a
- * copy that was answered followed by the ORIGINAL being moved outside Obsidian (the registry then names the copy's id, so
+ * detection that lost the start deadline and ends after the answer (it can write the old question back into the registry
+ * and the local memory); a copy that was answered followed by the ORIGINAL being moved outside Obsidian (the registry then names the copy's id, so
  * the question is about the copy's data and adopting would copy those); a
  * folder moved outside Obsidian AFTER a start in which the registry could not be written; a device that never ran the
  * plugin on that vault (nothing to adopt, no question).
@@ -139,13 +140,8 @@ function parseRecord(raw: unknown): VaultIdentityRecord | null {
 export function rememberedPreviousId(storage: TyrianLocalStoragePort | undefined, currentId: string): string | null {
 	const local = storage === undefined ? null : parseRecord(storage.load(VAULT_IDENTITY_KEY));
 	if (local === null) return null;
-	if (local.vaultId !== currentId) return local.vaultId;
+	if (local.vaultId !== currentId) return local.pendingFrom === currentId ? null : local.vaultId;
 	return local.pendingFrom !== undefined && local.pendingFrom !== currentId ? local.pendingFrom : null;
-}
-
-async function writeRecord(stores: VaultIdentityStores, record: VaultIdentityRecord): Promise<void> {
-	stores.storage?.save(VAULT_IDENTITY_KEY, record);
-	if (stores.token !== '') await writeRegistry(stores.factory, stores.token, record);
 }
 
 /**
@@ -199,9 +195,17 @@ export async function detectVaultRelocation(stores: VaultIdentityStores, current
 	return remember(stores, { vaultId: currentId, pendingFrom: previousVaultId }, { previousVaultId });
 }
 
-/** The user answered: the current id is recorded and nothing is pending. */
-export async function settleVaultRelocation(stores: VaultIdentityStores, currentId: string): Promise<void> {
-	await writeRecord(stores, { vaultId: currentId });
+/**
+ * The user answered: the current id is recorded and nothing is pending. In an order that leaves nothing half done: the
+ * registry first (if it fails, nothing changed), then `saveMode` (if it fails, the local memory still holds the open
+ * question, which it trusts over the registry, so the next start asks again), and the local memory last (synchronous).
+ */
+export async function settleVaultRelocation(
+	stores: VaultIdentityStores, currentId: string, saveMode: () => Promise<void>,
+): Promise<void> {
+	if (stores.token !== '') await writeRegistry(stores.factory, stores.token, { vaultId: currentId });
+	await saveMode();
+	stores.storage?.save(VAULT_IDENTITY_KEY, { vaultId: currentId });
 }
 
 /** Whether this device kept anything of the vault under `vaultId`. */
