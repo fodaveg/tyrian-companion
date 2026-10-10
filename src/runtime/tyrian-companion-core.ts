@@ -131,6 +131,7 @@ import {
 	createLocalDebugPersistenceSink,
 	LocalDebugPersistenceProbe,
 } from '../core/local-debug-persistence';
+import { requestPersistentStorage } from '../core/persistent-storage';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import { halloweenObservationActive } from '../halloween/halloween-activation';
@@ -918,6 +919,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async initializeRuntime(): Promise<void> {
 		this.bootTrace.mark('runtimeStart');
 		const host = this.host;
+		// DU-13: once per load, before the first database is opened, and never waited for. The answer is in the local log.
+		void requestPersistentStorage(() => host.kv.storage, this.persistenceDiagnostics('plugin', 'plugin_load'));
 		const indexedDB = host.kv.indexedDB;
 		this.managedAssets = new ManagedAssetsManager(
 			labelledVault(host.vault, 'Managed asset'),

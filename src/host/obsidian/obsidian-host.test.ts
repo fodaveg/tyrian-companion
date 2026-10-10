@@ -261,6 +261,20 @@ describe('ObsidianHost secrets, settings and environment', () => {
 		expect(host.kv.locks).toBeNull();
 	});
 
+	// DU-13 (10 Oct 2026): the core asks the storage manager of that same window not to evict the origin.
+	it('hands over the storage manager of the window its IndexedDB is from, read when asked, and none where that window has none', () => {
+		const host = createObsidianHost(fakePlugin().plugin);
+		const storage = { persist: vi.fn(async () => true) };
+		vi.stubGlobal('window', { indexedDB: {}, navigator: { storage } });
+		expect(host.kv.storage).toBe(storage);
+		vi.stubGlobal('window', { indexedDB: {}, navigator: {} });
+		expect(host.kv.storage).toBeNull();
+		vi.stubGlobal('window', { indexedDB: {} });
+		expect(host.kv.storage).toBeNull();
+		// Handing it over asks nothing: only the core does, once per load.
+		expect(storage.persist).not.toHaveBeenCalled();
+	});
+
 	it('reports connectivity changes as a boolean', () => {
 		const { plugin, domEvents } = fakePlugin();
 		vi.stubGlobal('window', {});

@@ -126,6 +126,8 @@ export interface HebraHostDeps {
 	 * no probe on a real client; `locks: null` in `entry.ts` turns it off. What is unverified: SPEC-live-loot §4.
 	 */
 	locks?: TyrianKvPort['locks'];
+	/** `navigator.storage` of the page `indexedDB` is from, or `null`/absent where the webview has none (`TyrianKvPort.storage`). */
+	storage?: TyrianKvPort['storage'];
 	pathIndexKv: TyrianPathIndexKv;
 	fileBackend: LocalFileBackend;
 	secretsBackend: TyrianSecretsBackend;
@@ -503,7 +505,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		})
 		: () => undefined;
 	const secrets = await createPreloadedSecrets(deps.secretsBackend, (error) => deps.report(error, 'keychain.write'));
-	const kv: TyrianKvPort = { indexedDB: deps.indexedDB, locks: deps.locks ?? null };
+	const kv: TyrianKvPort = { indexedDB: deps.indexedDB, locks: deps.locks ?? null, storage: deps.storage ?? null };
 	const background = createBackground(deps);
 	const win = deps.window;
 	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false, and one
