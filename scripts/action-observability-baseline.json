@@ -12452,9 +12452,9 @@
 				{
 					"id": "8c85853123d6891cba656c39371132cc02525a05",
 					"kind": "catch_clause",
-					"line": 259,
+					"line": 260,
 					"column": 5,
-					"endLine": 259,
+					"endLine": 260,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12468,9 +12468,9 @@
 				{
 					"id": "e97e762e6e917fe273403c0803bfd0cd6bcbddc6",
 					"kind": "catch_clause",
-					"line": 286,
+					"line": 287,
 					"column": 5,
-					"endLine": 286,
+					"endLine": 287,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {

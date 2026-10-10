@@ -150,7 +150,7 @@ const queueOutcomes = (records: readonly LocalDebugRecordInput[], code: LocalDeb
 	.map(({ store, operation }) => `${String(store)}/${String(operation)}`);
 
 /** An open the engine answers with an error, the way it does with its storage process gone. */
-function refusedQueueOpen(): IDBOpenDBRequest {
+function engineErrorOnQueueOpen(): IDBOpenDBRequest {
 	const request = { error: new DOMException('The storage process is gone.', 'UnknownError'), result: undefined } as unknown as IDBOpenDBRequest;
 	queueMicrotask(() => { request.onerror?.call(request, new Event('error')); });
 	return request;
@@ -243,18 +243,18 @@ describe('the Obsidian plugin started end to end through its own lifecycle', { t
 		}).toEqual({ failures: [], cancelled: ['pending_proposal/open', 'pending_proposal/transaction'], connections: [] });
 	});
 
-	it('still journals a confirmation queue the engine refuses to open as a storage failure', async () => {
+	it('still journals a confirmation queue the engine fails to open as a storage failure', async () => {
 		const started = await startPlugin();
 		const open = started.tracked.factory.open.bind(started.tracked.factory);
 		started.tracked.factory.open = (name: string, version?: number) => name.startsWith(`${PROPOSAL_QUEUE_DB_NAME}:`)
-			? refusedQueueOpen() : open(name, version);
+			? engineErrorOnQueueOpen() : open(name, version);
 		await started.layoutReady();
 		await started.unload();
 
 		expect({
-			refused: queueOutcomes(started.records, 'storage_failure').filter((outcome) => outcome === 'pending_proposal/open').length > 0,
+			engineError: queueOutcomes(started.records, 'storage_failure').filter((outcome) => outcome === 'pending_proposal/open').length > 0,
 			cancelled: queueOutcomes(started.records, 'cancelled'),
-		}).toEqual({ refused: true, cancelled: [] });
+		}).toEqual({ engineError: true, cancelled: [] });
 	});
 
 	it('leaves no IndexedDB connection open and no host timer armed once unloaded', async () => {

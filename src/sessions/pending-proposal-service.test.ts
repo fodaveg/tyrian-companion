@@ -15,6 +15,7 @@ import {
 	IndexedDbPendingProposalStore,
 	MemoryPendingProposalStore,
 	PROPOSAL_QUEUE_DB_NAME,
+	PROPOSAL_QUEUE_DB_VERSION,
 	vaultProposalQueueDatabaseName,
 } from './pending-proposal-store';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
@@ -51,7 +52,7 @@ describe('PendingProposalService', () => {
 		expect(closes).toBe(1);
 	});
 
-	it('journals an open its own close cut short as cancelled, and a refused open as a storage failure (GR-05 F1)', async () => {
+	it('journals an open its own close cut short as cancelled, and an open the engine fails as a storage failure (GR-05 F1)', async () => {
 		const outcomes = async (closeFirst: boolean): Promise<string[]> => {
 			const events: LocalDebugPersistenceEvent[] = [];
 			const probe = new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } });
@@ -65,10 +66,33 @@ describe('PendingProposalService', () => {
 			return events.filter(({ phase }) => phase !== 'start').map(({ operation, phase, code }) => `${operation}/${phase}/${code}`);
 		};
 
-		expect({ closed: await outcomes(true), refused: await outcomes(false) }).toEqual({
+		expect({ closed: await outcomes(true), engineError: await outcomes(false) }).toEqual({
 			closed: ['close/success/ok', 'open/skip/cancelled', 'transaction/skip/cancelled', 'read/skip/cancelled'],
-			refused: ['open/failure/storage_failure', 'transaction/failure/storage_failure'],
+			engineError: ['open/failure/storage_failure', 'transaction/failure/storage_failure'],
 		});
+	});
+
+	it('still journals a queue retired by another context\'s upgrade as a storage failure, never as cancelled (GR-05 F1)', async () => {
+		const name = databaseName();
+		const events: LocalDebugPersistenceEvent[] = [];
+		const probe = new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } });
+		const store = new IndexedDbPendingProposalStore(indexedDB, name, probe);
+		await store.transaction(() => ({ result: undefined, next: { version: 1, revision: 1, proposals: [], receipts: [] } }));
+		// Another context raises the version: the queue's connection gets an upgrade `versionchange` and retires, not closed.
+		const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = indexedDB.open(name, PROPOSAL_QUEUE_DB_VERSION + 1);
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error ?? new Error('Upgrade open failed.'));
+			request.onblocked = () => reject(new Error('Upgrade open was blocked.'));
+		});
+		upgraded.close();
+		const fromUpgrade = events.length;
+
+		await expect(store.read()).rejects.toThrow('Confirmation queue is unavailable.');
+		await expect(store.transaction(() => ({ result: undefined }))).rejects.toThrow('Confirmation queue is unavailable.');
+		expect(events.slice(fromUpgrade).filter(({ phase }) => phase !== 'start').map(({ operation, phase, code }) => `${operation}/${phase}/${code}`))
+			.toEqual(['read/failure/storage_failure', 'transaction/failure/storage_failure']);
+		store.close();
 	});
 
 	it('does not reconcile through a store it already closed (GR-05 F1)', async () => {
