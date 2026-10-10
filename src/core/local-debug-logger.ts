@@ -194,6 +194,7 @@ export class LocalDebugLogger {
 			state: this.enabled ? this.runtimeState : 'disabled',
 			path: writer.path,
 			bytes: writer.bytes,
+			bytesComplete: writer.bytesComplete,
 			fileCount: writer.fileCount,
 			lastEventAt: this.lastEventAt,
 			droppedRecords: this.droppedRecords,

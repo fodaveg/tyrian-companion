@@ -277,6 +277,7 @@ export class LocalDebugJsonlWriter {
 		return {
 			path: `${this.directory}/`,
 			bytes: this.fileBytes.reduce((total, bytes) => total + bytes, 0),
+			bytesComplete: this.initialized && this.scanned.every(Boolean),
 			fileCount: this.fileCount,
 			recoveredTails: this.recoveredTails,
 			maxSequence: this.maxSequence,

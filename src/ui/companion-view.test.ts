@@ -55,7 +55,7 @@ describe('Companion incident callout: local diagnostics', () => {
 		const opened = vi.fn();
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'degraded', path: 'test-config-dir/plugins/tyrian-companion/logs/',
-			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 1,
+			bytes: 0, bytesComplete: true, fileCount: 0, lastEventAt: null, droppedRecords: 1,
 			errorCode: 'logger_failure', queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 0, lastError: null,
 		};
@@ -77,7 +77,7 @@ describe('Companion incident callout: local diagnostics', () => {
 	it('surfaces errors since load and the last failure, with the timestamp formatted (H14.5)', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
-			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			bytes: 0, bytesComplete: true, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
 			errorCode: null, queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 20,
 			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
@@ -99,7 +99,7 @@ describe('Companion incident callout: local diagnostics', () => {
 	it('hands component/action/code/timestamp to the plugin adapter, never onto the visible line (H18.36)', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
-			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			bytes: 0, bytesComplete: true, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
 			errorCode: null, queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 1,
 			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
@@ -119,7 +119,7 @@ describe('Companion incident callout: local diagnostics', () => {
 	it('never throws when the host shell has not wired the port', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
-			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			bytes: 0, bytesComplete: true, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
 			errorCode: null, queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 1,
 			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
@@ -148,7 +148,7 @@ describe('Companion incident callout: local diagnostics', () => {
 	it('appends the connection line under an existing graver callout instead of replacing its title', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
-			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 0,
+			bytes: 0, bytesComplete: true, fileCount: 0, lastEventAt: null, droppedRecords: 0,
 			errorCode: null, queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 1, lastError: null,
 		};
@@ -210,7 +210,7 @@ describe('Companion incident callout: local diagnostics', () => {
 	it('surfaces the session start failure as the title even with errors since load, and keeps the count as a line', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
-			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 0,
+			bytes: 0, bytesComplete: true, fileCount: 0, lastEventAt: null, droppedRecords: 0,
 			errorCode: null, queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 3, lastError: null,
 		};

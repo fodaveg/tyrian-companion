@@ -1927,6 +1927,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			state: this.settings.debugLoggingEnabled ? 'degraded' : 'disabled',
 			path: `${this.host.diagnostics.directory}/`,
 			bytes: 0,
+			bytesComplete: true,
 			fileCount: 0,
 			lastEventAt: null,
 			droppedRecords: 0,

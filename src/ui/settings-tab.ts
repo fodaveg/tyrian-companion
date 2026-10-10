@@ -1008,7 +1008,7 @@ export function projectLocalDebugStatus(
 		lines: [
 			t(`settings.debug.writer.${status.state}`),
 			t('settings.debug.path', { path: status.path }),
-			t('settings.debug.storage', { bytes: status.bytes, files: status.fileCount }),
+			t(status.bytesComplete ? 'settings.debug.storage' : 'settings.debug.storagePartial', { bytes: status.bytes, files: status.fileCount }),
 			status.lastEventAt === null
 				? t('settings.debug.noEvents') : t('settings.debug.lastEvent', { timestamp: status.lastEventAt }),
 			t('settings.debug.dropped', { count: status.droppedRecords }),

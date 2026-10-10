@@ -532,7 +532,7 @@ describe('local diagnostics settings', () => {
 	it('projects degraded writer health as an alert with bounded operational details', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'warn', state: 'degraded',
-			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, fileCount: 2,
+			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, bytesComplete: true, fileCount: 2,
 			lastEventAt: '2026-08-30T04:00:00.000Z', droppedRecords: 3,
 			errorCode: 'logger_failure', queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 0, lastError: null,
@@ -551,10 +551,29 @@ describe('local diagnostics settings', () => {
 		});
 	});
 
+	it('says the storage total is a lower bound while older log files are still unmeasured', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'warn', state: 'ready',
+			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, bytesComplete: false, fileCount: 5,
+			lastEventAt: null, droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 0, lastError: null,
+		};
+		for (const [locale, text] of [
+			['en', 'At least 2048 bytes in 5 files (older files not measured yet)'],
+			['es', 'Al menos 2048 bytes en 5 archivos (aún no se han medido los archivos antiguos)'],
+		] as const) {
+			const translator = createTranslator(locale);
+			const lines = projectLocalDebugStatus(status, translator.t.bind(translator)).lines;
+			expect(lines).toContain(text);
+			expect(lines.join('\n')).not.toMatch(/^2048 bytes/mu);
+		}
+	});
+
 	it('surfaces a healthy writer as an alert once errors have been recorded since load, with the last failure named', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'warn', state: 'ready',
-			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, fileCount: 2,
+			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, bytesComplete: true, fileCount: 2,
 			lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
 			errorCode: null, queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 20,
