@@ -250,7 +250,7 @@ export class TyrianCompanionSettingTab {
 		const enabled = projectManagedAssetsActions({
 			working: view.status === 'working',
 			hasManagedRoot: this.plugin.hasManagedAssetsRoot(),
-			canMove: this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
+			canMove: this.plugin.managedAssetsCanMove?.() !== false && this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
 		});
 		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
 	}
@@ -928,7 +928,7 @@ export class TyrianCompanionSettingTab {
 	}
 
 	private rootDivergence() {
-		return projectManagedAssetsRootDivergence(this.plugin.settings);
+		return projectManagedAssetsRootDivergence(this.plugin.settings, this.plugin.managedAssetsCanMove?.() !== false);
 	}
 
 	private connectionDescription(state: ConnectionState): string {

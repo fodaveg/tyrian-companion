@@ -43,6 +43,20 @@ describe('ManagedAssetsLifecycle', () => {
 		expect(diagnostics.events.at(-1)).toMatchObject({ code: 'storage_failure', state: 'unavailable' });
 	});
 
+	it('records the real cause and code of a failure, not only the generic «unavailable»', async () => {
+		const diagnostics = diagnosticHarness();
+		const manager = new JournalFailureManager();
+		manager.apply = async () => ({
+			status: 'unavailable', message: 'injected', cause: 'bytes_not_synced', details: { reason: 'Error', code: 'bytes_not_synced' },
+		});
+		const lifecycle = new ManagedAssetsLifecycle(manager, new MemoryManagedAssetsPointerStore(), diagnostics);
+
+		expect(await lifecycle.install('A')).toMatchObject({ status: 'unavailable', cause: 'bytes_not_synced' });
+		expect(diagnostics.events.at(-1)).toMatchObject({
+			code: 'missing', state: 'unavailable', details: { code: 'bytes_not_synced', reason: 'Error' },
+		});
+	});
+
 	it('coordinates two installs so only one durable root wins', async () => {
 		const pointer = new MemoryManagedAssetsPointerStore();
 		const manager = new FakeManager();

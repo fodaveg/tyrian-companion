@@ -96,7 +96,7 @@ import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
 import type { StorageDelta } from '../account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from '../assets/generic-assets';
 import { RETIRED_MANAGED_ASSETS } from '../assets/retired-assets';
-import { ManagedAssetsManager, type ManagedAssetsResult } from '../assets/managed-assets';
+import { ManagedAssetsManager, type ManagedAssetsFailureCause, type ManagedAssetsResult } from '../assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
@@ -123,6 +123,7 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
+import { vaultFailureCause } from '../core/vault-failure-cause';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { resanitizeLocalDebugRecord } from '../core/local-debug-sanitizer';
 import {
@@ -931,6 +932,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.managedAssets,
 			this.managedAssetsPointer,
 			this.localDebugActions ?? undefined,
+			(root) => canMoveManagedAssets(host, root, this.settings.outputFolder),
 		);
 
 		const apiKeyProvider = new HostApiKeyProvider(
@@ -1458,6 +1460,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
+		// A press made while the plugin was starting left «still starting» in the Assets row: it is over now.
+		if (this.managedAssetsView.message === 'runtime_starting') {
+			this.managedAssetsView = { status: 'idle', message: 'not_inspected', plan: null };
+			this.settingTab.refreshManagedAssetsRow();
+		}
 		this.bootTrace.mark('ready');
 		this.settleRuntimeReadyWaiters();
 		if (this.lateCollectorMode !== null) this.adoptLateCollectorMode();
@@ -4655,12 +4662,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return hostSupportsManagedAssets(this.host);
 	}
 
+	/** False when the host cannot move assets between roots (Hebra): no Move button, no automatic follow. */
+	managedAssetsCanMove(): boolean {
+		return canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder);
+	}
+
 	hasManagedAssetsRoot(): boolean {		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
 	}
 
+	// Every press of the Assets row that does nothing (still starting, only consulting) says so in the row, with a
+	// message that tells what to do, besides the notice. Written inline: the tests drive these methods with a plain `this`.
 	async previewManagedAssets(): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_root_retained', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -4676,11 +4690,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			try {
 				const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
 				const plan = await this.managedAssets.preview(root, kind);
-				this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'preview_ready' : 'preview_blocked', plan };
+				// Files of the user's at a managed path are not touched by Apply: the preview says so and points to Replace.
+				const message = !plan.canApply ? 'preview_blocked'
+					: plan.steps.some((step) => step.status === 'occupied_unowned')
+						// Replace needs a managed root: a fresh install, with none, can only be told to move or rename the files.
+						? (this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null ? 'preview_unowned' : 'preview_unowned_no_root')
+						: 'preview_ready';
+				this.managedAssetsView = { status: 'ready', message, plan };
 				return undefined;
 			} catch (error) {
-				this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null };
-				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
+				const cause = vaultFailureCause(error);
+				this.managedAssetsView = { status: 'error', message: cause === undefined ? 'inspect_failed' : managedAssetsFailureCode('unavailable', cause), plan: null };
+				return { phase: 'failure' as const, code: cause === undefined ? 'unknown_failure' as const : 'missing' as const, details: { ...unmappedErrorLogDetails(error), ...(cause === undefined ? {} : { code: cause }) } };
 			}
 		};
 		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_preview' }, perform) ?? perform());
@@ -4690,8 +4711,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** `guard` is the caller's last word on the inspection the apply acts on (see `ManagedAssetsManager.apply`). */
 	async applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) return;
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -4703,8 +4724,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	async repairManagedAssets(): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) return;
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -4721,8 +4742,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	async replaceUnownedManagedAssets(confirmed: readonly string[]): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) return;
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -4738,8 +4759,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	async listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> {
 		if (!hostSupportsManagedAssets(this.host)) return [];
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return []; }
-		if (refusedInConsult(this)) return [];
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return []; }
+		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return []; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -4770,9 +4791,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
 	 * pointer could not be confirmed to match the retained root first). */
 	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
-		if (!hostSupportsManagedAssets(this.host)) return null;
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return null; }
-		if (refusedInConsult(this)) return null;
+		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return null;
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return null; }
+		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return null; }
 		const destination = this.settings.outputFolder;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority(parent)) return null;
@@ -4787,8 +4808,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	async removeManagedAssets(): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) return;
+		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority()) return;
 		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
@@ -4815,7 +4836,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * that into something that fires on its own the next time Obsidian starts.
 	 */
 	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
+		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return;
 		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
 		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
@@ -4859,7 +4880,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		catch { result = { status: 'unavailable', message: 'The durable managed-assets authority is unavailable.' }; }
 		this.managedAssetsView = 'root' in result
 			? { status: 'ready', message: 'lifecycle_ready', plan: null }
-			: { status: 'error', message: managedAssetsFailureCode(result.status), plan: null };
+			: { status: 'error', message: managedAssetsFailureCode(result.status, result.cause), plan: null };
 		this.settingTab.refreshManagedAssetsRow();
 		return result;
 	}
@@ -4867,11 +4888,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async runManagedAssetOperation(operation: () => Promise<ManagedAssetsResult>): Promise<ManagedAssetsResult> {
 		this.managedAssetsView = { status: 'working', message: 'applying_journal', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
-		const result = await operation();
+		let result!: ManagedAssetsResult;
+		// Repair and Replace used to leave nothing in the local log when they failed: the record carries the real code now.
+		const perform = async () => {
+			result = await operation();
+			if (!('message' in result)) return undefined;
+			return {
+				phase: 'failure' as const,
+				code: result.cause === undefined || result.cause === 'only_unowned_files' ? 'validation_failed' as const : 'missing' as const,
+				details: { status: result.status, message: result.message, ...result.details },
+			};
+		};
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply' }, perform) ?? perform());
 		if (result.status === 'applied' || result.status === 'unchanged' || result.status === 'detached') {
 			this.managedAssetsView = { status: 'ready', message: result.status === 'detached' ? 'ownership_detached' : 'assets_ready', plan: null };
 		} else if ('message' in result) {
-			this.managedAssetsView = { status: 'error', message: managedAssetsFailureCode(result.status), plan: null };
+			this.managedAssetsView = { status: 'error', message: managedAssetsFailureCode(result.status, result.cause), plan: null };
 		}
 		this.settingTab.refreshManagedAssetsRow();
 		return result;
@@ -6326,7 +6358,12 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 	};
 }
 
-function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable'): ManagedAssetsMessageCode {
+function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable', cause?: ManagedAssetsFailureCause): ManagedAssetsMessageCode {
+	const byCause: Record<ManagedAssetsFailureCause, ManagedAssetsMessageCode> = {
+		bytes_not_synced: 'operation_bytes_not_synced', output_folder_missing: 'operation_output_folder_missing',
+		host_refused: 'operation_host_refused', only_unowned_files: 'operation_only_unowned',
+	};
+	if (cause !== undefined) return byCause[cause];
 	const codes: Record<typeof status, ManagedAssetsMessageCode> = {
 		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
 	};
@@ -6490,6 +6527,19 @@ async function ensureAdapterDirectory(
 		current = current.length === 0 ? segment : `${current}/${segment}`;
 		if (!await adapter.exists(current)) await adapter.mkdir(current);
 	}
+}
+
+/**
+ * Whether the managed assets can be moved off the root the settings name. A host that declared
+ * `capabilities.managedAssetsMove: false` (Hebra: the vault IS the output folder) can only do it while that root is
+ * still READABLE in the vault. There the vault is the output folder, so that is decided by paths alone: the root is
+ * the output folder or lies inside it (the manifest may be lost and its Bases intact, which Move adopts). Once the
+ * output folder moved away from it (a sibling, or a folder inside it) nothing of the old root can be read and
+ * Apply installs afresh instead.
+ */
+function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null, outputFolder: string): boolean {
+	if (host?.capabilities?.managedAssetsMove !== false) return true;
+	return root !== null && (root === outputFolder || root.startsWith(`${outputFolder}/`));
 }
 
 /**

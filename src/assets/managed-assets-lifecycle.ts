@@ -1,4 +1,4 @@
-import type { ManagedAssetsManager, ManagedAssetsResult } from './managed-assets';
+import { failureEvidence, type ManagedAssetsFailureCause, type ManagedAssetsManager, type ManagedAssetsResult } from './managed-assets';
 import type { ManagedAssetsInspection } from './managed-assets-model';
 import type { ManagedAssetsPointerState, ManagedAssetsPointerStore } from './managed-assets-pointer';
 import {
@@ -8,13 +8,19 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 
-export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 'relocated' | 'unchanged'; root: string | null; generation: number } | { status: 'busy' | 'conflict' | 'unavailable'; message: string };
+export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 'relocated' | 'unchanged'; root: string | null; generation: number } | { status: 'busy' | 'conflict' | 'unavailable'; message: string; cause?: ManagedAssetsFailureCause; details?: Record<string, unknown> };
 
 export class ManagedAssetsLifecycle {
 	constructor(
 		private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'relocate' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>,
 		private readonly pointer: ManagedAssetsPointerStore,
 		private readonly diagnostics?: LocalDebugActionPort,
+		/**
+		 * False for a root the vault cannot read at all (Hebra: the vault is the output folder, so a root outside it is
+		 * out of reach). What an inspection of it shows is then an alias of another path (the old root's `Bases` folder
+		 * seen as the output folder), not the root's own state, so it counts as abandoned. Absent: every root is readable.
+		 */
+		private readonly rootReadable: (root: string) => boolean = () => true,
 	) {}
 
 	/** `guard` is handed to the manager's apply (see `ManagedAssetsManager.apply`): the caller's last word on the inspection it acts on. */
@@ -41,7 +47,8 @@ export class ManagedAssetsLifecycle {
 		if (current.status === 'ready' && current.root !== null) {
 			const reclaimed = await this.reclaimStalePointer(current, current.root, root);
 			if (!reclaimed) return { status: 'conflict', message: 'Another managed-assets root is active.' };
-			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state);
+			if ('failure' in reclaimed) return reclaimed.failure;
+			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state, guard);
 			return await this.installOverExistingAuthority(root, reclaimed.state, guard);
 		}
 		const claim = current.status === 'installing' ? current : await this.pointer.compareAndSet(current, { status: 'installing', root: null, targetRoot: root });
@@ -91,7 +98,7 @@ export class ManagedAssetsLifecycle {
 
 	/**
 	 * A `ready` pointer naming a different root than the one this install targets is reclaimed in
-	 * exactly two cases, both through a `compareAndSet` keyed on the exact pointer already read (a
+	 * exactly three cases, all through a `compareAndSet` keyed on the exact pointer already read (a
 	 * concurrent window that moves the pointer in between always beats this one back to `null`).
 	 *
 	 * 1. Stale: the named root has decayed to nothing (no manifest and every asset `create`) while
@@ -104,20 +111,33 @@ export class ManagedAssetsLifecycle {
 	 * alive; it is neither read for this decision nor touched afterwards (what to do with it is the
 	 * user's call). A requested root with nothing adoptable never qualifies, so pointing the
 	 * settings at a foreign folder cannot make it managed.
+	 * 3. Fresh: the named root has decayed to nothing (as in 1) and the requested root has no manifest
+	 * either. This is what a host whose vault is the output folder (Hebra) leaves after the output
+	 * folder changes: the old root is outside the vault, so it reads as nothing, and no Move can ever
+	 * read it. Without this the only possible exit, installing into the new folder, answered
+	 * `conflict` for ever (the new folder can only get its manifest from that install). It installs
+	 * like case 2, so a folder with nothing but the user's own files still ends in `conflict` and the
+	 * pointer goes back to the root it named.
 	 *
 	 * Anything else leaves this returning `null` and `installInternal` answers `conflict`.
 	 */
-	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<{ state: ManagedAssetsPointerState; adopt: boolean } | null> {
+	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<{ state: ManagedAssetsPointerState; adopt: boolean } | { failure: ManagedAssetsLifecycleResult } | null> {
 		let adopt = false;
 		try {
 			const requested = await this.manager.inspect(root);
 			adopt = requested.manifestStatus === 'missing' && requested.assets.some((entry) => entry.status === 'recoverable' || entry.status === 'update');
 			if (!adopt) {
 				const stale = await this.manager.inspect(staleRoot);
-				const abandoned = stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create');
-				if (!abandoned || requested.manifestStatus !== 'ready') return null;
+				const abandoned = !this.rootReadable(staleRoot)
+					|| (stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create'));
+				if (!abandoned || (requested.manifestStatus !== 'ready' && requested.manifestStatus !== 'missing')) return null;
+				// Fresh (case 3): no manifest to extend, so it is installed like an adopted root.
+				adopt = requested.manifestStatus === 'missing';
 			}
-		} catch { return null; }
+		} catch (error) {
+			// An inspection the host could not complete (bytes not synced, folder missing) keeps its cause: it is not a conflict.
+			return { failure: { status: 'unavailable', message: 'The managed-assets roots could not be inspected.', ...failureEvidence(error) } };
+		}
 		const state = await this.pointer.compareAndSet(current, { status: 'ready', root, targetRoot: null });
 		return state ? { state, adopt } : null;
 	}
@@ -127,8 +147,15 @@ export class ManagedAssetsLifecycle {
 	 * ordinary `install` adopts by published hash and writes the manifest. If it fails before any
 	 * manifest exists, the pointer goes back to the previous root so that authority is not lost.
 	 */
-	private async installAdoptedRoot(previousRoot: string, root: string, claim: ManagedAssetsPointerState): Promise<ManagedAssetsLifecycleResult> {
-		const installed = await this.manager.apply(root, 'install');
+	private async installAdoptedRoot(previousRoot: string, root: string, claim: ManagedAssetsPointerState, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsLifecycleResult> {
+		const installed = await this.manager.apply(root, 'install', guard);
+		if (isSuccess(installed) && installed.status === 'unchanged' && installed.inspection.manifestStatus === 'missing') {
+			// The guard refused (or nothing was left to install): no manifest exists at the new root, so it must not keep the pointer.
+			const back = await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
+			// Losing the race leaves the pointer wherever the other window put it: report that, not what we wanted.
+			const held = back ?? await this.pointer.read();
+			return { status: 'unchanged', root: held.root, generation: held.generation };
+		}
 		if (isSuccess(installed)) return successResult(installed, 'applied', claim);
 		const inspection = await this.manager.inspect(root);
 		if (inspection.manifestStatus === 'missing') await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
@@ -272,7 +299,13 @@ export class ManagedAssetsLifecycle {
 }
 
 function isSuccess(result: ManagedAssetsResult): result is Extract<ManagedAssetsResult, { status: 'applied' | 'unchanged' | 'detached' }> { return !('message' in result); }
-function failure(result: ManagedAssetsResult): ManagedAssetsLifecycleResult { return 'message' in result ? { status: result.status === 'busy' ? 'busy' : result.status === 'unavailable' ? 'unavailable' : 'conflict', message: result.message } : { status: 'conflict', message: 'Managed-assets evidence did not reach the required state.' }; }
+function failure(result: ManagedAssetsResult): ManagedAssetsLifecycleResult {
+	if (!('message' in result)) return { status: 'conflict', message: 'Managed-assets evidence did not reach the required state.' };
+	return {
+		status: result.status === 'busy' ? 'busy' : result.status === 'unavailable' ? 'unavailable' : 'conflict', message: result.message,
+		...(result.cause === undefined ? {} : { cause: result.cause }), ...(result.details === undefined ? {} : { details: result.details }),
+	};
+}
 function successResult(result: ManagedAssetsResult, status: 'applied', pointer: ManagedAssetsPointerState): ManagedAssetsLifecycleResult { return isSuccess(result) ? { status: result.status === 'unchanged' ? 'unchanged' : status, root: pointer.root, generation: pointer.generation } : failure(result); }
 
 function finishLifecycleSpan(span: LocalDebugActionSpan, result: ManagedAssetsLifecycleResult): void {
@@ -281,9 +314,10 @@ function finishLifecycleSpan(span: LocalDebugActionSpan, result: ManagedAssetsLi
 	} else if (result.status === 'unchanged' || result.status === 'busy') {
 		span.skip('skipped', result.status);
 	} else if (result.status === 'unavailable') {
-		span.failure(new Error('managed_assets_unavailable'), 'storage_failure', result.status, { message: result.message });
+		// The real code (`cause`, else the error's own code) reaches the record, not only the fixed «unavailable».
+		span.failure(new Error('managed_assets_unavailable'), result.cause === undefined ? 'storage_failure' : 'missing', result.status, { message: result.message, ...result.details });
 	} else {
-		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status, { message: 'message' in result ? result.message : undefined });
+		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status, { message: 'message' in result ? result.message : undefined, ...('details' in result ? result.details : {}) });
 	}
 }
 

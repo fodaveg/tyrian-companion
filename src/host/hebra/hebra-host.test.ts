@@ -383,7 +383,7 @@ describe('createHebraHost: the other ports', () => {
 	it('canonicalIdentity = hebra-library:<libraryId>; managed assets declared like Obsidian', async () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi()));
 		expect(handle.host.vault.canonicalIdentity()).toBe('hebra-library:library-1');
-		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true });
+		expect(handle.host.capabilities).toEqual({ managedAssets: true, managedAssetsMove: false, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true });
 	});
 
 	// 9 Oct 2026 (F7): the lock manager is the page's, handed over next to its IndexedDB, never looked up by the host.
@@ -418,7 +418,7 @@ describe('createHebraHost: the other ports', () => {
 
 	it('declares the main view where Hebra says it has it (plugin API 1.3.0), with the port to register it', async () => {
 		const handle = await createHebraHost(deps(createTyrianTestApi({ mainView: true })));
-		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true, mainView: true });
+		expect(handle.host.capabilities).toEqual({ managedAssets: true, managedAssetsMove: false, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true, mainView: true });
 		expect(createTyrianRuntime(handle.host).mainViewSupported()).toBe(true);
 		expect(handle.host.ui).toHaveProperty('registerSectionsView');
 		expect(handle.host.ui).toHaveProperty('revealSection');
@@ -434,7 +434,7 @@ describe('createHebraHost: the other ports', () => {
 		};
 
 		const handle = await createHebraHost(deps(test, { api: { ...test.api, has }, report }));
-		expect(handle.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true });
+		expect(handle.host.capabilities).toEqual({ managedAssets: true, managedAssetsMove: false, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true });
 		expect(handle.host.ui).not.toHaveProperty('registerSectionsView');
 		expect(report).toHaveBeenCalledWith(failure, 'has ui.view.main');
 		// The plugin starts on that host as on any Hebra without the main view.
@@ -450,7 +450,7 @@ describe('createHebraHost: the other ports', () => {
 		// And it is asked, not declared: a Hebra that has it says yes with the very same declared capabilities.
 		const newer = createTyrianTestApi({ mainView: true });
 		expect(newer.api.has('ui.view.main')).toBe(true);
-		expect((await createHebraHost(deps(newer))).host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true, mainView: true });
+		expect((await createHebraHost(deps(newer))).host.capabilities).toEqual({ managedAssets: true, managedAssetsMove: false, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: true, mainView: true });
 	});
 
 	// N5 (David, 9 Oct 2026): the icons of the session summary need Hebra to paint a remote image in a line (plugin API 1.4.0).
@@ -463,7 +463,7 @@ describe('createHebraHost: the other ports', () => {
 		expect(has.mock.calls.filter(([name]) => (name as string) === 'markdown.image.remote')).toHaveLength(1);
 		const older = await createHebraHost(deps(createTyrianTestApi({ remoteImages: false })));
 		// False and not omitted: an omitted flag is Obsidian's default, which paints them.
-		expect(older.host.capabilities).toEqual({ managedAssets: true, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: false });
+		expect(older.host.capabilities).toEqual({ managedAssets: true, managedAssetsMove: false, supportPackageAsNote: true, pathBoundIdentity: false, remoteImages: false });
 	});
 
 	it('still builds the host, without remote images, on a Hebra whose `has` throws for that name or is missing', async () => {
