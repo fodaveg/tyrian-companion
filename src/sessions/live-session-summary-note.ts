@@ -274,6 +274,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			`tyrian_summary_net_gold: ${goldText(shownNet)}`, `tyrian_summary_per_hour_gold: ${goldText(shownPerHour)}`, `tyrian_summary_wallet_gold: ${goldText(f.goldCopper)}`,
 			`tyrian_summary_top_item: ${topItem === null ? 'null' : JSON.stringify(raw(topItem.id, 'item'))}`, `tyrian_summary_top_item_count: ${topItem === null ? 'null' : String(topItem.count)}`,
 			`tyrian_summary_top_item_icon: ${topItem === null ? 'null' : iconText(input.itemMeta?.[topItem.id]?.icon)}`,
+			`tyrian_summary_top_item_id: ${topItem === null ? 'null' : String(topItem.id)}`, `tyrian_summary_map_ids: ${JSON.stringify(f.mapBreakdown.rows.flatMap((row) => row.mapId === null ? [] : [row.mapId]))}`,
 			`tyrian_summary_alerts: ${String(f.alerts.length)}`, `tyrian_summary_free_slots: ${session.coverage.freeSlots === null ? 'null' : String(session.coverage.freeSlots)}`,
 			'tags: ["gw2/session-summary"]', '---', ''].join('\n');
 		return { status: 'ok', note: { sessionRef: session.sessionRef, mainMapId: summaryMainMap(session), content: `${fm}${out.join('\n')}\n`,
