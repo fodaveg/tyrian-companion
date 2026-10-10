@@ -84,6 +84,7 @@ export interface SettingsPanelActions {
 	previewManagedAssets(): Promise<void>;
 	applyManagedAssets(): Promise<void>;
 	repairManagedAssets(): Promise<void>;
+	replaceUnownedManagedAssets(): Promise<void>;
 	relocateManagedAssets(): Promise<ManagedAssetsLifecycleResult | null>;
 	removeManagedAssets(): Promise<void>;
 	getSessionHistoryView(): SessionHistoryView;

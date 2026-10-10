@@ -686,6 +686,16 @@ export class TyrianCompanionSettingTab {
 					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText(this.t('settings.assets.preview')).onClick(async () => { await this.plugin.previewManagedAssets(); }); });
 					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText(this.t('settings.assets.apply')).setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
 					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText(this.t('settings.assets.repair')).onClick(async () => { await this.plugin.repairManagedAssets(); }); });
+					setting.addButton((button) => {
+						this.managedAssetButtons.set('replace', button);
+						button.buttonEl.addClass('mod-warning');
+						button.setButtonText(this.t('settings.assets.replace')).onClick(async () => {
+							await runConfirmedManagedAssetsRemoval(
+								() => confirmManagedAssetsRemoval(this.host.ui, this.t.bind(this), 'replace'),
+								() => this.plugin.replaceUnownedManagedAssets(),
+							);
+						});
+					});
 					setting.addButton((button) => { this.managedAssetButtons.set('move', button); button.setButtonText(this.t('settings.assets.move')).onClick(async () => { await this.plugin.relocateManagedAssets(); }); });
 					setting.addButton((button) => {
 						this.managedAssetButtons.set('remove', button);
@@ -919,17 +929,17 @@ function isHistoryOperationWorking(status: string): boolean {
 	return status === 'working' || status === 'scrub_previewing' || status === 'scrub_ready' || status === 'scrubbing';
 }
 
-function confirmManagedAssetsRemoval(ui: TyrianModalUi, t: (key: TranslationKey) => string): Promise<boolean> {
+function confirmManagedAssetsRemoval(ui: TyrianModalUi, t: (key: TranslationKey) => string, action: 'remove' | 'replace' = 'remove'): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
 		const modal = new class extends TyrianModal {
-			protected title(): string { return t('settings.remove.title'); }
+			protected title(): string { return t(action === 'replace' ? 'settings.replace.title' : 'settings.remove.title'); }
 
 			onOpen(): void {
-				this.contentEl.createEl('p', { text: t('settings.remove.desc') });
+				this.contentEl.createEl('p', { text: t(action === 'replace' ? 'settings.replace.desc' : 'settings.remove.desc') });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
-				const remove = actions.createEl('button', { text: t('settings.assets.remove'), cls: 'mod-warning' });
+				const remove = actions.createEl('button', { text: t(action === 'replace' ? 'settings.assets.replace' : 'settings.assets.remove'), cls: 'mod-warning' });
 				remove.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }

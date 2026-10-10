@@ -4610,8 +4610,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * False when the host declared `capabilities.managedAssets: false` (Hebra's first version has no
-	 * Bases): Settings shows no assets row and nothing here installs, moves, repairs or removes them.
+	 * False when the host declared `capabilities.managedAssets: false` (a host with no Bases; Hebra declares
+	 * `true`): Settings shows no assets row and nothing here installs, moves, repairs, replaces or removes them.
 	 * An omitted capability means true, so Obsidian is unchanged.
 	 */
 	managedAssetsSupported(): boolean {
@@ -4675,6 +4675,24 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 		if (!this.settings.managedAssetsRoot) return;
 		await this.runManagedAssetOperation(() => this.managedAssets.apply(this.settings.managedAssetsRoot!, 'repair'));
+	}
+
+	/**
+	 * The explicit «Replace» of Settings (the user confirmed it): overwrites the Bases the plugin cannot prove
+	 * it wrote (edited by hand, or from a build nothing published) with the ones it ships. No automatic path
+	 * reaches it: the preview keeps listing those files as «Yours, left untouched» until this runs.
+	 */
+	async replaceUnownedManagedAssets(): Promise<void> {
+		if (!hostSupportsManagedAssets(this.host)) return;
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+		if (refusedInConsult(this)) return;
+		if (this.settings.legacyManagedAssetsRoot !== null) {
+			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
+			this.settingTab.refreshManagedAssetsRow();
+			return;
+		}
+		if (!this.settings.managedAssetsRoot) return;
+		await this.runManagedAssetOperation(() => this.managedAssets.replaceUnowned(this.settings.managedAssetsRoot!));
 	}
 
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable

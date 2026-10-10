@@ -1,6 +1,6 @@
 import type { ManagedAssetsPlan, ManagedAssetStatus } from './managed-assets-model';
 
-export type ManagedAssetsAction = 'preview' | 'apply' | 'repair' | 'move' | 'remove';
+export type ManagedAssetsAction = 'preview' | 'apply' | 'repair' | 'replace' | 'move' | 'remove';
 
 /** Closed presentation codes; Vault engines retain their technical diagnostics internally. */
 export type ManagedAssetsMessageCode =
@@ -29,6 +29,7 @@ export function projectManagedAssetsActions(context: ManagedAssetsActionContext)
 		preview: !context.working,
 		apply: !context.working,
 		repair: !context.working && context.hasManagedRoot,
+		replace: !context.working && context.hasManagedRoot,
 		move: !context.working && context.hasManagedRoot && context.canMove,
 		remove: !context.working && context.hasManagedRoot,
 	};
