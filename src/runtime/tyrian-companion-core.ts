@@ -3094,37 +3094,37 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.session.getPilotMetricsState();
 	}
 
-	async getPilotProfile(): ReturnType<SessionRuntime['getPilotProfile']> {
-		return await this.session.getPilotProfile();
+	getPilotProfile(): ReturnType<SessionRuntime['getPilotProfile']> {
+		return this.session.getPilotProfile();
 	}
 
-	async getPilotSilentLossReview(): Promise<PilotSilentLossReview> {
-		return await this.session.getPilotSilentLossReview();
+	getPilotSilentLossReview(): Promise<PilotSilentLossReview> {
+		return this.session.getPilotSilentLossReview();
 	}
 
-	async configurePilotProfile(platform: PilotPlatform, platformVersion: string): Promise<boolean> {
-		return await this.session.configurePilotProfile(platform, platformVersion);
+	configurePilotProfile(platform: PilotPlatform, platformVersion: string): Promise<boolean> {
+		return this.session.configurePilotProfile(platform, platformVersion);
 	}
 
-	async previewPilotMetricsExport(): Promise<PilotMetricsExportPreview | null> {
-		return await this.session.previewPilotMetricsExport();
+	previewPilotMetricsExport(): Promise<PilotMetricsExportPreview | null> {
+		return this.session.previewPilotMetricsExport();
 	}
 
 	/** The export the last preview planned (`SessionRuntime.exportPilotMetrics`), refused in consult. */
-	async exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
-		return await this.session.exportPilotMetrics();
+	exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
+		return this.session.exportPilotMetrics();
 	}
 
-	async clearPilotMetrics(): Promise<number | null> {
-		return await this.session.clearPilotMetrics();
+	clearPilotMetrics(): Promise<number | null> {
+		return this.session.clearPilotMetrics();
 	}
 
-	async reviewPilotSilentLosses(value: PilotSilentLossReview): Promise<boolean> {
-		return await this.session.reviewPilotSilentLosses(value);
+	reviewPilotSilentLosses(value: PilotSilentLossReview): Promise<boolean> {
+		return this.session.reviewPilotSilentLosses(value);
 	}
 
-	async disablePilotMetrics(): Promise<number | null> {
-		return await this.session.disablePilotMetrics();
+	disablePilotMetrics(): Promise<number | null> {
+		return this.session.disablePilotMetrics();
 	}
 
 	getPendingProposalState(): ProposalQueueState {
@@ -3408,16 +3408,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** The next session's saved goal (`SessionRuntime`); an active session keeps the one it captured. */
 	getFarmingGoal(): FarmingGoalV1 { return this.session.getFarmingGoal(); }
 	/** Serialized with the other two preference forms (`SessionRuntime.saveFarmingSettings`). */
-	async saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { await this.session.saveFarmingGoal(goal); }
+	saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { return this.session.saveFarmingGoal(goal); }
 	getFarmingGroupContext(): FarmingGroupContext { return this.farmingGroupContext; }
 	setFarmingGroupContext(context: FarmingGroupContext): void { this.farmingGroupContext = context; }
 	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return this.session.getFarmingPreparationSettings(); }
-	async saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
-		await this.session.saveFarmingPreparationSettings(settings);
+	saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
+		return this.session.saveFarmingPreparationSettings(settings);
 	}
 	getFarmingDeclaredBuildPreference(): unknown { return this.session.getFarmingDeclaredBuildPreference(); }
-	async saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
-		await this.session.saveFarmingDeclaredBuildPreference(value);
+	saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
+		return this.session.saveFarmingDeclaredBuildPreference(value);
 	}
 	getFarmingReminders(): readonly FarmingManualReminder[] { return this.farmingReminders.map((reminder) => ({ ...reminder })); }
 	startFarmingReminder(kind: FarmingReminderKind, minutes: number): void {
@@ -3506,12 +3506,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	getLiveSessionView(offset = 0, limit = 200): LiveSessionViewV1 { return this.session.getLiveSessionView(offset, limit); }
 	getLiveSessionComparison(): LiveSessionComparisonView { return this.session.getLiveSessionComparison(); }
 	/** One comparison load in flight at a time (`SessionRuntime`). */
-	async loadLiveSessionComparison(): Promise<void> { await this.session.loadLiveSessionComparison(); }
+	loadLiveSessionComparison(): Promise<void> { return this.session.loadLiveSessionComparison(); }
 	getSelectedLiveSessionHistory(): string | null { return this.session.getSelectedLiveSessionHistory(); }
-	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> { return await this.session.listLiveSessionHistory(); }
+	listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> { return this.session.listLiveSessionHistory(); }
 	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.session.getLiveSessionSetAside(); }
-	async selectLiveSessionHistory(sessionRef: string | null): Promise<void> { await this.session.selectLiveSessionHistory(sessionRef); }
-	async exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> { await this.session.exportLiveSession(kind, format); }
+	selectLiveSessionHistory(sessionRef: string | null): Promise<void> { return this.session.selectLiveSessionHistory(sessionRef); }
+	exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> { return this.session.exportLiveSession(kind, format); }
 	/** Explicit local export of preserved account evidence; it never calls a capture service. */
 	async exportPreservedLegacySession():Promise<void> {
 		const preserved = await this.sessions.readPreservedLegacyRuntime();
@@ -3683,8 +3683,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** Writes the history's export (`SessionRuntime`); the settings row follows each step. */
-	async exportSessionHistory(): Promise<void> {
-		await this.session.exportSessionHistory();
+	exportSessionHistory(): Promise<void> {
+		return this.session.exportSessionHistory();
 	}
 
 	/** One preview in flight at a time, the same promise to every caller (`SessionRuntime`). */
@@ -4908,8 +4908,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** Records the recovery's kind once (`SessionRuntime`); a second, different kind is refused. */
-	async classifyPilotRecovery(recoveryKind: PilotRecoveryKind): Promise<boolean> {
-		return await this.session.classifyPilotRecovery(recoveryKind);
+	classifyPilotRecovery(recoveryKind: PilotRecoveryKind): Promise<boolean> {
+		return this.session.classifyPilotRecovery(recoveryKind);
 	}
 
 	async recoverSession(): Promise<void> {

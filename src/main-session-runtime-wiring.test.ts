@@ -14,7 +14,7 @@ import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harnes
 /**
  * DE-01, step 3a: the core's side of `SessionRuntime`, over the real core and its real
  * `initializeRuntime`. The runtime's own behaviour is tested on its own
- * (`src/runtime/session-facade.test.ts`); this file proves that each of the core's 33 facade methods
+ * (`src/runtime/session-facade.test.ts`); this file proves that each of the core's 33 facade methods (`FACADE`)
  * reaches it, and that the port reads the core as it stands rather than as it was when the runtime
  * was built (with the core, before the boot builds the services, before the settings panel exists
  * and before the device can turn to consult).
@@ -23,42 +23,49 @@ import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harnes
 /** The methods both expose; `collectorMode` is a field of the core, read by the port. */
 type FacadeMethod = Exclude<keyof SessionRuntime & keyof TyrianCompanionCore, 'collectorMode' | 'notifyConsultMode'>;
 
-/** Each facade method of the core, how the views call it and the arguments SessionRuntime must get. */
-const FACADE: ReadonlyArray<readonly [FacadeMethod, (core: TyrianCompanionCore) => unknown, readonly unknown[]]> = [
-	['getPilotMetricsState', (core) => core.getPilotMetricsState(), []],
-	['getPilotProfile', async (core) => await core.getPilotProfile(), []],
-	['getPilotSilentLossReview', async (core) => await core.getPilotSilentLossReview(), []],
-	['configurePilotProfile', async (core) => await core.configurePilotProfile('linux_steam_proton', '6.10'), ['linux_steam_proton', '6.10']],
-	['previewPilotMetricsExport', async (core) => await core.previewPilotMetricsExport(), []],
-	['exportPilotMetrics', async (core) => await core.exportPilotMetrics(), []],
-	['clearPilotMetrics', async (core) => await core.clearPilotMetrics(), []],
-	['reviewPilotSilentLosses', async (core) => await core.reviewPilotSilentLosses('none_observed'), ['none_observed']],
-	['disablePilotMetrics', async (core) => await core.disablePilotMetrics(), []],
-	['getPilotRecoveryKind', (core) => core.getPilotRecoveryKind(), []],
-	['isPilotRecoveryClassificationRequired', (core) => core.isPilotRecoveryClassificationRequired(), []],
-	['classifyPilotRecovery', async (core) => await core.classifyPilotRecovery('organic'), ['organic']],
-	['openSessionHistoryNote', (core) => { core.openSessionHistoryNote('Sessions/gone.md'); }, ['Sessions/gone.md']],
-	['getSessionHistoryView', (core) => core.getSessionHistoryView(), []],
-	['exportSessionHistory', async (core) => { await core.exportSessionHistory(); }, []],
-	['previewSessionHistoryScrub', async (core) => await core.previewSessionHistoryScrub(), []],
-	['cancelSessionHistoryScrubPreview', (core) => { core.cancelSessionHistoryScrubPreview('scrub-token'); }, ['scrub-token']],
-	['scrubSessionHistory', async (core) => await core.scrubSessionHistory('scrub-token'), ['scrub-token']],
-	['getFarmingGoal', (core) => core.getFarmingGoal(), []],
-	['saveFarmingGoal', async (core) => { await core.saveFarmingGoal({ version: 1, kind: 'bags', targetBags: 40 }); }, [{ version: 1, kind: 'bags', targetBags: 40 }]],
-	['getFarmingPreparationSettings', (core) => core.getFarmingPreparationSettings(), []],
-	['saveFarmingPreparationSettings', async (core) => { await core.saveFarmingPreparationSettings({ ...DEFAULT_FARMING_PREPARATION, enabled: true }); }, [{ ...DEFAULT_FARMING_PREPARATION, enabled: true }]],
-	['getFarmingDeclaredBuildPreference', (core) => core.getFarmingDeclaredBuildPreference(), []],
-	['saveFarmingDeclaredBuildPreference', async (core) => { await core.saveFarmingDeclaredBuildPreference(null); }, [null]],
-	['getLiveSessionAlerts', (core) => core.getLiveSessionAlerts(), []],
-	['getLiveSessionView', (core) => core.getLiveSessionView(20, 50), [20, 50]],
-	['getLiveSessionComparison', (core) => core.getLiveSessionComparison(), []],
-	['loadLiveSessionComparison', async (core) => { await core.loadLiveSessionComparison(); }, []],
-	['getSelectedLiveSessionHistory', (core) => core.getSelectedLiveSessionHistory(), []],
-	['listLiveSessionHistory', async (core) => await core.listLiveSessionHistory(), []],
-	['getLiveSessionSetAside', (core) => core.getLiveSessionSetAside(), []],
-	['selectLiveSessionHistory', async (core) => { await core.selectLiveSessionHistory(null); }, [null]],
-	['exportLiveSession', async (core) => { await core.exportLiveSession('summary', 'json'); }, ['summary', 'json']],
-];
+/**
+ * Each facade method of the core, how the views call it and the arguments SessionRuntime must get.
+ * A record over `FacadeMethod`, so a public method added to `SessionRuntime` and the core does not
+ * compile until it has its row here.
+ */
+const FACADE: Readonly<Record<FacadeMethod, readonly [call: (core: TyrianCompanionCore) => unknown, args: readonly unknown[]]>> = {
+	getPilotMetricsState: [(core) => core.getPilotMetricsState(), []],
+	getPilotProfile: [async (core) => await core.getPilotProfile(), []],
+	getPilotSilentLossReview: [async (core) => await core.getPilotSilentLossReview(), []],
+	configurePilotProfile: [async (core) => await core.configurePilotProfile('linux_steam_proton', '6.10'), ['linux_steam_proton', '6.10']],
+	previewPilotMetricsExport: [async (core) => await core.previewPilotMetricsExport(), []],
+	exportPilotMetrics: [async (core) => await core.exportPilotMetrics(), []],
+	clearPilotMetrics: [async (core) => await core.clearPilotMetrics(), []],
+	reviewPilotSilentLosses: [async (core) => await core.reviewPilotSilentLosses('none_observed'), ['none_observed']],
+	disablePilotMetrics: [async (core) => await core.disablePilotMetrics(), []],
+	getPilotRecoveryKind: [(core) => core.getPilotRecoveryKind(), []],
+	isPilotRecoveryClassificationRequired: [(core) => core.isPilotRecoveryClassificationRequired(), []],
+	classifyPilotRecovery: [async (core) => await core.classifyPilotRecovery('organic'), ['organic']],
+	openSessionHistoryNote: [(core) => { core.openSessionHistoryNote('Sessions/gone.md'); }, ['Sessions/gone.md']],
+	getSessionHistoryView: [(core) => core.getSessionHistoryView(), []],
+	exportSessionHistory: [async (core) => { await core.exportSessionHistory(); }, []],
+	previewSessionHistoryScrub: [async (core) => await core.previewSessionHistoryScrub(), []],
+	cancelSessionHistoryScrubPreview: [(core) => { core.cancelSessionHistoryScrubPreview('scrub-token'); }, ['scrub-token']],
+	scrubSessionHistory: [async (core) => await core.scrubSessionHistory('scrub-token'), ['scrub-token']],
+	getFarmingGoal: [(core) => core.getFarmingGoal(), []],
+	saveFarmingGoal: [async (core) => { await core.saveFarmingGoal({ version: 1, kind: 'bags', targetBags: 40 }); }, [{ version: 1, kind: 'bags', targetBags: 40 }]],
+	getFarmingPreparationSettings: [(core) => core.getFarmingPreparationSettings(), []],
+	saveFarmingPreparationSettings: [async (core) => { await core.saveFarmingPreparationSettings({ ...DEFAULT_FARMING_PREPARATION, enabled: true }); }, [{ ...DEFAULT_FARMING_PREPARATION, enabled: true }]],
+	getFarmingDeclaredBuildPreference: [(core) => core.getFarmingDeclaredBuildPreference(), []],
+	saveFarmingDeclaredBuildPreference: [async (core) => { await core.saveFarmingDeclaredBuildPreference(null); }, [null]],
+	getLiveSessionAlerts: [(core) => core.getLiveSessionAlerts(), []],
+	getLiveSessionView: [(core) => core.getLiveSessionView(20, 50), [20, 50]],
+	getLiveSessionComparison: [(core) => core.getLiveSessionComparison(), []],
+	loadLiveSessionComparison: [async (core) => { await core.loadLiveSessionComparison(); }, []],
+	getSelectedLiveSessionHistory: [(core) => core.getSelectedLiveSessionHistory(), []],
+	listLiveSessionHistory: [async (core) => await core.listLiveSessionHistory(), []],
+	getLiveSessionSetAside: [(core) => core.getLiveSessionSetAside(), []],
+	selectLiveSessionHistory: [async (core) => { await core.selectLiveSessionHistory(null); }, [null]],
+	exportLiveSession: [async (core) => { await core.exportLiveSession('summary', 'json'); }, ['summary', 'json']],
+};
+
+/** The rows of `FACADE` for `it.each`; `Object.keys` types its keys as plain strings. */
+const FACADE_CASES = (Object.keys(FACADE) as FacadeMethod[]).map((name) => [name, ...FACADE[name]] as const);
 
 /** What a call came to: its value, or the message it was refused with (the export refuses without a session). */
 async function settled(outcome: unknown): Promise<{ value: unknown } | { error: string }> {
@@ -94,7 +101,7 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 		return runtime;
 	}
 
-	it.each(FACADE)('%s reaches SessionRuntime with the view\'s arguments and answers what it answers', async (name, call, args) => {
+	it.each(FACADE_CASES)('%s reaches SessionRuntime with the view\'s arguments and answers what it answers', async (name, call, args) => {
 		const runtime = core();
 		await runtime.initializeRuntime();
 		const reached = vi.spyOn(SessionRuntime.prototype, name);
@@ -203,6 +210,43 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 				required: runtime.core.isPilotRecoveryClassificationRequired(),
 				kind: runtime.core.getPilotRecoveryKind(),
 			}).toEqual({ required: true, kind: 'organic' });
+		});
+
+		/** The core's own recovery hooks, sets and recorder: privates of the core, never of `SessionRuntime`. */
+		function pilotOf(core: TyrianCompanionCore) {
+			return core as unknown as {
+				pilotRecoveryIdentity(): string | null;
+				ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
+				measuredPilotRecoveries: Set<string>;
+				pilotRecoveryKinds: Map<string, 'forced_restart' | 'organic'>;
+				pilotMetrics: PilotMetricsRecorder;
+			};
+		}
+
+		it('measuredPilotRecoveries and pilotRecoveryKinds: clearing the journal through the core empties the core\'s own sets', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			const own = pilotOf(runtime.core);
+			own.measuredPilotRecoveries.add('session-a:7');
+			own.pilotRecoveryKinds.set('session-a:7', 'organic');
+			vi.spyOn(own.pilotMetrics, 'clear').mockResolvedValue(0);
+
+			await runtime.core.clearPilotMetrics();
+
+			expect({ measured: [...own.measuredPilotRecoveries], kinds: [...own.pilotRecoveryKinds] }).toEqual({ measured: [], kinds: [] });
+		});
+
+		it('pilotRecoveryKinds: a recovery classified through the core keeps its kind in the core\'s own map', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			const own = pilotOf(runtime.core);
+			vi.spyOn(own, 'pilotRecoveryIdentity').mockReturnValue('session-a:7');
+			vi.spyOn(own, 'ensurePilotRecoveryPresented').mockResolvedValue(true);
+			vi.spyOn(own.pilotMetrics, 'recoveryClassified').mockResolvedValue(true);
+
+			await expect(runtime.core.classifyPilotRecovery('forced_restart')).resolves.toBe(true);
+
+			expect(own.pilotRecoveryKinds.get('session-a:7')).toBe('forced_restart');
 		});
 	});
 });
