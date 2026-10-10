@@ -24,8 +24,8 @@ describe('session summaries Base', () => {
 	it('packages one Base per locale in the managed bundle, at its own path', async () => {
 		const assets = await sessionSummariesManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'session-summaries-base', kind: 'base', contentVersion: 2, locale: 'es', relativePath: 'Session summaries.base' },
-			{ id: 'session-summaries-base', kind: 'base', contentVersion: 2, locale: 'en', relativePath: 'Session summaries.base' },
+			{ id: 'session-summaries-base', kind: 'base', contentVersion: 3, locale: 'es', relativePath: 'Session summaries.base' },
+			{ id: 'session-summaries-base', kind: 'base', contentVersion: 3, locale: 'en', relativePath: 'Session summaries.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) expect(bundle).toContainEqual(expected);
@@ -99,8 +99,10 @@ describe('session summaries Base', () => {
 		const keys = Object.keys(es!.properties);
 		expect(keys.filter((key) => !/^(?:note|formula)\./u.test(key))).toEqual([]);
 		expect(Object.keys(en!.properties)).toEqual(keys);
-		expect(es!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Neto (oro)');
-		expect(en!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Net (gold)');
+		expect(es!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Valor neto de objetos');
+		expect(en!.properties['note.tyrian_summary_net_gold']!.displayName).toBe('Net value of items');
+		expect(es!.properties['note.tyrian_summary_per_hour_gold']!.displayName).toBe('Objetos por hora');
+		expect(en!.properties['note.tyrian_summary_per_hour_gold']!.displayName).toBe('Items per hour');
 	});
 
 	it('references only keys that a real rendered summary note carries', async () => {
