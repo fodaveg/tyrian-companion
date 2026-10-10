@@ -229,6 +229,31 @@ describe('TyrianPathIndex', () => {
 		expect((await TyrianPathIndex.load(kv, 'lib-1')).size).toBe(0);
 	});
 
+	it.each([
+		['null', 'null'],
+		['a number', '7'],
+		['a string', '"text"'],
+		['an array', '[]'],
+		['an object without version', '{"entries":[]}'],
+		['a null entry', '{"version":1,"entries":[null]}'],
+		['a number entry', '{"version":1,"entries":[3]}'],
+		['an entry without path', '{"version":1,"entries":[{"kind":"note","id":"n"}]}'],
+		['an entry without kind', '{"version":1,"entries":[{"path":"a.md","id":"n"}]}'],
+		['an entry with an unknown kind', '{"version":1,"entries":[{"path":"a.md","kind":"x"}]}'],
+		['an entry with a non-string id', '{"version":1,"entries":[{"path":"a.md","kind":"note","id":4}]}'],
+		['an entry with a non-numeric mtime', '{"version":1,"entries":[{"path":"a.md","kind":"note","mtime":"1"}]}'],
+		['a null unadopted item', '{"version":1,"entries":[{"path":"a.md","kind":"note","id":"n"}],"unadopted":[null]}'],
+	])('a valid JSON of the wrong shape (%s) is treated as an absent index and saved again', async (_name, raw) => {
+		const kv = createMemoryPathIndexKv();
+		await kv.set('tyrian-path-index:lib-1', raw);
+		const index = await TyrianPathIndex.load(kv, 'lib-1');
+		expect(index.size).toBe(0);
+		expect(index.unadopted()).toEqual([]);
+		await index.setNote('b.md', 'note-b', 1);
+		const reloaded = await TyrianPathIndex.load(kv, 'lib-1');
+		expect(reloaded.getIdForPath('b.md')).toBe('note-b');
+	});
+
 	it('batch saves once, and retainOnly drops what is not alive', async () => {
 		const store = createMemoryPathIndexKv();
 		let sets = 0;
