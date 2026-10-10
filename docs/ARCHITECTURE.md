@@ -171,6 +171,19 @@ proyección queda `internal_failure`. El cache no inventa un terminal de persist
 y `runtime_initialize` continúa: por tanto una causa produce un solo terminal y no reaparece como
 `plugin_load/unknown_failure`.
 
+Traza de tiempos de arranque (Z26): cada arranque escribe UNA línea `plugin_load` con `state: 'boot_timings'` y
+`details.bootMs`, un objeto plano `{fase: milisegundos}` (enteros, desde la evaluación del módulo, en el orden en que
+se alcanzó cada fase). Las fases comunes son `module`, `onload`, `settings` (tras `boot()`), `diagnostics` (registro
+listo), `registered` (vistas y comandos), `runtimeStart`, `mode` (modo recolector leído), `sessions`, `live` (sesión en
+vivo), `ready` (`runtimeReady`), `priceHistory`, `halloween` y `painted` (tras pedir el primer repintado completo; el
+repintado coalescido corre en la microtarea siguiente). En Hebra se añaden antes `hebraReady` (`ui.onReady`),
+`hebraSettings`, `hebraIndex` (índice de rutas cargado), `hebraSeed` (recorrido inicial) y `hebraHost`, y
+`details.bootCounts` lleva `pages`, `notesRead` y `newlyAdopted` de ese recorrido. La línea sale al llegar a `painted`;
+si `initializeRuntime` falla antes, sale con lo que hubiera y `result: 'incomplete'` + `reason` con la última fase
+alcanzada. Las marcas son `performance.now()` en un objeto en memoria (`src/core/boot-trace.ts`): sin E/S ni formateo con
+el registro apagado. El saneador admite `bootMs` y `bootCounts` solo en `plugin` y solo como mapa plano de enteros no
+negativos con nombre corto alfanumérico: una cadena, un objeto anidado o un número negativo o fraccionario se descartan.
+
 `scripts/action-observability-census.mjs` mantiene un inventario AST exacto y sin contenido de cada
 `catch`, `.catch`, `void` y callback registrado en producción. Una frontera añadida cambia el censo y
 falla el gate hasta recibir revisión explícita; la suite de sabotaje demuestra el rojo de las cuatro

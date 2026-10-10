@@ -12,6 +12,7 @@
  * builtin (`src/test/module-boundary.test.ts`, `npm run build:host-esm`).
  */
 
+import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
@@ -412,6 +413,9 @@ export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 /** The ONE view of a host's main screen that lists the three sections (`TyrianUiPort.registerSectionsView`). */
 export const TYRIAN_MAIN_VIEW_TYPE = 'tyrian-main-view';
+
+/** The clock reading when this module finished evaluating: the `module` phase of the boot timings. */
+export const CORE_MODULE_EVALUATED_MS = bootNow();
 /** What undoes a registration that registered nothing. */
 const NO_VIEW: TyrianDisposer = () => undefined;
 /** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
@@ -440,7 +444,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * `ObsidianHost` reads the plugin's `app` and `manifest` on every call, so building the core
 	 * before Obsidian has assigned them is fine.
 	 */
-	constructor(private readonly host: TyrianHost) {}
+	constructor(private readonly host: TyrianHost) {
+		this.bootTrace = host.bootTrace ?? createBootTrace();
+	}
+
+	/** The phases of this start, kept in memory and written once as the `boot_timings` line (`writeBootTimings`). */
+	private readonly bootTrace: BootTrace;
 
 	/**
 	 * R1c: the view controllers the host has mounted, one set per view type, which the repaints
@@ -720,8 +729,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// R1a: the host-neutral part of the boot (settings through the host, the diagnostics log)
 		// is `createTyrianRuntime`'s, the same code Hebra runs. Its diagnostics finish initializing
 		// while the views and commands below register; `start()` at the end waits for them.
-		const runtime = createTyrianCoreRuntime(this.host);
+		this.bootTrace.mark('module', CORE_MODULE_EVALUATED_MS);
+		this.bootTrace.mark('onload');
+		const runtime = createTyrianCoreRuntime(this.host, this.bootTrace);
 		const boot = await runtime.boot();
+		this.bootTrace.mark('settings');
 		this.settings = boot.settings;
 		// R1b: the seed until `initializeRuntime` reads this device's own mode; nothing collects before that.
 		this.collectorMode ??= collectorModeSeed(this.settings);
@@ -808,6 +820,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.priceHistory?.notifyWake();
 		});
 
+		// Before `onReady`: a host whose layout is already ready may call it back at once.
+		this.bootTrace.mark('registered');
 		this.host.ui.onReady(() => {
 			this.localDebugActions?.fireAndForget(
 				{ component: 'plugin', action: 'plugin_load', state: 'runtime_initialize' },
@@ -816,6 +830,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				// `notifyRuntimeStarting` to tell apart from one still in progress.
 				() => this.initializeRuntime().catch((error: unknown) => {
 					this.runtimeFailure = error;
+					this.writeBootTimings();
 					this.settleRuntimeReadyWaiters();
 					throw error;
 				}),
@@ -838,6 +853,27 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * Writes the `plugin_load` line `boot_timings` once: after the first complete paint, or from the failure handler of the
+	 * boot when it broke halfway. The phases come in the order they were reached, in milliseconds since the module began
+	 * evaluating, and (Hebra) the counters of the first library walk. A start that did not reach `painted` says
+	 * `result: 'incomplete'` and `reason` names the last phase it did reach. Only numbers and those two closed words leave
+	 * here, and the sanitizer holds `bootMs`/`bootCounts` to integers.
+	 */
+	private writeBootTimings(): void {
+		const snapshot = this.bootTrace.take();
+		if (snapshot === null) return;
+		const complete = 'painted' in snapshot.bootMs;
+		this.localDebugActions?.event({
+			component: 'plugin', action: 'plugin_load', state: 'boot_timings',
+			level: complete ? 'info' : 'warn', phase: complete ? 'success' : 'failure', code: complete ? 'ok' : 'unknown_failure',
+			details: {
+				bootMs: snapshot.bootMs, bootCounts: snapshot.bootCounts,
+				...(complete ? {} : { result: 'incomplete', reason: snapshot.lastPhase ?? 'none' }),
+			},
+		});
+	}
+
+	/**
 	 * Builds every account/session/storage service in the original order, then
 	 * flips `runtimeReady` and repaints. It runs after layout restore so a saved
 	 * leaf never renders against a half-built plugin; every getter and action
@@ -845,6 +881,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * neutral value instead of touching an unassigned service.
 	 */
 	private async initializeRuntime(): Promise<void> {
+		this.bootTrace.mark('runtimeStart');
 		const host = this.host;
 		const indexedDB = host.kv.indexedDB;
 		this.managedAssets = new ManagedAssetsManager(
@@ -876,6 +913,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				code: 'storage_failure', state: 'collector_mode', message: error,
 			});
 		}
+		this.bootTrace.mark('mode');
 		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(
 			indexedDB,
 			vaultId,
@@ -1349,6 +1387,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			async () => { await this.detectionQualityInitialization; this.renderViews(); });
 		this.sessions = sessionServices.sessions;
 		await this.sessions.initialize();
+		this.bootTrace.mark('sessions');
 		const recoveryId = this.pilotRecoveryIdentity();
 		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 		this.sessionNotes = sessionServices.sessionNotes;
@@ -1373,6 +1412,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onComplete: async (record, journal) => await this.saveLiveSessionNote(record, journal),
 		});
 		await this.liveSessions.initialize();
+		this.bootTrace.mark('live');
 		this.liveSummaryNetwork = true;
 		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
@@ -1401,6 +1441,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
+		this.bootTrace.mark('ready');
 		this.settleRuntimeReadyWaiters();
 		if (this.lateCollectorMode !== null) this.adoptLateCollectorMode();
 		this.startIngameSessionMarking();
@@ -1409,12 +1450,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
 			this.priceHistory.setOnline(this.host.environment.isOnline());
 		}
+		this.bootTrace.mark('priceHistory');
 		if (this.halloweenObservationActive()) {
 			await this.halloween.activate();
 			this.halloween.setOnline(this.host.environment.isOnline());
 		}
+		this.bootTrace.mark('halloween');
 		await this.halloweenPriceAlert.configure(halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled);
 		this.renderViews();
+		this.bootTrace.mark('painted');
+		this.writeBootTimings();
 		this.renderInventoryAdvisorViews();
 		// Heals a root left behind by a folder change made before this version shipped the
 		// auto-relocation above (David's own install: notes three folders deep, Bases still at

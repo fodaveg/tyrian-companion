@@ -56,10 +56,11 @@ import {
 	createTyrianSettingsPort,
 	type LocalFileBackend,
 } from './local-storage';
+import type { BootTrace } from '../../core/boot-trace';
 import { TyrianPathIndex } from './path-index';
 import type { TyrianPathIndexKv } from './path-index-kv';
 import { createPreloadedSecrets, type TyrianSecretsBackend } from './secrets';
-import { refreshUnadoptedNotes, seedTyrianPathIndex, type TyrianSeedResult, type TyrianUnadoptedNote } from './seed';
+import { refreshUnadoptedNotes, seedTyrianPathIndex, type TyrianSeedLibrary, type TyrianSeedResult, type TyrianUnadoptedNote } from './seed';
 import { createTcpServerPort, unavailableTcpServerPort } from './tcp-port';
 import { createHebraTyrianVault, HEBRA_TYRIAN_CONFIG_DIR, relativeToOutputFolder } from './vault';
 import { createTyrianVaultPort } from './vault-port';
@@ -137,6 +138,22 @@ export interface HebraHostDeps {
 	moduleUrl?: string;
 	/** Tests only: replaces `OUTPUT_FOLDER_RESTART_FALLBACK_MS`. */
 	restartFallbackMs?: number;
+	/** The boot timings of this start: the host marks its own phases and hands the trace on to the core (`TyrianHost.bootTrace`). */
+	bootTrace?: BootTrace;
+}
+
+/**
+ * The library as `seedTyrianPathIndex` reads it, counting pages (notes and files) and notes opened into `counts`.
+ * A pass-through: results and failures are the library's own.
+ */
+function countingSeedLibrary(library: TyrianSeedLibrary, counts: { pages: number; notesRead: number }): TyrianSeedLibrary {
+	return {
+		foldersList: () => library.foldersList(),
+		noteSummary: (ids) => library.noteSummary(ids),
+		notesPage: (...parameters) => { counts.pages += 1; return library.notesPage(...parameters); },
+		filesPage: (...parameters) => { counts.pages += 1; return library.filesPage(...parameters); },
+		noteRead: (id) => { counts.notesRead += 1; return library.noteRead(id); },
+	};
 }
 
 export interface HebraHostHandle {
@@ -337,6 +354,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const libraryRootId = api.vault.rootFolderId();
 	const storedSettings = createTyrianSettingsPort(api.storage);
 	const outputFolder = outputFolderFromSettings(await storedSettings.load());
+	deps.bootTrace?.mark('hebraSettings');
 	const rootFolderId = resolveFolderPath(await api.vault.foldersList(), libraryRootId, outputFolder);
 
 	// The vault below is bound to THIS start's output folder, but the core adopts a new setting
@@ -396,26 +414,32 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		pathIndexNamespace(libraryId, rootFolderId),
 		(error) => deps.report(error, 'path-index.storage'),
 	);
+	deps.bootTrace?.mark('hebraIndex');
 	// Decided after seeding the index (below) and before the core loads its settings.
 	let adoptManagedAssetsRoot = false;
 	let seed: TyrianSeedResult | null = null;
 	let unadopted: readonly TyrianUnadoptedNote[];
+	// What the walk read, counted from outside (`seed.ts` returns only what it adopted): pages of notes and files, notes opened.
+	const walk = { pages: 0, notesRead: 0 };
+	const walkedLibrary = countingSeedLibrary(api.vault, walk);
+	let newlyAdopted = 0;
 	if (rootFolderId && index.size === 0) {
 		seed = await seedTyrianPathIndex({
-			library: api.vault,
+			library: walkedLibrary,
 			index,
 			rootFolderId,
 			root: outputFolder,
 			canonicalPathFor: deps.canonicalPathFor,
 		});
 		unadopted = seed.unadopted;
+		newlyAdopted = seed.newlyAdopted;
 	} else if (rootFolderId) {
 		// A saved index (another start, or back to a folder used before) is reconciled with
 		// today's library: there may be Tyrian notes the index does not know (another device, sync
 		// while another folder was in use) and entries of notes deleted or trashed; without this,
 		// `file(path)` would be null and the core would create duplicates, or write to dead ids.
 		const reconciled = await seedTyrianPathIndex({
-			library: api.vault,
+			library: walkedLibrary,
 			index,
 			rootFolderId,
 			root: outputFolder,
@@ -423,8 +447,15 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			reconcile: true,
 		});
 		unadopted = reconciled.unadopted;
+		newlyAdopted = reconciled.newlyAdopted;
 	} else {
-		unadopted = await refreshUnadoptedNotes(api.vault, index);
+		unadopted = await refreshUnadoptedNotes(walkedLibrary, index);
+	}
+	if (deps.bootTrace !== undefined) {
+		deps.bootTrace.mark('hebraSeed');
+		deps.bootTrace.count('pages', walk.pages);
+		deps.bootTrace.count('notesRead', walk.notesRead);
+		deps.bootTrace.count('newlyAdopted', newlyAdopted);
 	}
 
 	/** Notes `vault.saveNote` left outside the path index (the support package), by relative path. */
@@ -529,6 +560,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		diagnostics: { storage: adapter, directory: localDebugDirectory(HEBRA_TYRIAN_CONFIG_DIR) },
 		background: { hold: (owner) => background.hold(owner) },
 		environment: createEnvironment(deps),
+		...(deps.bootTrace === undefined ? {} : { bootTrace: deps.bootTrace }),
 	};
 
 	return {

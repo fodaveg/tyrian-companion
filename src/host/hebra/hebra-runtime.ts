@@ -22,8 +22,9 @@
  */
 import type { HebraPluginApi, PluginCleanup } from 'hebra-plugin-api';
 
+import { createBootTrace, type BootTrace } from '../../core/boot-trace';
 import { canonicalPathFor } from '../../runtime/canonical-path';
-import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
+import { CORE_MODULE_EVALUATED_MS, createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { installDomHelpers } from '../dom-polyfill';
 import type { TyrianHost, TyrianRuntime } from '../tyrian-host';
 import {
@@ -52,6 +53,8 @@ export interface HebraRuntimeEnvironment {
 	readonly createRuntime?: (host: TyrianHost) => TyrianRuntime;
 	/** Where the adapter's failures go (tests); by default the core's diagnostic log. */
 	readonly failures?: HostFailureChannel;
+	/** Tests only: the boot timings with a clock of their own. */
+	readonly bootTrace?: BootTrace;
 }
 
 export async function activateTyrian(api: HebraPluginApi, environment: HebraRuntimeEnvironment): Promise<PluginCleanup> {
@@ -60,7 +63,11 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 	// The adapter's own DOM (settings rows, folder picker) is built with Obsidian's helpers, like the
 	// core's UI; the core installs them too, but this does not depend on it having started yet.
 	installDomHelpers();
+	// The timings of this start: the host marks its phases on it and the core adds its own (`boot_timings`, `core/boot-trace.ts`).
+	const bootTrace = environment.bootTrace ?? createBootTrace();
+	bootTrace.mark('module', CORE_MODULE_EVALUATED_MS);
 	await new Promise<void>((resolve) => { api.ui.onReady(resolve); });
+	bootTrace.mark('hebraReady');
 	const pathIndexKv = createIndexedDbPathIndexKv(environment.indexedDB, api.storage.indexedDbName(PATH_INDEX_DATABASE));
 	const fileBackend = createIndexedDbFileBackend(environment.indexedDB, api.storage.indexedDbName(LOCAL_FILES_DATABASE));
 	let handle: Awaited<ReturnType<typeof createHebraHost>>;
@@ -77,8 +84,10 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 			window: environment.window,
 			report,
 			failures,
+			bootTrace,
 			...(environment.moduleUrl === undefined ? {} : { moduleUrl: environment.moduleUrl }),
 		});
+		bootTrace.mark('hebraHost');
 	} catch (error) {
 		// The host never existed, so no handle can close the two stores: the path index may already hold a connection
 		// (folders read, first walk of the library, keychain). A close that fails is reported apart, never in place of `error`.

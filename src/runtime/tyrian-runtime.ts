@@ -12,6 +12,7 @@
  */
 
 import type { TyrianHost, TyrianRuntime } from '../host/tyrian-host';
+import type { BootTrace } from '../core/boot-trace';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { LocalDebugJsonlWriter } from '../core/local-debug-writer';
@@ -54,10 +55,10 @@ export interface TyrianCoreRuntime extends TyrianRuntime {
 	boot(): Promise<TyrianBoot>;
 }
 
-export function createTyrianCoreRuntime(host: TyrianHost): TyrianCoreRuntime {
+export function createTyrianCoreRuntime(host: TyrianHost, trace?: BootTrace): TyrianCoreRuntime {
 	let booted: Promise<TyrianBoot> | null = null;
 	const boot = (): Promise<TyrianBoot> => {
-		booted ??= bootTyrian(host);
+		booted ??= bootTyrian(host, trace ?? host.bootTrace);
 		return booted;
 	};
 	return {
@@ -81,7 +82,7 @@ export function createTyrianCoreRuntime(host: TyrianHost): TyrianCoreRuntime {
 	};
 }
 
-async function bootTyrian(host: TyrianHost): Promise<TyrianBoot> {
+async function bootTyrian(host: TyrianHost, trace: BootTrace | undefined): Promise<TyrianBoot> {
 	let settings: TyrianSettings;
 	let settingsLoadFailure: unknown = null;
 	try {
@@ -103,7 +104,7 @@ async function bootTyrian(host: TyrianHost): Promise<TyrianBoot> {
 		}),
 	});
 	const localDebugActions = new LocalDebugActionRunner({ diagnostics: localDebug });
-	const diagnosticsReady = initializeLocalDebug(localDebug, localDebugActions, settings, settingsLoadFailure === null);
+	const diagnosticsReady = initializeLocalDebug(localDebug, localDebugActions, settings, settingsLoadFailure === null, trace);
 	return { settings, settingsLoadFailure, localDebug, localDebugActions, diagnosticsReady };
 }
 
@@ -112,11 +113,13 @@ async function initializeLocalDebug(
 	localDebugActions: LocalDebugActionRunner,
 	settings: TyrianSettings,
 	settingsLoaded: boolean,
+	trace: BootTrace | undefined,
 ): Promise<void> {
 	await localDebugActions.run(
 		{ component: 'local_debug', action: 'debug_initialize' },
 		async () => await localDebug.initialize(),
 	);
+	trace?.mark('diagnostics');
 	if (settingsLoaded) localDebugActions.event({
 		component: 'settings', action: 'settings_load', level: 'info', phase: 'success', code: 'ok',
 		details: { schemaVersion: settings.schemaVersion },

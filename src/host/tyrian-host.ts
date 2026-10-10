@@ -6,6 +6,7 @@
 
 import type { AlertSoundOutcome } from '../alerts/alert-sound';
 import type { SystemNotificationInput, SystemNotificationOutcome } from '../alerts/alert-system-notification';
+import type { BootTrace } from '../core/boot-trace';
 import type { LocalDebugStoragePort } from '../core/local-debug-writer';
 import type {
 	TyrianDisposer,
@@ -475,6 +476,8 @@ export interface TyrianHost {
 	readonly diagnostics: TyrianDiagnosticsPort;
 	readonly background: TyrianBackgroundPort;
 	readonly environment: TyrianEnvironmentPort;
+	/** Optional: the boot timings the host already took before the core existed (Hebra's); absent, the core starts its own. */
+	readonly bootTrace?: BootTrace;
 }
 
 /** What `createTyrianRuntime` hands back: the plugin's `onload`/`onunload`, host-neutral. */

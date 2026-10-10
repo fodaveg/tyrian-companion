@@ -132,3 +132,51 @@ describe('local debug sanitizer: vault-relative path preservation', () => {
 		expect(twice?.message).toBe(record.message);
 	});
 });
+
+/**
+ * Z26. `bootMs` and `bootCounts` of the `boot_timings` line are the only free-form-looking detail fields, so they are held
+ * to `{name: non-negative integer}`: text cannot ride in under them. The deliberate negative proof is the string and the
+ * nested object below; the green one is the numbers that do come out.
+ */
+describe('local debug sanitizer: boot timings', () => {
+	const bootRecord = (details: Record<string, unknown>, component: 'plugin' | 'session' = 'plugin') => sanitizeLocalDebugRecord({
+		level: 'info', component, action: 'plugin_load', phase: 'success', code: 'ok', state: 'boot_timings',
+		actionId: 'a1', correlationId: 'c1', details,
+	}, CONTEXT);
+
+	it('keeps the phases and counters when they are integers', () => {
+		const record = bootRecord({
+			bootMs: { module: 812, onload: 840, painted: 2_301 }, bootCounts: { pages: 3, notesRead: 120, newlyAdopted: 0 },
+		});
+		expect(record.details).toEqual({
+			bootMs: { module: 812, onload: 840, painted: 2_301 }, bootCounts: { pages: 3, notesRead: 120, newlyAdopted: 0 },
+		});
+	});
+
+	it('NEGATIVE: a string under bootMs does not reach the record, not even as a number-looking text', () => {
+		const record = bootRecord({
+			bootMs: { module: 812, secretNote: 'Mi nota privada', hebraSeed: '1500', nested: { path: 'Tyrian/Notas/a.md' }, list: [1, 2] },
+			bootCounts: { pages: 'three' },
+		});
+		expect(record.details).toEqual({ bootMs: { module: 812 } });
+		expect(JSON.stringify(record)).not.toContain('Mi nota privada');
+		expect(JSON.stringify(record)).not.toContain('a.md');
+		expect(JSON.stringify(record)).not.toContain('1500');
+	});
+
+	it('drops the whole field when it is not a map of numbers, and negative, fractional or non-finite values', () => {
+		expect(bootRecord({ bootMs: 'module=812' }).details).toBeUndefined();
+		expect(bootRecord({ bootMs: [812] }).details).toBeUndefined();
+		expect(bootRecord({ bootMs: { a: -1, b: 1.5, c: Number.NaN, d: Number.POSITIVE_INFINITY, e: 7 } }).details).toEqual({ bootMs: { e: 7 } });
+		expect(bootRecord({ bootMs: { 'a b': 1, 'path/x': 2, ok: 3 } }).details).toEqual({ bootMs: { ok: 3 } });
+	});
+
+	it('is a plugin field: another component never carries it', () => {
+		expect(bootRecord({ bootMs: { module: 812 } }, 'session').details).toBeUndefined();
+	});
+
+	it('survives re-sanitization on export unchanged', () => {
+		const record = bootRecord({ bootMs: { module: 812, painted: 2_301 } });
+		expect(resanitizeLocalDebugRecord(record)?.details).toEqual({ bootMs: { module: 812, painted: 2_301 } });
+	});
+});
