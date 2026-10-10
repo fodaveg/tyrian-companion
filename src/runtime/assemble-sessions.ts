@@ -42,7 +42,11 @@ import { IndexedDbPilotMetricsStore } from '../sessions/pilot-metrics-store';
 import { PILOT_METRICS_MAX_OBSERVATIONS } from '../sessions/pilot-metrics-model';
 import type { SessionState } from '../sessions/session';
 import { DetectionQualityRecorder } from '../sessions/session-detection-quality-recorder';
-import { IndexedDbDetectionQualityStore } from '../sessions/session-detection-quality-store';
+import {
+	DETECTION_QUALITY_DB_NAME,
+	IndexedDbDetectionQualityStore,
+	vaultDetectionQualityDatabaseName,
+} from '../sessions/session-detection-quality-store';
 import { SessionHistoryService, type SessionHistoryVault } from '../sessions/session-history';
 import { SessionNoteWriter, type SessionNoteVault } from '../sessions/session-note-writer';
 import { IndexedDbSessionRuntimeStore } from '../sessions/session-runtime-store';
@@ -112,7 +116,10 @@ export interface SessionsAssembly {
 /** Builds every session service. Nothing is initialized, armed or brought online here. */
 export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly {
 	const detectionQuality = new DetectionQualityRecorder(
-		new IndexedDbDetectionQualityStore(input.factory, undefined, input.detectionQualityPersistence),
+		// DU-08: this vault's own events, starting once from a copy of the common database an earlier release left.
+		new IndexedDbDetectionQualityStore(
+			input.factory, vaultDetectionQualityDatabaseName(input.vaultId), input.detectionQualityPersistence, DETECTION_QUALITY_DB_NAME,
+		),
 	);
 	const pilotMetrics = new PilotMetricsRecorder(
 		new IndexedDbPilotMetricsStore(input.factory, input.vaultId),

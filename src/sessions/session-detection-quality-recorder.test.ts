@@ -74,6 +74,14 @@ describe('DetectionQualityRecorder', () => {
 		expect(appendFailure.getState()).toMatchObject({ status: 'unavailable' });
 	});
 
+	// DU-08: one row that no longer validates used to turn the measurement off for the whole run.
+	it('stays ready over a stored row that no longer validates, and keeps measuring', async () => {
+		const recorder = new DetectionQualityRecorder(new MemoryDetectionQualityStore([{ version: 1 }]), () => NOW);
+		await expect(recorder.initialize()).resolves.toEqual({ status: 'ready' });
+		await expect(recorder.recordAccepted('start', 'session-1', NOW.toISOString(), manualBoundary())).resolves.toBe(true);
+		expect(recorder.getStats()).toMatchObject({ acceptedBoundaries: 1 });
+	});
+
 	it('closes the store on dispose', () => {
 		const store = new MemoryDetectionQualityStore();
 		const close = vi.spyOn(store, 'close');
