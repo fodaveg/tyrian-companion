@@ -4,6 +4,7 @@ import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../a
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import { isCatalogResolution } from './inventory-advisor-contract';
 import { InventoryAdvisorEvidenceService } from './inventory-advisor-evidence';
 import {
 	inventoryAdvisorEvidenceValidationFailure,
@@ -50,6 +51,31 @@ describe('inventory advisor H4.14 evidence boundary', () => {
 			...evidence,
 			accountSignals: { ...evidence.accountSignals, accountId: 'someone-else' },
 		})).toBe('cross_reference_invalid');
+	});
+
+	it('rejects a sparse catalog warnings list as an invalid catalog, not as a serialization failure', async () => {
+		const snapshot = minimalSnapshot([10]);
+		const service = new InventoryAdvisorEvidenceService(
+			minimalClient(),
+			{ captureInventoryWithOperation: async () => snapshot },
+			{ resolve: async () => minimalCatalog(snapshot) },
+			minimalGateway(),
+			() => NOW,
+		);
+		const evidence = (await service.capture('es')).evidence!;
+		const first = { code: 'unexpected_id' as const, kind: 'items' as const, id: 5 };
+		const second = { code: 'unexpected_id' as const, kind: 'items' as const, id: 7 };
+		expect(isCatalogResolution({ ...evidence.catalog, warnings: [first, second] }), 'the dense list is valid').toBe(true);
+		// `[first, , second]` after a structured clone, as IndexedDB returns it: index 1 is a hole.
+		const sparse = new Array<typeof first>(3);
+		sparse[0] = first;
+		sparse[2] = second;
+		const catalog = structuredClone({ ...evidence.catalog, warnings: sparse });
+		expect(1 in catalog.warnings).toBe(false);
+		// DE-16 (lote E): on 52fa782c the order check read the hole as `undefined` and threw, so this
+		// was `'serialization_invalid'`; the guard now rejects the list as the catalog it belongs to.
+		expect(isCatalogResolution(catalog)).toBe(false);
+		expect(inventoryAdvisorEvidenceValidationFailure({ ...evidence, catalog })).toBe('catalog_invalid');
 	});
 
 	it('contains no implicit capture at module evaluation', async () => {

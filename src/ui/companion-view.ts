@@ -71,7 +71,7 @@ import {
 import { formatDecimal } from './format-number';
 import { relativeTimeLabel } from './inventory-advisor-view';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
-import { DetectionCorrectionModal } from './companion-modals';
+import { DetectionCorrectionModal, runtimeText } from './companion-modals';
 import {
 	renderSessionCard,
 	renderSessionCardCallout,
@@ -1907,13 +1907,6 @@ function addDetail(list: HTMLDListElement, term: string, detail: string): void {
 	list.createEl('dd', { text: detail });
 }
 
-function runtimeText(
-	locale: Locale,
-	key: RuntimeTranslationKey,
-	params?: Record<string, string | number>,
-): string {
-	return translateRuntime(createTranslator(locale), key, params);
-}
 
 function addDetectionTimelineItem(container: HTMLElement, label: string, value: string): HTMLElement {
 	const item = container.createDiv({ cls: 'tyrian-companion-view__detection-time' });

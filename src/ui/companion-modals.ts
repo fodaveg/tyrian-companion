@@ -276,8 +276,8 @@ function parsePilotBoundary(value: string): string | null {
 	return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-/** The same helper as `companion-view.ts`'s: the modals' copy comes only from the runtime catalog. */
-function runtimeText(
+/** A runtime catalog string in `locale`; the only source of the view's and the modals' copy. */
+export function runtimeText(
 	locale: Locale,
 	key: RuntimeTranslationKey,
 	params?: Record<string, string | number>,
