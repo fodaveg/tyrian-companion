@@ -535,15 +535,16 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 		return undo;
 	};
 	// In place, not on copies: a test that spies on `fake.api.ui` must still see the calls.
-	hebra.ui.registerView = tracked(hebra.ui.registerView);
-	hebra.ui.registerCommand = tracked(hebra.ui.registerCommand);
-	const registerStatusBarItem = hebra.ui.registerStatusBarItem;
+	// The originals are bound to their object, since `tracked` calls them without `this`.
+	hebra.ui.registerView = tracked(hebra.ui.registerView.bind(hebra.ui));
+	hebra.ui.registerCommand = tracked(hebra.ui.registerCommand.bind(hebra.ui));
+	const registerStatusBarItem = hebra.ui.registerStatusBarItem.bind(hebra.ui);
 	hebra.ui.registerStatusBarItem = (item) => {
 		const handle = registerStatusBarItem(item);
 		registrations.push(() => { handle.remove(); });
 		return handle;
 	};
-	hebra.editor.registerCodeBlock = tracked(hebra.editor.registerCodeBlock);
+	hebra.editor.registerCodeBlock = tracked(hebra.editor.registerCodeBlock.bind(hebra.editor));
 	const api: HebraPluginApi = {
 		...hebra,
 		has: (capability) => (capability === 'secrets' ? secretsAvailable : hebra.has(capability)),
