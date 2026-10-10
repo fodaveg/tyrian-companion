@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.30: sección Logros, historial acotado a las notas de Tyrian y almacenes locales que se recuperan solos (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `fe32b78` (rama `integracion/0.6.30` sobre el canal
+0.6.29, `810b411`) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.30 se ha visto en un Obsidian ni en un Hebra reales.
+  Todo está medido en tests. En particular, la sección Logros (buscador, seguimiento, contador en Hebra y el botón
+  «Actualizar»), la lectura del historial acotada a las notas de Tyrian y la recuperación de los almacenes secundarios
+  tras un cierre de conexión del motor no se han visto en un cliente.
+- Contenido: cuarta sección Logros en Obsidian y Hebra, con ajustes en la versión 15; historial y comparador que solo
+  leen las notas de sesión de Tyrian y panel que sale de «arrancando» (Z20, Z24); ocho almacenes secundarios que reabren
+  su conexión, calidad de detección por vault con tope de 2000 eventos y aviso de Halloween que no se pierde (DU-05,
+  DU-08); `dev:install` y `smoke:live` sin bóveda por defecto (RT-08); verificador de runtime en el artifact de CI
+  (RT-12); lint del gate sin caché (DE-18); tests de arranque de punta a punta (GR-05) y sin plazos de reloj (GR-07,
+  GR-10); plan medido para dividir el núcleo (DE-01).
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Canal 0.6.29 publicado: historial con nota abrible, ajustes de versión más nueva respetados y cola de confirmaciones por vault (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Parte de `15c9363` (rama `integracion/0.6.29` sobre el canal
