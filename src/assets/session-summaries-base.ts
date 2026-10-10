@@ -5,12 +5,12 @@ type SummariesLocale = 'es' | 'en';
 
 const COPY = {
 	es: {
-		latest: 'Sesiones', byMap: 'Por mapa', note: 'Nota', date: 'Fecha', map: 'Mapa', duration: 'Duración (min)', net: 'Valor neto de objetos',
-		perHour: 'Objetos por hora', characters: 'Personajes', observed: '% observado', topItem: 'Objeto principal', topItemIcon: 'Icono', alerts: 'Avisos', noMap: 'Sin mapa',
+		latest: 'Sesiones', byMap: 'Por mapa', note: 'Nota', date: 'Fecha', map: 'Mapa', duration: 'Duración (min)', net: 'Valor neto de objetos (oro)',
+		perHour: 'Objetos por hora (oro)', characters: 'Personajes', observed: '% observado', topItem: 'Objeto principal', topItemIcon: 'Icono', alerts: 'Avisos', noMap: 'Sin mapa',
 	},
 	en: {
-		latest: 'Sessions', byMap: 'By map', note: 'Note', date: 'Date', map: 'Map', duration: 'Duration (min)', net: 'Net value of items',
-		perHour: 'Items per hour', characters: 'Characters', observed: '% observed', topItem: 'Top item', topItemIcon: 'Icon', alerts: 'Alerts', noMap: 'No map',
+		latest: 'Sessions', byMap: 'By map', note: 'Note', date: 'Date', map: 'Map', duration: 'Duration (min)', net: 'Net value of items (gold)',
+		perHour: 'Items per hour (gold)', characters: 'Characters', observed: '% observed', topItem: 'Top item', topItemIcon: 'Icon', alerts: 'Alerts', noMap: 'No map',
 	},
 } as const;
 
