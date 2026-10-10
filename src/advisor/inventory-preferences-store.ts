@@ -17,6 +17,9 @@ import {
 	type InventoryPreferencesReadResult,
 	type InventoryPreferencesStore,
 	type InventoryPreferencesV1,
+	type InventoryPreferencesVaultReadResult,
+	type InventoryPreferencesVaultRestoreResult,
+	type InventoryPreferencesVaultStore,
 	type InventoryPreferencesWriteResult,
 } from './inventory-preferences-model';
 import {
@@ -35,7 +38,7 @@ export interface InventoryPreferencesPersistenceDiagnostics {
 }
 
 /** Dedicated, explicit-use IndexedDB adapter for inventory preference intent. */
-export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesStore {
+export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesStore, InventoryPreferencesVaultStore {
 	private database: IDBDatabase | null = null;
 	private opening: Promise<IDBDatabase> | null = null;
 	private disposed = false;
@@ -134,6 +137,69 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		}
 	}
 
+	/**
+	 * DU-13: every record of one vault this release can read, for the copy kept in the host's settings. A record it cannot
+	 * read (corrupt, or written by a newer release) is left out and counted in `unreadable`; it stays in IndexedDB as it is.
+	 */
+	async readVault(vaultId: string): Promise<InventoryPreferencesVaultReadResult> {
+		const attempt = this.readDiagnostics.begin('inventory_preferences', 'read');
+		try {
+			const stored = await this.onStore<{ keys: IDBValidKey[]; values: unknown[] }>(this.readDiagnostics, 'readonly', (store, done) => {
+				const keys = store.getAllKeys();
+				const values = store.getAll();
+				// Both lists come back in key order, from the same transaction.
+				values.onsuccess = () => { done({ keys: keys.result, values: values.result as unknown[] }); };
+			});
+			const records: InventoryPreferencesV1[] = [];
+			let unreadable = 0;
+			stored.keys.forEach((key, index) => {
+				if (!inVault(key, vaultId)) return;
+				const record = migrateInventoryPreferences(stored.values[index]);
+				if (record === null || record.vaultId !== vaultId || storageKey(record) !== key) unreadable += 1;
+				else records.push(record);
+			});
+			attempt.success();
+			return { status: 'ok', records, unreadable };
+		} catch (error) {
+			const code = failure(error);
+			attempt.failure(preferenceFailureCode(code));
+			return { status: 'error', code };
+		}
+	}
+
+	/**
+	 * DU-13: writes `records` only when the vault has no record at all, checked and written in one transaction, so a record
+	 * saved meanwhile is never overwritten. Every record must be valid and belong to `vaultId`.
+	 */
+	async restoreVaultIfEmpty(vaultId: string, records: readonly InventoryPreferencesV1[]): Promise<InventoryPreferencesVaultRestoreResult> {
+		const attempt = this.writeDiagnostics.begin('inventory_preferences', 'write');
+		const copies = records.map(cloneInventoryPreferences);
+		if (copies.some((record) => record === null || record.vaultId !== vaultId)
+			|| new Set(copies.map((record) => record?.accountId)).size !== copies.length) {
+			attempt.failure('validation_failed');
+			return { status: 'error', code: 'corrupt' };
+		}
+		try {
+			const result = await this.onStore<InventoryPreferencesVaultRestoreResult>(this.writeDiagnostics, 'readwrite', (store, done) => {
+				const keys = store.getAllKeys();
+				keys.onsuccess = () => {
+					if (keys.result.some((key) => inVault(key, vaultId))) {
+						done({ status: 'not_empty' });
+						return;
+					}
+					for (const record of copies as InventoryPreferencesV1[]) store.put(record, storageKey(record));
+					done({ status: 'restored', count: copies.length });
+				};
+			});
+			attempt.success();
+			return result;
+		} catch (error) {
+			const code = failure(error);
+			attempt.failure(preferenceFailureCode(code));
+			return { status: 'error', code };
+		}
+	}
+
 	dispose(): void {
 		const attempt = this.lifecycleDiagnostics.begin('inventory_preferences', 'close');
 		this.disposed = true;
@@ -212,6 +278,34 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		}
 	}
 
+	/**
+	 * One transaction over the whole store, not one key (DU-13's vault-wide read and restore), with the same single reopen
+	 * as `transaction`. `body` issues its requests and hands its answer to `done`; it is what the transaction resolves with
+	 * once it commits.
+	 */
+	private async onStore<T>(
+		diagnostics: LocalDebugPersistenceProbe,
+		mode: IDBTransactionMode,
+		body: (store: IDBObjectStore, done: (value: T) => void) => void,
+	): Promise<T> {
+		try {
+			return await withIndexedDbReopen({
+				open: async () => await this.open(diagnostics),
+				discard: (database) => { this.discard(database); },
+			}, async (database) => await new Promise<T>((resolve, reject) => {
+				// A throw here rejects this promise: the executor runs synchronously inside it.
+				const transaction = startIndexedDbTransaction(database, INVENTORY_PREFERENCES_STORE_NAME, mode);
+				let result: T | undefined;
+				body(transaction.objectStore(INVENTORY_PREFERENCES_STORE_NAME), (value) => { result = value; });
+				transaction.oncomplete = () => resolve(result as T);
+				transaction.onerror = () => reject(new StorageFailure('unavailable'));
+				transaction.onabort = () => reject(new StorageFailure('unavailable'));
+			}));
+		} catch (error) {
+			throw error instanceof IndexedDbConnectionLostError ? new StorageFailure('unavailable') : error;
+		}
+	}
+
 	private async transact<T>(
 		database: IDBDatabase,
 		mode: IDBTransactionMode,
@@ -238,6 +332,11 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 			transaction.onabort = () => reject(new StorageFailure(failed ? 'corrupt' : 'unavailable'));
 		});
 	}
+}
+
+/** Whether a key of this store belongs to `vaultId` (`<vaultId>\0<accountId>`), never to a vault whose id only starts the same. */
+function inVault(key: IDBValidKey, vaultId: string): key is string {
+	return typeof key === 'string' && key.startsWith(`${vaultId}\u0000`);
 }
 
 function parseRecord(raw: unknown, scope: InventoryPreferenceScope):

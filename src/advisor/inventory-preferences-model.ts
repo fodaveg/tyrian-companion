@@ -59,6 +59,23 @@ export interface InventoryPreferencesStore {
 	dispose(): void;
 }
 
+/** DU-13: every readable record of one vault; `unreadable` counts the ones left out. */
+export type InventoryPreferencesVaultReadResult =
+	| { status: 'ok'; records: InventoryPreferencesV1[]; unreadable: number }
+	| { status: 'error'; code: InventoryPreferencesFailureCode };
+
+/** DU-13: `not_empty` when the vault already had a record, in which case nothing was written. */
+export type InventoryPreferencesVaultRestoreResult =
+	| { status: 'restored'; count: number }
+	| { status: 'not_empty' }
+	| { status: 'error'; code: InventoryPreferencesFailureCode };
+
+/** DU-13: the two vault-wide operations the copy in the host's settings needs, next to the per-account store. */
+export interface InventoryPreferencesVaultStore {
+	readVault(vaultId: string): Promise<InventoryPreferencesVaultReadResult>;
+	restoreVaultIfEmpty(vaultId: string, records: readonly InventoryPreferencesV1[]): Promise<InventoryPreferencesVaultRestoreResult>;
+}
+
 export type InventoryPreferencesOperationResult =
 	| { status: 'ok'; record: InventoryPreferencesV1 | null }
 	| { status: 'conflict'; generation: number }

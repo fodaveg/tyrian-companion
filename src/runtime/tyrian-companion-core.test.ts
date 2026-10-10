@@ -7,6 +7,8 @@ import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugStoragePort } from '../core/local-debug-writer';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION } from '../core/settings';
+import { IndexedDbInventoryPreferencesStore } from '../advisor/inventory-preferences-store';
+import { sha256Text } from '../assets/managed-asset-hash';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import type {
 	TyrianCommandRegistration,
@@ -303,6 +305,72 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		// Exactly these: the quota itself (which gives the size of the disk away) never reaches the log.
 		expect(settled()[0]!.details).toEqual({
 			store: 'origin_storage', operation: 'open', result: 'granted', usageMiB: '12', quotaUsedPercent: '1',
+		});
+	});
+
+	// DU-13: the copy of the inventory preferences kept in the host's settings (`advisor/inventory-preferences-copy.ts`).
+	describe('the copy of the inventory preferences in the host settings (DU-13)', () => {
+		const copy = {
+			version: 1,
+			accounts: [{ accountId: 'account-a', goals: [], keepExceptions: [{ version: 1, exceptionId: 'keep-1', itemId: 7, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' }] }],
+		};
+		const startWith = async (stored: Record<string, unknown>, logged = true) => {
+			vi.stubGlobal('window', {
+				setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+			});
+			const { host, registered, records } = neutralHost();
+			const store = { value: stored as unknown, saves: 0 };
+			const runtime = createTyrianRuntime({ ...host, settings: {
+				load: async () => structuredClone(store.value), save: async (value) => { store.value = structuredClone(value); store.saves += 1; },
+			} });
+			await runtime.start();
+			registered.ready[0]!();
+			// Settings from a newer release keep the log off for this run (DU-04), so there is no record to wait for.
+			if (logged) {
+				await vi.waitFor(() => {
+					expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+				}, { timeout: 10_000 });
+			}
+			return { host, runtime, store, records };
+		};
+		const base = { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug' };
+
+		it('restores the copy from the settings into an empty IndexedDB at the start, and logs it once', async () => {
+			const { host, runtime, records } = await startWith({ ...base, inventoryPreferencesBackup: copy });
+			await vi.waitFor(() => {
+				expect(records().filter((record) => record.state === 'backup_restored')).toHaveLength(1);
+			}, { timeout: 10_000 });
+			await runtime.stop();
+
+			const vaultId = await sha256Text('hebra-library:test');
+			const stored = await new IndexedDbInventoryPreferencesStore(host.kv.indexedDB).readVault(vaultId);
+			expect(stored).toMatchObject({ status: 'ok', records: [{ vaultId, accountId: 'account-a', generation: 1, goals: [], keepExceptions: [{ exceptionId: 'keep-1', itemId: 7 }] }] });
+			expect(records().find((record) => record.state === 'backup_restored')).toMatchObject({
+				component: 'advisor', action: 'inventory_preferences_write', phase: 'success', details: { count: 1 },
+			});
+		});
+
+		it('writes the copy over the settings as they are saved, keeps what another device changed, and skips an identical copy', async () => {
+			const { runtime, store } = await startWith({ ...base });
+			const saves = store.saves;
+			// Another device changed a setting after this one started.
+			store.value = { ...(store.value as Record<string, unknown>), valuableLootThresholdCopper: 12_345 };
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+
+			await expect(write(copy)).resolves.toBe('saved');
+			expect(store.value).toMatchObject({ inventoryPreferencesBackup: copy, valuableLootThresholdCopper: 12_345 });
+			expect(runtime.settings.inventoryPreferencesBackup).toEqual(copy);
+			await expect(write(structuredClone(copy))).resolves.toBe('unchanged');
+			expect(store.saves).toBe(saves + 1);
+			await runtime.stop();
+		});
+
+		it('writes nothing over settings from a newer release (DU-04)', async () => {
+			const { runtime, store } = await startWith({ ...base, schemaVersion: SETTINGS_SCHEMA_VERSION + 1 }, false);
+			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			await expect(write(copy)).resolves.toBe('read_only');
+			expect(store.saves).toBe(0);
+			await runtime.stop();
 		});
 	});
 

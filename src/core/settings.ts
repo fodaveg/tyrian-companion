@@ -28,7 +28,7 @@ import {
 	type FarmingPreparationSettingsV1,
 } from '../sessions/farming-goal-preparation';
 
-export const SETTINGS_SCHEMA_VERSION = 15 as const;
+export const SETTINGS_SCHEMA_VERSION = 16 as const;
 /**
  * The oldest schemas whose polling cadence (v12 rewrote it once) and diagnostic opt-in (v11 introduced it) are
  * accepted as the user's own. A value from an older schema takes the default; one from a newer schema too, because
@@ -208,6 +208,13 @@ export interface TyrianSettings {
 	 * Following and unfollowing go through `updateSettings`, like every other edit.
 	 */
 	trackedAchievementIds: readonly number[];
+	/**
+	 * v16 (DU-13): the copy of the inventory preferences (goals and «keep» exceptions per account of this vault) that
+	 * `advisor/inventory-preferences-copy.ts` writes after each burst of changes and restores into an empty IndexedDB.
+	 * Opaque here, like `farmingDeclaredBuild`: kept exactly as stored (an invalid copy too, so its reader can say so and
+	 * nothing deletes it), validated only by that reader. Null before the first change saves one.
+	 */
+	inventoryPreferencesBackup: unknown;
 	/** Optional off-device alert relay. Empty means off; only HTTPS destinations are used. */
 	alertWebhookUrl: string;
 	/** Optional in-game alert relay (H13.9/H13.15). Off by default: no port opens on a fresh install. */
@@ -270,6 +277,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	recommendationCapitalThresholdCopper: 100_000,
 	legendaryTargetItemIds: [],
 	trackedAchievementIds: [],
+	inventoryPreferencesBackup: null,
 	alertWebhookUrl: '',
 	alertIngameEnabled: false,
 	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
@@ -387,6 +395,8 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 		legendaryTargetItemIds: legendaryTargetItemIds(data.legendaryTargetItemIds),
 		// v15. Read defensively like the two above: absent on any pre-v15 install, it is the empty list.
 		trackedAchievementIds: trackedAchievementIds(data.trackedAchievementIds),
+		// v16. Absent on any pre-v16 install (no copy yet); otherwise kept as stored, valid or not, for its reader to judge.
+		inventoryPreferencesBackup: data.inventoryPreferencesBackup === undefined ? null : structuredClone(data.inventoryPreferencesBackup),
 		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
 		alertIngameEnabled: data.alertIngameEnabled === true,
 		alertIngamePort: alertIngamePortValue(data.alertIngamePort),

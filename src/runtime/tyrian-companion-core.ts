@@ -192,6 +192,11 @@ import type {
 	InventoryPreferencesEditorSession,
 	InventoryPreferencesEditorState,
 } from '../advisor/inventory-preferences-runtime';
+import {
+	sameInventoryPreferencesBackup,
+	type InventoryPreferencesBackupV1,
+	type InventoryPreferencesBackupWriteOutcome,
+} from '../advisor/inventory-preferences-copy';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from '../economy/legendary-materials';
@@ -1317,8 +1322,21 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// One macrotask between the classifier and the discard allowlist (each a whole-account
 			// synchronous pass) so the renderer paints and the sync counter advances between them.
 			yieldToEventLoop: () => new Promise((resolve) => { window.setTimeout(resolve, 0); }),
+			// DU-13: the copy of the preferences in the host's settings, through the core's settings port.
+			preferencesBackup: {
+				settings: {
+					read: () => this.settings.inventoryPreferencesBackup,
+					write: async (backup) => await this.writeInventoryPreferencesBackup(backup),
+				},
+				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+				cancel: (handle) => { window.clearTimeout(handle as number); },
+				now: () => new Date().toISOString(),
+			},
 		});
 		this.inventoryPreferences = advisorServices.preferences;
+		// DU-13: once per load, before any preference is read (reads and writes wait for it), and never waited for here.
+		// It never rejects: every outcome, a failure included, ends in the local log.
+		void advisorServices.preferencesBackup?.restore();
 		this.inventoryAdvisor = advisorServices.controller;
 		const sessionServices = assembleSessions({
 			factory: indexedDB,
@@ -2825,6 +2843,23 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Memory takes only the key this method owns. What another device changed stays unpublished,
 			// so the next `updateSettings` still sees it as a difference and reacts to it.
 			this.settings = { ...this.settings, inventorySyncLastRun: outcome };
+		});
+	}
+
+	/**
+	 * DU-13: writes the copy of the inventory preferences into the host's settings, over the settings as they are now
+	 * (`loadSettingsBase`), in the same write chain as every other save. A copy equal to the stored one is not written
+	 * again. With settings from a newer release (DU-04) nothing is written. A failed save rejects, for the copy to record.
+	 */
+	private async writeInventoryPreferencesBackup(backup: InventoryPreferencesBackupV1): Promise<InventoryPreferencesBackupWriteOutcome> {
+		return await this.serializeSettingsWrite(async () => {
+			const base = await this.loadSettingsBase();
+			if (base === null) return 'read_only';
+			if (sameInventoryPreferencesBackup(base.inventoryPreferencesBackup, backup)) return 'unchanged';
+			await this.host.settings.save({ ...base, inventoryPreferencesBackup: backup });
+			// Memory takes only the key this method owns, as `recordInventorySyncOutcome` does.
+			this.settings = { ...this.settings, inventoryPreferencesBackup: structuredClone(backup) };
+			return 'saved';
 		});
 	}
 

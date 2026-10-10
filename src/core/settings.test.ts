@@ -623,18 +623,17 @@ describe('isNewerSettingsSchema (DU-04)', () => {
 });
 
 describe('settings schema v15: the tracked achievements of the «Logros» section', () => {
-	it('is schema 15 and ships an empty tracked list', () => {
-		expect(SETTINGS_SCHEMA_VERSION).toBe(15);
+	it('ships an empty tracked list', () => {
 		expect(DEFAULT_SETTINGS.trackedAchievementIds).toEqual([]);
 		expect(migrateSettings(null).trackedAchievementIds).toEqual([]);
 	});
 
 	// Regression: before v15 the cadence and the diagnostics were accepted only from `=== SETTINGS_SCHEMA_VERSION`,
 	// so this bump would have reset both on every v14 install.
-	it('keeps the polling cadence and the diagnostic opt-in of a v14 data.json when migrating to v15', () => {
+	it('keeps the polling cadence and the diagnostic opt-in of a v14 data.json when migrating to the current schema', () => {
 		const v14 = { schemaVersion: 14, pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug' };
 		expect(migrateSettings(v14)).toMatchObject({
-			schemaVersion: 15, pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug', trackedAchievementIds: [],
+			schemaVersion: SETTINGS_SCHEMA_VERSION, pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug', trackedAchievementIds: [],
 		});
 	});
 
@@ -667,4 +666,52 @@ describe('settings schema v15: the tracked achievements of the «Logros» sectio
 		}
 		expect(mergeSettingsUpdate(migrateSettings(null), { trackedAchievementIds: [3, 3, 1] }).trackedAchievementIds).toEqual([3, 1]);
 	});
+});
+
+/** DU-13: the copy of the inventory preferences that `advisor/inventory-preferences-copy.ts` keeps in the settings. */
+describe('settings schema v16: the copy of the inventory preferences', () => {
+	const backup = {
+		version: 1,
+		accounts: [{ accountId: 'account-a', goals: [], keepExceptions: [{ version: 1, exceptionId: 'keep-1', itemId: 1, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' }] }],
+	};
+
+	it('is schema 16 and starts without a copy', () => {
+		expect(SETTINGS_SCHEMA_VERSION).toBe(16);
+		expect(DEFAULT_SETTINGS.inventoryPreferencesBackup).toBeNull();
+		expect(migrateSettings(null).inventoryPreferencesBackup).toBeNull();
+	});
+
+	it('loads a v15 data.json, which has no copy, exactly as before plus the empty field', () => {
+		const v15 = {
+			schemaVersion: 15, apiKeySecret: 'tyrian-key', language: 'es', outputFolder: 'Juego/GW2', pollingIntervalMinutes: 60,
+			debugLoggingEnabled: true, debugLoggingLevel: 'debug', trackedAchievementIds: [7, 3], legendaryTargetItemIds: [30_704],
+			vaultMark: 'abcdefghijklmnop-1234', priceHistoryEnabled: true,
+		};
+		const loaded = migrateSettings(v15);
+		expect(loaded).toMatchObject({
+			schemaVersion: SETTINGS_SCHEMA_VERSION, apiKeySecret: 'tyrian-key', language: 'es', outputFolder: 'Juego/GW2',
+			pollingIntervalMinutes: 60, debugLoggingEnabled: true, debugLoggingLevel: 'debug', trackedAchievementIds: [7, 3],
+			legendaryTargetItemIds: [30_704], vaultMark: 'abcdefghijklmnop-1234', priceHistoryEnabled: true,
+		});
+		expect(loaded.inventoryPreferencesBackup).toBeNull();
+		expect(Object.keys(loaded).sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
+	});
+
+	it('keeps the copy as stored through migrateSettings, a JSON round trip and an unrelated edit, so a save never drops it', () => {
+		const stored = JSON.parse(JSON.stringify({ ...migrateSettings(null), inventoryPreferencesBackup: backup })) as unknown;
+		const loaded = migrateSettings(stored);
+		expect(loaded.inventoryPreferencesBackup).toEqual(backup);
+		expect(shouldPersistSettingsOnLoad(stored, loaded)).toBe(false);
+		expect(mergeSettingsUpdate(loaded, { language: 'en' }).inventoryPreferencesBackup).toEqual(backup);
+		// A copy of its own, not the caller's object.
+		(backup.accounts[0]!.keepExceptions[0] as { itemId: number }).itemId = 2;
+		expect(migrateSettings({ inventoryPreferencesBackup: backup }).inventoryPreferencesBackup).not.toBe(backup);
+		(backup.accounts[0]!.keepExceptions[0] as { itemId: number }).itemId = 1;
+	});
+
+	it.each([['a string', 'not a copy'], ['a future version', { version: 9, accounts: 'whatever' }], ['an array', [1, 2]]])(
+		'keeps %s as it is, for its reader to judge and nobody to delete', (_label, value) => {
+			expect(migrateSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION, inventoryPreferencesBackup: value }).inventoryPreferencesBackup).toEqual(value);
+		},
+	);
 });
