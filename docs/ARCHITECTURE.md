@@ -42,7 +42,6 @@ En Hebra, `src/host/hebra/hebra-main-view.ts` traduce esa vista a la de su API 1
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `inventory`: proyección sin identidad y persistencia Vault-only del inventario durable mediante Preview/CAS.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
-- `objectives`: no es un módulo vivo. Es un único fichero de interfaces, `src/objectives/objective.ts`, sin implementación y sin ningún consumidor en el repositorio: nada bajo `src/` lo importa y su única aparición fuera del propio fichero es la entrada del censo en `scripts/action-observability-baseline.json`. Se conserva como contrato futuro, no como frontera que gobierne código existente.
 - `platform`: contrato H8.1/H8.4, núcleo H8.6, frontera H8.7 y política shadow H8.8 puras con puertos inyectados; no contiene I/O ambiente ni executor host.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
@@ -117,11 +116,11 @@ no intenta inferir el runtime desde procesos ni desde el disco.
 ## Flujo de dependencias
 
 ```text
-main -> ui -> connection service -> account gateway -> GW2 client
-                                                   |
-                                                   +-> core (HTTP + SecretStorage)
+main -> host/obsidian + runtime (tyrian-companion-core) -> ui -> connection service -> account gateway -> GW2 client
+                                                                                                    |
+                                                                                                    +-> core (HTTP + SecretStorage)
 
-main -> advisor
+runtime -> advisor
 
 storage snapshot service -> GW2 operation fijada -> core concurrency
 
@@ -148,7 +147,6 @@ recommendation envelope -> decisiones H4.10 + refs internas (JSON, manual, sin c
 
 sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
-objectives --> interfaces sin implementación ni consumidores
 
 H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch + H8.8 shadow policy aislados -/-> main, plugin o release
 
@@ -157,6 +155,34 @@ efectos HTTP/scheduler/IndexedDB -> puertos diagnósticos cerrados -----------/
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Una tabla cerrada por operación sustituye esos defaults solo para `character_inventory|character_build`: un intento de 30 segundos y cero reintentos internos, porque el scheduler de captura es el único dueño del backoff. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
+
+### Imports entre carpetas de `src/`
+
+Medido el 10 oct 2026 (sección 3 de [la auditoría de deuda estructural](audit/2026-10-10-deuda-estructural.md)) con expresiones regulares sobre los `import ... from '...'` relativos de la fuente, sin tests y con los imports de tipo incluidos. Filas: carpeta que importa; columnas: carpeta importada. Es una fotografía, no un contrato: lo que gobierna las direcciones permitidas es `src/layer-direction-architecture.test.ts`.
+
+```text
+            acco advi aler asse cata core econ hall host inve plat runt sess test   ui wall
+account        .    .    .    .    .   18    .    .    .    .    .    .    .    .    .    .
+advisor       20    .    .    .   11   14   76    .    .    .    .    .    .    .    .    .
+alerts         .    .    .    .    .    2    1    1    1    .    .    .    .    .    .    .
+assets         .    2    .    .    .    7    .    .    .    .    .    .    .    .    .    .
+catalog        3    .    .    .    .    8    .    .    .    .    .    .    .    .    .    .
+core           .    .    1    .    .    .    4    1    2    .    .    .    3    .    .    .
+economy       14    2    3    .   15   36    .    .    4    .    .    .    2    .    .    .
+halloween      6    .    3    .    4   12   10    .    .    .    .    .    2    .    .    .
+host           .    .    6    2    .   11    4    1    .    1    .    2    3    .    1    1
+inventory      2    7    .    1    1    6   14    .    .    .    .    .    .    .    .    .
+platform       .    .    .    .    .    .    .    .    .    .    .    .    .    .    .    .
+runtime       14   15   24    7   11   41   22   13    9    5    .    .   72    .   24    2
+sessions      32    .   19    .    5   59   20    .    .    1    2    2    .    .    .    1
+test           1    3    .    2    .    3    .    .    2    .    .    2    2    .    .    .
+ui            14   17    9    5    .   64   31    3   13    5    .    3   63    .    .    1
+wallet         2    .    .    1    3    3    .    .    .    .    .    .    .    .    .    .
+```
+
+- Concentradoras de entrada: `core` (284 imports desde 14 carpetas), `economy` (182, 9), `sessions` (147, 7), `account` (108, 10).
+- Concentradoras de salida: `runtime` (259 hacia 13 carpetas), `ui` (228, 12), `sessions` (141, 9), `advisor` (121, 4).
+- Hojas: `platform` (0 salidas; solo la importan `host` y `sessions`) y, casi, `account` (solo importa `core`).
 
 ## Diagnóstico local H6.17
 
