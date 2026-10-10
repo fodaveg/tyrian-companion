@@ -41,7 +41,7 @@ export class ManagedAssetsLifecycle {
 		if (current.status === 'ready' && current.root !== null) {
 			const reclaimed = await this.reclaimStalePointer(current, current.root, root);
 			if (!reclaimed) return { status: 'conflict', message: 'Another managed-assets root is active.' };
-			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state);
+			if (reclaimed.adopt) return await this.installAdoptedRoot(current.root, root, reclaimed.state, guard);
 			return await this.installOverExistingAuthority(root, reclaimed.state, guard);
 		}
 		const claim = current.status === 'installing' ? current : await this.pointer.compareAndSet(current, { status: 'installing', root: null, targetRoot: root });
@@ -91,7 +91,7 @@ export class ManagedAssetsLifecycle {
 
 	/**
 	 * A `ready` pointer naming a different root than the one this install targets is reclaimed in
-	 * exactly two cases, both through a `compareAndSet` keyed on the exact pointer already read (a
+	 * exactly three cases, both through a `compareAndSet` keyed on the exact pointer already read (a
 	 * concurrent window that moves the pointer in between always beats this one back to `null`).
 	 *
 	 * 1. Stale: the named root has decayed to nothing (no manifest and every asset `create`) while
@@ -104,6 +104,13 @@ export class ManagedAssetsLifecycle {
 	 * alive; it is neither read for this decision nor touched afterwards (what to do with it is the
 	 * user's call). A requested root with nothing adoptable never qualifies, so pointing the
 	 * settings at a foreign folder cannot make it managed.
+	 * 3. Fresh: the named root has decayed to nothing (as in 1) and the requested root has no manifest
+	 * either. This is what a host whose vault is the output folder (Hebra) leaves after the output
+	 * folder changes: the old root is outside the vault, so it reads as nothing, and no Move can ever
+	 * read it. Without this the only possible exit, installing into the new folder, answered
+	 * `conflict` for ever (the new folder can only get its manifest from that install). It installs
+	 * like case 2, so a folder with nothing but the user's own files still ends in `conflict` and the
+	 * pointer goes back to the root it named.
 	 *
 	 * Anything else leaves this returning `null` and `installInternal` answers `conflict`.
 	 */
@@ -115,7 +122,9 @@ export class ManagedAssetsLifecycle {
 			if (!adopt) {
 				const stale = await this.manager.inspect(staleRoot);
 				const abandoned = stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create');
-				if (!abandoned || requested.manifestStatus !== 'ready') return null;
+				if (!abandoned || (requested.manifestStatus !== 'ready' && requested.manifestStatus !== 'missing')) return null;
+				// Fresh (case 3): no manifest to extend, so it is installed like an adopted root.
+				adopt = requested.manifestStatus === 'missing';
 			}
 		} catch { return null; }
 		const state = await this.pointer.compareAndSet(current, { status: 'ready', root, targetRoot: null });
@@ -127,8 +136,8 @@ export class ManagedAssetsLifecycle {
 	 * ordinary `install` adopts by published hash and writes the manifest. If it fails before any
 	 * manifest exists, the pointer goes back to the previous root so that authority is not lost.
 	 */
-	private async installAdoptedRoot(previousRoot: string, root: string, claim: ManagedAssetsPointerState): Promise<ManagedAssetsLifecycleResult> {
-		const installed = await this.manager.apply(root, 'install');
+	private async installAdoptedRoot(previousRoot: string, root: string, claim: ManagedAssetsPointerState, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<ManagedAssetsLifecycleResult> {
+		const installed = await this.manager.apply(root, 'install', guard);
 		if (isSuccess(installed)) return successResult(installed, 'applied', claim);
 		const inspection = await this.manager.inspect(root);
 		if (inspection.manifestStatus === 'missing') await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
