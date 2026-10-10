@@ -278,39 +278,45 @@ export class AchievementCatalogService {
 		const now = this.now();
 		const names = new Map<string, string>();
 		let failed = false;
-		const keptName = (kind: AchievementNameKind, id: number, rule: AgeRule): string | null => {
+		/** A kept record: its name, `null` for «the API does not know it» (kept as a negative), `undefined` for none usable. */
+		const keptName = (kind: AchievementNameKind, id: number, rule: AgeRule): string | null | undefined => {
 			const record = kept.get(recordKey(kind, id));
-			if (record === undefined || !withinAge(record.savedAt, now, rule)) return null;
+			if (record === undefined || !withinAge(record.savedAt, now, rule)) return undefined;
 			const value = record.value;
-			return typeof value === 'object' && value !== null && 'name' in value && typeof value.name === 'string' && value.name.length > 0 ? value.name : null;
+			if (typeof value !== 'object' || value === null || !('name' in value)) return undefined;
+			if (value.name === null) return null;
+			return typeof value.name === 'string' && value.name.length > 0 ? value.name : undefined;
 		};
 		for (const [kind, ids] of wanted) {
 			const missing: number[] = [];
 			for (const id of ids) {
 				const name = keptName(kind, id, 'fresh');
-				if (name === null) missing.push(id);
-				else names.set(achievementNameKey(kind, id), name);
+				if (name === undefined) missing.push(id);
+				else if (name !== null) names.set(achievementNameKey(kind, id), name);
 			}
 			for (const batch of chunks(missing, ACHIEVEMENT_PAGE_SIZE)) {
 				if (this.disposed || options.signal?.aborted === true) return { names, failed: true };
 				const fetched = await this.requestPublic(`${NAME_ENDPOINT[kind]}?ids=${batch.join(',')}&lang=${locale}`);
-				// A 404 is the API saying none of these ids exists: unknown names, not a failure.
-				if (fetched.status === 'not_found') continue;
+				// A 404 is the API saying none of these ids exists: unknown names, not a failure. They are
+				// kept as negatives so the next reads within 7 days do not ask for them again.
+				if (fetched.status === 'not_found') {
+					await this.store.writePublic(batch.map((id) => ({ key: recordKey(kind, id), savedAt: now, value: { name: null } })));
+					continue;
+				}
 				const answered = fetched.status === 'ok' ? parseNames(fetched.body) : null;
 				if (answered === null) {
 					failed = true;
 					for (const id of batch) {
 						const name = keptName(kind, id, 'usable');
-						if (name !== null) names.set(achievementNameKey(kind, id), name);
+						if (typeof name === 'string') names.set(achievementNameKey(kind, id), name);
 					}
 					continue;
 				}
 				const writes: AchievementPublicRecord[] = [];
 				for (const id of batch) {
 					const name = answered.get(id);
-					if (name === undefined) continue;
-					names.set(achievementNameKey(kind, id), name);
-					writes.push({ key: recordKey(kind, id), savedAt: now, value: { name } });
+					if (name !== undefined) names.set(achievementNameKey(kind, id), name);
+					writes.push({ key: recordKey(kind, id), savedAt: now, value: { name: name ?? null } });
 				}
 				if (writes.length > 0) await this.store.writePublic(writes);
 			}

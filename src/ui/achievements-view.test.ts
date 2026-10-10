@@ -690,7 +690,7 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		rewards: [{ kind: 'coins', copper: 12_345 }, { kind: 'item', itemId: 500, count: 3 }, { kind: 'title', titleId: 9 }],
 	});
 	const known = (locale: 'es' | 'en') => {
-		const word = locale === 'es' ? { item: 'Objeto', minipet: 'Mascota', skin: 'Piel', title: 'Titulo' } : { item: 'Thing', minipet: 'Pet', skin: 'Look', title: 'Name' };
+		const word = locale === 'es' ? { item: 'Espada', minipet: 'Mascota', skin: 'Piel', title: 'Titulo' } : { item: 'Thing', minipet: 'Pet', skin: 'Look', title: 'Name' };
 		return {
 			[achievementNameKey('item', 77)]: `${word.item} 77`, [achievementNameKey('minipet', 88)]: `${word.minipet} 88`,
 			[achievementNameKey('skin', 99)]: `${word.skin} 99`, [achievementNameKey('item', 500)]: `${word.item} 500`,
@@ -704,8 +704,8 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known });
 		h.view.mount();
 		await h.settle();
-		expect(objectives(h)).toEqual(['pendiente: Uno', 'pendiente: Objeto: Objeto 77', 'pendiente: Minimascota: Mascota 88', 'pendiente: Aspecto: Piel 99']);
-		expect(rewards(h)).toEqual(['Monedas: 1g 23s 45c', 'Objeto 500 ×3', 'Título: Titulo 9', '5 PL']);
+		expect(objectives(h)).toEqual(['pendiente: Uno', 'pendiente: Objeto: Espada 77', 'pendiente: Minimascota: Mascota 88', 'pendiente: Aspecto: Piel 99']);
+		expect(rewards(h)).toEqual(['Monedas: 1g 23s 45c', 'Espada 500 ×3', 'Título: Titulo 9', '5 PL']);
 		expect(h.nameRequests).toHaveLength(1);
 		expect(h.nameRequests[0]!.refs).toEqual([
 			{ kind: 'item', id: 77 }, { kind: 'minipet', id: 88 }, { kind: 'skin', id: 99 }, { kind: 'item', id: 500 }, { kind: 'title', id: 9 },
@@ -720,7 +720,7 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		expect(objectives(h)[1]).toBe('pendiente: Objeto 77');
 		h.releaseNames();
 		await h.settle();
-		expect(rewards(h)[1]).toBe('Objeto 500 ×3');
+		expect(rewards(h)[1]).toBe('Espada 500 ×3');
 		expect(rewards(h)[2]).toBe('Título: Titulo 9');
 	});
 
@@ -752,6 +752,7 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		h.view.refresh();
 		await h.settle();
 		expect(h.nameRequests).toHaveLength(2);
+		expect(rewards(h)[1]).toBe('Espada 500 ×3');
 		expect(rewards(h)[2]).toBe('Título: Titulo 9');
 	});
 
@@ -783,11 +784,74 @@ describe('AchievementsView: names of rewards and objectives (L3)', () => {
 		h.view.mount();
 		await h.settle();
 		expect(h.nameRequests[0]!.signal?.aborted).toBe(false);
+		const painters = h.view as unknown as { renderTracked(): void; applyNames(): void };
+		const repaint = vi.spyOn(painters, 'renderTracked');
+		const rewrite = vi.spyOn(painters, 'applyNames');
 		h.view.dispose();
 		expect(h.nameRequests[0]!.signal?.aborted).toBe(true);
 		h.releaseNames();
 		await h.settle();
-		expect(h.container.childElementCount).toBe(0);
+		expect(repaint).not.toHaveBeenCalled();
+		expect(rewrite).not.toHaveBeenCalled();
+	});
+
+	it('when the names arrive the focus stays where it was: on the next achievement after unfollowing', async () => {
+		const h = harness({ tracked: [1, 2], details: new Map([[1, rich(1)], [2, rich(2)]]), names: known, holdNames: true });
+		h.view.mount();
+		await h.settle();
+		h.container.querySelector<HTMLButtonElement>('details[data-id="1"] .tyrian-achievements__item-foot button')!.click();
+		await h.settle();
+		const summary = h.container.querySelector<HTMLElement>('details[data-id="2"] summary')!;
+		summary.focus();
+		expect(document.activeElement).toBe(summary);
+		h.releaseNames();
+		await h.settle();
+		expect(rewards(h)).toContain('Espada 500 ×3');
+		expect(summary.isConnected).toBe(true);
+		expect(document.activeElement).toBe(summary);
+	});
+
+	it('when the names arrive the focus stays on the unfollow button or the wiki link of an open achievement', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known, holdNames: true });
+		h.view.mount();
+		await h.settle();
+		h.items()[0]!.setAttribute('open', '');
+		for (const selector of ['.tyrian-achievements__item-foot button', '.tyrian-achievements__item-foot a']) {
+			const target = h.container.querySelector<HTMLElement>(selector)!;
+			target.focus();
+			expect(document.activeElement).toBe(target);
+		}
+		const link = h.container.querySelector<HTMLElement>('.tyrian-achievements__item-foot a')!;
+		const button = h.container.querySelector<HTMLElement>('.tyrian-achievements__item-foot button')!;
+		h.releaseNames();
+		await h.settle();
+		expect(rewards(h)[1]).toBe('Espada 500 ×3');
+		expect(link.isConnected).toBe(true);
+		expect(document.activeElement).toBe(link);
+		button.focus();
+		expect(button.isConnected).toBe(true);
+		expect(document.activeElement).toBe(button);
+	});
+
+	it('does not ask again or repaint when every id on screen is already named in this language', async () => {
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: known });
+		h.view.mount();
+		await h.settle();
+		h.view.refresh();
+		h.view.refresh();
+		await h.settle();
+		expect(h.nameRequests).toHaveLength(1);
+	});
+
+	it('a read that fails halfway does not take away the names already seen', async () => {
+		let calls = 0;
+		const h = harness({ tracked: [1], details: new Map([[1, rich(1)]]), names: (locale) => (++calls === 1 ? known(locale) : {}) });
+		h.view.mount();
+		await h.settle();
+		expect(rewards(h)[2]).toBe('Título: Titulo 9');
+		h.view.refresh();
+		await h.settle();
+		expect(rewards(h)[2]).toBe('Título: Titulo 9');
 	});
 
 	it('never uses the key to name anything', async () => {

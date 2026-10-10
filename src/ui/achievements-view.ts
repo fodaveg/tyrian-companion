@@ -140,6 +140,8 @@ export class AchievementsView {
 	private namesLocale: Locale | null = null;
 	/** The names request in flight; aborted by a newer one and by `dispose`. */
 	private namesAbort: AbortController | null = null;
+	/** The painted nodes that carry a name, with the text they show: names arriving rewrite these and rebuild nothing. */
+	private nameNodes: Array<{ el: HTMLElement; text: () => string }> = [];
 	private readonly now: () => number;
 	private readonly debounceMs: number;
 	private readonly timers: NonNullable<AchievementsViewOptions['timers']>;
@@ -327,6 +329,8 @@ export class AchievementsView {
 	 */
 	private async loadNames(load: number, catalog: AchievementCatalogPort, locale: Locale, views: readonly TrackedAchievementView[]): Promise<void> {
 		const refs = nameRefsOf(views);
+		// Everything on screen is already named (or was already asked for in this language): nothing to ask or repaint.
+		if (this.namesLocale === locale && refs.every((ref) => this.names.has(achievementNameKey(ref.kind, ref.id)))) return;
 		this.namesAbort?.abort();
 		if (refs.length === 0) { this.namesAbort = null; return; }
 		const abort = new AbortController();
@@ -334,8 +338,17 @@ export class AchievementsView {
 		const read = await catalog.loadNames(locale, refs, { signal: abort.signal });
 		if (this.disposed || abort.signal.aborted || load !== this.trackedLoad) return;
 		this.namesAbort = null;
-		this.names = read.names;
-		this.renderTracked();
+		// Same language: what was seen stays seen, so a read that failed halfway never takes a name away.
+		this.names = new Map([...this.names, ...read.names]);
+		this.applyNames();
+	}
+
+	/** Rewrites only the text of the painted nodes that carry a name: the list is not rebuilt, so focus, open state and position stay. */
+	private applyNames(): void {
+		for (const node of this.nameNodes) {
+			const text = node.text();
+			if (node.el.textContent !== text) node.el.setText(text);
+		}
 	}
 
 	/** The explicit action, and the only call with the key. */
@@ -632,6 +645,7 @@ export class AchievementsView {
 		const t = this.t;
 		const ids = this.actions.getTrackedAchievementIds();
 		this.trackedHeading.setText(`${t.t('achievements.tracked.title')} (${String(ids.length)})`);
+		this.nameNodes = [];
 		const open = new Set(Array.from(this.trackedList.querySelectorAll<HTMLDetailsElement>('details.tyrian-achievements__item')).filter((item) => item.open).map((item) => item.dataset.id));
 		this.trackedList.empty();
 		if (ids.length === 0) { this.trackedStatus.setText(t.t('achievements.tracked.none')); return; }
@@ -675,14 +689,20 @@ export class AchievementsView {
 				const row = list.createEl('li', { attr: { 'data-state': objective.state } });
 				// The state is read aloud but not shown: the mark on the left says it to the eye.
 				row.createSpan({ cls: 'tyrian-visually-hidden', text: `${t.t(`achievements.tracked.objective.${objective.state}` as TranslationKey)}: ` });
-				row.appendText(this.objectiveText(objective));
+				const label = row.createSpan({ text: this.objectiveText(objective) });
+				if (objective.kind === 'item' || objective.kind === 'minipet' || objective.kind === 'skin') {
+					this.nameNodes.push({ el: label, text: () => this.objectiveText(objective) });
+				}
 			}
 		}
 		body.createEl('h4', { text: t.t('achievements.tracked.rewards') });
 		if (view.rewards.length === 0) body.createEl('p', { text: t.t('achievements.tracked.noRewards') });
 		else {
 			const rewards = body.createEl('ul', { cls: 'tyrian-achievements__rewards' });
-			for (const reward of view.rewards) rewards.createEl('li', { text: this.rewardText(reward) });
+			for (const reward of view.rewards) {
+				const row = rewards.createEl('li', { text: this.rewardText(reward) });
+				if (reward.kind === 'item' || reward.kind === 'title') this.nameNodes.push({ el: row, text: () => this.rewardText(reward) });
+			}
 		}
 		const foot = body.createDiv({ cls: 'tyrian-achievements__item-foot' });
 		if (view.wikiUrl !== null) {

@@ -96,6 +96,21 @@ describe('AchievementCatalogService · names of rewards and objectives', () => {
 		expect(read.failed).toBe(false);
 	});
 
+	it('remembers an unknown id (and a 404 page) for 7 days: it is not asked again until then', async () => {
+		const { service, paths, clock } = harness({ unknown: new Set([2, 9]) });
+		await service.loadNames('es', [item(1), item(2), { kind: 'skin', id: 9 }]);
+		expect(paths).toHaveLength(2);
+		paths.length = 0;
+		clock.now = NOW + 3 * DAY;
+		const read = await service.loadNames('es', [item(1), item(2), { kind: 'skin', id: 9 }]);
+		expect(paths).toHaveLength(0);
+		expect([...read.names.keys()]).toEqual([achievementNameKey('item', 1)]);
+		expect(read.failed).toBe(false);
+		clock.now = NOW + 8 * DAY;
+		await service.loadNames('es', [item(1), item(2), { kind: 'skin', id: 9 }]);
+		expect(paths).toHaveLength(2);
+	});
+
 	it('leaves out every id when the API answers 404 to all of them', async () => {
 		const read = await harness({ unknown: new Set([2, 3]) }).service.loadNames('es', [item(2), item(3)]);
 		expect(read.names.size).toBe(0);
