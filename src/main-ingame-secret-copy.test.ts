@@ -108,6 +108,22 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 		expect(secrets.get(ALERT_INGAME_SECRET_ID)).not.toBe(created);
 	});
 
+	it('keeps the working token when "create new" cannot save its selection', async () => {
+		const { plugin, secrets, clipboard } = secretCopyPlugin({ alertIngameEnabled: true, alertIngameSecret: ALERT_INGAME_SECRET_ID });
+		secrets.set(ALERT_INGAME_SECRET_ID, USER_SECRET);
+		const target = plugin as unknown as { updateSettings: (update: Partial<TyrianSettings>) => Promise<unknown> };
+		target.updateSettings = async () => ({ status: 'blocked', reason: 'runtime_starting' });
+
+		await expect(plugin.regenerateAlertIngameSecret()).rejects.toThrow();
+
+		expect(secrets.get(ALERT_INGAME_SECRET_ID)).toBe(USER_SECRET);
+		expect(clipboard.writes).toEqual([]);
+
+		target.updateSettings = async () => { throw new Error('disk full'); };
+		await expect(plugin.regenerateAlertIngameSecret()).rejects.toThrow('disk full');
+		expect(secrets.get(ALERT_INGAME_SECRET_ID)).toBe(USER_SECRET);
+	});
+
 	it('reports the existing failure copy when the copy itself fails', async () => {
 		const { plugin, secretStorage } = secretCopyPlugin({ alertIngameEnabled: true });
 		secretStorage.setSecret = () => { throw new Error('secret storage locked'); };

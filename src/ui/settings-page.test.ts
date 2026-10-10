@@ -53,7 +53,8 @@ function fakeRow(container: HTMLElement) {
 			inputEl: el, selectEl: el, toggleEl: el, buttonEl: el,
 			setValue: (value: string) => { (el as HTMLInputElement).value = String(value); return api; },
 			onChange: (cb: (value: string) => unknown) => { el.addEventListener('change', () => { void cb((el as HTMLInputElement).value); }); return api; },
-			setPlaceholder: self, setDisabled: self, setTooltip: self, setCta: self,
+			setPlaceholder: self, setTooltip: self, setCta: self,
+			setDisabled: (disabled: boolean) => { (el as HTMLButtonElement).disabled = disabled; return api; },
 			addOption: (value: string) => { const o = make(doc, 'option') as HTMLOptionElement; o.value = value; el.appendChild(o); return api; },
 			setButtonText: (text: string) => { el.textContent = text; return api; },
 			onClick: (cb: () => unknown) => { el.addEventListener('click', () => { void cb(); }); return api; },
@@ -341,6 +342,82 @@ describe('settings page: the addon token is created with a button, never typed',
 		tokenRow(container).querySelectorAll('button')[1]!.click();
 		await vi.waitFor(() => { expect(regenerate).toHaveBeenCalledTimes(1); });
 		await vi.waitFor(() => { expect(buttons(tokenRow(container))).toEqual(['Copy token', 'Create new token']); });
+	});
+
+	const region = (row: HTMLElement): HTMLElement => row.querySelector<HTMLElement>('[aria-live="polite"]')!;
+
+	it('keeps the live region node when a press does not change the buttons, and writes its text into it', async () => {
+		const { self } = pluginWithBridge({ token: true });
+		const { container } = mountPage(self);
+		const before = region(tokenRow(container));
+		expect(before.textContent).toBe('');
+
+		tokenRow(container).querySelector('button')!.click();
+		await vi.waitFor(() => { expect(before.textContent).toBe('Token copied.'); });
+
+		expect(region(tokenRow(container))).toBe(before);
+		expect(before.isConnected).toBe(true);
+	});
+
+	it('when the row has to be rebuilt, paints the region empty and fills it afterwards', async () => {
+		const microtasks: Array<() => void> = [];
+		const real = globalThis.queueMicrotask;
+		const spy = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => { microtasks.push(callback); });
+		try {
+			const { self } = pluginWithBridge({ token: false });
+			const { container } = mountPage(self);
+			tokenRow(container).querySelector('button')!.click();
+			await vi.waitFor(() => { expect(buttons(tokenRow(container))).toEqual(['Copy token', 'Create new token']); });
+
+			expect(region(tokenRow(container)).textContent).toBe('');
+			expect(microtasks.length).toBeGreaterThan(0);
+			for (const callback of microtasks) callback();
+			expect(region(tokenRow(container)).textContent).toBe('New token created and copied.');
+		} finally {
+			spy.mockRestore();
+			globalThis.queueMicrotask = real;
+		}
+	});
+
+	it('disables both buttons while an action runs, so the old token cannot be copied mid-regeneration', async () => {
+		const { self, regenerate } = pluginWithBridge({ token: true });
+		let release!: () => void;
+		regenerate.mockImplementation(() => new Promise<'generated'>((resolve) => { release = () => { resolve('generated'); }; }));
+		const { container } = mountPage(self);
+		const [copyButton, newButton] = Array.from(tokenRow(container).querySelectorAll('button'));
+
+		newButton!.click();
+		newButton!.click();
+		await vi.waitFor(() => { expect(regenerate).toHaveBeenCalledTimes(1); });
+		expect([copyButton!.disabled, newButton!.disabled]).toEqual([true, true]);
+
+		release();
+		await vi.waitFor(() => { expect([copyButton!.disabled, newButton!.disabled]).toEqual([false, false]); });
+	});
+
+	it('lets the confirmation lapse after 6 s and when the button loses focus', () => {
+		vi.useFakeTimers();
+		try {
+			const { self, regenerate } = pluginWithBridge({ token: true });
+			const { container } = mountPage(self);
+			const newButton = (): HTMLButtonElement => tokenRow(container).querySelectorAll('button')[1]!;
+
+			newButton().click();
+			expect(newButton().textContent).toBe('Confirm: create new token');
+			vi.advanceTimersByTime(5900);
+			expect(newButton().textContent).toBe('Confirm: create new token');
+			vi.advanceTimersByTime(200);
+			expect(newButton().textContent).toBe('Create new token');
+			expect(region(tokenRow(container)).textContent).toBe('');
+
+			newButton().click();
+			newButton().dispatchEvent(new Event('blur'));
+			expect(newButton().textContent).toBe('Create new token');
+			expect(region(tokenRow(container)).textContent).toBe('');
+			expect(regenerate).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('says in Spanish what to do, with the button names', () => {

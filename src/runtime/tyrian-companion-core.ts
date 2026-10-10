@@ -4263,12 +4263,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				? this.host.secrets.get(ALERT_INGAME_SECRET_ID) : null;
 			const secret = isUsableIngameBridgeSecret(stored)
 				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });
+			// A replacement overwrites the entry that may be the selected one: keep the old value so a
+			// selection that cannot be saved puts it back instead of losing the working token.
+			const previous = replace && this.host.secrets.list().includes(ALERT_INGAME_SECRET_ID)
+				? this.host.secrets.get(ALERT_INGAME_SECRET_ID) : null;
 			if (secret !== stored) this.host.secrets.set(ALERT_INGAME_SECRET_ID, secret);
 			// Unsaved (`blocked` while the runtime starts) means the entry is not selected and the
-			// bridge would reject this token: fail instead of handing it out. The value stays in
+			// bridge would reject this token: fail instead of handing it out. A first token stays in
 			// SecretStorage, so the next attempt reuses it rather than minting another.
-			const selection = await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
-			if (selection.status !== 'saved') throw new Error('The in-game bridge token selection was not saved.');
+			let selection: Awaited<ReturnType<typeof this.updateSettings>>;
+			try {
+				selection = await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
+			} catch (error) {
+				if (previous !== null) this.host.secrets.set(ALERT_INGAME_SECRET_ID, previous);
+				throw error;
+			}
+			if (selection.status !== 'saved') {
+				if (previous !== null) this.host.secrets.set(ALERT_INGAME_SECRET_ID, previous);
+				throw new Error('The in-game bridge token selection was not saved.');
+			}
 			return await deliver(secret, 'generated');
 		};
 		return await (this.localDebugActions?.run(
