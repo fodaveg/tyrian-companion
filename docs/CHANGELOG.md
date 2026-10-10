@@ -1,10 +1,13 @@
 # Changelog
 
-## Release beta 0.6.26 - el hallazgo mágico por logros cuenta las repeticiones, las notas de inventario respetan tus comentarios y solo valoran lo vendible, y el catálogo guarda cada lote de una vez
+## Release beta 0.6.26 - las sesiones en vivo nuevas guardan notas mucho más pequeñas (formato 2, sin vuelta atrás a la 0.6.24), el hallazgo mágico por logros cuenta las repeticiones, las notas de inventario respetan tus comentarios y el catálogo guarda cada lote de una vez
 
-Candidato; no publicado ni etiquetado. Va encima de la 0.6.25, que también es candidata y no está publicada, así que
-parte de ella y no de la 0.6.24 publicada. Son arreglos de datos que salían mal o se reescribían de más, más una mejora
-de escritura en el catálogo. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+Candidato; no publicado ni etiquetado. La 0.6.25 nunca se publicó ni se etiquetó: esta versión contiene todo lo suyo,
+y se actualiza desde la 0.6.24 publicada. Lo que más se nota es que las sesiones en vivo que empiecen con esta versión
+se guardan en un formato nuevo (formato 2) y no se puede volver a la 0.6.24 sin perder la posibilidad de empezar
+sesiones nuevas (ver «Límites conocidos de lo que venía en la 0.6.25»). Además hay arreglos de datos que salían mal o se
+reescribían de más, y una mejora de escritura en el catálogo. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha
+visto en un cliente real.
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.26 se ha ejecutado en un Hebra ni en un Obsidian
   reales. Todo lo que sigue está medido en tests.
@@ -33,9 +36,59 @@ de escritura en el catálogo. [ESTADO](ESTADO.md) separa lo medido de lo que nad
   respuesta al usuario no cambia. Medido solo con IndexedDB simulado (mediana de 10,2 ms a 5,0 ms para 200 objetos); no
   hay medida en un cliente real.
 
+**Lo que venía en la 0.6.25, que no llegó a publicarse**
+
+Quien actualiza desde la 0.6.24 recibe también todo esto. Nada de ello se ha ejecutado en un Hebra ni en un Obsidian
+reales: está medido en tests y en un arnés de medida con almacenamiento y reloj simulados.
+
+- Nota de sesión en vivo en formato 2. Las sesiones que empiezan con esta versión no guardan una entrada por cada
+  muestra que no observó nada, y guardan el precio bruto (la mejor orden de compra, sin descontar la comisión del bazar)
+  en vez del neto por unidad. La nota de una sesión de 4 609 muestras de las que 75 cambian algo pasa de 766 544 bytes a
+  83 224 en las pruebas. Las sesiones ya empezadas, y las notas ya escritas, siguen en formato 1 y se leen y valoran
+  exactamente como antes. La exportación lleva la versión de su formato en el nombre del fichero.
+- Resumen de sesiones. «Tu media en sesiones parecidas» lee como mucho las 200 sesiones más recientes y lo dice, pero
+  solo cuando de verdad quedaron más de 200 sin leer. El resumen guarda dos claves nuevas (el objeto más valioso y los
+  mapas de la sesión), y las columnas de su Base se renombran para llamarse igual que las etiquetas de la nota, con la
+  unidad de oro (versión de contenido 3 de la Base).
+- Ajustes. Guardar los ajustes, y el resultado de una sincronización de inventario, vuelve a leer antes de escribir y
+  solo cambia lo suyo: lo que otro dispositivo hubiera sincronizado entre medias ya no se pisa. Solo lo hace con el mismo
+  número de esquema.
+- Bases. Una Base en una ruta del plugin que no es reconocible como suya (editada a mano o de una versión sin publicar)
+  tiene ahora un botón «Reemplazar» en ajustes, con confirmación, que nombra las Bases que va a sobrescribir y solo
+  reemplaza esas. Está siempre disponible; si no encuentra nada lo dice, y si el listado falla lo registra y lo muestra.
+- Cartera. La sincronización ya no reescribe las más de 100 notas de divisa cuando ningún saldo cambió: se quita
+  `tc_captured_at` de las notas y la columna «Actualizado» de la Base lee la fecha de modificación del fichero. Las notas
+  escritas por una versión anterior se reescriben una sola vez, sin ese campo. Una nota editada a mano sigue sin
+  tocarse.
+- Inventario y bazar. Si una parte del catálogo no se pudo cargar, el inventario no reescribe notas con lo que falte. Si
+  una página de órdenes del bazar falla, las ya leídas quedan como cobertura parcial en vez de perderse. El historial de
+  precios se lee solo para los objetos con precio y unas pocas lecturas a la vez, con un tope.
+- Arranque más ligero. Al arrancar se lee solo el fichero más reciente del registro de depuración (los demás, cuando
+  hacen falta); el índice de rutas de Hebra no se reescribe si no cambió; y las tablas fijas de la economía ya no se
+  calculan al importar el módulo. Si el host de Hebra no llega a crearse, se cierran las conexiones del índice de rutas
+  y de los ficheros locales.
+- Línea de tiempos de arranque. Cada arranque escribe en el registro de depuración una sola línea (`plugin_load`,
+  `boot_timings`) con las marcas de cada fase. Los valores son milisegundos acumulados desde el origen de la traza, no
+  duraciones por fase, y ninguna marca mide el primer pintado visible: la última, `renderRequested`, dice que la
+  inicialización terminó y que se pidió el repintado.
+- README. Aviso («Disclaimer»): el proyecto es no oficial, el plugin no lee la memoria del juego pero el addon de Nexus
+  sí (solo lee), y se usa sin garantía.
+
+**Límites conocidos de lo que venía en la 0.6.25**
+
+1. Después de una sesión en formato 2 no se puede volver a la 0.6.24 ni a una anterior: esa versión deja de poder
+   empezar sesiones en vivo (basta con que la última sesión sea de formato 2, aunque esté cerrada y guardada) hasta que
+   se instale de nuevo una versión que entienda el formato. Es un límite aceptado, porque son versiones ya publicadas; el
+   detalle está en [SPEC-live-loot](SPEC-live-loot.md) §6.0, límite 1.
+2. El tamaño del registro de depuración que se muestra en ajustes sale como «al menos» hasta que se miden los ficheros
+   antiguos (la primera rotación o la primera exportación); hasta entonces puede quedar por debajo del real.
+3. El límite de la 0.6.25 sobre una nota de inventario con el nombre de reserva cuando el catálogo responde con un dato
+   rechazado (`invalid` o `malformed`) queda cerrado en esta versión (ver «Notas de inventario, catálogo»).
+
 ## Release beta 0.6.25 - las sesiones en vivo nuevas guardan notas mucho más pequeñas y con el precio bruto, el resumen de sesiones y la Base cambian de forma, y varios sitios dejan de reescribir o pisar datos sin motivo
 
-Candidato; no publicado ni etiquetado. Parte de la 0.6.24 publicada y reúne nueve lotes. Lo que más se nota: las
+Nunca publicada ni etiquetada; su contenido salió en la 0.6.26. Se conserva como historial. Parte de la 0.6.24
+publicada y reúne nueve lotes. Lo que más se nota: las
 sesiones en vivo que empiecen con esta versión se guardan en un formato nuevo (formato 2) y no se puede volver atrás sin
 perder la posibilidad de empezar sesiones nuevas (ver «Límites conocidos»). El resto son arreglos de datos que se
 reescribían de más o se pisaban, y un arranque más ligero. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto

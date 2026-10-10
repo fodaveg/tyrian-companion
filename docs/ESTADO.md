@@ -2,7 +2,8 @@
 
 ## Candidato 0.6.26: hallazgo mágico con repeticiones, notas de inventario que respetan comentarios y catálogo por lotes (10 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Va encima de la candidata 0.6.25, que tampoco está publicada: parte de
+**Candidato; no publicado ni etiquetado.** Es la única candidata y contiene la 0.6.25, que no se publica ni se etiqueta
+nunca: quien actualice pasa de la 0.6.24 publicada a la 0.6.26. Parte de
 `80719eb` (rama de integración que ya contiene la 0.6.25 y estos lotes) y añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
@@ -19,12 +20,13 @@
   límite conocido de la 0.6.25 sobre el nombre de reserva. Límites que quedan: un `#` suelto, las líneas en blanco
   dentro de un bloque de comentarios se pierden, y un comentario en línea al final de una clave gestionada pasa a una
   línea propia.
-- Pendiente: el gate sobre el commit definitivo, la publicación de ambas y verlas en un
+- Pendiente: el gate sobre el commit definitivo, la publicación de la 0.6.26 y verla en un
   cliente real.
 
 ## Candidato 0.6.25: sesiones en formato 2, resumen de sesiones, ajustes que no se pisan y arranque más ligero (10 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Parte de `6fbe77e` (`main` con el canal 0.6.24 publicado) y reúne nueve lotes
+**Nunca publicada ni etiquetada: su contenido sale en la 0.6.26, que es la única candidata.** Se conserva como
+historial de lo que reunió. Parte de `6fbe77e` (`main` con el canal 0.6.24 publicado) y reúne nueve lotes
 integrados en `f14b3a6`, más el renombrado de la marca `painted` de la traza de arranque a `renderRequested` y los
 metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de
 Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md), en [SPEC-live-loot](SPEC-live-loot.md) §4 y §6.0 y en
@@ -37,13 +39,12 @@ Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md), en [SPEC-live-loot](SPEC
 - Sesiones en formato 2: las sesiones que empiezan con esta versión guardan el precio bruto y ninguna entrada para las
   muestras que no cambian nada. Después de una de ellas no se puede volver a la 0.6.24 ni a una anterior (límite
   aceptado, [SPEC-live-loot](SPEC-live-loot.md) §6.0, límite 1).
-- Límites conocidos que quedan abiertos: el tamaño del registro de depuración que muestran los ajustes sale por debajo
-  del real hasta la primera rotación o exportación, y un catálogo que responde `invalid` o `malformed` todavía puede
-  dejar una nota de inventario con el nombre de reserva.
+- Límites conocidos de la 0.6.25: el tamaño del registro de depuración que muestran los ajustes sale como «al menos»
+  hasta la primera rotación o exportación. El del nombre de reserva en notas de inventario lo cierra la 0.6.26.
 - La marca `renderRequested` de la traza de arranque (antes `painted`) no mide el primer pintado visible: el repintado
   es diferido, y la marca dice que la inicialización terminó y que se pidió.
-- Pendiente: la integración final, el gate sobre el commit definitivo, la publicación de la 0.6.25 y verla en un
-  cliente real.
+- Pendiente: el de la 0.6.26 (el gate sobre el commit definitivo, su publicación y verla en un cliente real). La 0.6.25
+  no tiene pendientes propios porque no se publica.
 
 ## Canal 0.6.24 publicado: el arranque con el almacenamiento mudo y la sesión en vivo tras un cierre brusco (9 oct 2026)
 
