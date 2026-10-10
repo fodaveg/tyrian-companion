@@ -32,7 +32,7 @@ export const FAILED = 'FALLO';
 export const GATE_GROUPS = Object.freeze(['test', 'check', 'check:guardrails']);
 
 export const GATE_STEPS = Object.freeze([
-	step('lint', 'ESLint sobre todo el arbol', ['eslint', '.', '--cache', '--cache-location', 'node_modules/.cache/eslint'], ['check']),
+	step('lint', 'ESLint sobre todo el arbol, sin cache (reglas de tipos)', ['eslint', '.'], ['check']),
 	step('typecheck', 'tsc --noEmit', ['tsc', '--noEmit', '--skipLibCheck'], ['check']),
 	step('unit', 'Suite unitaria de vitest (sin src/platform ni los tests de texto fuente congelados)', ['vitest', 'run', '--configLoader', 'runner'], ['test', 'check']),
 	step('unit-guardrails', 'Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.guardrails.config.mts'], ['test', 'check:guardrails']),

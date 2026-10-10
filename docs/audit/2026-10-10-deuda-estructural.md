@@ -180,6 +180,7 @@ Lo que exige el `recommended` de `eslint-plugin-obsidianmd` 0.4.1 instalado (118
 **DE-18. `--cache` de ESLint con reglas de tipos puede dar resultados viejos.**
 - Evidencia leída: el gate usa `--cache` (`scripts/gate-steps.mjs:35`) con `recommended-type-checked` activo. La caché de ESLint se invalida por el contenido de cada fichero, no por los tipos que importa: si cambia un tipo en otro fichero, el resultado de uno no tocado puede quedarse viejo. No lo he reproducido.
 - Acción: en el gate de cierre, lint sin `--cache` una vez por candidato; medir antes su coste en Fedora.
+- Hecho (Fedora, 10 oct 2026): `eslint .` sin caché 68 s de pared; con caché en caliente 1,3 s. El paso `lint` del gate (`scripts/gate-steps.mjs`) ya no lleva `--cache`; `npm run lint` lo conserva para desarrollo. Lo guarda `testClosingLintHasNoCache` en `scripts/tests/probar-run-gate.mjs`.
 
 **DE-19. Impacto de endurecer `tsconfig`.**
 - Evidencia: `tsconfig.json` tiene `strict`, `noUncheckedIndexedAccess`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noUnused*`, pero no `exactOptionalPropertyTypes`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature` ni `verbatimModuleSyntax`. No corrí `tsc` con esas opciones (una sola pasada permitida, y aquí faltan dependencias).

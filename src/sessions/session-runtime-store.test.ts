@@ -696,6 +696,7 @@ describe('session runtime persistence', () => {
 			const store = new IndexedDbSessionRuntimeStore(tracked.factory, databaseName('hung-open'), undefined, timers);
 			hangStorage(tracked);
 			const load = store.load();
+			await engineIdle(tracked);
 			expect(await settlement(load)).toBe('pending');
 			timers.fire();
 			await expect(load).resolves.toEqual({ status: 'error', code: 'unavailable' });

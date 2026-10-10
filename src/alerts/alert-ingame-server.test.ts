@@ -21,7 +21,10 @@ import { createIngameBridgeNonce, createIngameBridgeSecret, ingameBridgeSecretMa
  * driven by short real timers, and the port-retry tests by a controlled one.
  */
 
-const SECRET = createIngameBridgeSecret((bytes) => { randomFillSync(bytes); });
+/** Only a failing test ever waits this long; a loaded runner must not turn a slow answer into a red (GR-07). */
+const POLL_DEADLINE_MS = 5_000;
+
+const SECRET =createIngameBridgeSecret((bytes) => { randomFillSync(bytes); });
 
 /** Port 0 never collides, so `schedule` below only ever runs the handshake deadlines. */
 const REAL_TIMER: AlertIngameServerTimer = {
@@ -34,9 +37,40 @@ interface Harness {
 	readonly events: IngameConnectionEvent[];
 }
 
-async function startBridge(options: Partial<AlertIngameBridgeOptions> = {}): Promise<Harness> {
+/**
+ * A timer the test drives: nothing fires until `fire` says so, so a deadline of 80 ms never races the
+ * slowness of the machine (GR-07). `armed(ms)` is how a test learns, without sleeping, that the bridge
+ * has accepted a connection and armed that deadline.
+ */
+class ManualTimer implements AlertIngameServerTimer {
+	private readonly entries: { callback: () => void; milliseconds: number; live: boolean }[] = [];
+
+	schedule(callback: () => void, milliseconds: number): unknown {
+		const entry = { callback, milliseconds, live: true };
+		this.entries.push(entry);
+		return entry;
+	}
+
+	cancel(handle: unknown): void {
+		const entry = this.entries.find((candidate) => candidate === handle);
+		if (entry !== undefined) entry.live = false;
+	}
+
+	armed(milliseconds: number): boolean {
+		return this.entries.some((entry) => entry.live && entry.milliseconds === milliseconds);
+	}
+
+	fire(milliseconds: number): void {
+		const entry = this.entries.find((candidate) => candidate.live && candidate.milliseconds === milliseconds);
+		if (entry === undefined) throw new Error(`No ${milliseconds} ms deadline is armed.`);
+		entry.live = false;
+		entry.callback();
+	}
+}
+
+async function startBridge(options: Partial<AlertIngameBridgeOptions> = {}, timer: AlertIngameServerTimer = REAL_TIMER): Promise<Harness> {
 	const events: IngameConnectionEvent[] = [];
-	const handle = await startAlertIngameServer(createNodeTcpServerPort({ createServer }), 0, REAL_TIMER, {
+	const handle = await startAlertIngameServer(createNodeTcpServerPort({ createServer }), 0, timer, {
 		authenticate: (candidate) => ingameBridgeSecretMatches(candidate, SECRET),
 		now: () => Date.now(),
 		fillRandom: (bytes) => { randomFillSync(bytes); },
@@ -55,13 +89,15 @@ function helloLine(overrides: Record<string, unknown> = {}): string {
 
 describe('H18.22 in-game bridge handshake', () => {
 	it('does not count a connection that has not said hello, and closes it when the hello deadline passes', async () => {
-		const { handle } = await startBridge({ helloTimeoutMs: 80 });
+		const timer = new ManualTimer();
+		const { handle } = await startBridge({ helloTimeoutMs: 80 }, timer);
 		try {
 			const mute = await LineClient.connect(handle.port);
 			// Accepted by the kernel and by `net`, but mute: it must not read as a delivery target.
-			await delay(20);
+			await waitFor(() => timer.armed(80));
 			expect(handle.clientCount()).toBe(0);
 			expect(() => { handle.broadcast('{"v":2,"type":"alert"}'); }).not.toThrow();
+			timer.fire(80);
 			await mute.closed;
 			expect(mute.lines).toEqual(['{"v":2,"type":"error","code":"hello_timeout"}']);
 			expect(handle.clientCount()).toBe(0);
@@ -190,9 +226,12 @@ describe('H18.23 in-game bridge, addon to plugin', () => {
 	});
 
 	it('declares a silent authenticated connection lost after the liveness timeout', async () => {
-		const { handle, events } = await startBridge({ livenessTimeoutMs: 80 });
+		const timer = new ManualTimer();
+		const { handle, events } = await startBridge({ livenessTimeoutMs: 80 }, timer);
 		try {
 			const addon = await AuthenticatedAddon.open(handle.port);
+			await waitFor(() => timer.armed(80));
+			timer.fire(80);
 			await addon.client.closed;
 			expect(addon.client.lines.at(-1)).toBe('{"v":2,"type":"error","code":"liveness_timeout"}');
 			expect(events.at(-1)).toMatchObject({ kind: 'closed', reason: 'lost' });
@@ -211,8 +250,10 @@ describe('H13.9/H13.15 in-game bridge, plugin to addon', () => {
 			handle.broadcast('{"v":2,"type":"alert","seq":1}');
 			expect(await a.client.nextLine()).toBe('{"v":2,"type":"alert","seq":1}');
 			expect(await b.client.nextLine()).toBe('{"v":2,"type":"alert","seq":1}');
-			await delay(30);
-			expect(pending.lines).toEqual([]);
+			// TCP keeps order: if the broadcast had reached the pending socket, it would sit before the welcome.
+			pending.write(helloLine());
+			expect(JSON.parse(await pending.nextLine())).toMatchObject({ type: 'welcome' });
+			expect(pending.lines).toHaveLength(1);
 		} finally { await handle.close(); }
 	});
 
@@ -380,7 +421,10 @@ describe('H18.23 presence through real sockets', () => {
 			await waitFor(() => tracker.snapshot().status === 'present');
 			expect(presence.at(-1)).toMatchObject({ kind: 'restored', presenceId });
 			second.send({ type: 'context', state: 'gameplay', mapId: 866, character: 'Astra Uno' });
-			await delay(20);
+			// Frames on one socket are applied in order: once the bye after the context has landed (a positive
+			// event), the context has been applied too, so "no second start" is judged after it, not after a sleep.
+			second.send({ type: 'bye', reason: 'game_exit' });
+			await waitFor(() => tracker.snapshot().connections === 0);
 			expect(presence.filter((event) => event.kind === 'started')).toHaveLength(1);
 		} finally { await handle.close(); tracker.dispose(); }
 	});
@@ -462,7 +506,7 @@ class LineClient {
 
 	/** The next line not yet returned by a previous call. */
 	async nextLine(): Promise<string> {
-		const deadline = Date.now() + 2_000;
+		const deadline = Date.now() + POLL_DEADLINE_MS;
 		while (this.lines.length <= this.consumed) {
 			if (Date.now() > deadline) throw new Error('No line arrived.');
 			await new Promise<void>((resolve) => { this.waiters.push(resolve); setTimeout(resolve, 20); });
@@ -568,7 +612,7 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
-	const deadline = Date.now() + 2_000;
+	const deadline = Date.now() + POLL_DEADLINE_MS;
 	while (!predicate()) {
 		if (Date.now() > deadline) throw new Error('Condition never became true.');
 		await delay(5);
