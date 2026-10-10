@@ -14,7 +14,7 @@ export type SessionStatus =
 	| 'error'
 	| 'abandoned';
 
-export type ComparableSnapshotQuality = Extract<
+type ComparableSnapshotQuality = Extract<
 	StorageSnapshot['quality'],
 	'stable' | 'stable_owned_placement_changed'
 >;
@@ -230,7 +230,7 @@ export type SessionTransitionResult =
 	| { status: 'applied' | 'unchanged'; state: SessionState }
 	| { status: 'rejected'; state: SessionState | null; reason: SessionTransitionRejection };
 
-export type PlaySession = Exclude<SessionState, IdleSessionState>;
+type PlaySession = Exclude<SessionState, IdleSessionState>;
 
 /** Persistence boundary only; no adapter is selected by H3.1. */
 export interface SessionRepository {

@@ -1,5 +1,5 @@
 /** Known binary build-template fields, without claiming active equipment or API skill IDs. */
-export interface BuildPaletteBarV1 { heal: number; utilities: [number,number,number]; elite: number }
+interface BuildPaletteBarV1 { heal: number; utilities: [number,number,number]; elite: number }
 export interface DecodedBuildTemplateV1 {
 	profession: 'Guardian' | 'Warrior' | 'Engineer' | 'Ranger' | 'Thief' | 'Elementalist' | 'Mesmer' | 'Necromancer' | 'Revenant';
 	specializations: { id: number; traitSelections: [number,number,number] }[];
@@ -12,9 +12,9 @@ export interface DecodedBuildTemplateV1 {
 	skillOverrides: number[] | null;
 }
 export const MAX_BUILD_TEMPLATE_CODE_LENGTH = 4096;
-export type BuildTemplateFailureReason = 'invalid_format' | 'invalid_base64' | 'wrong_header' | 'truncated' | 'too_long'
+type BuildTemplateFailureReason = 'invalid_format' | 'invalid_base64' | 'wrong_header' | 'truncated' | 'too_long'
 	| 'unsupported_profession' | 'reserved_bits' | 'unknown_profession_data' | 'unknown_extension';
-export type BuildTemplateParseResult = {status:'valid';templateCode:string;configuration:DecodedBuildTemplateV1}
+type BuildTemplateParseResult = {status:'valid';templateCode:string;configuration:DecodedBuildTemplateV1}
 	| {status:'invalid' | 'unsupported';reason:BuildTemplateFailureReason};
 const PROFESSIONS = ['Guardian','Warrior','Engineer','Ranger','Thief','Elementalist','Mesmer','Necromancer','Revenant'] as const;
 

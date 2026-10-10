@@ -4,9 +4,9 @@ import type { ContainerDispositionRecommendation } from '../economy/container-re
 import { observedRateBand, unavailableRateBand, type ObservedRateBand } from './observed-rate-band';
 import type { PreparedSessionNote, SessionNoteLocale } from './session-note-model';
 
-export const LOOT_PRESENTATION_VERSION = 1 as const;
+const LOOT_PRESENTATION_VERSION = 1 as const;
 
-export type LootValuation =
+type LootValuation =
 	| { status: 'complete'; immediateCopper: number; listingCopper: number }
 	| { status: 'partial'; immediateCopper: number | null; listingCopper: number | null; reason: string }
 	| { status: 'non_liquid' | 'not_applicable' | 'not_evaluated' | 'withheld' | 'invalid' };
@@ -15,7 +15,7 @@ export type LootAllocation =
 	| { status: 'known'; reserved: number; held: number; free: number }
 	| { status: 'not_applicable' | 'not_evaluated' | 'unknown' | 'invalid' };
 
-export type LootRecommendation =
+type LootRecommendation =
 	| { status: 'ready'; action: 'open' | 'sell'; quantity: number; route?: 'instant_sell' | 'vendor' }
 	| { status: 'reserved_only' }
 	| { status: 'blocked' | 'invalid'; reasons: string[] }
@@ -53,7 +53,7 @@ export interface LootAttributionBand {
 	causes: string[];
 }
 
-export interface LootEconomyPresentation {
+interface LootEconomyPresentation {
 	status: 'total' | 'subtotal' | 'nonvaluable' | 'not_evaluated' | 'withheld' | 'invalid';
 	immediateCopper: number | null;
 	listingCopper: number | null;
@@ -83,7 +83,7 @@ export interface LootEconomyPresentation {
 	label: string;
 }
 
-export interface LootDecisionPresentation {
+interface LootDecisionPresentation {
 	reserved: number | null;
 	held: number | null;
 	free: number | null;

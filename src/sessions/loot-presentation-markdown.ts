@@ -10,7 +10,7 @@ import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runti
 import { formatBandMinutes, formatMilliUnits, type ObservedRateBand } from './observed-rate-band';
 import type { SessionNoteLocale } from './session-note-model';
 
-export interface LootMarkdownBlocks { results: string; economy: string; decision: string }
+interface LootMarkdownBlocks { results: string; economy: string; decision: string }
 
 /** Serializes the shared H5.5 view model into the three H5.4 managed blocks. */
 export function renderLootMarkdown(presentation: LootPresentationV1): LootMarkdownBlocks {

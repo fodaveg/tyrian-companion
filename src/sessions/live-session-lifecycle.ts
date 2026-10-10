@@ -18,7 +18,7 @@ import { withCharacter, type LiveSessionSummaryState } from './live-session-summ
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1, LiveSessionCaptureV1 } from './live-session-model';
 import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 
-export interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
+interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build: string; profile: string; context: IngameGameContext }
 /**
  * How long the live session's lease lasts without a renewal: the coordinator's own five minutes (H14.22), asked for
  * by name so that the day it changes it changes here.
@@ -39,9 +39,9 @@ export interface LiveSessionSourceInput { sourceInstance: string; epoch: string;
  * renewing a lease that ran out and renewing from the data path, no longer planned. Reasoning in SPEC-live-loot §4.
  */
 /** What `discard` did: whether the session left the runtime key, and whether its note was written on the way. */
-export interface LiveSessionDiscard { cleared: boolean; note: 'written' | 'not_written' | 'none'; reason?: LiveStopFailure }
+interface LiveSessionDiscard { cleared: boolean; note: 'written' | 'not_written' | 'none'; reason?: LiveStopFailure }
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
-export interface LiveSessionLifecycleOptions {
+interface LiveSessionLifecycleOptions {
 	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'> & Partial<Pick<SessionRuntimeStore, 'forceClear'>>;
 	/** How long the lease this lifecycle asks the coordinator for lasts (`LIVE_SESSION_LEASE_TTL_MS` when absent). */
 	leaseTtlMs?: number;

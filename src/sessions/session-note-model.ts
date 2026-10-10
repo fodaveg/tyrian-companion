@@ -73,7 +73,7 @@ export interface SessionNoteInput {
 	outputFolder: string;
 }
 
-export type OptionalEvidence<T> =
+type OptionalEvidence<T> =
 	| { status: 'not_evaluated' }
 	| { status: 'invalid' }
 	| { status: 'valid'; value: T };
@@ -103,7 +103,7 @@ export interface PreparedSessionNote {
 	outputFolder: string;
 }
 
-export type PrepareSessionNoteResult =
+type PrepareSessionNoteResult =
 	| { status: 'ok'; note: PreparedSessionNote }
 	| { status: 'invalid'; reason: 'invalid_runtime' | 'identity_mismatch' | 'unsafe_output_folder' | 'invalid_input' };
 

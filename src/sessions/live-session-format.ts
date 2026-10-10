@@ -10,7 +10,7 @@ import { keys, record } from './live-session-reducer';
  */
 export const LIVE_SESSION_FORMAT_KEY = 'live-session-format';
 
-export interface LiveSessionFormatMark extends LiveSessionFormat { version: 1; sessionId: string }
+interface LiveSessionFormatMark extends LiveSessionFormat { version: 1; sessionId: string }
 
 /**
  * A session with no mark: one started by a plugin from before the mark existed (up to 0.6.24). Those kept every sample and
@@ -32,7 +32,7 @@ export function isLiveSessionFormat(value: unknown): value is LiveSessionFormat 
 		|| value.noteVersion === 2 && (value.priceBasis === 'instant_sell_net' || value.priceBasis === 'instant_sell_gross'));
 }
 
-export function isLiveSessionFormatMark(value: unknown): value is LiveSessionFormatMark {
+function isLiveSessionFormatMark(value: unknown): value is LiveSessionFormatMark {
 	return record(value) && keys(value, ['version', 'sessionId', 'noteVersion', 'priceBasis']) && value.version === 1
 		&& typeof value.sessionId === 'string' && value.sessionId.length > 0 && isLiveSessionFormat(value);
 }

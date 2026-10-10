@@ -1,4 +1,4 @@
-export interface RenewalTimerPort {
+interface RenewalTimerPort {
 	setInterval(callback: () => void, intervalMs: number): number;
 	clearInterval(handle: number): void;
 }

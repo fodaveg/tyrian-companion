@@ -9,10 +9,10 @@ import { normalizeSessionOutputFolder } from './session-note-model';
 export const LIVE_SUMMARY_MAX_ATTEMPTS = 3;
 export const LIVE_SUMMARY_RETRY_MS = 60_000;
 /** Map names are cosmetic: the summary waits this long for the public API and then writes «Mapa <id>». */
-export const LIVE_SUMMARY_MAP_WAIT_MS = 5_000;
+const LIVE_SUMMARY_MAP_WAIT_MS = 5_000;
 
 /** The two cache-only reads the entity names need; the public catalog service satisfies it. */
-export interface SummaryNameCache {
+interface SummaryNameCache {
 	readCachedItems(ids: readonly number[], locale: 'es' | 'en'): Promise<Record<string, { id: number; name: string }>>;
 	readCachedCurrencies(ids: readonly number[], locale: 'es' | 'en'): Promise<Record<string, { id: number; name: string }>>;
 }
@@ -31,7 +31,7 @@ export async function summaryCachedNames(cache: SummaryNameCache, wanted: Summar
 	return names;
 }
 
-export interface LiveSessionSummaryServiceOptions {
+interface LiveSessionSummaryServiceOptions {
 	vault: LiveSessionSummaryVault & SummaryHistoryVault;
 	runtime(): LiveSessionRuntimeRecord | null;
 	journal(): readonly LiveJournalEntryV1[];

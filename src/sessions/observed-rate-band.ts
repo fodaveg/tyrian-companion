@@ -1,6 +1,6 @@
 import { API_SETTLEMENT_WINDOW_MS } from './session-api-settlement';
 
-export const OBSERVED_RATE_BAND_VERSION = 1 as const;
+const OBSERVED_RATE_BAND_VERSION = 1 as const;
 
 /**
  * Uncertainty the account cache puts on each end of an observed session window.

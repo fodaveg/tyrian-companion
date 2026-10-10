@@ -9,7 +9,7 @@ export interface DeclaredBuildV1 {
 	version:1; source:'manual_template'; label:string|null;
 	templateCode:string; configuration:DecodedBuildTemplateV1;
 }
-export type FarmingDeclaredBuildReadResult = {status:'empty'} | {status:'valid';value:DeclaredBuildV1}
+type FarmingDeclaredBuildReadResult = {status:'empty'} | {status:'valid';value:DeclaredBuildV1}
 	| {status:'invalid' | 'unsupported';reason:string};
 export const MAX_DECLARED_BUILD_LABEL_LENGTH = 120;
 

@@ -38,7 +38,7 @@ import {
 } from '../core/local-debug-persistence';
 
 export const DETECTION_QUALITY_DB_NAME = 'tyrian-companion-detection-quality';
-export const DETECTION_QUALITY_DB_VERSION = 1;
+const DETECTION_QUALITY_DB_VERSION = 1;
 export const DETECTION_QUALITY_STORE_NAME = 'events-v1';
 /**
  * DU-08: how many events one vault keeps. A session leaves two accepted boundaries plus one event per dismissed
@@ -54,13 +54,13 @@ export function vaultDetectionQualityDatabaseName(vaultId: string): string {
 }
 
 /** One stored row: its key and whatever is under it, readable or not. */
-export interface DetectionQualityRow {
+interface DetectionQualityRow {
 	key: IDBValidKey;
 	value: unknown;
 }
 
 /** What a vault keeps of its rows: the readable events, and the keys to delete. */
-export interface DetectionQualityRetention {
+interface DetectionQualityRetention {
 	/** The newest readable events, at most `maximum`, oldest first. */
 	kept: DetectionQualityEvent[];
 	/** Rows that do not validate as an event (DU-08): retired, never returned. */
@@ -73,7 +73,7 @@ export interface DetectionQualityRetention {
  * DU-08: splits stored rows into the events a vault keeps, the unreadable rows to retire and the oldest readable rows
  * past `maximum`. A row is unreadable when it does not validate or when it sits under a key that is not its own event id.
  */
-export function retainDetectionQualityRows(rows: readonly DetectionQualityRow[], maximum: number): DetectionQualityRetention {
+function retainDetectionQualityRows(rows: readonly DetectionQualityRow[], maximum: number): DetectionQualityRetention {
 	const readable: { key: IDBValidKey; event: DetectionQualityEvent }[] = [];
 	const unreadable: IDBValidKey[] = [];
 	for (const row of rows) {
@@ -89,12 +89,12 @@ export function retainDetectionQualityRows(rows: readonly DetectionQualityRow[],
 	};
 }
 
-export type DetectionQualityLoadResult =
+type DetectionQualityLoadResult =
 	| { status: 'loaded'; events: DetectionQualityEvent[] }
 	| { status: 'empty' }
 	| { status: 'error'; code: 'corrupt' | 'unavailable' };
 
-export type DetectionQualityAppendResult =
+type DetectionQualityAppendResult =
 	| { status: 'saved' | 'duplicate' }
 	| { status: 'error'; code: 'conflict' | 'corrupt' | 'unavailable' };
 

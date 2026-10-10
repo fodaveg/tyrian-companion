@@ -18,7 +18,7 @@ import {
 	type StoredSessionLootSummary,
 } from './session-note-renderer';
 
-export const SESSION_HISTORY_EXPORT_VERSION = 1 as const;
+const SESSION_HISTORY_EXPORT_VERSION = 1 as const;
 export const SESSION_HISTORY_JSON_FILE = 'tyrian-companion-sessions-v1.json';
 export const SESSION_HISTORY_CSV_FILE = 'tyrian-companion-sessions-v1.csv';
 
@@ -103,7 +103,7 @@ export interface DurableSessionHistoryRecord {
 	lootRows: readonly DurableSessionLootLine[];
 }
 
-export interface DurableSessionNoteEvidence {
+interface DurableSessionNoteEvidence {
 	schema: 1 | 2 | 3 | 4 | 5 | 6;
 	event: 'halloween' | null;
 	sessionRef: string;
@@ -112,7 +112,7 @@ export interface DurableSessionNoteEvidence {
 	positiveItemDeltas: readonly { itemId: number; quantity: number }[] | null;
 }
 
-export type DurableSessionNoteInspection =
+type DurableSessionNoteInspection =
 	| { status: 'ok'; session: DurableSessionHistoryRecord; evidence: DurableSessionNoteEvidence }
 	| { status: 'non_candidate' | 'invalid' };
 
@@ -145,12 +145,12 @@ export interface SessionHistoryScrubGate {
 	detectorStatus: string;
 }
 
-export interface SessionHistoryScrubLease {
+interface SessionHistoryScrubLease {
 	isLive(): boolean;
 	release(): void;
 }
 
-export interface SessionHistoryRuntimeMutationLease { release(): void }
+interface SessionHistoryRuntimeMutationLease { release(): void }
 
 /** Shared synchronous exclusion between a destructive scrub and runtime transitions. */
 export class SessionHistoryRuntimeAuthority {
@@ -250,10 +250,10 @@ export interface SharedNoteRead {
  * Hands a history every note another history of the same run read. `stale` is true when the host named the note in a change
  * after the read began: the text may already be the old one, and a history that trusts change events must not keep it.
  */
-export type SharedNoteReadPeer = (file: SessionHistoryFile, read: SharedNoteRead, stale: boolean) => void;
+type SharedNoteReadPeer = (file: SessionHistoryFile, read: SharedNoteRead, stale: boolean) => void;
 
 /** A note's text, read; `inspect` inspects it for both histories, once however many callers ask, and hands it to the peers. */
-export interface SharedNoteText {
+interface SharedNoteText {
 	readonly content: string;
 	inspect(): Promise<SharedNoteRead>;
 }
@@ -264,7 +264,7 @@ export interface SharedNoteText {
  * - `fresh`: the note is read again even when a read is under way, and the result is still handed to the peers;
  * - `private`: a plain read, handed to nobody and following no change (the export's whole-vault read).
  */
-export type SharedNoteReadMode = 'join' | 'fresh' | 'private';
+type SharedNoteReadMode = 'join' | 'fresh' | 'private';
 
 /**
  * The reads of session notes in one run, shared by the durable history and the live one (Z24). Before it, opening the history

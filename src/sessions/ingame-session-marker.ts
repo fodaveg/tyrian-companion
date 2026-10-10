@@ -46,7 +46,7 @@ export interface IngameSessionView {
 	canStart: boolean;
 }
 
-export interface IngameSessionMarkerPort {
+interface IngameSessionMarkerPort {
 	/** The bridge is enabled. */
 	enabled(): boolean;
 	session(): IngameSessionView;
@@ -61,7 +61,7 @@ export interface IngameSessionMarkerPort {
 	recordFailure(error: unknown): void;
 }
 
-export interface IngameSessionMarkerOptions {
+interface IngameSessionMarkerOptions {
 	port: IngameSessionMarkerPort;
 	presence: () => IngamePresenceSnapshot;
 	now: () => number;

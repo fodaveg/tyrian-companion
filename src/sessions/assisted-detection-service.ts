@@ -56,7 +56,7 @@ export const HALLOWEEN_RELEVANT_ITEM_RULE_SET = Object.freeze({
  */
 export const DEFAULT_INACTIVITY_THRESHOLD_MS = 15 * 60_000;
 
-export type AssistedDetectionDisarmReason =
+type AssistedDetectionDisarmReason =
 	| 'initial'
 	| 'user'
 	| 'mode_off'
@@ -114,7 +114,7 @@ type PollSchedulerFactory = (
 	options: Pick<ApiPollSchedulerOptions, 'poll' | 'onStateChange' | 'diagnostics' | 'resolveActionContext'>,
 ) => PollSchedulerPort;
 
-export interface AssistedDetectionServiceOptions {
+interface AssistedDetectionServiceOptions {
 	snapshots: Pick<StorageSnapshotService, 'capture'>;
 	getSessionState: () => SessionState;
 	onStateChange?: (state: AssistedDetectionState) => void;

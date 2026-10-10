@@ -33,7 +33,7 @@ export interface RenderedSessionNote<AccountRef extends string | null = string> 
 	content: string;
 }
 
-export type RenderSessionNoteResult =
+type RenderSessionNoteResult =
 	| { status: 'ok'; note: RenderedSessionNote }
 	| { status: 'invalid'; reason: 'hash_unavailable' | 'arithmetic_invalid' };
 
