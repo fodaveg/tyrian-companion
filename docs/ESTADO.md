@@ -1,8 +1,8 @@
 # Estado
 
-## Candidato 0.6.28: aviso de vault movido, cursor de gráfica estable y aviso de puerto ocupado (10 oct 2026)
+## Canal 0.6.28 publicado: aviso de vault movido, cursor de gráfica estable y aviso de puerto ocupado (10 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `952a393` (rama `integracion/0.6.28` sobre el canal
+**Canal publicado; instalación/runtime pendiente.** Parte de `952a393` (rama `integracion/0.6.28` sobre el canal
 0.6.27) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
 
@@ -14,7 +14,13 @@
   gráfica de sesión sin saltos y en ventana emergente (N8), aviso de puerto del juego ocupado (HP-05) y poda del historial
   de precios que retira filas ilegibles (DU-07). Interno: THREAT-MODEL con las nueve bases (DU-10), regla de dirección de
   capas con test (DE-02), retirada del panel de alertas sin montar y de un script huérfano (DE-05, GR-12).
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Publicación (medida el 10 oct 2026). Tag `0.6.28` sobre `55abc0c` (commit de atestación; árbol
+  `433f4d8cfd2438c34481a849291c187c0f99d754`). CI de GitHub: run `38037523960`, success. Workflow de release: run
+  `38038673325`, success. «BRAT release contract: PASS (version=0.6.28; assets=8)» sobre la salida real de
+  `gh release view 0.6.28 --json tagName,name,isDraft,isPrerelease,assets`, con `isDraft` false e `isPrerelease` false.
+  SHA-256 del zip `tyrian-companion-0.6.28.zip`: `a957d9c48beee7522b2310862ac65c14a1483ca7e689871f62bcf2cb72a2fba0`.
+- Pendiente: verificar la instalación y la carga de la 0.6.28 en un Obsidian y un Hebra reales. Nada de eso se ha
+  comprobado.
 
 ## Canal 0.6.27 publicado: logros de Leyspring, notas de sesión legibles, gráfica con burbuja y Hebra en dos idiomas (10 oct 2026)
 
