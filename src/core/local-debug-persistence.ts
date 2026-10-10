@@ -162,6 +162,7 @@ export function createLocalDebugPersistenceSink(
 			// `cancelled` (a store's own `close()`) is routine and goes at `info`, as `LocalDebugActionRunner.cancel` does.
 			level: event.phase === 'failure' ? 'error'
 				: event.phase === 'skip' && event.code === 'cancelled' ? 'info'
+				: isLifeLockVerdict(event) ? 'warn'
 				: event.phase === 'skip' && event.code !== 'skipped' ? 'warn' : 'debug',
 			phase: event.phase,
 			code: event.code,
@@ -175,6 +176,21 @@ export function createLocalDebugPersistenceSink(
 			details: { ...event.detail, store: event.store, operation: event.operation },
 		});
 	};
+}
+
+/**
+ * RT-04 (10 Oct 2026): the verdicts of the session life lock (`life_lock_proven`, `life_lock_absent`)
+ * and a lease taken over from a gone owner (`result: taken`) are what tells, from the log alone, whether
+ * the lock works. At `debug` they never reached a client on the default `warn` level, and `info` would
+ * not either (the default drops it), so they are written at `warn`. They are not anomalies but they are
+ * rare: one verdict per instance and one `taken` per takeover, never per tick. `life_lock_unmarked`
+ * already warns through its own code.
+ */
+function isLifeLockVerdict(event: LocalDebugPersistenceEvent): boolean {
+	if (event.store !== 'coordination') return false;
+	if (event.phase !== 'success' && event.phase !== 'skip') return false;
+	const detail = event.detail;
+	return detail?.result === 'taken' || detail?.state === 'life_lock_proven' || detail?.state === 'life_lock_absent';
 }
 
 /** Maps browser storage failures without retaining their message, stack or request. */
