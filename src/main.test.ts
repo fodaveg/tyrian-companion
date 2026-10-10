@@ -1038,6 +1038,8 @@ describe('one-click inventory sync outcome persistence', () => {
 		const plugin = withObsidianHost({
 			settings: { apiKeySecret: 'gw2-primary', language: 'es', inventorySyncLastRun: null },
 			saveData: async (data: unknown) => { saved.push(data); },
+			// The save re-reads the store first; a store with nothing in it leaves the base to the memory.
+			loadData: async () => null,
 		});
 		const outcome = {
 			status: 'success' as const, finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
