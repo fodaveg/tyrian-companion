@@ -56,6 +56,11 @@ export class LocalDebugJsonlWriter {
 	private current: WriterOperation = { abandoned: false };
 	private initialized = false;
 	private readonly fileBytes: number[];
+	/**
+	 * Per file: its size and tail are known (it was read and, if needed, repaired). Startup only
+	 * reads as far as the newest record; the older files are read when something needs them.
+	 */
+	private readonly scanned: boolean[];
 	private fileCount = 0;
 	private recoveredTails = 0;
 	private maxSequence = 0;
@@ -71,9 +76,14 @@ export class LocalDebugJsonlWriter {
 		this.schedule = options.schedule ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
 		this.cancel = options.cancel ?? ((handle) => { window.clearTimeout(handle as number); });
 		this.fileBytes = Array.from({ length: this.maximumFiles }, () => 0);
+		this.scanned = Array.from({ length: this.maximumFiles }, () => false);
 	}
 
-	/** Creates the directory, repairs truncated tails and restores the maximum persisted sequence. */
+	/**
+	 * Creates the directory and restores the maximum persisted sequence from the newest file that
+	 * holds a record (normally the active one), repairing that file's truncated tail. Older files
+	 * are not read here: rotation, `readAll` and `status` byte totals complete the picture later.
+	 */
 	initialize(): Promise<LocalDebugWriterStatus> {
 		return this.serial(async () => {
 			await this.initializeUnlocked();
@@ -115,6 +125,7 @@ export class LocalDebugJsonlWriter {
 	readAll(): Promise<readonly string[]> {
 		return this.serial(async () => {
 			await this.initializeUnlocked();
+			await this.scanRemainingUnlocked();
 			const contents: string[] = [];
 			for (let index = this.maximumFiles - 1; index >= 0; index -= 1) {
 				const path = this.filePath(index);
@@ -133,6 +144,7 @@ export class LocalDebugJsonlWriter {
 				if (await this.storage.exists(path)) await this.storage.remove(path);
 			}
 			this.fileBytes.fill(0);
+			this.scanned.fill(true);
 			this.fileCount = 0;
 			this.maxSequence = 0;
 			return this.statusUnlocked();
@@ -191,28 +203,52 @@ export class LocalDebugJsonlWriter {
 	private async initializeUnlocked(): Promise<void> {
 		if (this.initialized) return;
 		if (!await this.storage.exists(this.directory)) await this.storage.mkdir(this.directory);
+		this.fileBytes.fill(0);
+		this.scanned.fill(false);
 		let files = 0;
 		let maximumSequence = 0;
 		for (let index = 0; index < this.maximumFiles; index += 1) {
-			const path = this.filePath(index);
-			if (!await this.storage.exists(path)) continue;
-			files += 1;
-			const original = await this.storage.read(path);
-			const recovered = recoverJsonl(original);
-			if (recovered.content !== original) {
-				await this.storage.write(path, recovered.content);
-				this.recoveredTails += 1;
+			if (!await this.storage.exists(this.filePath(index))) {
+				// A file that is not there has nothing to read, so its (zero) size is already known.
+				this.scanned[index] = true;
+				continue;
 			}
-			maximumSequence = Math.max(maximumSequence, recovered.maxSequence);
-			this.fileBytes[index] = utf8Bytes(recovered.content);
+			files += 1;
+			// Sequences grow from older files to newer ones: the first file that holds a record
+			// has the maximum, so the rest stay unread (only counted).
+			if (maximumSequence > 0) continue;
+			maximumSequence = await this.scanFileUnlocked(index);
 		}
 		this.fileCount = files;
 		this.maxSequence = maximumSequence;
 		this.initialized = true;
 	}
 
+	/** Reads one existing file, cuts a truncated tail off it and records its size. */
+	private async scanFileUnlocked(index: number): Promise<number> {
+		const path = this.filePath(index);
+		const original = await this.storage.read(path);
+		const recovered = recoverJsonl(original);
+		if (recovered.content !== original) {
+			await this.storage.write(path, recovered.content);
+			this.recoveredTails += 1;
+		}
+		this.fileBytes[index] = utf8Bytes(recovered.content);
+		this.scanned[index] = true;
+		return recovered.maxSequence;
+	}
+
+	/** Reads the files startup skipped, so their sizes and truncated tails are known too. */
+	private async scanRemainingUnlocked(): Promise<void> {
+		for (let index = 0; index < this.maximumFiles; index += 1) {
+			if (!this.scanned[index]) await this.scanFileUnlocked(index);
+		}
+	}
+
 	/** Rotates the exact bounded file set from oldest to newest. */
 	private async rotateUnlocked(): Promise<void> {
+		// The shift below moves the byte counts with the files, so every one has to be known first.
+		await this.scanRemainingUnlocked();
 		const oldest = this.filePath(this.maximumFiles - 1);
 		if (await this.storage.exists(oldest)) {
 			await this.storage.remove(oldest);
