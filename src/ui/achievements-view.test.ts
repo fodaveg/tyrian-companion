@@ -1275,13 +1275,46 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('Los elementos están ocultos hasta que avances en alguno.');
 	});
 
-	it('223 «The Emperor\'s New Wardrobe» lists its 7 achievements and says the bar counts pieces, each achievement giving several', async () => {
+	it('223 «The Emperor\'s New Wardrobe» lists its 5 Specialty Armors and says the bar counts pieces, each achievement giving several', async () => {
 		const real = detailsOf(SWEEP_SAMPLE_PAGE);
 		const h = harness({ tracked: [223], details: real, categories: parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!, noReading: true });
 		h.view.mount();
 		await h.settle();
-		expect(rows(h)).toHaveLength(7);
+		expect(rows(h)).toHaveLength(5);
 		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).toContain('La barra cuenta piezas; cada logro de abajo aporta varias.');
 		expect(h.container.querySelector('.tyrian-achievements__body')?.textContent).not.toContain('La barra cuenta más de lo que aparece');
+	});
+
+	it('a category of weekly achievements (6832) says the elements are periodic', async () => {
+		const real = detailsOf(SWEEP_SAMPLE_PAGE);
+		const h = harness({ tracked: [6832], details: real, categories: parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!, noReading: true });
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('Los elementos son periódicos (diarios o semanales) y no se listan aquí.');
+	});
+
+	it('without an API key the failed-categories text does not point to the disabled «Actualizar progreso»: it says the list is retried on reopening', async () => {
+		const h = harness({ tracked: [99417], details: new Map([[99417, detail(99417, { flags: ['CategoryDisplay'], bits: [], tiers: [{ count: 2, points: 1 }] })]]), categoriesFailFirst: 9, hasKey: false });
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('No se pudo cargar la lista de elementos. Se reintenta al volver a abrir la vista.');
+	});
+
+	it('a reading that fails still reloads the list: the categories that had failed come in and the notice goes', async () => {
+		const meta = detail(99417, { name: 'Meta', flags: ['CategoryDisplay'], bits: [], tiers: [{ count: 1, points: 1 }] });
+		const h = harness({
+			tracked: [99417], details: new Map([[99417, meta], [5, detail(5, { bits: [] })]]), noReading: true,
+			categories: [{ id: 50, name: 'Cat', order: 1, icon: null, achievementIds: [99417, 5] }], categoriesFailFirst: 2,
+			refresh: { status: 'unavailable', reason: 'request_failed' },
+		});
+		h.view.mount();
+		await h.settle();
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('No se pudo cargar la lista de elementos. Pulsa «Actualizar progreso».');
+		h.refreshButton().click();
+		await h.settle();
+		await h.settle();
+		expect(h.refresh).toHaveBeenCalledTimes(1);
+		expect(rows(h)).toHaveLength(1);
+		expect(h.text()).not.toContain('No se pudo cargar la lista de elementos');
 	});
 });
