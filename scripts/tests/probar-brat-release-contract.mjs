@@ -1,4 +1,5 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -47,6 +48,20 @@ try {
 		'release-not-published',
 		'draft release',
 	);
+	assertRed(
+		fixtureRoot,
+		releaseMetadata({ isPrerelease: true }),
+		'release-prerelease',
+		'prerelease',
+	);
+	const { isPrerelease: _omitted, ...withoutPrereleaseField } = releaseMetadata();
+	assertRed(
+		fixtureRoot,
+		withoutPrereleaseField,
+		'release-prerelease',
+		'release metadata that does not say whether it is a prerelease',
+	);
+	assertDownloadedAssets(fixtureRoot);
 	assertRed(
 		fixtureRoot,
 		releaseMetadata({ assets: releaseAssets().slice(0, -1) }),
@@ -174,6 +189,62 @@ function assertStdinGreen(root, release) {
 	}
 }
 
+/**
+ * HP-11, the half the metadata cannot see: with the release downloaded, `hebra.json` has to declare the
+ * manifest version and the sha256 of the Hebra files that were really published, and any asset whose
+ * `digest` GitHub reported has to match the bytes. One green case and one red per finding.
+ */
+function assertDownloadedAssets(root) {
+	const build = (name, { version = '0.1.19', mainBytes = 'export const activate = 1;\n', declaredMain } = {}) => {
+		const directory = resolve(testRoot, `assets-${name}`);
+		mkdirSync(directory, { recursive: true });
+		const stylesBytes = '.tyrian{}\n';
+		writeFileSync(resolve(directory, 'hebra-main.mjs'), mainBytes);
+		writeFileSync(resolve(directory, 'hebra-styles.css'), stylesBytes);
+		const manifest = {
+			version,
+			files: {
+				'hebra-main.mjs': declaredMain ?? `sha256:${sha256(mainBytes)}`,
+				'hebra-styles.css': `sha256:${sha256(stylesBytes)}`,
+			},
+		};
+		writeFileSync(resolve(directory, 'hebra.json'), JSON.stringify(manifest));
+		return directory;
+	};
+	const withDigests = (directory) => releaseMetadata({
+		assets: releaseAssets().map((asset) => {
+			try {
+				return { ...asset, digest: `sha256:${sha256(readFileSync(resolve(directory, asset.name)))}` };
+			} catch {
+				return asset;
+			}
+		}),
+	});
+	const cases = [
+		['green: consistent hebra.json and digests', build('green'), null, null],
+		['hebra.json with another version', build('version', { version: '0.1.18' }), 'hebra-manifest-version', null],
+		['hebra.json declaring another sha256 for hebra-main.mjs', build('hash', { declaredMain: `sha256:${'0'.repeat(64)}` }), 'hebra-manifest-hash', null],
+		['a published hebra-main.mjs that GitHub digests differently', build('digest'), 'release-asset-digest', 'tamper'],
+		['a download without hebra.json', build('missing'), 'hebra-manifest-unreadable', 'remove'],
+	];
+	for (const [label, directory, category, mutation] of cases) {
+		const release = withDigests(directory);
+		if (mutation === 'tamper') writeFileSync(resolve(directory, 'hebra-main.mjs'), 'tampered\n');
+		if (mutation === 'remove') rmSync(resolve(directory, 'hebra.json'));
+		const path = resolve(testRoot, `downloaded-${category ?? 'green'}.json`);
+		writeFileSync(path, `${JSON.stringify(release)}\n`);
+		const result = spawnSync(process.execPath, [guardrail, '--release-json', path, '--assets-dir', directory], { cwd: root, encoding: 'utf8' });
+		if (result.error) fail(`${label}: could not execute the guardrail`);
+		else if (category === null && (result.status !== 0 || !result.stdout.includes('PASS'))) fail(`${label} was rejected: ${result.stderr}`);
+		else if (category !== null && (result.status === 0 || !result.stderr.includes(`BRAT release contract: ${category}\n`))) fail(`${label} did not turn red as ${category}`);
+		else process.stdout.write(`PASS: ${label}${category === null ? '' : ` turned red: ${category}`}\n`);
+	}
+}
+
+function sha256(bytes) {
+	return createHash('sha256').update(bytes).digest('hex');
+}
+
 function assertRed(root, release, category, label) {
 	const path = resolve(testRoot, `${category}.json`);
 	writeFileSync(path, `${JSON.stringify(release)}\n`);
@@ -192,6 +263,7 @@ function releaseMetadata(overrides = {}) {
 		tagName: '0.1.19',
 		name: '0.1.19',
 		isDraft: false,
+		isPrerelease: false,
 		assets: releaseAssets(),
 		...overrides,
 	};

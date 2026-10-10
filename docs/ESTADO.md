@@ -68,15 +68,17 @@ ningún test en Obsidian ni Hebra reales; no se tocó código. El CI de GitHub s
   (`6500b843`, run `38029515920`) salió en ROJO por `bench:h6-live-session` («end-of-session p95 113.92ms > 100ms»), el
   mismo paso y la misma cifra que el CI de `670ead57` (run `38028453458`, «p95 114.43ms»); el último verde es `6fbe77e`.
   Un commit solo de docs no cambia el bench: el exceso viene de la 0.6.25/0.6.26 o del runner. Tarea `e2e3923b` en el
-  proyecto de guardarraíles.
+  proyecto de guardarraíles. **Resuelto el 10 oct 2026:** `b6e8656` evita valorar dos veces un objeto del que no ha
+  salido nada del inventario, y el CI de `af030b0` (run `38030787443`) está en verde, con `bench:h6-live-session`
+  incluido (p95 al final 70,7 ms, máximo 100). Desde `af030b0` el CI de `main` ya no está rojo.
 
 Dónde seguir: las 25 decisiones están en las secciones «Decisiones de David» de los cinco proyectos de Lumbre. El guion
 humano de 30 minutos para comprobar la carga de la 0.6.24 en el Mac está en el apartado 3 de la nota «Tyrian Companion -
 Audit de evidencia en hosts reales (2026-10-10)».
 
-## Candidato 0.6.26: hallazgo mágico con repeticiones, notas de inventario que respetan comentarios y catálogo por lotes (10 oct 2026)
+## Canal 0.6.26 publicado: hallazgo mágico con repeticiones, notas de inventario que respetan comentarios y catálogo por lotes (10 oct 2026)
 
-**Candidato; no publicado ni etiquetado.** Es la única candidata y contiene la 0.6.25, que no se publica ni se etiqueta
+**Canal publicado; instalación/runtime pendiente.** Es la única que se publicó y contiene la 0.6.25, que no se publica ni se etiqueta
 nunca: quien actualice pasa de la 0.6.24 publicada a la 0.6.26. Parte de
 `80719eb` (rama de integración que ya contiene la 0.6.25 y estos lotes) y añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
@@ -94,8 +96,18 @@ nunca: quien actualice pasa de la 0.6.24 publicada a la 0.6.26. Parte de
   límite conocido de la 0.6.25 sobre el nombre de reserva. Límites que quedan: un `#` suelto, las líneas en blanco
   dentro de un bloque de comentarios se pierden, y un comentario en línea al final de una clave gestionada pasa a una
   línea propia.
-- Pendiente: el gate sobre el commit definitivo, la publicación de la 0.6.26 y verla en un
-  cliente real.
+- Sesión en vivo, gráfico: cada cambio de precios revalora el gráfico entero y, en formato 2, cada valoración calcula la
+  comisión del bazar. `b6e8656` evita valorar dos veces un objeto del que no ha salido nada del inventario (p95 al final
+  de una sesión larga de 85 a 66-72 ms en las pruebas; formato 1, 48 ms). El resto queda como tarea (Z34). El CI de
+  `670ead5` salió rojo por `bench:h6-live-session` y por eso no se etiquetó.
+- Publicación (medida el 10 oct 2026). Tag `0.6.26` sobre `af030b0` (commit de atestación). CI de GitHub sobre `af030b0`:
+  run `38030787443`, success, con `bench:h6-live-session` (p95 al final 70,7 ms en el CI, máximo 100). Workflow de
+  release: run `38031373642`, success. «BRAT release contract: PASS (version=0.6.26; assets=8)» sobre la salida real de
+  `gh release view 0.6.26`; assets subidos (bytes): `hebra-main.mjs` 2698729, `hebra-styles.css` 122387, `hebra.json`
+  29593, `main.js` 1977888, `manifest.json` 237, `styles.css` 96405, `tyrian-companion-0.6.26.zip` 2074840 y su
+  `.sha256` 94. La 0.6.25 nunca se publicó.
+- Pendiente: verificar la instalación y la carga de la 0.6.26 en un Obsidian y un Hebra reales. Nada de eso se ha
+  comprobado.
 
 ## Candidato 0.6.25: sesiones en formato 2, resumen de sesiones, ajustes que no se pisan y arranque más ligero (10 oct 2026)
 

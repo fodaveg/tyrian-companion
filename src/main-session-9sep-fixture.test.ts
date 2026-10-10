@@ -122,7 +122,7 @@ async function seedRuntimeRecord(factory: IDBFactory, record: Record<string, unk
 	const database = await openIndexedDb({
 		factory,
 		databaseName: SESSION_RUNTIME_DB_NAME,
-		databaseVersion: SESSION_RUNTIME_DB_VERSION,
+		databaseVersion: 1,
 		schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
 		accept: () => true,
 		onVersionChange: () => undefined,

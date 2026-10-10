@@ -13,7 +13,6 @@ import { COORDINATION_DB_NAME } from './coordination-store';
 import { StorageDeadline } from './storage-deadline';
 import {
 	SESSION_RUNTIME_DB_NAME,
-	SESSION_RUNTIME_DB_VERSION,
 	SESSION_RUNTIME_KEY,
 	SESSION_RUNTIME_STORE_NAME,
 } from './session-runtime-store';
@@ -173,11 +172,12 @@ async function databaseNames(factory: IDBFactory): Promise<string[]> {
 	return (await factory.databases()).map((info) => info.name ?? '');
 }
 
+/** The database as the release before the live journal left it: version 1, the session store alone (DU-01). */
 function openRuntime(factory: IDBFactory, name: string): Promise<IDBDatabase> {
 	return openIndexedDb({
 		factory,
 		databaseName: name,
-		databaseVersion: SESSION_RUNTIME_DB_VERSION,
+		databaseVersion: 1,
 		schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
 		toError: (reason) => new Error(`Could not open the fixture database: ${reason}`),
 	});
@@ -227,7 +227,12 @@ describe('a scope whose engine does not answer', () => {
 });
 
 async function readLegacy(factory: IDBFactory): Promise<{ record: unknown; owner: unknown }> {
-	const database = await openRuntime(factory, SESSION_RUNTIME_DB_NAME);
+	// Whatever version it is in by now: reading must neither upgrade it nor fail on it.
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = factory.open(SESSION_RUNTIME_DB_NAME);
+		request.onsuccess = () => { resolve(request.result); };
+		request.onerror = () => { reject(new Error('Could not open the fixture database.')); };
+	});
 	const values = await new Promise<{ record: unknown; owner: unknown }>((resolve, reject) => {
 		const transaction = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readonly');
 		const store = transaction.objectStore(SESSION_RUNTIME_STORE_NAME);

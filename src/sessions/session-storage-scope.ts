@@ -26,14 +26,13 @@
  * that identity lives in the coordination database.
  */
 
-import { openIndexedDb } from '../core/indexed-db-open';
 import { COORDINATION_DB_NAME } from './coordination-store';
 import { StorageDeadline, StorageUnansweredError } from './storage-deadline';
 import {
 	SESSION_RUNTIME_DB_NAME,
-	SESSION_RUNTIME_DB_VERSION,
 	SESSION_RUNTIME_KEY,
 	SESSION_RUNTIME_STORE_NAME,
+	openSessionRuntimeDatabase,
 } from './session-runtime-store';
 
 /** Third key in the runtime object store (no schema upgrade), only ever written in the unscoped database. */
@@ -88,11 +87,9 @@ export async function resolveSessionStorageNames(
 	if (typeof listDatabases !== 'function') return own;
 	const existing = new Set((await listDatabases.call(factory)).map((info) => info.name));
 	if (!existing.has(SESSION_RUNTIME_DB_NAME)) return own;
-	const database = await openIndexedDb({
+	const database = await openSessionRuntimeDatabase({
 		factory,
 		databaseName: SESSION_RUNTIME_DB_NAME,
-		databaseVersion: SESSION_RUNTIME_DB_VERSION,
-		schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
 		onVersionChange: 'close',
 		toError: (reason) => new Error(reason === 'blocked'
 			? 'The earlier session storage was blocked.'

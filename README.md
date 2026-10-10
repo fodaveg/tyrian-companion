@@ -1,7 +1,7 @@
 # Tyrian Companion
 
 > **Contract update, October 6, 2026:** [live1](docs/SPEC-live-loot.md) supersedes the API-only session
-> design. The 0.6.24 channel is published with its release-tree checks verified; installation and
+> design. The 0.6.26 channel is published with its release-tree checks verified; installation and
 > runtime QA remain pending. H1–H18 descriptions below retain legacy history, not permission to
 > restore automatic authenticated API requests in live sessions.
 
@@ -22,10 +22,10 @@ author takes no responsibility for anything that happens to your account, your g
 computer from using them.
 
 The October 6, 2026 [live1 contract](docs/SPEC-live-loot.md) authorizes a passive inventory reader in
-our Nexus addon as the source of new sessions. **The 0.6.24 channel is published;
+our Nexus addon as the source of new sessions. **The 0.6.26 channel is published;
 installation and runtime QA remain pending.** This does not prove that an installed older addon supplies it.
-Authenticated GW2 API requests are reserved for explicit manual inventory/wallet operations and
-connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
+Authenticated GW2 API requests are reserved for explicit manual inventory, wallet and achievements
+operations and connection checks; public catalog and prices remain available. Linux with Steam/Proton and Nexus
 is primary. Since October 8, 2026 (David's decision) the Nexus addon is required for the live features on
 every platform; the Blish HUD module is frozen at its published 0.5.0 and receives no new features. Windows
 with Nexus and the same addon is the expected route for Windows players, but the addon's reader has only
@@ -46,7 +46,7 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 
 > [!WARNING]
 > `manifest.json` identifies the checkout or installed candidate; it does not by itself prove that
-> version is published or loaded. The [0.6.24 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.24)
+> version is published or loaded. The [0.6.26 channel](https://github.com/fodaveg/tyrian-companion/releases/tag/0.6.26)
 > is published; real-client installation/runtime QA remains pending. Use a disposable vault and
 > record the exact Companion and addon versions when testing.
 
@@ -108,7 +108,7 @@ Obsidian plugin assets. Publication does not prove installation or runtime behav
 ## Install the beta
 
 For Obsidian, use desktop `1.11.4` or newer and a disposable vault. BRAT installs published beta
-versions; select the published 0.6.24 release. Game sessions also need the matching Nexus producer.
+versions; select the published 0.6.26 release. Game sessions also need the matching Nexus producer.
 The Nexus addon is required on every platform, Windows included; Blish HUD is frozen at 0.5.0.
 
 1. From **Settings → Community plugins → Browse**, install and enable
@@ -119,7 +119,7 @@ The Nexus addon is required on every platform, Windows included; Blish HUD is fr
 3. Back in **Settings → Community plugins**, enable **Tyrian Companion** and open its settings page.
 4. Open the command palette and run **Open companion**. For a live session, continue with the
    collector/bridge/Nexus setup below. **No GW2 API key or Check connection step is required.**
-5. Only if using manual inventory/wallet features or explicitly checking the account connection,
+5. Only if using manual inventory/wallet/achievements features or explicitly checking the account connection,
    [create an API key](docs/API-KEY.md), select or create a secret in **API key**, and store the
    value in Obsidian Secret Storage. The plugin setting retains only the secret name. Use
    **Check connection** when you want to validate that API connection; it is not session setup.
@@ -130,14 +130,14 @@ a new release; that delay proves neither installation success nor failure.
 Developers testing an exact unpublished commit use the existing
 [artifact installation procedure](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores).
 The canonical Hebra host uses the matching external-plugin assets, described in the same
-[beta guide](docs/BETA.md). The 0.6.24 channel is a normal release, not a prerelease,
+[beta guide](docs/BETA.md). The 0.6.26 channel is a normal release, not a prerelease,
 because the Hebra installer omits prereleases. In Hebra the plugin's `hebra.json` carries its own icon (the
 monster, `iconImage`) with the Lucide `sword` as fallback; Obsidian keeps the sword. Hebra builds that predate
 the field ignore it and paint the sword. Record installation/loading separately from session QA.
 
 ## First farming session
 
-These steps describe the published 0.6.24 code; they do not certify its behavior in
+These steps describe the published 0.6.26 code; they do not certify its behavior in
 an installed client. The [live QA matrix](docs/QA-MVP.md) records the pending real-client
 checks. Legacy API session controls are not a fallback for missing Nexus observations.
 
@@ -515,7 +515,7 @@ It does not verify semantic change scope or replace the test and CI gates.
 After publishing a GitHub Release, verify the metadata and exact BRAT asset set returned by GitHub:
 
 ```sh
-gh release view "<version>" --json tagName,name,isDraft,assets \
+gh release view "<version>" --json tagName,name,isDraft,isPrerelease,assets \
   | npm run release:brat-verify -- --release-json -
 ```
 
@@ -529,7 +529,7 @@ remain human QA even when the package and CI gates are green.
 
 For live1, the [current contract](docs/SPEC-live-loot.md) takes precedence over legacy session paths:
 no authenticated API request on load, presence, start, sampling, stop, recovery or live view refresh.
-Inventory/wallet and connection checks remain explicit manual operations. Local live journals are
+Inventory/wallet/achievements and connection checks remain explicit manual operations. Local live journals are
 private observations and must not be included in support reports. HUD messages exclude
 account/character identity, paths and secrets.
 
@@ -623,6 +623,12 @@ is single-flight and opening Settings does not list or read vault notes.
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 
 `account` is required for the initial connection; `characters`, `inventories`, `builds`, `wallet`, `tradingpost`, `progression`, and `unlocks` are recommended capabilities and appear as warnings rather than invalidating a key. URL-limited subtokens work when both connection endpoints are allowed, with a warning that future modules remain restricted.
+
+The **Update Leyspring achievements** command (also available in consult mode) reads `/v2/account` and
+`/v2/account/achievements` with the key, and the public `/v2/achievements?ids=` catalog for the names, and
+rewrites one managed note, `Achievements/Leyspring Hollows.md`, below the output folder. It needs the
+`progression` permission: without it, or without network, the note keeps what it said and the plugin
+tells you it could not update. The wiki links in the note are fixed data; the plugin never requests the wiki.
 
 Rate limits create a real cooldown: both connection controls remain disabled and show a live countdown until retry is allowed. Transient failures preserve the last verified account with an explicit stale-data warning.
 

@@ -367,6 +367,10 @@ import {
 	WalletVaultCaptureService,
 	WalletVaultSyncService,
 } from '../wallet/wallet-vault-sync';
+import { LeyspringCaptureService } from '../achievements/leyspring-capture';
+import { LeyspringNoteWriter } from '../achievements/leyspring-note';
+import { leyspringRunNotice } from '../achievements/leyspring-notice';
+import { LeyspringAchievementsService } from '../achievements/leyspring-service';
 import {
 	WalletVaultSyncController,
 	type WalletVaultSyncViewState,
@@ -396,6 +400,7 @@ type NoticeDiagnosticSource =
 	| 'halloween_price_alert'
 	| 'halloween_observation' | 'inventory_advisor_missing_key'
 	| 'wallet_sync'
+	| 'achievements_sync'
 	| 'proposal_unavailable'
 	| 'proposal_review_failed'
 	| 'pending_start_failed'
@@ -418,6 +423,8 @@ export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
 /** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
 export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
+/** Palette command that refreshes the Leyspring Hollows achievements note; manual, also in consult mode. */
+export const UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID = 'update-leyspring-achievements';
 /** The ONE view of a host's main screen that lists the three sections (`TyrianUiPort.registerSectionsView`). */
 export const TYRIAN_MAIN_VIEW_TYPE = 'tyrian-main-view';
 
@@ -429,7 +436,7 @@ const NO_VIEW: TyrianDisposer = () => undefined;
 /** Version of the managed-assets bundle the core hands to the manager, at start and on a language change. */
 const MANAGED_ASSETS_BUNDLE_VERSION = 8;
 
-const STANDALONE_COMMAND_IDS =[ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID] as const;
+const STANDALONE_COMMAND_IDS =[ALERT_INGAME_SECRET_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, EXPORT_LEGACY_SESSION_COMMAND_ID, UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID] as const;
 
 /**
  * `createTyrianRuntime(host)`: Tyrian over any `TyrianHost`, Obsidian's (`src/main.ts`) or
@@ -549,6 +556,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** A mutable slot the one-click sync run swaps in for the duration of one capture; purely in-memory. */
 	private readonly inventoryAdvisorCaptureProgressListener: InventoryAdvisorCaptureProgressListenerRef = { current: null };
 	private walletVaultSync!: WalletVaultSyncController;
+	/** Built with the clients in `initializeRuntime`; null until then. */
+	private leyspringAchievements: LeyspringAchievementsService | null = null;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private priceHistory: PriceHistoryRuntime | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
@@ -790,6 +799,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
 		this.registerSessionExportCommands();
+		this.registerLeyspringAchievementsCommand();
 		// `state` reads `unattributed_origin` for both listeners below, not `window_error` or
 		// `unhandled_rejection`: those names described which browser event fired, which reads
 		// as attribution but is not one. The sanitizer already redacts any absolute path in
@@ -1288,6 +1298,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			},
 			apply: async (plan) => await walletVaultWriter.apply(plan),
 		});
+		this.leyspringAchievements = new LeyspringAchievementsService(
+			new LeyspringCaptureService(client, publicClient),
+			new LeyspringNoteWriter(labelledVault(host.vault, 'Achievements note'), host.vault.configDir),
+		);
 		const advisorServices = assembleAdvisor({
 			factory: indexedDB,
 			vaultId,
@@ -4578,6 +4592,40 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				},
 			});
 		}
+	}
+
+	/**
+	 * "Actualizar logros de Leyspring": a manual action that reads the player's achievements and
+	 * rewrites one managed note. Like the manual inventory and wallet actions it works in consult
+	 * mode too; nothing runs it on its own.
+	 */
+	private registerLeyspringAchievementsCommand(): void {
+		this.host.ui.registerCommand({
+			id: UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID,
+			name: createTranslator(this.settings.language).t('commands.updateLeyspringAchievements'),
+			callback: () => { void this.updateLeyspringAchievements().catch(() => undefined); },
+		});
+	}
+
+	async updateLeyspringAchievements(): Promise<void> {
+		const translator = createTranslator(this.settings.language);
+		const service = this.leyspringAchievements;
+		if (!this.runtimeReady || service === null) {
+			this.emitNotice(translateRuntime(translator, 'notices.pluginStarting'), 'plugin_starting');
+			return;
+		}
+		if (this.settings.legacyOutputFolder !== null || this.settings.legacyManagedAssetsRoot !== null) {
+			this.emitNotice(translateRuntime(translator, 'notices.leyspringAchievementsLegacyRoot'), 'achievements_sync');
+			return;
+		}
+		const perform = async () => {
+			const notice = leyspringRunNotice(translator, await service.run(this.configuredNotesRoot(), this.settings.language));
+			this.emitNotice(notice.text, 'achievements_sync');
+			return notice.failure === null ? undefined : {
+				phase: 'failure' as const, code: 'storage_failure' as const, details: { errorName: notice.failure.errorName },
+			};
+		};
+		await (this.localDebugActions?.run({ component: 'vault', action: 'vault_write', state: 'achievements_sync' }, perform) ?? perform());
 	}
 
 	private registerAlertIngameSecretCommand(): void {

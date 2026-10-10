@@ -12,11 +12,14 @@ const releaseSource = readFileSync(resolve(root, workflowDirectory, 'release.yml
 try {
 	testRepositoryIsGreen();
 	testGateMustPrecedePublication();
+	testGuardrailsMustRunBeforePackaging();
 	testMissingGateIsRed();
 	testShellCommentDoesNotSatisfyTheGate();
 	testWriteAccessIsRequiredAndConfined();
 	testTagTriggerIsRequired();
 	testPlanningIsRequired();
+	testNodeComesFromOneFile();
+	testCiKeepsWhatTheGateGaveUp();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
 }
@@ -44,6 +47,31 @@ function testGateMustPrecedePublication() {
 	const inverted = moveGateAfterPublication(releaseSource);
 	assert(inverted !== releaseSource, 'the suite could not build the inverted-order workflow, so it proves nothing');
 	assertFinding('a gate placed after the publication', inverted, 'release-gate-after-publication');
+}
+
+/**
+ * GR-02: `check` alone leaves the guardrail suites out, and a tag push does not
+ * trigger `ci.yml`. Removing the step, putting it after the package, or leaving
+ * only a shell comment about it has to be red.
+ */
+function testGuardrailsMustRunBeforePackaging() {
+	const without = removeStep(releaseSource, 'Guardrails');
+	assert(without !== releaseSource, 'the suite could not remove the guardrails step, so it proves nothing');
+	assertFinding('a release that never runs check:guardrails', without, 'release-missing-guardrails');
+
+	const guardrails = extractStep(releaseSource, 'Guardrails');
+	const packaging = extractStep(releaseSource, 'Build the release package');
+	assert(guardrails !== null && packaging !== null, 'the suite could not find the guardrails and packaging steps');
+	const late = releaseSource.replace(guardrails, '@@G@@').replace(packaging, packaging + guardrails).replace('@@G@@', '');
+	assert(late !== releaseSource, 'the suite could not build the late-guardrails workflow, so it proves nothing');
+	assertFinding('guardrails that run after the package is built', late, 'release-guardrails-after-package');
+
+	const commented = releaseSource.replace(
+		'        run: npm run check:guardrails',
+		'        run: |\n          # npm run check:guardrails\n          echo skipped',
+	);
+	assert(commented !== releaseSource, 'the suite could not comment the guardrails out, so it proves nothing');
+	assertFinding('guardrails that only exist inside a shell comment', commented, 'release-missing-guardrails');
 }
 
 /**
@@ -106,6 +134,49 @@ function testTagTriggerIsRequired() {
 	assertFinding('a workflow that does not fire on tags', releaseSource.replace("    tags: ['*']", '    branches: [main]'), 'release-not-triggered-by-tag');
 }
 
+/**
+ * GR-06: a literal Node in either workflow is how the publishing gate and the push gate diverged.
+ * Both must read `.nvmrc`, and `.nvmrc` must exist.
+ */
+function testNodeComesFromOneFile() {
+	const literal = releaseSource.replace("node-version-file: '.nvmrc'", "node-version: '22.20.0'");
+	assert(literal !== releaseSource, 'the suite could not put a literal Node in release.yml, so it proves nothing');
+	assertFinding('a release.yml with its own Node version', literal, 'workflow-node-not-from-nvmrc:release.yml');
+	assertCiFinding(
+		'a ci.yml job with its own Node version',
+		(ci) => ci.replace("node-version-file: '.nvmrc'", "node-version: '24.12.0'"),
+		'workflow-node-not-from-nvmrc:ci.yml',
+	);
+	const directory = buildRoot('no-nvmrc', releaseSource);
+	rmSync(join(directory, '.nvmrc'));
+	assert(
+		validateReleaseWorkflow(directory).findings.includes('nvmrc-missing-or-malformed'),
+		'a repository without .nvmrc was accepted',
+	);
+}
+
+/**
+ * GR-15 and GR-03: `ci.yml` carries the H8 spike (conditioned on the diff) and the slow-engine run.
+ * Removing either, or making the spike unconditional, has to be red.
+ */
+function testCiKeepsWhatTheGateGaveUp() {
+	assertCiFinding(
+		'a ci.yml that no longer runs the H8 spike',
+		(ci) => ci.replace('      - run: npm run test:h8-crossover-spike\n', '      - run: echo skipped\n'),
+		'ci-missing-h8-spike-job',
+	);
+	assertCiFinding(
+		'a ci.yml whose H8 spike runs on every push',
+		(ci) => ci.replace("    if: needs.detect-spike-changes.outputs.changed == 'true'\n", ''),
+		'ci-h8-spike-job-not-conditioned',
+	);
+	assertCiFinding(
+		'a ci.yml without the slow-engine run',
+		(ci) => ci.replace("TYRIAN_TEST_ENGINE_LATENCY_MS: '30'", "TYRIAN_TEST_ENGINE_LATENCY_MS: '0'"),
+		'ci-missing-slow-engine-step',
+	);
+}
+
 function testPlanningIsRequired() {
 	let stripped = releaseSource;
 	for (const name of ['Plan the BRAT release', 'Collect the exact asset paths']) stripped = removeStep(stripped, name);
@@ -141,10 +212,24 @@ function assertFinding(label, source, finding) {
 	);
 }
 
+function assertCiFinding(label, mutate, finding) {
+	const original = readFileSync(resolve(root, workflowDirectory, 'ci.yml'), 'utf8');
+	const mutated = mutate(original);
+	assert(mutated !== original, `the suite could not build "${label}", so it proves nothing`);
+	const directory = buildRoot(finding.replace(/[^a-z-]/gu, '-') + Math.random().toString(36).slice(2, 8), releaseSource);
+	writeFileSync(join(directory, workflowDirectory, 'ci.yml'), mutated);
+	const result = validateReleaseWorkflow(directory);
+	assert(
+		result.findings.includes(finding),
+		`${label} did not turn red with ${finding}; got [${result.findings.join(', ')}]`,
+	);
+}
+
 function buildRoot(name, releaseYaml) {
 	const directory = join(testRoot, name);
 	mkdirSync(join(directory, workflowDirectory), { recursive: true });
 	cpSync(resolve(root, workflowDirectory), join(directory, workflowDirectory), { recursive: true });
+	cpSync(resolve(root, '.nvmrc'), join(directory, '.nvmrc'));
 	writeFileSync(join(directory, workflowDirectory, 'release.yml'), releaseYaml);
 	return directory;
 }

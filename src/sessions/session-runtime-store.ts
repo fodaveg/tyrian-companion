@@ -4,12 +4,12 @@ import type { LiveSessionFormat, LiveSessionRuntimeRecord, LiveJournalEntryV1 } 
 import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-validation';
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
-import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey, LIVE_SESSION_JOURNAL_STORE_NAME,
+import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey,
 	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, readLiveJournalEntry, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen } from '../core/indexed-db-open';
+import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen, type IndexedDbStoreSchema, type OpenIndexedDbOptions } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -39,8 +39,61 @@ export interface RejectedLegacyArchive { key: string; reason: 'record_invalid' }
 
 export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
+/**
+ * The version a NEW database is created in, and the lowest one the published 0.6.26 opens. A database never goes above it
+ * unless a store is missing (see {@link openSessionRuntimeDatabase}): raising it for everybody would leave the 0.6.26 unable
+ * to open a healthy database. Do not open the database at a fixed version anywhere else.
+ */
 export const SESSION_RUNTIME_DB_VERSION = 2;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
+/**
+ * Defined here, not in `live-session-persistence` (which re-exports it): the schema below reads it while this module loads,
+ * and the two modules import each other, so a constant living there could still be uninitialised at that moment.
+ */
+export const LIVE_SESSION_JOURNAL_STORE_NAME = 'live-inventory-journal-v1';
+/** The ONE schema of the session runtime database; every open of it, whoever opens it, passes this. */
+export const SESSION_RUNTIME_SCHEMA: readonly IndexedDbStoreSchema[] = [
+	{ name: SESSION_RUNTIME_STORE_NAME },
+	{ name: LIVE_SESSION_JOURNAL_STORE_NAME, indexes: [{ name: 'session', keyPath: 'sessionId' }] },
+];
+
+/** Options of {@link openSessionRuntimeDatabase}: everything `openIndexedDb` takes except what the schema fixes. */
+export type OpenSessionRuntimeDatabaseOptions = Omit<OpenIndexedDbOptions, 'databaseVersion' | 'schema'>;
+
+/**
+ * Opens the session runtime database with the complete schema and repairs one that is missing a store.
+ *
+ * A new database, or one left in version 1, is opened in {@link SESSION_RUNTIME_DB_VERSION} and gets every store on that
+ * upgrade. One already in a higher version is opened in the version it has: asking for a lower one fails with
+ * `VersionError`, and asking for a higher one would lock out the release that wrote it. Only when a store is still missing
+ * (a database an earlier incomplete upgrade damaged, DU-01) is it opened again one version up so `applyIndexedDbSchema`
+ * creates what is missing. It is never deleted or recreated, because it holds the saved session.
+ */
+export async function openSessionRuntimeDatabase(options: OpenSessionRuntimeDatabaseOptions): Promise<IDBDatabase> {
+	const complete = (database: IDBDatabase): boolean => SESSION_RUNTIME_SCHEMA.every((store) => database.objectStoreNames.contains(store.name));
+	const openAt = async (databaseVersion: number, onVersionError?: () => void): Promise<IDBDatabase> => await openIndexedDb({
+		...options, databaseVersion, schema: SESSION_RUNTIME_SCHEMA,
+		toError: (reason, error) => { if (error?.name === 'VersionError') onVersionError?.(); return options.toError(reason, error); },
+	});
+	let tooLow = false;
+	// `allSettled` rather than try/catch: the only failure absorbed here is "the database is already above the minimum".
+	const [first] = await Promise.allSettled([openAt(SESSION_RUNTIME_DB_VERSION, () => { tooLow = true; })]);
+	if (first.status === 'rejected' && !tooLow) throw first.reason;
+	let database: IDBDatabase | null = first.status === 'fulfilled' ? first.value : null;
+	if (database === null) {
+		// Already above the minimum: read the version it has and open exactly that one.
+		const current = await new Promise<number>((resolve, reject) => {
+			const request = options.factory.open(options.databaseName);
+			request.onsuccess = () => { const { version } = request.result; request.result.close(); resolve(version); };
+			request.onerror = () => { reject(options.toError('error', request.error)); };
+		});
+		database = await openAt(current);
+	}
+	if (complete(database)) return database;
+	const repairVersion = database.version + 1;
+	database.close();
+	return await openAt(repairVersion);
+}
 /** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
 export const SESSION_RUNTIME_KEY = 'active-session';
 /** Normalize retained API evidence without writing it, querying an account or changing its phase. */
@@ -616,11 +669,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 
 	private async openDatabase(): Promise<IDBDatabase> {
 		const databaseName = typeof this.databaseName === 'function' ? await this.databaseName() : this.databaseName;
-		return await openIndexedDb({
+		return await openSessionRuntimeDatabase({
 			factory: this.factory,
 			databaseName,
-			databaseVersion: SESSION_RUNTIME_DB_VERSION,
-			schema: [{ name: SESSION_RUNTIME_STORE_NAME }, { name: LIVE_SESSION_JOURNAL_STORE_NAME, indexes: [{ name: 'session', keyPath: 'sessionId' }] }],
 			accept: () => !this.unavailable,
 			onVersionChange: (database, kind) => {
 				if (this.database === database) this.database = null;

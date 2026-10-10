@@ -1,7 +1,9 @@
 import { canonicalJson } from '../core/canonical-sha256';
 import { normalizeSessionOutputFolder, type SessionNoteBlockId } from './session-note-model';
 import { assembleNote, inspectStoredSessionNote, readStoredSessionBlocks, sha256Text, type RenderedSessionNote } from './session-note-renderer';
-import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, liveSessionTitleStamp, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, liveSessionLocalDateTime, liveSessionTitleStamp, liveSessionUtcOffsetLabel, prepareLiveSessionPayload,
+	systemUtcOffsetMinutes, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { computeSummaryFigures, formatSummaryDuration } from './live-session-summary-figures';
 import { keys, liveItemValueCopper } from './live-session-reducer';
 
 const LIVE_NOTE_KEYS = ['tc_schema','tc_kind','tc_source','tc_session_ref','tc_account_ref','tc_locale','tc_started_at',
@@ -29,25 +31,52 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 		const label = (spanish: string, english: string): string => es ? spanish : english;
 		const money = (value: number | null): string => value === null ? '—' : `${String(value)} c`;
 		const names = input.displayNames ?? {};
-		const entity = (kind: 'item' | 'currency', id: number): string => escapeMarkdown(names[`${kind}:${String(id)}`] ?? `${label(kind === 'item' ? 'Objeto' : 'Moneda',kind === 'item' ? 'Item' : 'Currency')} ${String(id)}`);
+		// The name and, next to it, the id the payload below carries it under; with no name the fallback already says the id.
+		const entity = (kind: 'item' | 'currency', id: number): string => {
+			const name = names[`${kind}:${String(id)}`];
+			return name === undefined ? `${label(kind === 'item' ? 'Objeto' : 'Moneda',kind === 'item' ? 'Item' : 'Currency')} ${String(id)}` : `${escapeMarkdown(name)} (${String(id)})`;
+		};
+		// Every hour is written in the machine's local time (the title's), with the UTC of the start and the end beside it: the
+		// payload keeps the UTC instants, and these are for the person reading.
+		const offset = input.utcOffsetMinutes ?? systemUtcOffsetMinutes;
+		const local = (at: string): string => liveSessionLocalDateTime(at,offset);
+		const localAndUtc = (at: string): string => `${local(at)} (${at})`;
 		const valuation = session.valuation;
 		const prices = new Map(valuation.prices.map((price) => [price.itemId,price.unitCopper]));
 		const rows = session.journal.flatMap((entry) => entry.observations);
+		// Each stretch on a map, with the objects of most value of each (the figures of the summary note, worked out from this same
+		// payload). This note knows no item flags, so an account-bound item is valued here like the note's own valuation does. A
+		// session on fewer than two identified maps adds nothing, and its block is byte for byte the one it always was.
+		const breakdown = new Set(session.mapIntervals.flatMap((interval) => interval.mapId === null ? [] : [interval.mapId])).size > 1
+			? computeSummaryFigures(session,{},[]).mapBreakdown : null;
+		const stretchLines = breakdown === null || breakdown.rows.length < 2 ? [] : (() => {
+			const mapLabel = (mapId: number | null): string => mapId === null ? label('Sin mapa identificado','No identified map') : `${label('Mapa','Map')} ${String(mapId)}`;
+			const stretchValue = (stretch: (typeof breakdown.stretches)[number]): string => stretch.netCopper !== null ? money(stretch.netCopper)
+				: stretch.changes === 0 ? label('sin cambios de objetos','no item changes') : !stretch.priced ? label('sin precios de bazar','no bazaar prices') : '—';
+			const best = breakdown.stretches.filter((stretch) => stretch.top.length > 0);
+			return [`### ${label('Tramos de mapa','Map stretches')}`,
+				`| ${label('Mapa','Map')} | ${label('Entrada','Entered')} | ${label('Salida','Left')} | ${label('Duración','Length')} | ${label('Valor neto conocido de objetos','Known net item value')} |`,
+				'|---|---|---|---:|---:|',
+				...breakdown.stretches.map((stretch) => `| ${mapLabel(stretch.mapId)} | ${local(stretch.fromAt)} | ${local(stretch.toAt)} | ${formatSummaryDuration(stretch.ms)} | ${stretchValue(stretch)} |`),
+				...(best.length === 0 ? [] : ['', ...best.flatMap((stretch) => [`- ${mapLabel(stretch.mapId)} · ${label('objetos de más valor','objects of most value')}:`,
+					...stretch.top.map((row) => `  - ${entity('item',row.itemId)} ×${String(row.quantity)} · ${money(row.valueCopper)}`)])])];
+		})();
 		const contents: Record<SessionNoteBlockId,string> = {
 			summary: [
 				`## ${label('Resumen','Summary')}`,
-				`- ${label('Inicio','Started')}: ${session.startedAt}`,
-				`- ${label('Fin','Ended')}: ${session.endedAt}`,
+				`- ${label('Inicio','Started')}: ${localAndUtc(session.startedAt)}`,
+				`- ${label('Fin','Ended')}: ${localAndUtc(session.endedAt)}`,
+				`- ${label('Hora local','Local time')}: ${liveSessionUtcOffsetLabel(session.startedAt,offset)}`,
 				`- ${label('Ámbito','Scope')}: ${label('bolsas del personaje controlado','controlled character bags')}`,
 				`- ${label('Cambios observados','Observed changes')}: ${String(session.observationCount)}`,
 				`- ${label('Tiempo con objetos observados','Observed item time')}: ${String(session.observedItemsMs / 1000)} s`,
 				`- ${label('Tiempo con monedas cubiertas','Covered currency time')}: ${String(session.observedCurrenciesMs / 1000)} s`,
 				`- MF: ${session.magicFind.value === null ? label('desconocido','unknown') : `${String(session.magicFind.value)} (${session.magicFind.source === 'manual' ? label('declarado','manual') : label('verificado','verified')})`}`,
 				// Every stretch on an identified map, in order: when the map was entered and when it was left, so each change of map has
-				// its hour. They are the intervals the payload below already carries, written as this note writes everything (UTC, ids).
+				// its hour. They are the intervals the payload below already carries, in local time with their UTC beside it, and by id.
 				// A session with none adds no line, so its block is byte for byte the one it always was.
 				...[...session.mapIntervals].sort((a,b) => a.fromMs - b.fromMs).flatMap((interval) => interval.mapId === null ? []
-					: [`- ${label('Mapa','Map')} ${String(interval.mapId)}: ${new Date(interval.fromMs).toISOString()} → ${new Date(interval.toMs).toISOString()}`]),
+					: [`- ${label('Mapa','Map')} ${String(interval.mapId)}: ${localAndUtc(new Date(interval.fromMs).toISOString())} → ${localAndUtc(new Date(interval.toMs).toISOString())}`]),
 			].join('\n'),
 			evidence: [
 				`## ${label('Cobertura y límites','Coverage and limits')}`,
@@ -56,23 +85,24 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 				`- ${label('Última cobertura de objetos','Last item coverage')}: ${label(session.coverage.items === 'complete' ? 'cobertura completa' : session.coverage.items === 'partial' ? 'cobertura parcial' : 'sin cobertura',session.coverage.items === 'complete' ? 'complete coverage' : session.coverage.items === 'partial' ? 'partial coverage' : 'no coverage')}`,
 				`- ${label('Última cobertura de monedas','Last currency coverage')}: ${session.coverage.currencies === 'none' ? label('sin cobertura','no coverage') : session.coverage.currencyIds.join(', ')}`,
 				`- ${label('Últimos huecos libres observados','Last observed free slots')}: ${String(session.coverage.freeSlots ?? '—')}`,
-				...session.gaps.map((gap) => `- ${label('Tramo sin observación','Unobserved interval')}: ${gap.fromAt} → ${gap.toAt!} · ${gap.channels[0] === 'items' ? label('objetos','items') : label('monedas','currencies')} · ${gapReason(gap.reason,es)}`),
+				...session.gaps.map((gap) => `- ${label('Tramo sin observación','Unobserved interval')}: ${local(gap.fromAt)} → ${local(gap.toAt!)} · ${gap.channels[0] === 'items' ? label('objetos','items') : label('monedas','currencies')} · ${gapReason(gap.reason,es)}`),
 			].join('\n'),
 			results: [
 				`## ${label('Cronología observada','Observed timeline')}`,
-				`| ${label('Hora observada','Observed time')} | ${label('Elemento','Entity')} | ${label('Antes','Before')} | ${label('Después','After')} | ${label('Cambio','Change')} | ${label('Valor estimado','Estimated value')} |`,
+				`| ${label('Hora local observada','Observed local time')} | ${label('Elemento','Entity')} | ${label('Antes','Before')} | ${label('Después','After')} | ${label('Cambio','Change')} | ${label('Valor estimado','Estimated value')} |`,
 				'|---|---|---:|---:|---:|---:|',
 				...rows.map((row) => {
 					const unit = row.kind === 'item' ? prices.get(row.idNumber) : null;
 					// Each change is valued on its own in the basis the valuation states; with a gross price the commission is
 					// taken over that change's total, so the column does not have to add up to the session's subtotal.
 					const value = unit !== undefined && unit !== null ? liveItemValueCopper(valuation.priceBasis,unit,row.delta) : null;
-					return `| ${row.observedAt} | ${entity(row.kind,row.idNumber)} | ${String(row.before)} | ${String(row.after)} | ${String(row.delta)} | ${money(value)} |`;
+					return `| ${local(row.observedAt)} | ${entity(row.kind,row.idNumber)} | ${String(row.before)} | ${String(row.after)} | ${String(row.delta)} | ${money(value)} |`;
 				}),
 				...(rows.length === 0 ? [label('No se observaron cambios de cantidad.','No quantity changes were observed.')] : []),
 				`### ${label('Suma de cambios','Change totals')}`,
 				`| ${label('Elemento','Entity')} | + | − | ${label('Neto','Net')} |`, '|---|---:|---:|---:|',
 				...session.totals.map((total) => `| ${entity(total.kind,total.idNumber)} | ${String(total.positive)} | ${String(total.negative)} | ${String(total.net)} |`),
+				...stretchLines,
 			].join('\n'),
 			economy: [
 				`## ${label('Valoración','Valuation')}`,
@@ -96,7 +126,7 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 			provenance: [
 				`## ${label('Procedencia','Provenance')}`,
 				`- ${label('Fuente','Source')}: Nexus · ${label('observación de inventario','inventory observation')}`,
-				`- ${label('Precios capturados','Price snapshot')}: ${valuation.capturedAt ?? '—'} · ${valuation.priceBasis === 'instant_sell_gross'
+				`- ${label('Precios capturados','Price snapshot')}: ${valuation.capturedAt === null ? '—' : localAndUtc(valuation.capturedAt)} · ${valuation.priceBasis === 'instant_sell_gross'
 					? label('venta inmediata, precio bruto por unidad; la comisión se descuenta sobre el total de cada venta','instant selling, gross price per unit; the commission is taken over the total of each sale')
 					: label('venta inmediata neta','net instant selling')}`,
 				label('El siguiente registro conserva la sesión completa para recuperarla y exportarla en otra instalación.',
@@ -107,7 +137,7 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 		// The title sits outside the managed blocks: no reader takes anything from it, and a note already written keeps the one it has
 		// (the writer only replaces the blocks of an existing note), so this names the notes created from here on.
 		return { status: 'ok', session, note: await assembleNote(session.sessionRef,null,session.startedAt,folder,input.locale,frontmatter,contents,
-			{ heading: `${liveSessionTitleStamp(session.startedAt,input.utcOffsetMinutes)} · ${label('Sesión completa','Full session')}`, notes: label('Mis notas','My notes') }) };
+			{ heading: `${liveSessionTitleStamp(session.startedAt,input.utcOffsetMinutes)} · ${label('Sesión completa','Full session')}`, notes: label('Mis notas','My notes'), notesBeforeData: true }) };
 	} catch { return { status: 'invalid', reason: 'live_note_unavailable' }; }
 }
 

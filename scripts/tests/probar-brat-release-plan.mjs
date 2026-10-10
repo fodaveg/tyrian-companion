@@ -36,6 +36,7 @@ function testCompleteStagingPassesTheContract() {
 	assert(findings.length === 0, `complete staging was rejected with [${findings.join(', ')}]`);
 	assert(plan.assets.length === 8, `the plan declared ${plan.assets.length} assets instead of 8`);
 	assert(plan.isDraft === false, 'the plan declared a draft release');
+	assert(plan.isPrerelease === false, 'the plan did not declare a stable (non prerelease) release');
 	assert(plan.tagName === MANIFEST.version, 'the plan tag does not match the manifest version');
 }
 
@@ -75,6 +76,7 @@ function testGitHubPayloadTranslation() {
 		tag_name: '9.9.9',
 		name: '9.9.9',
 		draft: false,
+		prerelease: false,
 		assets: [
 			{ name: 'main.js', state: 'uploaded', size: 10 },
 			{ name: 'manifest.json', state: 'uploaded', size: 10 },
@@ -90,6 +92,13 @@ function testGitHubPayloadTranslation() {
 
 	const draft = releaseFromGitHubPayload({ tag_name: '9.9.9', name: '9.9.9', draft: true, assets: [] });
 	assert(validateBratRelease({ manifest: MANIFEST, release: draft }).includes('release-not-published'), 'a draft release was accepted');
+
+	const prerelease = releaseFromGitHubPayload({ tag_name: '9.9.9', name: '9.9.9', draft: false, prerelease: true, assets: published.assets });
+	assert(validateBratRelease({ manifest: MANIFEST, release: prerelease }).includes('release-prerelease'), 'a prerelease was accepted');
+	const silent = releaseFromGitHubPayload({ tag_name: '9.9.9', name: '9.9.9', draft: false, assets: published.assets });
+	assert(validateBratRelease({ manifest: MANIFEST, release: silent }).length === 0, 'a payload without the prerelease key must read as stable (GitHub always sends it)');
+	const digested = releaseFromGitHubPayload({ tag_name: '9.9.9', name: '9.9.9', draft: false, prerelease: false, assets: [{ name: 'a', state: 'uploaded', size: 1, digest: 'sha256:ab' }] });
+	assert(digested.assets[0].digest === 'sha256:ab', 'the GitHub asset digest was dropped by the translation');
 
 	const assetless = releaseFromGitHubPayload({ tag_name: '9.9.9', name: '9.9.9', draft: false, assets: [] });
 	assert(validateBratRelease({ manifest: MANIFEST, release: assetless }).includes('release-asset-set'), 'an assetless release was accepted');
@@ -112,6 +121,7 @@ function testTheContractActuallyJudgesThePlan() {
 	const plan = planBratRelease(root);
 	for (const [label, mutate, finding] of [
 		['a draft plan', (value) => ({ ...value, isDraft: true }), 'release-not-published'],
+		['a prerelease plan', (value) => ({ ...value, isPrerelease: true }), 'release-prerelease'],
 		['a mislabelled release name', (value) => ({ ...value, name: 'v9.9.9' }), 'release-name-mismatch'],
 		['a mismatched tag', (value) => ({ ...value, tagName: '1.0.0' }), 'tag-manifest-mismatch'],
 		['an extra asset', (value) => ({ ...value, assets: [...value.assets, { name: 'extra.txt', state: 'uploaded', size: 1 }] }), 'release-asset-set'],

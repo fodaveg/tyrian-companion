@@ -57,6 +57,19 @@ export function liveSessionLocalTime(iso: string, utcOffsetMinutes: UtcOffsetMin
 	return { day: local.slice(0, 10), clock: local.slice(11, 16) };
 }
 
+/** The local `2026-10-09 08:42:07` of an instant: the hour the full note writes in its tables, with the seconds its timeline has. */
+export function liveSessionLocalDateTime(iso: string, utcOffsetMinutes: UtcOffsetMinutes = systemUtcOffsetMinutes): string {
+	const at = Date.parse(iso);
+	return new Date(at + utcOffsetMinutes(at) * 60_000).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/** `UTC+02:00`, `UTC-05:00` or `UTC+05:30`: the zone the local hours of a note are written in, at an instant. */
+export function liveSessionUtcOffsetLabel(iso: string, utcOffsetMinutes: UtcOffsetMinutes = systemUtcOffsetMinutes): string {
+	const minutes = Math.round(utcOffsetMinutes(Date.parse(iso)));
+	const abs = Math.abs(minutes);
+	return `UTC${minutes < 0 ? '-' : '+'}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}
+
 /**
  * `2026-10-09 08.42`: the local day and hour a session started. It opens the title of both notes of the session (the full
  * one and its summary), so two sessions are told apart in a list, a link or a search. The hour takes a dot and never a

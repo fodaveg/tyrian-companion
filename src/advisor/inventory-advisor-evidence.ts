@@ -9,6 +9,7 @@ import {
 } from '../account/storage-snapshot-model';
 import { parseAccountProfile, parseTokenInfo, type TokenInfo } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
+import { readAccountAchievements } from '../account/account-achievements';
 import { captureActiveTradingPostOrders } from '../account/trading-post-evidence';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
@@ -471,20 +472,14 @@ async function captureAchievementBits(
 ): Promise<{ coverage: EndpointCoverage; evidence: EndpointEvidence; bits: Record<string, number[]> | null; progress: AccountSignalsV1['achievementProgress'] }> {
 	if (allowed !== 'complete') return { coverage: allowed, evidence: endpointEvidence(allowed, null, allowed), bits: null, progress: null };
 	try {
-		const value = await requestBody(operation, `account/achievements?v=${encodeURIComponent(PINNED_SCHEMA)}`);
-		if (!Array.isArray(value)) return { coverage: 'invalid', evidence: endpointEvidence('invalid', null, 'invalid_payload'), bits: null, progress: null };
-		const entries = value.map((entry) => isAchievement(entry) ? entry : null);
-		if (entries.some((entry) => entry === null)) return { coverage: 'invalid', evidence: endpointEvidence('invalid', null, 'invalid_payload'), bits: null, progress: null };
+		const read = await readAccountAchievements(operation);
+		if (read.status === 'invalid') return { coverage: 'invalid', evidence: endpointEvidence('invalid', null, 'invalid_payload'), bits: null, progress: null };
 		const result: Record<string, number[]> = {};
-		const seen = new Set<number>();
 		const progress: NonNullable<AccountSignalsV1['achievementProgress']> = [];
-		for (const entry of entries) {
-			if (seen.has(entry!.id)) return { coverage: 'invalid', evidence: endpointEvidence('invalid', null, 'invalid_payload'), bits: null, progress: null };
-			seen.add(entry!.id);
-			const rawBits = entry!.bits ?? null;
-			const bits = rawBits === null ? null : [...rawBits].sort(numberOrder);
-			if (bits !== null) result[String(entry!.id)] = bits;
-			progress.push({ achievementId: entry!.id, done: entry!.done, current: entry!.current ?? null, max: entry!.max ?? null, repeated: entry!.repeated ?? null, bits });
+		for (const entry of read.entries) {
+			const bits = entry.bits === null ? null : [...entry.bits].sort(numberOrder);
+			if (bits !== null) result[String(entry.id)] = bits;
+			progress.push({ achievementId: entry.id, done: entry.done, current: entry.current, max: entry.max, repeated: entry.repeated, bits });
 		}
 		return { coverage: 'complete', evidence: endpointEvidence('complete', new Date(now()).toISOString(), null), bits: result, progress: progress.sort((left, right) => left.achievementId - right.achievementId) };
 	} catch { return { coverage: 'unavailable', evidence: endpointEvidence('unavailable', null, 'request_failed'), bits: null, progress: null }; }
@@ -515,12 +510,6 @@ function signalCoverage(signals: AccountSignalsV1): InventoryAdvisorEvidenceCove
 		: signals.unlockCoverage === 'unavailable' && signals.achievementCoverage === 'unavailable'
 		&& signals.tradingPostAccess === 'unknown' ? 'unavailable' : 'partial';
 }
-function isAchievement(value: unknown): value is { id: number; done: boolean; current?: number | null; max?: number | null; repeated?: number | null; bits?: number[] | null } {
-	return record(value) && positive(value.id) && typeof value.done === 'boolean'
-		&& optionalNonNegative(value.current) && optionalNonNegative(value.max) && optionalNonNegative(value.repeated)
-		&& (value.current === null || value.current === undefined || value.max === null || value.max === undefined || value.current <= value.max)
-		&& (value.bits === undefined || (Array.isArray(value.bits) && value.bits.every(nonNegative) && new Set(value.bits).size === value.bits.length));
-}
 function hasUnexpectedPriceId(body: unknown, requested: ReadonlySet<number>): boolean {
 	return Array.isArray(body) && body.some((entry) => record(entry) && positive(entry.id) && !requested.has(entry.id));
 }
@@ -535,7 +524,6 @@ function tradingPostAccess(access: string[]): AccountSignalsV1['tradingPostAcces
 	if (normalized.length === 1 && normalized[0] === 'PlayForFree') return 'free_to_play';
 	return normalized.some((entry) => ['GuildWars2', 'HeartOfThorns', 'PathOfFire', 'EndOfDragons', 'SecretsOfTheObscure', 'JanthirWilds'].includes(entry)) ? 'full' : 'unknown';
 }
-function optionalNonNegative(value: unknown): boolean { return value === undefined || value === null || nonNegative(value); }
 function normalizeSupplementalIds(values: readonly number[]): number[] | null {
 	if (!Array.isArray(values) || !values.every(positive)
 		|| values.some((value, index) => index > 0 && values[index - 1]! >= value)) return null;
@@ -545,5 +533,4 @@ function ids(values: Record<string, number>): number[] { return Object.entries(v
 function uniqueIds(values: readonly number[]): number[] { return [...new Set(values)].sort(numberOrder); }
 function numberOrder(left: number, right: number): number { return left - right; }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
-function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

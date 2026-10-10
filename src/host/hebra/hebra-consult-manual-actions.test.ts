@@ -108,7 +108,7 @@ async function activate(test: TyrianTestApi, factory: IDBFactory): Promise<{ cor
 	});
 	// The boot's fire-and-forget work (IndexedDB, the collector's warm-up check) settles first.
 	await new Promise((resolve) => { window.setTimeout(resolve, 50); });
-	return { core: core as unknown as ConsultCore, cleanup: async () => { await cleanup(); } };
+	return { core: core as unknown as ConsultCore, cleanup: async () => { await cleanup(); test.unloadPlugin(); } };
 }
 
 function endpoint(url: string): string {

@@ -242,9 +242,10 @@ describe('the title of the full note', () => {
 		const summary = await renderLiveSessionSummary({session,locale: 'es',outputFolder: 'Tyrian Companion',fullNotePath: note.preferredPath,utcOffsetMinutes: () => 120});
 		if (summary.status !== 'ok') throw new Error(summary.reason);
 		expect(h1(summary.note.content).startsWith('# 2026-10-06 14.00 · Resumen · ')).toBe(true);
-		// Nothing else of the note moves with the title: same path, same frontmatter, same managed blocks, to the byte.
+		// The zone moves the title and the local hours the blocks write, and nothing else: same path, same frontmatter, same data block, to the byte.
 		expect(eastNote.preferredPath).toBe(note.preferredPath); expect(eastNote.collisionPath).toBe(note.collisionPath);
-		expect(eastNote.content.replace(h1(eastNote.content),h1(note.content))).toBe(note.content);
+		expect(eastNote.frontmatter).toEqual(note.frontmatter); expect(await inspectLiveSessionNote(eastNote.content)).toEqual({status: 'ok',session});
+		expect(eastNote.blocks.decision.serialized).toBe(note.blocks.decision.serialized);
 	});
 	it('is read by nobody: a note with the title every note had until 0.6.18 gives the same session and the same path', async () => {
 		const {note,session} = await rendered(); const old = note.content.replace(h1(note.content),OLD_TITLE);
@@ -287,7 +288,8 @@ describe('the title of the full note', () => {
 });
 
 describe('the changes of map in the full note', () => {
-	const ON_866 = '- Mapa 866: 2026-10-06T12:00:00.000Z → 2026-10-06T12:00:01.000Z'; const ON_873 = '- Mapa 873: 2026-10-06T12:00:01.000Z → 2026-10-06T12:00:02.000Z';
+	const ON_866 = '- Mapa 866: 2026-10-06 14:00:00 (2026-10-06T12:00:00.000Z) → 2026-10-06 14:00:01 (2026-10-06T12:00:01.000Z)';
+	const ON_873 = '- Mapa 873: 2026-10-06 14:00:01 (2026-10-06T12:00:01.000Z) → 2026-10-06 14:00:02 (2026-10-06T12:00:02.000Z)';
 	/** The 0→2→4 session, on map 866 for its first second and on 873 for the other. */
 	const mapped = (): LiveSessionNoteInput => { const input = fixture();
 		input.record.mapIntervals = [{mapId: 866,fromMs: AT,toMs: AT + 1000},{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000}]; return input; };
@@ -297,37 +299,41 @@ describe('the changes of map in the full note', () => {
 		const old = content.split('\n').filter((line) => !/^- (?:Mapa|Map) \d+: /u.test(line)).join('\n');
 		return note.content.replace(serialized,serialized.replace(hash,await sha256Text(old)).replace(content,old));
 	};
-	it('writes each stretch on a map under the summary, in order, in UTC and by id like the rest of the note; a session without maps gains no line', async () => {
+	it('writes each stretch on a map under the summary, in order, in local time with its UTC beside it and by id; a session without maps gains no line', async () => {
 		const {note} = await rendered(mapped());
 		expect(note.blocks.summary.content.endsWith(`\n- MF: desconocido\n${ON_866}\n${ON_873}`)).toBe(true);
 		const english = mapped(); english.locale = 'en';
-		expect((await rendered(english)).note.blocks.summary.content).toContain('\n- Map 866: 2026-10-06T12:00:00.000Z → 2026-10-06T12:00:01.000Z\n- Map 873: ');
+		expect((await rendered(english)).note.blocks.summary.content).toContain('\n- Map 866: 2026-10-06 14:00:00 (2026-10-06T12:00:00.000Z) → 2026-10-06 14:00:01 (2026-10-06T12:00:01.000Z)\n- Map 873: ');
 		// Out of order in the record and with a stretch on a map nobody identified: in order, and that stretch is no map to name.
 		const mixed = fixture(); mixed.record.mapIntervals = [{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000},{mapId: null,fromMs: AT + 500,toMs: AT + 1000},{mapId: 866,fromMs: AT,toMs: AT + 500}];
-		expect((await rendered(mixed)).note.blocks.summary.content.split('\n').slice(-2)).toEqual([ON_866.replace('12:00:01.000Z','12:00:00.500Z'),ON_873]);
+		expect((await rendered(mixed)).note.blocks.summary.content.split('\n').slice(-2)).toEqual(['- Mapa 866: 2026-10-06 14:00:00 (2026-10-06T12:00:00.000Z) → 2026-10-06 14:00:00 (2026-10-06T12:00:00.500Z)',ON_873]);
 		// The golden note of this file has no map: it is still, to the byte, the snapshot it always was.
 		expect((await rendered()).note.blocks.summary.content.endsWith('\n- MF: desconocido')).toBe(true);
 	});
 	it('touches nothing else: the other blocks are the same, and the data block carries the intervals exactly as before', async () => {
 		const plain = await rendered(); const {note,session} = await rendered(mapped());
-		for (const id of ['evidence','results','economy','decision'] as const) expect(note.blocks[id].serialized).toBe(plain.note.blocks[id].serialized);
+		for (const id of ['evidence','economy','decision'] as const) expect(note.blocks[id].serialized).toBe(plain.note.blocks[id].serialized);
+		// Two maps add the table of their stretches at the foot of the results, and nothing above it moves.
+		expect(note.blocks.results.content.startsWith(plain.note.blocks.results.content)).toBe(true);
+		expect(note.blocks.results.content.slice(plain.note.blocks.results.content.length)).toMatch(/^\n### Tramos de mapa\n/u);
 		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session});
 		expect(session).toEqual({...plain.session,mapIntervals: [{mapId: 866,fromMs: AT,toMs: AT + 1000},{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000}]});
 		// The lines are text of the summary block only: the note without them is the same evidence, under the same payload hash.
 		const old = await asBefore(note);
-		expect(old).not.toContain('- Mapa 8');
+		expect((await readStoredSessionBlocks(old))!.summary).not.toContain('- Mapa 8');
 		expect((await readStoredSessionBlocks(old))!.summary).toBe(plain.note.blocks.summary.content);
 		expect((await readStoredSessionBlocks(old))!.provenance).toBe(note.blocks.provenance.content);
 		expect(await inspectLiveSessionNote(old)).toEqual({status: 'ok',session});
 	});
 	it('a note already written gains the lines when its session is written again: no conflict, «Mis notas» and the human frontmatter stay, same data', async () => {
 		const input: LiveSessionNoteInput = mapped(); const {note,session} = await rendered(input); const path = note.preferredPath;
-		const written = `${await asBefore(note)}\nLo que apunté a mano.\n`.replace('---\n','---\naliases: [Mía]\n');
+		// And as the section of the notes was kept before 0.6.27: after the data, which this write moves before it.
+		const written = `${(await asBefore(note)).replace('## Mis notas\n\n','')}\n## Mis notas\n\nLo que apunté a mano.\n`.replace('---\n','---\naliases: [Mía]\n');
 		const vault = new TestVault(); vault.contents.set(path,written); const writer = new SessionNoteWriter(vault);
 		expect(await writer.writeLive(input)).toEqual({status: 'written',path});
 		const after = vault.contents.get(path)!;
 		expect(after).toContain(`\n- MF: desconocido\n${ON_866}\n${ON_873}\n<!-- tyrian-companion:managed:end:summary -->`);
-		expect(after.endsWith('## Mis notas\n\nLo que apunté a mano.\n')).toBe(true); expect(after).toContain('aliases: [Mía]');
+		expect(after).toContain('## Mis notas\n\nLo que apunté a mano.\n\n<!-- tyrian-companion:managed:start:provenance'); expect(after).toContain('aliases: [Mía]');
 		const blocks = await readStoredSessionBlocks(after);
 		expect(blocks).toEqual(Object.fromEntries(Object.entries(note.blocks).map(([id,block]) => [id,block.content])));
 		expect(blocks!.provenance).toBe((await readStoredSessionBlocks(written))!.provenance);

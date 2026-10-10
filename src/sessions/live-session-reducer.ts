@@ -126,8 +126,9 @@ export function isEmptySample(entry: Pick<LiveJournalEntryV1,'cursor' | 'observa
  * says it). With no record there are no prices and nothing is valued, whatever the basis.
  */
 export function liveChartPoint(entry: Pick<LiveJournalEntryV1,'observedAt' | 'breakBefore'>, totals: readonly LiveTotalV1[],
-	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> & { priceBasis: LivePriceBasis } | null): LiveChartPointV1 {
-	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, record?.priceBasis ?? 'instant_sell_net');
+	record: Pick<LiveSessionRuntimeRecord, 'prices' | 'priceCapturedAt' | 'currencyTrackedIds'> & { priceBasis: LivePriceBasis } | null,
+	memo?: LiveValuationMemo): LiveChartPointV1 {
+	const valuation = valueLiveTotals(totals, record?.prices ?? [], record?.priceCapturedAt ?? null, record?.currencyTrackedIds.includes(GOLD_CURRENCY_ID) ?? false, record?.priceBasis ?? 'instant_sell_net', memo);
 	return { observedAt: entry.observedAt, itemQuantityNet: totals.filter((item) => item.kind === 'item').reduce((sum, item) => sum + item.net, 0),
 		netItemValueKnownCopper: valuation.netItemValueKnownCopper, knownNetValueCopper: valuation.knownNetValueCopper, breakBefore: entry.breakBefore };
 }
@@ -207,7 +208,9 @@ export class LiveChartBuilder {
  */
 export function createLiveChart(journal: readonly ChartEntry[], record: ChartRecord, limit = 600,
 	lastObservationAt: string | null = null): { builder: LiveChartBuilder; totals: LiveTotalV1[] } {
-	const map = new Map<string, LiveTotalV1>(); const builder = new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, record), limit);
+	// One memo for the whole build: every point is valued with the same prices and basis, so a (item, quantity) pair repeated across points is valued once.
+	const memo = record === null ? undefined : new LiveValuationMemo(record.prices, record.priceBasis);
+	const map = new Map<string, LiveTotalV1>(); const builder = new LiveChartBuilder((entry, totals) => liveChartPoint(entry, totals, record, memo), limit);
 	for (const entry of journal) { accumulateLiveTotals(map, entry.observations); builder.push(entry, () => [...map.values()]); }
 	const last = journal[journal.length - 1];
 	if (last !== undefined && lastObservationAt !== null && lastObservationAt > last.observedAt) {
@@ -238,6 +241,27 @@ export function liveItemValueCopper(basis: LivePriceBasis, unitCopper: number, q
 }
 
 /**
+ * Values already computed for ONE price list and basis, valid only while that list is used (a chart build makes one and drops it).
+ * The value of (item, quantity) depends on nothing else, so a repeated pair gives the stored value, the same one `liveItemValueCopper` returns.
+ */
+export class LiveValuationMemo {
+	readonly quotes: Map<number, number | null>;
+	private readonly values = new Map<number, Map<number, number | null>>();
+	constructor(readonly prices: readonly LivePriceV1[], readonly basis: LivePriceBasis) {
+		this.quotes = new Map(prices.map((row) => [row.itemId, row.unitCopper]));
+	}
+	value(itemId: number, unit: number, quantity: number): number | null {
+		let byQuantity = this.values.get(itemId);
+		if (byQuantity === undefined) { byQuantity = new Map(); this.values.set(itemId, byQuantity); }
+		const known = byQuantity.get(quantity);
+		if (known !== undefined) return known;
+		const computed = liveItemValueCopper(this.basis, unit, quantity);
+		byQuantity.set(quantity, computed);
+		return computed;
+	}
+}
+
+/**
  * Revalues the whole ledger with one public price snapshot. `goldTracked` says the gold currency (id 1) was ever covered by the
  * session: only then the observed net gold (0 when unchanged) is added; otherwise wallet coverage remains unknown (null).
  * `basis` says what the unit prices are (see `LivePriceBasis`) and is stated back in the result; every price is in that one basis.
@@ -245,15 +269,19 @@ export function liveItemValueCopper(basis: LivePriceBasis, unitCopper: number, q
  * runtime record passes the basis of the session the record belongs to (`LiveSessionFormat.priceBasis`).
  */
 export function valueLiveTotals(totals: readonly LiveTotalV1[], prices: readonly LivePriceV1[], capturedAt: string | null, goldTracked: boolean,
-	basis: LivePriceBasis): LiveValuationV1 {
-	const quotes = new Map(prices.map((row) => [row.itemId, row.unitCopper]));
+	basis: LivePriceBasis, memo?: LiveValuationMemo): LiveValuationV1 {
+	// A memo only counts for the very prices and basis it was made for; for any other call it is ignored, so it cannot change a result.
+	const own = memo !== undefined && memo.prices === prices && memo.basis === basis ? memo : undefined;
+	const quotes = own?.quotes ?? new Map(prices.map((row) => [row.itemId, row.unitCopper]));
+	const value = own === undefined ? (unit: number, quantity: number) => liveItemValueCopper(basis, unit, quantity)
+		: (unit: number, quantity: number, itemId: number) => own.value(itemId, unit, quantity);
 	let positive = 0; let net = 0; const unpricedItemIds: number[] = [];
 	for (const total of totals) {
 		if (total.kind !== 'item') continue;
 		const unit = quotes.get(total.idNumber);
-		const gained = unit === null || unit === undefined ? null : liveItemValueCopper(basis, unit, total.positive);
+		const gained = unit === null || unit === undefined ? null : value(unit, total.positive, total.idNumber);
 		// Nothing of this item has left the inventory: both quantities are one, and valuing it twice (a sale with its fees, in gross) is the cost.
-		const kept = unit === null || unit === undefined ? null : total.net === total.positive ? gained : liveItemValueCopper(basis, unit, total.net);
+		const kept = unit === null || unit === undefined ? null : total.net === total.positive ? gained : value(unit, total.net, total.idNumber);
 		if (gained === null || kept === null) { unpricedItemIds.push(total.idNumber); continue; }
 		positive += gained; net += kept;
 	}

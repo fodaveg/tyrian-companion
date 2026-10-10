@@ -136,7 +136,7 @@ export async function assembleNote<AccountRef extends string | null>(
 	locale: PreparedSessionNote['locale'],
 	frontmatter: Record<string, string | number | null>,
 	contents: Record<SessionNoteBlockId, string>,
-	titles?: { heading: string; notes: string },
+	titles?: { heading: string; notes: string; /** «Mis notas» goes before the last block (the one with the data), not after it. */ notesBeforeData?: boolean },
 ): Promise<RenderedSessionNote<AccountRef>> {
 	const [preferredPath, collisionPath] = sessionNoteRelativePaths(baselineCompletedAt, sessionRef);
 	const blocks = {} as RenderedSessionNote['blocks'];
@@ -151,7 +151,12 @@ export async function assembleNote<AccountRef extends string | null>(
 	}
 	const heading = `# ${titles?.heading ?? noteText(locale, 'note.heading')}`;
 	const notes = `## ${titles?.notes ?? noteText(locale, 'note.myNotes')}`;
-	const body = `${heading}\n\n${SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized).join('\n\n')}\n\n${notes}\n`;
+	const serialized = SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized);
+	// The section of the reader's own notes comes before the block of data when asked (the full note of a live session): the data is
+	// the long part, and what a person writes should not be at the foot of it. The order of the blocks themselves does not change.
+	const body = titles?.notesBeforeData === true
+		? `${heading}\n\n${serialized.slice(0, -1).join('\n\n')}\n\n${notes}\n\n${serialized.at(-1)!}\n`
+		: `${heading}\n\n${serialized.join('\n\n')}\n\n${notes}\n`;
 	return {
 		sessionRef, accountRef,
 		preferredPath: `${outputFolder}/${preferredPath}`,
@@ -209,9 +214,29 @@ export async function mergeRenderedSessionNote(
 	const parsed = parseFrontmatter(existing);
 	if (!parsed || parsed.sessionRef !== rendered.sessionRef || parsed.frontmatter.tc_kind !== rendered.frontmatter.tc_kind
 		|| rendered.frontmatter.tc_schema === 7 && (parsed.frontmatter.tc_schema !== 7 || parsed.frontmatter.tc_source !== rendered.frontmatter.tc_source)) return { status: 'conflict' };
-	const body = await replaceManagedBlocks(parsed.body, rendered.blocks);
-	if (body === null) return { status: 'conflict' };
+	const replaced = await replaceManagedBlocks(parsed.body, rendered.blocks);
+	if (replaced === null) return { status: 'conflict' };
+	// A live note written by an earlier build has «Mis notas» after the data: the section moves before it, whole.
+	const body = rendered.frontmatter.tc_schema === 7 ? moveNotesBeforeData(replaced) : replaced;
 	return { status: 'ok', content: `${serializeFrontmatter(rendered.frontmatter, parsed.humanLines, parsed.tags)}${body}` };
+}
+
+const NOTES_HEADING = /^## (?:Mis notas|My notes)$/mu;
+const DATA_START = '<!-- tyrian-companion:managed:start:provenance';
+const DATA_END = '<!-- tyrian-companion:managed:end:provenance -->';
+
+/**
+ * Moves the reader's «Mis notas» section from after the last managed block (where a note written before 0.6.27 has it) to just
+ * before it, with everything under its heading untouched, up to the end of the text. It moves nothing else: a note that already has the
+ * section before the data, or whose text after the data does not open with that heading (the reader's own), is returned as it is.
+ */
+function moveNotesBeforeData(body: string): string {
+	const start = body.indexOf(DATA_START); const end = body.lastIndexOf(DATA_END);
+	if (start < 0 || end < start) return body;
+	const tail = body.slice(end + DATA_END.length).replace(/^\n+/u, '');
+	const heading = /^(.*)$/mu.exec(tail)?.[1]?.trim();
+	if (heading === undefined || !NOTES_HEADING.test(heading) || NOTES_HEADING.test(body.slice(0, start))) return body;
+	return `${body.slice(0, start)}${tail.replace(/\n$/u, '')}\n\n${body.slice(start, end + DATA_END.length)}\n`;
 }
 
 export function frontmatterSessionRef(content: string): string | null {

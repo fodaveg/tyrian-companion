@@ -37,6 +37,7 @@ describe('GuildWars2PublicCatalogClient', () => {
 	it('maps only reviewed public endpoint families', () => {
 		expect(publicCatalogLogicalEndpoint('materials?ids=1')).toBe('material_categories');
 		expect(publicCatalogLogicalEndpoint('commerce/listings?ids=1')).toBe('commerce_listings');
+		expect(publicCatalogLogicalEndpoint('achievements?ids=9417&lang=en')).toBe('achievements');
 		expect(publicCatalogLogicalEndpoint('private/secret?token=value')).toBe('unknown');
 	});
 

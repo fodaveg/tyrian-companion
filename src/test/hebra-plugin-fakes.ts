@@ -493,6 +493,13 @@ export interface TyrianTestApi {
 	local: Map<string, string>;
 	openedNotes: string[];
 	restarts: { count: number; result: boolean };
+	/**
+	 * What Hebra does when a plugin is unloaded: it undoes every registration the plugin made through
+	 * `ui` and `editor`. The cleanup `activate` returns does not do it (Hebra does, `hebra-runtime.ts`),
+	 * and since the fake of API 1.4.0 refuses a view, command, status item or code block whose id is
+	 * still registered, a test that loads the plugin again on the same api calls this after the cleanup.
+	 */
+	unloadPlugin(): void;
 }
 
 /** The capabilities `hebra.json` declares for Tyrian. */
@@ -520,6 +527,24 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 	const restarts = { count: 0, result: true };
 	const secretsAvailable = keychain !== null && capabilities.includes('secrets');
 	const hebra = options.mainView === true ? fake.api : asHebraWithoutMainView(fake.api);
+	// The undo functions of the registrations, which Hebra calls when it unloads the plugin.
+	const registrations: Array<() => void> = [];
+	const tracked = <T extends unknown[]>(register: (...args: T) => () => void) => (...args: T): (() => void) => {
+		const undo = register(...args);
+		registrations.push(undo);
+		return undo;
+	};
+	// In place, not on copies: a test that spies on `fake.api.ui` must still see the calls.
+	// The originals are bound to their object, since `tracked` calls them without `this`.
+	hebra.ui.registerView = tracked(hebra.ui.registerView.bind(hebra.ui));
+	hebra.ui.registerCommand = tracked(hebra.ui.registerCommand.bind(hebra.ui));
+	const registerStatusBarItem = hebra.ui.registerStatusBarItem.bind(hebra.ui);
+	hebra.ui.registerStatusBarItem = (item) => {
+		const handle = registerStatusBarItem(item);
+		registrations.push(() => { handle.remove(); });
+		return handle;
+	};
+	hebra.editor.registerCodeBlock = tracked(hebra.editor.registerCodeBlock.bind(hebra.editor));
 	const api: HebraPluginApi = {
 		...hebra,
 		has: (capability) => (capability === 'secrets' ? secretsAvailable : hebra.has(capability)),
@@ -535,5 +560,8 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 			},
 		},
 	};
-	return { api, fake, library, local, openedNotes, restarts };
+	const unloadPlugin = (): void => {
+		for (const undo of registrations.splice(0).reverse()) undo();
+	};
+	return { api, fake, library, local, openedNotes, restarts, unloadPlugin };
 }

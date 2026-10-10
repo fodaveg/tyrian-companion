@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const SEMVER = /^\d+\.\d+\.\d+$/u;
+/** The Hebra files `hebra.json` hashes in its `files` map (the manifest does not hash itself). */
+const HEBRA_HASHED_FILES = Object.freeze(['hebra-main.mjs', 'hebra-styles.css']);
 
 /**
  * Returns the only asset names accepted for a published release: the three Obsidian files BRAT
@@ -34,6 +37,10 @@ export function validateBratRelease({ manifest, release }) {
 	if (release.tagName !== manifest.version) findings.push('tag-manifest-mismatch');
 	if (release.name !== manifest.version) findings.push('release-name-mismatch');
 	if (release.isDraft !== false) findings.push('release-not-published');
+	// A prerelease is not what BRAT's stable channel installs and Hebra's updater treats it differently.
+	// `!== false`, like the draft check: a payload that does not say (an old `gh release view --json`
+	// field list) is red, not assumed stable.
+	if (release.isPrerelease !== false) findings.push('release-prerelease');
 
 	const actualAssets = inspectReleaseAssets(release.assets);
 	if (actualAssets.finding !== null) {
@@ -43,6 +50,59 @@ export function validateBratRelease({ manifest, release }) {
 	}
 
 	return findings;
+}
+
+/**
+ * Judges the bytes of a release that has been DOWNLOADED into `directory` (`gh release download`),
+ * which the metadata alone cannot see (HP-11):
+ * - `hebra.json` is readable and declares the version of `manifest.json`;
+ * - the sha256 it declares for `hebra-main.mjs` and `hebra-styles.css` is the sha256 of the files
+ *   actually published, which is what Hebra checks before installing;
+ * - when GitHub reports a `digest` for an asset, the downloaded bytes match it.
+ * Reads local files only, makes no network request.
+ */
+export function validateDownloadedHebraAssets({ manifest, release, directory }) {
+	const findings = [];
+	const hebra = readDownloadedJson(resolve(directory, 'hebra.json'));
+	if (!isRecord(hebra)) {
+		findings.push('hebra-manifest-unreadable');
+	} else {
+		if (hebra.version !== manifest.version) findings.push('hebra-manifest-version');
+		const declared = isRecord(hebra.files) ? hebra.files : {};
+		for (const name of HEBRA_HASHED_FILES) {
+			const actual = sha256OfFile(resolve(directory, name));
+			if (actual === null || declared[name] !== `sha256:${actual}`) {
+				findings.push('hebra-manifest-hash');
+				break;
+			}
+		}
+	}
+	const assets = isRecord(release) && Array.isArray(release.assets) ? release.assets : [];
+	for (const asset of assets) {
+		if (!isRecord(asset) || typeof asset.name !== 'string' || typeof asset.digest !== 'string') continue;
+		const actual = sha256OfFile(resolve(directory, asset.name));
+		if (actual === null || asset.digest !== `sha256:${actual}`) {
+			findings.push('release-asset-digest');
+			break;
+		}
+	}
+	return findings;
+}
+
+function readDownloadedJson(path) {
+	try {
+		return JSON.parse(readFileSync(path, 'utf8'));
+	} catch {
+		return null;
+	}
+}
+
+function sha256OfFile(path) {
+	try {
+		return createHash('sha256').update(readFileSync(path)).digest('hex');
+	} catch {
+		return null;
+	}
 }
 
 function inspectReleaseAssets(assets) {
@@ -83,10 +143,12 @@ function parseJson(source, category) {
 }
 
 function parseArguments(argv) {
-	if (argv.length !== 2 || argv[0] !== '--release-json' || argv[1].trim() === '') {
+	const validShape = (argv.length === 2 || argv.length === 4) && argv[0] === '--release-json' && argv[1].trim() !== '';
+	const withAssets = argv.length === 4;
+	if (!validShape || (withAssets && (argv[2] !== '--assets-dir' || argv[3].trim() === ''))) {
 		throw new Error('usage');
 	}
-	return argv[1];
+	return { releaseSource: argv[1], assetsDirectory: withAssets ? argv[3] : null };
 }
 
 function readReleaseSource(source) {
@@ -107,10 +169,13 @@ function readManifestSource(root) {
 
 export function runCli({ argv = process.argv.slice(2), root = process.cwd() } = {}) {
 	try {
-		const releaseSource = parseArguments(argv);
+		const { releaseSource, assetsDirectory } = parseArguments(argv);
 		const manifest = parseJson(readManifestSource(root), 'manifest-json');
 		const release = parseJson(readReleaseSource(releaseSource), 'release-json');
 		const findings = validateBratRelease({ manifest, release });
+		if (assetsDirectory !== null) {
+			findings.push(...validateDownloadedHebraAssets({ manifest, release, directory: resolve(assetsDirectory) }));
+		}
 		if (findings.length > 0) {
 			for (const finding of findings) process.stderr.write(`BRAT release contract: ${finding}\n`);
 			return 1;

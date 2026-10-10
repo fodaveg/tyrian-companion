@@ -36,7 +36,6 @@ export const GATE_STEPS = Object.freeze([
 	step('typecheck', 'tsc --noEmit', ['tsc', '--noEmit', '--skipLibCheck'], ['check']),
 	step('unit', 'Suite unitaria de vitest (sin src/platform ni los tests de texto fuente congelados)', ['vitest', 'run', '--configLoader', 'runner'], ['test', 'check']),
 	step('unit-guardrails', 'Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.guardrails.config.mts'], ['test', 'check:guardrails']),
-	step('h8-crossover-spike', 'Spike H8 de crossover', ['bash', 'scripts/tests/probar-h8-crossover-spike.sh'], ['test', 'check:guardrails']),
 	step('release-preflight', 'Preflight de release', ['bash', 'scripts/tests/probar-release-preflight.sh'], ['test', 'check:guardrails']),
 	step('brat-release-contract', 'Suite del contrato BRAT', ['node', 'scripts/tests/probar-brat-release-contract.mjs'], ['test', 'check:guardrails']),
 	step('brat-release-plan', 'Suite del plan de release BRAT (puerta previa a publicar)', ['node', 'scripts/tests/probar-brat-release-plan.mjs'], ['test', 'check:guardrails']),
@@ -66,6 +65,10 @@ export const GATE_STEPS = Object.freeze([
 	// R1a: the host-neutral entry Hebra loads must bundle without obsidian, electron, net, Node
 	// builtins or the Buffer/process globals. The suite proves the check catches each of them.
 	step('host-esm', 'Bundle ESM del runtime para Hebra (sin obsidian/electron/net/node)', ['node', 'scripts/build-host-esm.mjs'], ['check']),
+	// GR-01: the only test that boots the published `hebra-main.mjs`. It cannot run inside `unit`
+	// (the bundle does not exist yet there, and a checkout without it would skip it), so it runs here,
+	// right after `host-esm` built the bundle of the tree being measured, and fails if it is missing.
+	step('hebra-bundle', 'Test que arranca el hebra-main.mjs recien construido (falla si falta)', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.hebra-bundle.config.mts'], ['check']),
 	step('host-esm-suite', 'Suite del guardarrail del bundle ESM para Hebra', ['node', 'scripts/tests/probar-build-host-esm.mjs'], ['test', 'check:guardrails']),
 ]);
 

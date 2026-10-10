@@ -1,8 +1,8 @@
 import { formatCopperVisual } from '../core/copper-format';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
-import { computeSummaryFigures, SUMMARY_FOLD_COVERAGE, SUMMARY_SHORT_GAP_MS, summaryMainMap,
-	type SummaryCharacter, type SummaryItemMetaMap, type SummaryMapRow } from './live-session-summary-figures';
+import { computeSummaryFigures, formatSummaryDuration as duration, SUMMARY_FOLD_COVERAGE, SUMMARY_SHORT_GAP_MS, summaryMainMap,
+	type SummaryCharacter, type SummaryItemMetaMap, type SummaryMapRow, type SummaryMapStretch } from './live-session-summary-figures';
 import { liveSessionLocalTime, liveSessionTitleStamp, systemUtcOffsetMinutes, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
 import { MAX_SUMMARIES_READ } from './live-session-summary-history';
@@ -63,7 +63,8 @@ export type LiveSessionSummaryWriteResult =
 	| { status: 'conflict' | 'unavailable'; message: string; errorName?: string };
 
 /** The vault calls the writer needs; the common vault port satisfies it in Obsidian and in Hebra. */
-export type LiveSessionSummaryVault = Pick<SessionNoteVault, 'file' | 'read' | 'createFolder' | 'create'> & { linkTarget?(path: string): string | null };
+export type LiveSessionSummaryVault = Pick<SessionNoteVault, 'file' | 'read' | 'createFolder' | 'create'> & Partial<Pick<SessionNoteVault, 'process'>>
+	& { linkTarget?(path: string): string | null };
 
 /** Minimum comparable sessions before «tu media» is written. */
 export const SUMMARY_MIN_COMPARABLES = 3;
@@ -205,6 +206,21 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 				'What arrives while a map loads, or is opened on the next map, counts on the map where it was observed.'));
 		}
 
+		// Each stretch on a map with the hours it was entered and left (David, 10 Oct 2026): the table above adds a map's visits together
+		// and the route only says when each began. With one identified map there is nothing to tell apart, and nothing is added.
+		if (byMap.rows.length > 1) {
+			const when = (at: string): string => day(at) === day(session.startedAt) ? clock(at) : `${day(at)} ${clock(at)}`;
+			const stretchValue = (stretch: SummaryMapStretch): string => stretch.netCopper !== null ? money(stretch.netCopper)
+				: stretch.changes === 0 ? label('sin cambios de objetos', 'no item changes')
+					: !stretch.priced && f.hasNewItems ? label('sin precios de bazar', 'no bazaar prices') : '—';
+			// The value goes with the balance, as in the table of maps: a note that states no net value of items states none by stretch.
+			const withValue = f.hasNewItems;
+			out.push('', `## ${label('Tramos de mapa', 'Map stretches')}`, '',
+				`| ${label('Mapa', 'Map')} | ${label('Entrada', 'Entered')} | ${label('Salida', 'Left')} | ${label('Duración', 'Length')}${withValue ? ` | ${label('Valor neto de objetos', 'Net value of items')}` : ''} |`,
+				`|---|---:|---:|---:${withValue ? '|---:' : ''}|`,
+				...byMap.stretches.map((stretch) => `| ${stretch.mapId === null ? label('Sin mapa identificado', 'No identified map') : mapName(stretch.mapId)} | ${when(stretch.fromAt)} | ${when(stretch.toAt)} | ${duration(stretch.ms)}${withValue ? ` | ${stretchValue(stretch)}` : ''} |`));
+		}
+
 		const extra: string[] = [];
 		if (session.magicFind.source === 'verified' && session.magicFind.value !== null) extra.push(`- ${label('Hallazgo mágico', 'Magic find')}: ${String(session.magicFind.value)}`);
 		if (session.coverage.freeSlots !== null) extra.push(`- ${label('Huecos libres al cerrar', 'Free slots at close')}: ${String(session.coverage.freeSlots)}`);
@@ -282,6 +298,41 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 	} catch { return { status: 'invalid', reason: 'summary_unavailable' }; }
 }
 
+const BACK_LINK_PATTERN = /\|(?:Resumen|Summary)\]\]|^(?:Resumen|Summary): /mu;
+
+/**
+ * Links the full note of a session back to its summary, by the same rule the summary links forward (the host's own target when it
+ * has one, which on Hebra is `id:<uuid>`; the vault path otherwise, which Obsidian resolves). It can only be written once the
+ * summary exists, because a host that names notes by id knows the summary's only then. The line goes under the title and outside every
+ * managed block, so writing the session again keeps it and no hash changes; the payload, the frontmatter and the path are not touched.
+ *
+ * It touches only a live note of THIS session (`sessionRef` in its frontmatter) that has its managed blocks, and writes nothing when the
+ * link is already there. `linked`: written; `present`: already there; `skipped`: not a note it may edit, or the vault cannot edit.
+ */
+export async function linkFullNoteToSummary(vault: LiveSessionSummaryVault,
+	input: { fullNotePath: string; summaryPath: string; sessionRef: string; locale: 'es' | 'en' }): Promise<'linked' | 'present' | 'skipped'> {
+	const file = vault.file(input.fullNotePath);
+	if (file === null || vault.process === undefined) return 'skipped';
+	const hostTarget = vault.linkTarget?.(input.summaryPath);
+	const target = hostTarget !== undefined && hostTarget !== null && hostTarget !== '' ? hostTarget : input.summaryPath.replace(/\.md$/u, '');
+	const word = input.locale === 'es' ? 'Resumen' : 'Summary';
+	const line = /[[\]|#^]/u.test(target) ? `${word}: \`${target}\`` : `[[${target}|${word}]]`;
+	let outcome: 'linked' | 'present' | 'skipped' = 'skipped';
+	// The host may run the update again on a fresh read: the outcome is that of the run whose text was written.
+	await vault.process(file, (current) => {
+		outcome = 'skipped';
+		const end = current.startsWith('---\n') ? current.indexOf('\n---\n', 4) : -1;
+		const marker = current.indexOf('<!-- tyrian-companion:managed:start:summary');
+		if (end < 0 || marker < end) return current;
+		const frontmatter = current.slice(4, end);
+		if (!/^tc_source: "?nexus_inventory"?$/mu.test(frontmatter) || !frontmatter.includes(input.sessionRef)) return current;
+		if (BACK_LINK_PATTERN.test(current.slice(end, marker))) { outcome = 'present'; return current; }
+		outcome = 'linked';
+		return `${current.slice(0, marker)}${line}\n\n${current.slice(marker)}`;
+	});
+	return outcome;
+}
+
 /**
  * Writes the summary once per session. An existing file is never overwritten: identical content
  * is `unchanged`; anything else (the user's edit, or an older render) is `kept` as it is.
@@ -318,14 +369,6 @@ export class LiveSessionSummaryWriter {
 		}
 		return { status: 'kept', path };
 	}
-}
-
-function duration(ms: number): string {
-	const total = Math.max(0, Math.round(ms / 1000));
-	const hours = Math.floor(total / 3600); const minutes = Math.floor(total % 3600 / 60); const seconds = total % 60;
-	const parts = [...(hours > 0 ? [`${String(hours)} h`] : []), ...(minutes > 0 ? [`${String(minutes)} min`] : []),
-		...(hours === 0 && seconds > 0 || total === 0 ? [`${String(seconds)} s`] : [])];
-	return parts.join(' ');
 }
 
 /**

@@ -7,11 +7,12 @@ import { exportLiveSession, liveSessionExportVersion, prepareLiveSessionExportSn
 import { LEGACY_LIVE_SESSION_FORMAT, LIVE_SESSION_FORMAT_KEY, LiveSessionFormatUnreadableError, liveSessionFormatOf } from './live-session-format';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionFormat, type LiveSessionRuntimeRecord } from './live-session-model';
-import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, provenanceJsonLines, renderLiveSessionNote } from './live-session-note-renderer';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { SessionHistoryVault } from './session-history';
 import { sha256Text } from './session-note-renderer';
-import { IndexedDbSessionRuntimeStore, MemorySessionRuntimeStore, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
+import { IndexedDbSessionRuntimeStore, MemorySessionRuntimeStore, SESSION_RUNTIME_DB_NAME, SESSION_RUNTIME_STORE_NAME } from './session-runtime-store';
+import { LIVE_SESSION_JOURNAL_STORE_NAME } from './live-session-persistence';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -24,14 +25,19 @@ const iso = (second: number): string => new Date(AT + second * 1000).toISOString
 
 const GROSS: LiveSessionFormat = { noteVersion: 2, priceBasis: 'instant_sell_gross' };
 /**
- * sha256 of the whole note the published 0.6.24 (commit 6fbe77e) writes for the two sequences below, taken on 10 Oct 2026 by
+ * sha256 of the DATA of the note the published 0.6.24 (commit 6fbe77e) writes for the two sequences below, taken on 10 Oct 2026 by
  * playing them, with this same harness, on a copy of that tree: `continued` is `firstStretch`, a restart and `secondStretch`;
- * `pending` is `firstStretch`, a close the vault refuses and the host that comes back.
+ * `pending` is `firstStretch`, a close the vault refuses and the host that comes back. The data is what an earlier plugin reads:
+ * the `tc_*` lines of the frontmatter and the line of the payload (`noteData`). It is not the whole note, which since 0.6.27 also
+ * carries the hours in the machine's local time and each object's id beside its name (presentation, so it follows the machine's
+ * zone and has no byte to pin). Both values were taken from the 0.6.24 tree and the bytes did not change when the pin moved here.
  */
 const NOTE_OF_0_6_24 = {
-	continued: '3d38693bc364ca1cb4eac497d22ac3e8aa8cd6b44b76f9257cbfc4eaa57956bb',
-	pending: 'a5480af396f335557067d8affa4fd065235120f7ea4773cae89d5dc91a180fc5',
+	continued: '7029b52d616bf909092aee86e36c65e2228e10f920ac8ca72857e422ea66003e',
+	pending: '3e5a545cd064869a8292ddae32bb5bf685c39e8b7efb495fda3815b17716daa0',
 };
+/** The frontmatter keys and the payload of a live note: what has to stay byte for byte whatever the presentation does. */
+const noteData = (content: string): string => [...content.split('\n').filter((line) => /^tc_/u.test(line)), ...provenanceJsonLines(content)].join('\n');
 
 interface Closed { record: LiveSessionRuntimeRecord; journal: readonly LiveJournalEntryV1[]; format: LiveSessionFormat; content: string; path: string }
 /** What outlives a host: the runtime store, the clock, the lease fences and session ids handed out, and the notes written so far. */
@@ -167,7 +173,7 @@ describe('a live session keeps the format it started in', () => {
 		expect(note.content).toBe(old.closed[0]!.content);
 		expect(note.path).toBe(old.closed[0]!.path);
 		// And they are the bytes 0.6.24 itself wrote for this sequence.
-		expect(await sha256Text(note.content)).toBe(NOTE_OF_0_6_24.continued);
+		expect(await sha256Text(noteData(note.content))).toBe(NOTE_OF_0_6_24.continued);
 		await after.die(); await second.die();
 	});
 
@@ -181,7 +187,7 @@ describe('a live session keeps the format it started in', () => {
 		expect(after.lifecycle.getRuntime()).toMatchObject({ phase: 'complete', summaryReceipt: { path: w.closed[0]!.path } });
 		expect(w.closed[0]!.format).toEqual(LEGACY_LIVE_SESSION_FORMAT);
 		expect(w.closed[0]!.content).toContain('tc_payload_version: 1\n');
-		expect(await sha256Text(w.closed[0]!.content)).toBe(NOTE_OF_0_6_24.pending);
+		expect(await sha256Text(noteData(w.closed[0]!.content))).toBe(NOTE_OF_0_6_24.pending);
 		const read = await inspectLiveSessionNote(w.closed[0]!.content); if (read.status !== 'ok') throw new Error(read.status);
 		expect(read.session).toMatchObject({ version: 1, sampleCount: 6, valuation: { priceBasis: 'instant_sell_net', prices: [{ itemId: ITEM, unitCopper: 6 }], netItemValueKnownCopper: 1_500 } });
 		expect(read.session.journal).toHaveLength(6);
@@ -426,5 +432,104 @@ describe('the mark that says the format of a session', () => {
 		expect(await store.loadLive()).toEqual({ status: 'empty' });
 		expect(await store.loadSessionFormat('session')).toEqual(LEGACY_LIVE_SESSION_FORMAT);
 		store.close();
+	});
+});
+
+/**
+ * DU-01: the unscoped session database an earlier release adopted. Whatever version and stores it was left with, opening it the way
+ * production does (the scope decides the name, the store opens it) must give it the live journal and keep what it already held.
+ */
+describe('the live journal of an adopted session database (DU-01)', () => {
+	const SURVIVOR = { version: 1, note: 'a record of the earlier release' };
+	/** The database as some release left it: `version`, with exactly `stores`, and SURVIVOR in the session store. */
+	async function seed(factory: IDBFactory, version: number, stores: readonly string[]): Promise<void> {
+		const database = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = factory.open(SESSION_RUNTIME_DB_NAME, version);
+			request.onupgradeneeded = () => { for (const name of stores) { const created = request.result.createObjectStore(name); if (name === LIVE_SESSION_JOURNAL_STORE_NAME) created.createIndex('session', 'sessionId'); } };
+			request.onsuccess = () => { resolve(request.result); };
+			request.onerror = () => { reject(new Error('seed')); };
+		});
+		await new Promise<void>((resolve, reject) => {
+			const tx = database.transaction(SESSION_RUNTIME_STORE_NAME, 'readwrite');
+			tx.objectStore(SESSION_RUNTIME_STORE_NAME).put(SURVIVOR, 'survivor');
+			tx.oncomplete = () => { resolve(); }; tx.onerror = () => { reject(new Error('seed put')); };
+		});
+		database.close();
+	}
+	async function firstRecord() {
+		const memory = world(); const h = host(memory, { starts: GROSS }); await firstStretch(h);
+		const started = await memory.store.loadLive(); if (started.status !== 'loaded') throw new Error(started.status);
+		await h.die(); return started.record;
+	}
+	const cases: readonly { name: string; version: number; stores: readonly string[] }[] = [
+		{ name: 'a database left in version 1 with the session store alone', version: 1, stores: [SESSION_RUNTIME_STORE_NAME] },
+		{ name: 'a database already damaged: version 2 without the journal', version: 2, stores: [SESSION_RUNTIME_STORE_NAME] },
+		{ name: 'a healthy database in version 2', version: 2, stores: [SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME] },
+	];
+	for (const { name, version, stores } of cases) {
+		it(`saves the live session in ${name} and keeps what it held`, async () => {
+			const factory = new IDBFactory(); await seed(factory, version, stores);
+			const store = new IndexedDbSessionRuntimeStore(factory);
+			const record = await firstRecord();
+			expect(await store.saveLive(record, undefined, undefined, GROSS)).toEqual({ status: 'saved' });
+			expect(await store.loadLive()).toMatchObject({ status: 'loaded', record: { sampleCount: record.sampleCount } });
+			expect(await store.readLiveJournal(record.sessionId)).toEqual([]);
+			store.close();
+			expect(await (async () => { const again = new IndexedDbSessionRuntimeStore(factory); try { return await (again as unknown as { read(key: undefined, name: string): Promise<unknown> }).read(undefined, 'survivor'); } finally { again.close(); } })()).toEqual(SURVIVOR);
+			const names = await new Promise<string[]>((resolve, reject) => { const r = factory.open(SESSION_RUNTIME_DB_NAME); r.onsuccess = () => { const l = Array.from(r.result.objectStoreNames); r.result.close(); resolve(l); }; r.onerror = () => { reject(new Error('open')); }; });
+			expect(names.sort()).toEqual([LIVE_SESSION_JOURNAL_STORE_NAME, SESSION_RUNTIME_STORE_NAME].sort());
+		});
+	}
+
+	async function shape(factory: IDBFactory): Promise<{ version: number; stores: string[] }> {
+		return await new Promise((resolve, reject) => {
+			const request = factory.open(SESSION_RUNTIME_DB_NAME);
+			request.onsuccess = () => { const { version, objectStoreNames } = request.result; request.result.close(); resolve({ version, stores: Array.from(objectStoreNames).sort() }); };
+			request.onerror = () => { reject(new Error('open')); };
+		});
+	}
+	async function survivor(factory: IDBFactory): Promise<unknown> {
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		try { return await (store as unknown as { read(key: undefined, name: string): Promise<unknown> }).read(undefined, 'survivor'); } finally { store.close(); }
+	}
+	const BOTH = [LIVE_SESSION_JOURNAL_STORE_NAME, SESSION_RUNTIME_STORE_NAME].sort();
+
+	it('repairs a damaged database once and opens it, loads and saves on every later start', async () => {
+		const factory = new IDBFactory(); await seed(factory, 2, [SESSION_RUNTIME_STORE_NAME]);
+		const record = await firstRecord();
+		for (let start = 1; start <= 3; start += 1) {
+			const store = new IndexedDbSessionRuntimeStore(factory);
+			expect(await store.saveLive({ ...record, persistedAt: record.persistedAt + start }, undefined, undefined, GROSS), `start ${String(start)}`).toEqual({ status: 'saved' });
+			expect(await store.loadLive(), `start ${String(start)}`).toMatchObject({ status: 'loaded' });
+			store.close();
+		}
+		expect(await shape(factory)).toEqual({ version: 3, stores: BOTH });
+		expect(await survivor(factory)).toEqual(SURVIVOR);
+	});
+	it('repairs a database already above version 2 without lowering or locking it, on every later start', async () => {
+		const factory = new IDBFactory(); await seed(factory, 3, [SESSION_RUNTIME_STORE_NAME]);
+		const record = await firstRecord();
+		for (let start = 1; start <= 3; start += 1) {
+			const store = new IndexedDbSessionRuntimeStore(factory);
+			expect(await store.saveLive({ ...record, persistedAt: record.persistedAt + start }, undefined, undefined, GROSS), `start ${String(start)}`).toEqual({ status: 'saved' });
+			store.close();
+		}
+		expect(await shape(factory)).toEqual({ version: 4, stores: BOTH });
+		expect(await survivor(factory)).toEqual(SURVIVOR);
+	});
+	it('leaves a healthy version 2 database in version 2, where the published 0.6.26 still opens it', async () => {
+		const factory = new IDBFactory(); await seed(factory, 2, [SESSION_RUNTIME_STORE_NAME, LIVE_SESSION_JOURNAL_STORE_NAME]);
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		expect(await store.loadLive()).toEqual({ status: 'empty' });
+		store.close();
+		expect(await shape(factory)).toEqual({ version: 2, stores: BOTH });
+	});
+	it('takes a version 1 database to version 2 with both stores', async () => {
+		const factory = new IDBFactory(); await seed(factory, 1, [SESSION_RUNTIME_STORE_NAME]);
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		expect(await store.readLiveJournal('any')).toEqual([]);
+		store.close();
+		expect(await shape(factory)).toEqual({ version: 2, stores: BOTH });
+		expect(await survivor(factory)).toEqual(SURVIVOR);
 	});
 });

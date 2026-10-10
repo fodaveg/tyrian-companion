@@ -11,6 +11,17 @@ const CONTRACT_COMMAND = 'scripts/brat-release-contract.mjs';
 const CONTRACT_FLAG = '--release-json';
 const PUBLISH_COMMAND = 'gh release create';
 /**
+ * The publishing job must run the guardrail suites itself, before it packages
+ * anything. `release.yml` fires on a tag with no `needs` on `ci.yml`, so a green
+ * `check:guardrails` run elsewhere proves nothing about the commit being
+ * published (GR-02).
+ */
+const GUARDRAILS_COMMAND = 'npm run check:guardrails';
+const PACKAGE_COMMAND = 'npm run release:package';
+const NODE_VERSION_FILE = '.nvmrc';
+const SPIKE_COMMAND = 'npm run test:h8-crossover-spike';
+const SLOW_ENGINE_VARIABLE = 'TYRIAN_TEST_ENGINE_LATENCY_MS';
+/**
  * The asset set has to be DERIVED from the staged bytes, not typed into the
  * workflow. A hand-written list is exactly how 0.1.19 shipped incomplete: it
  * cannot notice that a file it never mentions is missing.
@@ -56,6 +67,13 @@ export function validateReleaseWorkflow(root = process.cwd()) {
 	if (gateIndex === -1) findings.push('release-missing-brat-gate');
 	else if (publishIndex !== -1 && gateIndex > publishIndex) findings.push('release-gate-after-publication');
 
+	const guardrailsIndex = steps.findIndex((step) => runsCommand(step, GUARDRAILS_COMMAND));
+	const packageIndex = steps.findIndex((step) => runsCommand(step, PACKAGE_COMMAND));
+	if (guardrailsIndex === -1) findings.push('release-missing-guardrails');
+	else if ((packageIndex !== -1 && guardrailsIndex > packageIndex) || (publishIndex !== -1 && guardrailsIndex > publishIndex)) {
+		findings.push('release-guardrails-after-package');
+	}
+
 	for (const source of REQUIRED_ASSET_SOURCES) {
 		if (!steps.some((step) => runsCommand(step, source))) findings.push('release-assets-not-planned');
 	}
@@ -69,7 +87,53 @@ export function validateReleaseWorkflow(root = process.cwd()) {
 		}
 	}
 
+	checkNodePin(root, [[RELEASE_WORKFLOW, workflow], ...otherWorkflows(root, [])], findings);
+	checkCiJobs(otherWorkflows(root, []).find(([name]) => name === 'ci.yml')?.[1], findings);
+
 	return finish(findings);
+}
+
+/**
+ * GR-06: one Node for every workflow, read from `.nvmrc`. Two literal versions is how the gate that
+ * decided a publication (22.20.0) ended up different from the one that ran on every push (24.12.0).
+ */
+function checkNodePin(root, workflows, findings) {
+	let pinned = '';
+	try {
+		pinned = readFileSync(resolve(root, NODE_VERSION_FILE), 'utf8').trim();
+	} catch {
+		// reported below
+	}
+	if (!/^\d+\.\d+\.\d+$/u.test(pinned)) findings.push('nvmrc-missing-or-malformed');
+	for (const [name, parsed] of workflows) {
+		for (const [, job] of isRecord(parsed.jobs) ? Object.entries(parsed.jobs) : []) {
+			for (const step of stepsOf(job)) {
+				if (!isRecord(step) || typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node')) continue;
+				const input = isRecord(step.with) ? step.with : {};
+				if (input['node-version-file'] !== NODE_VERSION_FILE || 'node-version' in input) {
+					findings.push(`workflow-node-not-from-nvmrc:${name}`);
+				}
+			}
+		}
+	}
+}
+
+/**
+ * GR-03 and GR-15: two things `ci.yml` carries that the gate no longer does. The slow-engine step is
+ * the only caller of `TYRIAN_TEST_ENGINE_LATENCY_MS`; the H8 spike left `check:guardrails` and must
+ * keep running, conditioned on the diff, or nothing compiles it any more.
+ */
+function checkCiJobs(ci, findings) {
+	if (!isRecord(ci) || !isRecord(ci.jobs)) return;
+	const jobs = Object.values(ci.jobs);
+	const spikeJobs = jobs.filter((job) => stepsOf(job).some((step) => runsCommand(step, SPIKE_COMMAND)));
+	if (spikeJobs.length === 0) findings.push('ci-missing-h8-spike-job');
+	else if (!spikeJobs.every((job) => typeof job.if === 'string' && /outputs\.changed\s*==\s*'true'/u.test(job.if) && job.needs !== undefined)) {
+		findings.push('ci-h8-spike-job-not-conditioned');
+	}
+	const slowEngine = jobs.some((job) => stepsOf(job).some((step) =>
+		isRecord(step) && isRecord(step.env) && Number(step.env[SLOW_ENGINE_VARIABLE]) > 0 && runsCommand(step, 'vitest')));
+	if (!slowEngine) findings.push('ci-missing-slow-engine-step');
 }
 
 function finish(findings) {

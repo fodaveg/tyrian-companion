@@ -62,6 +62,10 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/account/magic-find-service.ts',
 	'src/account/rate-limited-storage-snapshot-service.ts',
 	'src/account/storage-snapshot-service.ts',
+	// "Actualizar logros de Leyspring". Imports only the `HttpTransportError` class to read the
+	// status of a failed call (401/403 = key without `progression`); the requests it makes go through
+	// the injected `GuildWars2Client` and public gateway, so it opens no transport of its own.
+	'src/achievements/leyspring-capture.ts',
 	'src/advisor/inventory-advisor-evidence.ts',
 	'src/catalog/public-catalog-client.ts',
 	'src/catalog/public-catalog-service.ts',
