@@ -121,4 +121,23 @@ export default defineConfig(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	// DE-11: the three Obsidian popout-window rules protect plugin code that runs inside Obsidian.
+	// A test runs under Node (or happy-dom) with one global window, so `setTimeout`, `globalThis` and
+	// `document.createElement` there are the test environment, not product risk (36 warnings, all in
+	// `*.test.ts`). Source files keep every rule.
+	{
+		files: ['**/*.test.ts'],
+		rules: {
+			'obsidianmd/prefer-window-timers': 'off',
+			'obsidianmd/no-global-this': 'off',
+			'obsidianmd/prefer-create-el': 'off',
+		},
+	},
+	// DE-12: `scripts/` are Node tools that never ship in the plugin; `fetch` there is Node's own.
+	{
+		files: ['scripts/**'],
+		rules: {
+			'no-restricted-globals': 'off',
+		},
+	},
 );
