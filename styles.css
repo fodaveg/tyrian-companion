@@ -2989,7 +2989,6 @@
 }
 
 @keyframes tyrian-sale-pulse {
-	0%, 100% { opacity: 1; }
 	50% { opacity: .35; }
 }
 
