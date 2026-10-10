@@ -89,7 +89,7 @@ describe('requestPersistentStorage', () => {
 describe('requestPersistentStorage with an estimate', () => {
 	const MIB = 1024 * 1024;
 
-	it('records the origin\'s usage and quota in whole MiB next to the answer, asking estimate once on the manager itself', async () => {
+	it('records the origin\'s usage in whole MiB and its share of the quota next to the answer, asking estimate once on the manager itself', async () => {
 		const { probe, settled } = recorded();
 		const storage = {
 			persist: vi.fn(async () => true),
@@ -101,7 +101,7 @@ describe('requestPersistentStorage with an estimate', () => {
 
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
 		expect(storage.estimate).toHaveBeenCalledTimes(1);
-		expect(settled().detail).toEqual({ result: 'granted', usageMiB: '5', quotaMiB: '2048' });
+		expect(settled().detail).toEqual({ result: 'granted', usageMiB: '5', quotaUsedPercent: '1' });
 	});
 
 	it('records them with a refusal too', async () => {
@@ -110,7 +110,7 @@ describe('requestPersistentStorage with an estimate', () => {
 
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('denied');
 		expect(settled()).toMatchObject({ phase: 'skip', code: 'permission_denied' });
-		expect(settled().detail).toEqual({ result: 'denied', usageMiB: '0', quotaMiB: '512' });
+		expect(settled().detail).toEqual({ result: 'denied', usageMiB: '0', quotaUsedPercent: '0' });
 	});
 
 	it.each([
@@ -123,6 +123,43 @@ describe('requestPersistentStorage with an estimate', () => {
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
 		expect(settled()).toMatchObject({ phase: 'success', code: 'ok' });
 		expect(settled().detail).toEqual({ result: 'granted' });
+	});
+
+	it.each([
+		['rounds the share up', 100.2 * MIB, 200 * MIB, '51'],
+		['keeps it at 100 when the engine reports more usage than quota', 300 * MIB, 200 * MIB, '100'],
+		['keeps it at 100 at the quota', 200 * MIB, 200 * MIB, '100'],
+	])('%s', async (_label, usage, quota, percent) => {
+		const { probe, settled } = recorded();
+		const storage = { persist: async () => true, estimate: async () => ({ usage, quota }) };
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
+		expect(settled().detail).toMatchObject({ quotaUsedPercent: percent });
+	});
+
+	// The quota gives the size of the disk away: it never reaches the line, in bytes, in MiB or under any other key.
+	it('never records the quota itself', async () => {
+		const { probe, settled } = recorded();
+		const quota = 238_475 * MIB;
+		const storage = { persist: async () => true, estimate: async () => ({ usage: 3 * MIB, quota }) };
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
+		const detail = settled().detail ?? {};
+		expect(Object.keys(detail).sort()).toEqual(['quotaUsedPercent', 'result', 'usageMiB']);
+		expect(Object.values(detail)).not.toContain(String(quota));
+		expect(Object.values(detail)).not.toContain('238475');
+	});
+
+	it.each([
+		['a zero quota', 0],
+		['a quota that is not a number', Number.NaN],
+		['no quota', undefined],
+	])('records only the usage with %s', async (_label, quota) => {
+		const { probe, settled } = recorded();
+		const storage = { persist: async () => true, estimate: async () => ({ usage: 2 * MIB, quota }) };
+
+		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
+		expect(settled().detail).toEqual({ result: 'granted', usageMiB: '2' });
 	});
 
 	it('leaves out a figure that is not a finite, non-negative number', async () => {

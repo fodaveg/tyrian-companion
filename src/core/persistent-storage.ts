@@ -15,9 +15,10 @@ const MIB = 1024 * 1024;
  * Asks the engine not to evict this origin's storage when the disk runs short (`navigator.storage.persist()`,
  * DU-13, 10 Oct 2026), and records its answer in the local diagnostic log by the persistence probe every store
  * uses: store `origin_storage`, operation `open`, `result` `granted`, `denied` or `unavailable`. Once it answered,
- * the same line carries the origin's `estimate()` where the manager has one: `usageMiB` and `quotaMiB`, in whole MiB
- * (rounded, so the line says how full the origin is without the exact byte counts). An estimate that is missing or
- * fails leaves them out and changes nothing else.
+ * the same line carries the origin's `estimate()` where the manager has one: `usageMiB`, the usage in whole MiB, and
+ * `quotaUsedPercent`, the usage over the quota as an integer from 0 to 100, rounded up. That says how close the origin
+ * is to eviction without the quota itself, which gives the size of the disk away, or the exact byte counts. An estimate
+ * that is missing or fails, or a figure that is not a finite, non-negative number, leaves them out and changes nothing else.
  *
  * Until it is granted, IndexedDB is «best effort»: an engine short of disk may drop the whole origin, and with it
  * the only copy of what the user wrote by hand (the inventory preferences). The request changes nothing else, and
@@ -61,8 +62,9 @@ export async function requestPersistentStorage(
 }
 
 /**
- * `usageMiB` and `quotaMiB` of the origin from the manager's own `estimate()` (called on itself), each only when the
- * engine gave a finite, non-negative number; nothing at all where there is no `estimate` or it throws or rejects.
+ * `usageMiB` and `quotaUsedPercent` of the origin from the manager's own `estimate()` (called on itself): the usage only
+ * when the engine gave a finite, non-negative number, and the percentage only with it and a positive quota; nothing at
+ * all where there is no `estimate` or it throws or rejects.
  */
 async function originEstimate(storage: PersistentStorageManager): Promise<Record<string, string>> {
 	if (typeof storage.estimate !== 'function') return {};
@@ -74,16 +76,18 @@ async function originEstimate(storage: PersistentStorageManager): Promise<Record
 		return {};
 	}
 	const detail: Record<string, string> = {};
-	const usage = wholeMiB(estimate, 'usage');
-	if (usage !== undefined) detail.usageMiB = usage;
-	const quota = wholeMiB(estimate, 'quota');
-	if (quota !== undefined) detail.quotaMiB = quota;
+	const usage = estimateBytes(estimate, 'usage');
+	if (usage === undefined) return detail;
+	detail.usageMiB = String(Math.round(usage / MIB));
+	const quota = estimateBytes(estimate, 'quota');
+	// The quota itself never goes to the log: it gives the size of the disk away. Only how much of it is used, rounded up.
+	if (quota !== undefined && quota > 0) detail.quotaUsedPercent = String(Math.min(100, Math.ceil((usage / quota) * 100)));
 	return detail;
 }
 
-/** One field of an estimate in whole MiB, or undefined when it is not a finite, non-negative number. */
-function wholeMiB(estimate: unknown, field: 'usage' | 'quota'): string | undefined {
+/** One field of an estimate in bytes, or undefined when it is not a finite, non-negative number. */
+function estimateBytes(estimate: unknown, field: 'usage' | 'quota'): number | undefined {
 	if (typeof estimate !== 'object' || estimate === null) return undefined;
 	const bytes = (estimate as Partial<Record<typeof field, unknown>>)[field];
-	return typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? String(Math.round(bytes / MIB)) : undefined;
+	return typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? bytes : undefined;
 }

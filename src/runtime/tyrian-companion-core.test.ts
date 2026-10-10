@@ -299,9 +299,10 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		await vi.waitFor(() => { expect(settled()).toHaveLength(1); }, { timeout: 10_000 });
 		await runtime.stop();
 
-		expect(settled()[0]).toMatchObject({
-			component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok',
-			details: { store: 'origin_storage', result: 'granted', usageMiB: '12', quotaMiB: '4096' },
+		expect(settled()[0]).toMatchObject({ component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok' });
+		// Exactly these: the quota itself (which gives the size of the disk away) never reaches the log.
+		expect(settled()[0]!.details).toEqual({
+			store: 'origin_storage', operation: 'open', result: 'granted', usageMiB: '12', quotaUsedPercent: '1',
 		});
 	});
 
