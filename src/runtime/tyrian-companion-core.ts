@@ -2708,7 +2708,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		);
 		if (!this.halloweenObservationActive() || this.halloween === null) return accountRef;
 		this.halloween.disable(parent);
-		await this.halloween.activate(parent);
+		// Z21: `activate` drains the session-note backfill (it reads and parses every candidate note,
+		// seconds on a big vault), so awaiting it here held "Comprobar conexión" and the first loot
+		// observation behind the walk. It runs in the background instead. What actually reads its
+		// result waits explicitly: `HalloweenRuntime.observeDelta` awaits the pending activation and
+		// every backfill flight before counting anything, and per-episode flights stay serialised, so
+		// no loot is counted twice or lost while the walk is still going. `activate` reports store
+		// failures through the runtime state; only a disposed runtime rejects, which is not an error here.
+		void this.halloween.activate(parent).catch(() => undefined);
 		this.halloween.setOnline(this.host.environment.isOnline());
 		return accountRef;
 	}

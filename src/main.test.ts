@@ -196,6 +196,45 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		await prototype.checkConnection.call(harness);
 		expect(activate).toHaveBeenCalledTimes(1);
 	});
+
+	// Z21: the first connection check of a load used to wait for the whole session-note walk,
+	// because `switchHalloweenAccount` awaited `halloween.activate()` (which drains the backfill).
+	it('checkConnection answers while the Halloween note walk is still running', async () => {
+		let releaseWalk: () => void = () => undefined;
+		const walk = new Promise<void>((resolve) => { releaseWalk = resolve; });
+		const activate = vi.fn(async () => { await walk; });
+		const prototype = TyrianCompanionCore.prototype as unknown as {
+			checkConnection(this: unknown): Promise<ConnectionState>;
+			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
+		};
+		const harness = withObsidianHost({
+			runtimeReady: true,
+			connection: { check: async () => ({
+				status: 'connected' as const, details: { account: { id: 'account-1' } },
+			}) },
+			settingTab: { refreshConnectionRow: vi.fn() },
+			renderViews: vi.fn(),
+			localDebugActions: null,
+			reconcilePendingProposals: vi.fn(async () => undefined),
+			alertAccountRef: null as string | null,
+			halloweenAccountRef: null as string | null,
+			halloweenObservationActive: () => true,
+			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
+			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
+			settings: DEFAULT_SETTINGS,
+			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+			switchHalloweenAccount: prototype.switchHalloweenAccount,
+			armAssistedDetection: vi.fn(async () => 'unavailable'),
+		});
+
+		const outcome = await Promise.race([
+			prototype.checkConnection.call(harness).then(() => 'answered'),
+			new Promise<string>((resolve) => { setTimeout(() => { resolve('waiting for the walk'); }, 50); }),
+		]);
+		expect(outcome).toBe('answered');
+		expect(activate).toHaveBeenCalledTimes(1);
+		releaseWalk();
+	});
 });
 
 /**

@@ -606,6 +606,32 @@ describe('HalloweenRuntime', () => {
 		expect(secondEpisode).toBeNull();
 		runtime.dispose();
 	});
+
+	// Z21: the host no longer awaits `activate()` (the note walk); this is the explicit block that
+	// replaces it. A loot observation that arrives mid-walk waits for the walk and is counted once.
+	it('holds a loot observation until the unawaited note walk finishes, then counts it exactly once', async () => {
+		let releaseWalk: () => void = () => undefined;
+		const walk = new Promise<void>((resolve) => { releaseWalk = resolve; });
+		const loadBackfill = vi.fn(async () => { await walk; return []; });
+		const onNotice = vi.fn();
+		const runtime = new HalloweenRuntime(options({ loadBackfill, onNotice }));
+		const activation = runtime.activate();
+		let settled = false;
+		const first = runtime.observeDelta({ delta: delta('z-a', 'z-b', [7]), source: 'assisted_poll', episodeId: 'session:z21' })
+			.finally(() => { settled = true; });
+		const repeat = runtime.observeDelta({ delta: delta('z-a', 'z-b', [7]), source: 'assisted_poll', episodeId: 'session:z21' });
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(settled).toBe(false);
+		expect(onNotice).not.toHaveBeenCalled();
+		releaseWalk();
+		await activation;
+		await Promise.all([first, repeat]);
+		expect(loadBackfill).toHaveBeenCalledTimes(1);
+		expect(onNotice).toHaveBeenCalledTimes(1);
+		expect(runtime.getState().notices).toHaveLength(1);
+		expect(runtime.getState().notices[0]?.items).toMatchObject([{ itemId: 7, quantity: 1 }]);
+		runtime.dispose();
+	});
 });
 
 function options(patch: Partial<ConstructorParameters<typeof HalloweenRuntime>[0]> = {}): ConstructorParameters<typeof HalloweenRuntime>[0] {
