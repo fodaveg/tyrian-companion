@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 574,
+		"catch_clause": 577,
 		"promise_catch": 59,
 		"void_expression": 126,
 		"callback_registration": 230
@@ -6582,11 +6582,59 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "c8913590ad358b66692065c18641ff1caf38248e",
+					"id": "68ef3c785633f35c25d6a99a64029a1c919496bf",
 					"kind": "catch_clause",
 					"line": 82,
 					"column": 4,
-					"endLine": 89,
+					"endLine": 88,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" catch (\"rethrow\") closes the path-index and local-files stores opened before the host existed, since no handle and no cleanup will ever exist for a host that failed to be created, and rethrows the original failure to Hebra, so it is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"activateTyrian\" catch (\"rethrow\") closes the path-index and local-files stores opened before the host existed, since no handle and no cleanup will ever exist for a host that failed to be created, and rethrows the original failure to Hebra, so it is not swallowed. Verified recovery: \"rethrow\" in \"activateTyrian\"."
+				},
+				{
+					"id": "e17ab3406efce5432c2cf13d0d857d67c0e8159e",
+					"kind": "catch_clause",
+					"line": 85,
+					"column": 34,
+					"endLine": 85,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" inner catch is a \"local_recovery\": a path-index close that throws while a failed host creation is being undone is handed to report(closeError, 'host'), the adapter failure channel, so the error rethrown to Hebra is still the creation failure."
+					},
+					"reason": "Allowlisted catch_clause: The \"activateTyrian\" inner catch is a \"local_recovery\": a path-index close that throws while a failed host creation is being undone is handed to report(closeError, 'host'), the adapter failure channel, so the error rethrown to Hebra is still the creation failure. Verified recovery: \"local_recovery\" in \"activateTyrian\"."
+				},
+				{
+					"id": "88163be139a5f422d43dee3d8867920db246593a",
+					"kind": "catch_clause",
+					"line": 86,
+					"column": 34,
+					"endLine": 86,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "activateTyrian",
+						"justification": "The \"activateTyrian\" inner catch is a \"local_recovery\": a local-files close that throws while a failed host creation is being undone is handed to report(closeError, 'host'), the adapter failure channel, so the error rethrown to Hebra is still the creation failure."
+					},
+					"reason": "Allowlisted catch_clause: The \"activateTyrian\" inner catch is a \"local_recovery\": a local-files close that throws while a failed host creation is being undone is handed to report(closeError, 'host'), the adapter failure channel, so the error rethrown to Hebra is still the creation failure. Verified recovery: \"local_recovery\" in \"activateTyrian\"."
+				},
+				{
+					"id": "c8913590ad358b66692065c18641ff1caf38248e",
+					"kind": "catch_clause",
+					"line": 93,
+					"column": 4,
+					"endLine": 100,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6600,9 +6648,9 @@
 				{
 					"id": "8ece42f8ce86b1fdbaad516dc7b2894f75635a4a",
 					"kind": "catch_clause",
-					"line": 87,
+					"line": 98,
 					"column": 34,
-					"endLine": 87,
+					"endLine": 98,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6616,9 +6664,9 @@
 				{
 					"id": "7d6e66e8d19222967ab9c6e499823526951c7a9e",
 					"kind": "callback_registration",
-					"line": 101,
+					"line": 112,
 					"column": 10,
-					"endLine": 102,
+					"endLine": 113,
 					"endColumn": 31,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6633,9 +6681,9 @@
 				{
 					"id": "05239e2c338b4923ff47b4ffa0cdde3cfaa895b2",
 					"kind": "promise_catch",
-					"line": 101,
+					"line": 112,
 					"column": 10,
-					"endLine": 103,
+					"endLine": 114,
 					"endColumn": 53,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6650,9 +6698,9 @@
 				{
 					"id": "1931145d16604d103cdcdb422e969abf354fc03e",
 					"kind": "callback_registration",
-					"line": 101,
+					"line": 112,
 					"column": 10,
-					"endLine": 105,
+					"endLine": 116,
 					"endColumn": 41,
 					"registration": "finally",
 					"classification": "allowlisted",

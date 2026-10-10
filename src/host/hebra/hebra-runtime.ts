@@ -61,20 +61,31 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 	// core's UI; the core installs them too, but this does not depend on it having started yet.
 	installDomHelpers();
 	await new Promise<void>((resolve) => { api.ui.onReady(resolve); });
-	const handle = await createHebraHost({
-		api,
-		indexedDB: environment.indexedDB,
-		locks: environment.locks ?? null,
-		pathIndexKv: createIndexedDbPathIndexKv(environment.indexedDB, api.storage.indexedDbName(PATH_INDEX_DATABASE)),
-		fileBackend: createIndexedDbFileBackend(environment.indexedDB, api.storage.indexedDbName(LOCAL_FILES_DATABASE)),
-		secretsBackend: await hebraSecretsBackend(api, report),
-		canonicalPathFor,
-		platform: tyrianPlatform(api.env),
-		window: environment.window,
-		report,
-		failures,
-		...(environment.moduleUrl === undefined ? {} : { moduleUrl: environment.moduleUrl }),
-	});
+	const pathIndexKv = createIndexedDbPathIndexKv(environment.indexedDB, api.storage.indexedDbName(PATH_INDEX_DATABASE));
+	const fileBackend = createIndexedDbFileBackend(environment.indexedDB, api.storage.indexedDbName(LOCAL_FILES_DATABASE));
+	let handle: Awaited<ReturnType<typeof createHebraHost>>;
+	try {
+		handle = await createHebraHost({
+			api,
+			indexedDB: environment.indexedDB,
+			locks: environment.locks ?? null,
+			pathIndexKv,
+			fileBackend,
+			secretsBackend: await hebraSecretsBackend(api, report),
+			canonicalPathFor,
+			platform: tyrianPlatform(api.env),
+			window: environment.window,
+			report,
+			failures,
+			...(environment.moduleUrl === undefined ? {} : { moduleUrl: environment.moduleUrl }),
+		});
+	} catch (error) {
+		// The host never existed, so no handle can close the two stores: the path index may already hold a connection
+		// (folders read, first walk of the library, keychain). A close that fails is reported apart, never in place of `error`.
+		try { pathIndexKv.close?.(); } catch (closeError) { report(closeError, 'host'); }
+		try { fileBackend.close?.(); } catch (closeError) { report(closeError, 'host'); }
+		throw error;
+	}
 	const removeMobileClass = installObsidianMobileClass(environment.document, environment.window, api.env.appleMobile());
 	const runtime = (environment.createRuntime ?? createTyrianRuntime)(handle.host);
 	try {
