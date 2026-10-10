@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
-import { DevInstallError, defaultPluginDir, installDevBuild, parseDevInstallArguments } from '../dev-install.mjs';
+import { DevInstallError,installDevBuild, parseDevInstallArguments } from '../dev-install.mjs';
 
 // Resolved: on macOS tmpdir() is /var/folders, a symlink to /private/var/folders, and reloadPlugin compares
 // the vault path against realpathSync(vaultRoot), so an unresolved root never matched and the reload never ran.
@@ -236,8 +236,9 @@ function testArgumentParsing() {
 	assert(defaulted.pluginDir === resolve('/tmp/from-env'), 'TC_PLUGIN_DIR was not honoured when no flag is given');
 	assert(defaulted.reload === true, 'reload did not default to true');
 
-	const noEnv = withEnvironment({ TC_PLUGIN_DIR: undefined }, () => parseDevInstallArguments([]));
-	assert(noEnv.pluginDir === defaultPluginDir(), 'the default plugin dir did not match defaultPluginDir()');
+	// RT-08: with neither flag nor env var there is no vault to fall back on.
+	assertThrowsCode(() => withEnvironment({ TC_PLUGIN_DIR: undefined }, () => parseDevInstallArguments([])), 'plugin-dir-required', 'a run without a vault fell back to a default one');
+	assertThrowsCode(() => withEnvironment({ TC_PLUGIN_DIR: '' }, () => parseDevInstallArguments([])), 'plugin-dir-required', 'an empty TC_PLUGIN_DIR was accepted as a vault');
 
 	assertThrowsCode(() => parseDevInstallArguments(['--unknown']), 'usage', 'an unknown flag was silently accepted');
 	assertThrowsCode(() => parseDevInstallArguments(['--plugin-dir']), 'usage', 'a --plugin-dir without a value was accepted');
