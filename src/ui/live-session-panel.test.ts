@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { Window } from 'happy-dom';
 import { formatCopperVisual } from '../core/copper-format';
 import type { LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
@@ -398,9 +399,10 @@ describe('Session tab: figures, objects and chart', () => {
 		}
 		/** The pointer paints on the next frame; here a frame runs at once unless a test queues them itself. */
 		let frames: FrameRequestCallback[] | null = null;
+		let mainFrame: MockInstance<typeof window.requestAnimationFrame>;
 		beforeEach(() => {
 			frames = null;
-			vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { if (frames === null) callback(0); else frames.push(callback); return 1; });
+			mainFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { if (frames === null) callback(0); else frames.push(callback); return 1; });
 		});
 		afterEach(() => { vi.restoreAllMocks(); });
 
@@ -557,6 +559,28 @@ describe('Session tab: figures, objects and chart', () => {
 			frames[0]!(0);
 			expect(tip(panel).hasAttribute('hidden')).toBe(true);
 			observer.disconnect();
+		});
+
+		it('asks the frame of the window the plot lives in, not the main one: an Obsidian pop-out keeps painting while the main window is hidden', () => {
+			const popout = new Window();
+			const popoutDocument = popout.document as unknown as Document;
+			const popoutWindow = popoutDocument.defaultView!;
+			const popoutFrame = vi.spyOn(popoutWindow, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1; });
+			const view = cursorView();
+			const actions: LiveSessionPanelActions = {
+				getLocale: () => 'en', getLiveSessionView: () => view, getLiveSessionEntity: () => null,
+				getLiveSessionControl: () => control(), startLiveSession: async () => {}, stopLiveSession: async () => {}, discardOldSession: async () => {},
+			};
+			const panel = new LiveSessionPanel(popoutDocument, actions);
+			popoutDocument.body.append(panel.element);
+			expect(panel.element.ownerDocument.defaultView).toBe(popoutWindow);
+			expect(popoutWindow).not.toBe(window);
+			laidOut(panel);
+			pointer(panel, 'pointermove', 260);
+			expect(popoutFrame).toHaveBeenCalledOnce();
+			expect(mainFrame, 'the main window got no request').not.toHaveBeenCalled();
+			expect(lines(panel)[0]).toBe(clock(10));
+			popout.close();
 		});
 
 		it('walks the readings with the keyboard: arrows, Home, End and Escape, stepping over a gap, and speaks each step', () => {

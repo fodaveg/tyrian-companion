@@ -826,7 +826,9 @@ export class LiveSessionPanel {
 		}
 		const scheduled = this.pendingClientX !== null;
 		this.pendingClientX = event.clientX;
-		if (!scheduled) window.requestAnimationFrame(this.paintPointer);
+		// The frame belongs to the window the plot lives in: in an Obsidian pop-out that is not the main window, whose
+		// frames pause while it is hidden.
+		if (!scheduled) (this.document.defaultView ?? window).requestAnimationFrame(this.paintPointer);
 	};
 
 	private readonly paintPointer = (): void => {
