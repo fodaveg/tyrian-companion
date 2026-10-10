@@ -166,11 +166,11 @@ function hostItemViewClass(view: TyrianViewRegistration): new (leaf: WorkspaceLe
 
 		getDisplayText(): string { return view.title(); }
 
-		getIcon(): string { return view.icon; }
+		override getIcon(): string { return view.icon; }
 
-		async onOpen(): Promise<void> { await view.mount(this.contentEl); }
+		override async onOpen(): Promise<void> { await view.mount(this.contentEl); }
 
-		async onClose(): Promise<void> { await view.unmount(this.contentEl); }
+		override async onClose(): Promise<void> { await view.unmount(this.contentEl); }
 	};
 }
 
@@ -179,12 +179,12 @@ class HostModal extends Modal {
 		super(app);
 	}
 
-	onOpen(): void {
+	override onOpen(): void {
 		if (this.request.title !== undefined) this.setTitle(this.request.title);
 		this.request.mount(this.contentEl, () => { this.close(); });
 	}
 
-	onClose(): void {
+	override onClose(): void {
 		this.contentEl.empty();
 		this.request.onClose?.();
 	}
@@ -250,14 +250,14 @@ export class ObsidianSettingTab<T extends ObsidianSettingsPanel> extends PluginS
 		this.panel = createPanel(this.containerEl);
 	}
 
-	display(): void { this.panel.mount(this.containerEl); }
+	override display(): void { this.panel.mount(this.containerEl); }
 
-	hide(): void {
+	override hide(): void {
 		this.panel.unmount();
 		super.hide();
 	}
 
-	getSettingDefinitions(): SettingDefinitionItem[] {
+	override getSettingDefinitions(): SettingDefinitionItem[] {
 		return this.panel.getSettingDefinitions().map((definition) => ({
 			name: definition.name,
 			desc: definition.desc,

@@ -98,7 +98,7 @@ export class ManualSessionStartModal extends TyrianModal {
 	}
 
 	/** The host empties the content as it closes (ObsidianHost's `Modal.onClose`), before this runs. */
-	onClose(): void {
+	override onClose(): void {
 		this.onDismiss();
 	}
 }

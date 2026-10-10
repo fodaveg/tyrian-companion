@@ -7,14 +7,14 @@ class RecordingModal extends TyrianModal {
 	readonly events: string[] = [];
 	mountedInto: unknown = null;
 
-	protected title(): string { return 'Título'; }
+	protected override title(): string { return 'Título'; }
 
 	onOpen(): void {
 		this.mountedInto = this.contentEl;
 		this.events.push('open');
 	}
 
-	onClose(): void { this.events.push('close'); }
+	override onClose(): void { this.events.push('close'); }
 }
 
 /** A host slot that mounts at once (Obsidian's `Modal.open` runs `onOpen` synchronously). */

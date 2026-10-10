@@ -21,7 +21,7 @@ export class AlertIngameSecretModal extends TyrianModal {
 		super(ui);
 	}
 
-	protected title(): string {
+	protected override title(): string {
 		return this.copy.title;
 	}
 
@@ -37,7 +37,7 @@ export class AlertIngameSecretModal extends TyrianModal {
 		field.select();
 	}
 
-	onClose(): void {
+	override onClose(): void {
 		this.contentEl.empty();
 		this.secret = '';
 	}
