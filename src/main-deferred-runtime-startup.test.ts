@@ -7,6 +7,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { compareStorageSnapshots } from './account/storage-delta';
 import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS } from './alerts/alert-contract';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
+import { sha256Text } from './assets/managed-asset-hash';
 import TyrianCompanionPlugin from './main';
 import { obsidianPluginCore } from './test/obsidian-host-harness';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
@@ -208,6 +209,17 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			// first answer at once, the store having just stayed silent).
 			expect(opened.length).toBeGreaterThan(1);
 			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([30_000, 30_000]);
+		});
+
+		// DU-02: a device that already remembers this vault's id does not wait for the registry, so the common start is back to two waits.
+		it('a device that remembers this vault does not wait for the vault registry: ready after the two usual waits', async () => {
+			const tracked = trackedIndexedDb(); hangStorage(tracked);
+			const local = new Map<string, unknown>([['tyrian-companion:vault-identity', { vaultId: await sha256Text('/test/vault') }]]);
+			const plugin = runtimeBootPlugin(tracked.factory, new Map(), local);
+			const timers = manualWindowTimers();
+			expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
+			expect(plugin.runtimeReady).toBe(true);
+			expect([bootTiming.readyAtMs, bootTiming.settledAtMs]).toEqual([20_000, 20_000]);
 		});
 
 		// A slow engine, not a silent one: the device saved `consult`, the read of it answers after the start gave up waiting.
@@ -455,7 +467,9 @@ describe('deferred runtime startup failure', () => {
 	});
 });
 
-function runtimeBootPlugin(factory: IDBFactory, notes = new Map<string, string>()): RuntimeBootHarness {
+function runtimeBootPlugin(
+	factory: IDBFactory, notes = new Map<string, string>(), local?: Map<string, unknown>,
+): RuntimeBootHarness {
 	const workspace = {
 		getLeavesOfType: vi.fn(() => []),
 	};
@@ -480,7 +494,13 @@ function runtimeBootPlugin(factory: IDBFactory, notes = new Map<string, string>(
 		}),
 		fileManager: { trashFile: vi.fn(async () => undefined) },
 	};
-	const app = { vault, workspace, fileManager: vault.fileManager } as unknown as App;
+	const app = {
+		vault, workspace, fileManager: vault.fileManager,
+		...(local === undefined ? {} : {
+			loadLocalStorage: (key: string) => local.get(key) ?? null,
+			saveLocalStorage: (key: string, value: unknown) => { local.set(key, value); },
+		}),
+	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
 	const { core } = obsidianPluginCore(app, manifest, { saveData: vi.fn(async () => undefined) });
 	const target = core as unknown as {

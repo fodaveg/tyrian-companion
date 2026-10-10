@@ -330,6 +330,171 @@ describe('a vault that changes path is not silently orphaned (DU-02)', () => {
 		await plugin.shutdownRuntime();
 	});
 
+	it('a vault copied whole (same token, own local storage) opened alternately never asks again once the copy is answered', async () => {
+		const original = device();
+		const first = await boot(original, '/vaults/v1', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('collector');
+		await first.shutdownRuntime();
+		const copy: Device = { factory: original.factory, local: new Map(), notices: [], data: structuredClone(original.data) };
+		const opened: string[] = [];
+		const open = async (world: Device, path: string, answer?: 'adopt' | 'fresh'): Promise<void> => {
+			const plugin = await boot(world, path, { apiKeySecret: 'gw2-main' });
+			opened.push(`${path} pending=${String(plugin.getVaultRelocation().pending)} mode=${plugin.getCollectorMode()}`);
+			if (answer !== undefined) await plugin.resolveVaultRelocation(answer);
+			await plugin.shutdownRuntime();
+		};
+
+		await open(copy, '/vaults/v2', 'fresh');
+		await open(original, '/vaults/v1');
+		await open(copy, '/vaults/v2');
+		await open(original, '/vaults/v1');
+		await open(original, '/vaults/v1');
+		await open(copy, '/vaults/v2');
+
+		// Only the first opening of the copy asks; the original keeps its collector mode in every opening.
+		expect(opened).toEqual([
+			'/vaults/v2 pending=true mode=consult',
+			'/vaults/v1 pending=false mode=collector',
+			'/vaults/v2 pending=false mode=consult',
+			'/vaults/v1 pending=false mode=collector',
+			'/vaults/v1 pending=false mode=collector',
+			'/vaults/v2 pending=false mode=consult',
+		]);
+	});
+
+	it('a copy that is not answered keeps asking on its own side and never makes the original ask', async () => {
+		const original = device();
+		const first = await boot(original, '/vaults/v1', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('collector');
+		await first.shutdownRuntime();
+		const copy: Device = { factory: original.factory, local: new Map(), notices: [], data: structuredClone(original.data) };
+		const opened: string[] = [];
+		for (const [world, path] of [[copy, '/vaults/v2'], [original, '/vaults/v1'], [copy, '/vaults/v2'], [original, '/vaults/v1']] as const) {
+			const plugin = await boot(world, path, { apiKeySecret: 'gw2-main' });
+			opened.push(`${path} pending=${String(plugin.getVaultRelocation().pending)} mode=${plugin.getCollectorMode()}`);
+			await plugin.shutdownRuntime();
+		}
+
+		expect(opened).toEqual([
+			'/vaults/v2 pending=true mode=consult',
+			'/vaults/v1 pending=false mode=collector',
+			'/vaults/v2 pending=true mode=consult',
+			'/vaults/v1 pending=false mode=collector',
+		]);
+	});
+
+	it('a token that changes under an intact local storage reaches the registry, so a later move outside Obsidian is detected', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('consult');
+		await first.shutdownRuntime();
+		// What Sync leaves after two devices created their token at once, or an older build stripped it and this one made another.
+		const crossed = crypto.randomUUID();
+		world.data = { ...world.data, vaultToken: crossed };
+		const second = await boot(world, '/vaults/a', { apiKeySecret: 'gw2-main' });
+		expect(second.getVaultRelocation()).toEqual({ pending: false });
+		await second.shutdownRuntime();
+		expect(await registryEntry(world, crossed)).toEqual({ vaultId: await sha256Text('/vaults/a') });
+
+		world.local.clear();
+		const moved = await boot(world, '/vaults/elsewhere', { apiKeySecret: 'gw2-main' });
+
+		expect(moved.getVaultRelocation()).toEqual({ pending: true });
+		expect(moved.getCollectorMode()).toBe('consult');
+		await moved.shutdownRuntime();
+	});
+
+	it('the notice after "start fresh" says the mode in force, collector when the user chose it while the question was open', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('consult');
+		await first.shutdownRuntime();
+		const second = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		await second.updateCollectorMode('collector');
+
+		expect(await second.resolveVaultRelocation('fresh')).toEqual({ status: 'fresh' });
+
+		expect(second.getCollectorMode()).toBe('collector');
+		expect(world.notices.at(-1)).toMatch(/collector mode/u);
+		expect(world.notices.at(-1)).not.toMatch(/consult/u);
+		await second.shutdownRuntime();
+	});
+
+	it('the notice after "adopt" does not claim the old mode when the one chosen for the new path won', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', { apiKeySecret: 'gw2-main' });
+		await first.updateCollectorMode('consult');
+		await first.shutdownRuntime();
+		const second = await boot(world, '/vaults/new', { apiKeySecret: 'gw2-main' });
+		await second.updateCollectorMode('collector');
+
+		expect(await second.resolveVaultRelocation('adopt')).toEqual({ status: 'adopted', preferences: 0, mode: null });
+
+		expect(second.getCollectorMode()).toBe('collector');
+		expect(world.notices.at(-1)).not.toMatch(/mode|modo/iu);
+		await second.shutdownRuntime();
+	});
+
+	it('the answer runs as a diagnosed settings action', async () => {
+		const world = device();
+		await (await boot(world, '/vaults/old', {})).shutdownRuntime();
+		const plugin = await boot(world, '/vaults/new', {});
+		const run = vi.fn(async (_context: unknown, action: () => Promise<unknown>) => await action());
+		(plugin as unknown as { localDebugActions: unknown }).localDebugActions = {
+			run, runSync: (_context: unknown, action: () => void) => { action(); }, event: vi.fn(),
+			fireAndForget: vi.fn(),
+		};
+
+		await plugin.resolveVaultRelocation('fresh');
+
+		expect(run).toHaveBeenCalledWith(expect.objectContaining({ component: 'settings', state: 'vault_relocation' }), expect.any(Function));
+		(plugin as unknown as { localDebugActions: unknown }).localDebugActions = null;
+		await plugin.shutdownRuntime();
+	});
+
+	it('an answer whose storage does not answer in time fails, stays pending, and the next click tries again', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		// Ten-second deadlines fire at once; everything that answers does so well before.
+		vi.stubGlobal('window', {
+			indexedDB: world.factory, setInterval: vi.fn(() => 1), clearInterval: vi.fn(),
+			setTimeout: (callback: () => void, delay: number) => globalThis.setTimeout(callback, delay >= 10_000 ? 30 : delay),
+			clearTimeout: (handle: number) => { globalThis.clearTimeout(handle); },
+		});
+		const open = world.factory.open.bind(world.factory);
+		const mute = vi.spyOn(world.factory, 'open').mockImplementation((name: string, version?: number) => {
+			if (name === INVENTORY_PREFERENCES_DB_NAME) return {} as IDBOpenDBRequest;
+			return open(name, version);
+		});
+
+		await expect(plugin.resolveVaultRelocation('adopt')).rejects.toThrow();
+		expect(plugin.getVaultRelocation()).toEqual({ pending: true });
+
+		mute.mockRestore();
+		expect(await plugin.resolveVaultRelocation('adopt')).toMatchObject({ status: 'adopted', preferences: 1 });
+		expect(plugin.getVaultRelocation()).toEqual({ pending: false });
+		await plugin.shutdownRuntime();
+	});
+
+	it('after adopting preferences the in-memory inventory preferences are loaded again', async () => {
+		const world = device();
+		const first = await boot(world, '/vaults/old', {});
+		const oldId = first.vaultId ?? '';
+		await first.shutdownRuntime();
+		await savePreferences(world, oldId);
+		const plugin = await boot(world, '/vaults/new', {});
+		const reload = vi.spyOn((plugin as unknown as { inventoryPreferences: { loadCached(): Promise<unknown> } }).inventoryPreferences, 'loadCached');
+
+		await plugin.resolveVaultRelocation('adopt');
+
+		expect(reload).toHaveBeenCalledTimes(1);
+		await plugin.shutdownRuntime();
+	});
+
 	it('a host without per-device local storage behaves as before', async () => {
 		const world = device();
 		world.local.clear();
@@ -358,6 +523,25 @@ interface Device {
 /** One computer: the IndexedDB and the per-vault local storage that survive a restart or a rename. */
 function device(): Device {
 	return { factory: new IDBFactory(), local: new Map(), notices: [], data: null };
+}
+
+/** What the per-device registry holds for a token. */
+async function registryEntry(world: Device, token: string): Promise<unknown> {
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = world.factory.open(VAULT_REGISTRY_DB, 1);
+		request.onupgradeneeded = () => { request.result.createObjectStore('tokens-v1'); };
+		request.onsuccess = () => { resolve(request.result); };
+		request.onerror = () => { reject(new Error('registry could not be opened')); };
+	});
+	try {
+		return await new Promise<unknown>((resolve, reject) => {
+			const request = database.transaction('tokens-v1', 'readonly').objectStore('tokens-v1').get(token);
+			request.onsuccess = () => { resolve(request.result as unknown); };
+			request.onerror = () => { reject(new Error('registry could not be read')); };
+		});
+	} finally {
+		database.close();
+	}
 }
 
 async function savePreferences(world: Device, vaultId: string, generation = 3): Promise<void> {

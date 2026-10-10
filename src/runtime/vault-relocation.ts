@@ -14,14 +14,19 @@
  * - a per-device registry `vault token -> last id`, in its own origin-wide IndexedDB. The token
  *   is a random string kept in the plugin's data (`data.json`, which travels with the folder), so it follows the
  *   folder through any move and identifies the vault, not the device.
- * The registry is read first; the local storage is the fallback and is also kept up to date.
+ * The local storage is trusted FIRST: it is each copy's own (it goes by the `appId`), so when it says "this id, nothing
+ * pending" the answer is no question and the registry is only brought up to date, without making the start wait for
+ * it. Otherwise the registry is read and the local storage is the fallback; both are kept up to date.
  *
- * Covered: a rename or move from the vault switcher, and a folder moved outside Obsidian (when the vault already had
- * its token, i.e. it ran a version with this module at least once). NOT covered: a vault from before the token that
- * is moved outside Obsidian on its first start with it (nothing remembers it); a vault COPIED whole, which shares
- * the token with the original (each opening then looks like a move from the other: it asks, starts in consult, and
- * answering "start fresh" or "adopt" copies and never moves, so the other copy loses nothing); a device that
- * never ran the plugin on that vault (nothing to adopt, no question).
+ * Covered: a rename or move from the vault switcher; a folder moved outside Obsidian (when the vault already had
+ * its token, i.e. it ran a version with this module at least once, whatever token it carries now, because every start
+ * that finds the local storage intact or empty puts the current token in the registry); a vault COPIED whole, which
+ * shares the token with the original: the first opening of the copy asks once (the registry names the original),
+ * and once answered, each copy's own local storage settles every later opening without a question. NOT covered: a
+ * vault from before the token that is moved outside Obsidian on its first start with it (nothing remembers it); a
+ * copy opened for the first time that is never answered (it asks on every start, in consult, until it is answered); a
+ * folder moved outside Obsidian AFTER a start in which the registry could not be written; a device that never ran the
+ * plugin on that vault (nothing to adopt, no question).
  *
  * - A change is reported only when there are local data under the previous id: a collector-mode
  *   entry (every start with IndexedDB leaves one) or inventory preferences.
@@ -136,40 +141,50 @@ async function writeRecord(stores: VaultIdentityStores, record: VaultIdentityRec
 }
 
 /**
+ * What a detection decided. `registryWrite` is the update of the per-device registry, NOT awaited: the start does not
+ * wait for it (a registry that answers nothing must not hold the common start), so the caller owns observing its
+ * failure and awaits it before it writes the registry again.
+ */
+export interface VaultDetection {
+	readonly relocation: VaultRelocation | null;
+	readonly registryWrite: Promise<void> | null;
+}
+
+/** Remembers `record` in the local storage now and in the registry in the background. */
+function remember(stores: VaultIdentityStores, record: VaultIdentityRecord, relocation: VaultRelocation | null): VaultDetection {
+	stores.storage?.save(VAULT_IDENTITY_KEY, record);
+	return { relocation, registryWrite: stores.token === '' ? null : writeRegistry(stores.factory, stores.token, record) };
+}
+
+/**
  * Compares `currentId` with the last id this device used for this vault and records the current one. Returns the
  * relocation to ask about, or `null`. A device with nothing remembered (first start) just records. While the user
  * has not answered, every start asks again; coming back to the original path clears the question.
  */
-export async function detectVaultRelocation(stores: VaultIdentityStores, currentId: string): Promise<VaultRelocation | null> {
-	if (stores.storage === undefined && stores.token === '') return null;
-	const fromRegistry = stores.token === '' ? null : parseRecord(await readRegistry(stores.factory, stores.token));
-	const saved = fromRegistry ?? (stores.storage === undefined ? null : parseRecord(stores.storage.load(VAULT_IDENTITY_KEY)));
-	if (saved === null) {
-		await writeRecord(stores, { vaultId: currentId });
-		return null;
+export async function detectVaultRelocation(stores: VaultIdentityStores, currentId: string): Promise<VaultDetection> {
+	const none: VaultDetection = { relocation: null, registryWrite: null };
+	if (stores.storage === undefined && stores.token === '') return none;
+	// This copy's own memory first: "this id, nothing pending" settles it without the registry (a vault copied whole
+	// shares the token, so the registry may be naming the other copy).
+	const local = stores.storage === undefined ? null : parseRecord(stores.storage.load(VAULT_IDENTITY_KEY));
+	if (local !== null && local.vaultId === currentId && local.pendingFrom === undefined) {
+		return remember(stores, { vaultId: currentId }, null);
 	}
+	const fromRegistry = stores.token === '' ? null : parseRecord(await readRegistry(stores.factory, stores.token));
+	const saved = fromRegistry ?? local;
+	if (saved === null) return remember(stores, { vaultId: currentId }, null);
 	if (saved.vaultId === currentId) {
-		if (saved.pendingFrom === undefined) {
-			// Memories that disagree (the registry knows the id, the local storage was renewed): bring them level.
-			if (fromRegistry !== null) await writeRecord(stores, { vaultId: currentId });
-			return null;
-		}
-		if (saved.pendingFrom === currentId) {
-			await writeRecord(stores, { vaultId: currentId });
-			return null;
-		}
-		return { previousVaultId: saved.pendingFrom };
+		if (saved.pendingFrom === undefined || saved.pendingFrom === currentId) return remember(stores, { vaultId: currentId }, null);
+		return { relocation: { previousVaultId: saved.pendingFrom }, registryWrite: null };
 	}
 	// A second move before answering: the data are under the id that has some, else under the one still pending.
 	const previousVaultId = !(await hasLocalData(stores.factory, saved.vaultId)) && saved.pendingFrom !== undefined
 		? saved.pendingFrom : saved.vaultId;
 	// Back to where it was before the first move: nothing moved.
 	if (previousVaultId === currentId || !(await hasLocalData(stores.factory, previousVaultId))) {
-		await writeRecord(stores, { vaultId: currentId });
-		return null;
+		return remember(stores, { vaultId: currentId }, null);
 	}
-	await writeRecord(stores, { vaultId: currentId, pendingFrom: previousVaultId });
-	return { previousVaultId };
+	return remember(stores, { vaultId: currentId, pendingFrom: previousVaultId }, { previousVaultId });
 }
 
 /** The user answered: the current id is recorded and nothing is pending. */

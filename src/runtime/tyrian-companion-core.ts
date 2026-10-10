@@ -705,6 +705,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private vaultRelocation: VaultRelocation | null = null;
 	/** The answer being applied: a second click gets the same one instead of adopting twice. */
 	private vaultRelocationResolving: Promise<VaultRelocationResult> | null = null;
+	/** The registry update the start's detection left running, waited for once by the answer. */
+	private vaultRegistryWrite: Promise<void> | null = null;
 	/** The late mode being applied: a Settings choice waits for it, so the two applications never overlap. */
 	private lateCollectorApplying: Promise<void> | null = null;
 	/**
@@ -1527,11 +1529,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * already chose for the new id while the question was open wins over the old one); `fresh` adopts nothing and leaves
 	 * the old data where it is. Either way the current id is recorded and the question is not asked again. A `fresh` start
 	 * stays in consult unless the new id already stored a mode: choosing the collector is the user's, in Settings.
-	 * A second call while one runs gets the same answer and does nothing more. A failure leaves the question pending.
+	 * A second call while one runs gets the same answer and does nothing more. A failure, or storage that does not answer
+	 * within its deadline, leaves the question pending and the next call tries again.
 	 */
 	resolveVaultRelocation(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult> {
 		if (this.vaultRelocationResolving !== null) return this.vaultRelocationResolving;
-		const resolving = this.performVaultRelocationAnswer(choice);
+		const perform = async (): Promise<VaultRelocationResult> => await this.performVaultRelocationAnswer(choice);
+		const resolving = this.localDebugActions?.run(
+			{ component: 'settings', action: 'settings_save', state: 'vault_relocation' }, perform,
+		) ?? perform();
 		this.vaultRelocationResolving = resolving;
 		const release = (): void => { if (this.vaultRelocationResolving === resolving) this.vaultRelocationResolving = null; };
 		resolving.then(release, release);
@@ -1543,22 +1549,36 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const vaultId = this.vaultId;
 		if (relocation === null || vaultId === null || !this.runtimeReady) return { status: 'none' };
 		const indexedDB = this.host.kv.indexedDB;
-		const adoption = choice === 'adopt' ? await adoptVaultData(indexedDB, relocation.previousVaultId, vaultId) : null;
-		const mode = await readStoredCollectorMode(indexedDB, vaultId) ?? adoption?.mode ?? 'consult';
-		await saveCollectorMode(indexedDB, vaultId, mode);
-		await settleVaultRelocation(this.vaultIdentityStores(), vaultId);
+		// The registry update the start left running must land before this one writes it again; it is waited for once.
+		const startWrite = this.vaultRegistryWrite;
+		this.vaultRegistryWrite = null;
+		const outcome = await new StorageDeadline().bounded(async () => {
+			if (startWrite !== null) await startWrite;
+			const adoption = choice === 'adopt' ? await adoptVaultData(indexedDB, relocation.previousVaultId, vaultId) : null;
+			// What was copied is read again by the in-memory preferences, which cached the (empty) record of the new id.
+			if (adoption !== null && adoption.preferences > 0) await this.inventoryPreferences.loadCached();
+			const own = await readStoredCollectorMode(indexedDB, vaultId);
+			const adoptedMode = own === null ? adoption?.mode ?? null : null;
+			const mode = own ?? adoptedMode ?? 'consult';
+			await saveCollectorMode(indexedDB, vaultId, mode);
+			await settleVaultRelocation(this.vaultIdentityStores(), vaultId);
+			return { adoption, adoptedMode, mode };
+		}, () => Promise.reject(new StorageUnansweredError()));
 		this.vaultRelocation = null;
 		this.collectorModeChosen = false;
-		if (mode !== this.collectorMode) {
-			this.collectorMode = mode;
+		if (outcome.mode !== this.collectorMode) {
+			this.collectorMode = outcome.mode;
 			await this.applyCollectorModeChange();
 		} else this.settingTab.refreshForSettingsChange();
 		this.renderInventoryAdvisorViews();
 		const translator = createTranslator(this.settings.language);
-		this.emitNotice(adoption === null
-			? translateRuntime(translator, 'notices.vaultFresh')
-			: translateRuntime(translator, adoption.mode === null ? 'notices.vaultAdoptedNoMode' : 'notices.vaultAdopted', { preferences: adoption.preferences }), 'vault_relocation');
-		return adoption === null ? { status: 'fresh' } : { status: 'adopted', preferences: adoption.preferences, mode: adoption.mode };
+		// The notice says what is true now: the mode in force, and whether the old path's mode is the one applied.
+		const notice = outcome.adoption === null
+			? translateRuntime(translator, outcome.mode === 'collector' ? 'notices.vaultFreshCollector' : 'notices.vaultFresh')
+			: translateRuntime(translator, outcome.adoptedMode === null ? 'notices.vaultAdoptedNoMode' : 'notices.vaultAdopted', { preferences: outcome.adoption.preferences });
+		this.emitNotice(notice, 'vault_relocation');
+		return outcome.adoption === null
+			? { status: 'fresh' } : { status: 'adopted', preferences: outcome.adoption.preferences, mode: outcome.adoptedMode };
 	}
 
 	private vaultIdentityStores(): VaultIdentityStores {
@@ -1585,16 +1605,24 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/**
 	 * DU-02: the detection, which never stops the start. A host whose identity is not a path has nothing to detect. When
 	 * the check itself fails and the device remembers ANOTHER id, the answer is an unverified relocation (consult and a
-	 * notice that it could not be checked): the seed must not turn a device into a collector on a guess.
+	 * notice that it could not be checked): the seed must not turn a device into a collector on a guess. The registry
+	 * update the detection leaves is not awaited here: its failure is recorded and the answer to the question waits for it.
 	 */
 	private async detectVaultRelocation(vaultId: string): Promise<VaultRelocation | null> {
 		if (this.host.capabilities?.pathBoundIdentity === false) return null;
 		try {
 			// The start does not wait past the storage deadline either: an engine that answers nothing ends as a failed check.
-			return await new StorageDeadline().bounded(async () => {
+			const detection = await new StorageDeadline().bounded(async () => {
 				await this.ensureVaultToken();
 				return await detectVaultRelocation(this.vaultIdentityStores(), vaultId);
 			}, () => Promise.reject(new StorageUnansweredError()));
+			const write = detection.registryWrite;
+			if (write !== null) {
+				this.vaultRegistryWrite = write;
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'settings', action: 'settings_load', state: 'vault_relocation' }, async () => { await write; });
+			}
+			return detection.relocation;
 		} catch (error) {
 			this.localDebugActions?.event({
 				component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
