@@ -186,6 +186,44 @@ describe('TyrianPathIndex saves in the background', () => {
 		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md', 'b.md']);
 	});
 
+	it('a change that goes back to the text on disk while another is in flight is still written (A, B, back to A)', async () => {
+		const { kv, written, release } = heldKv();
+		const index = await TyrianPathIndex.load(kv, 'lib-1');
+		await index.setNote('a.md', 'note-a', 1);
+		await release();
+		await index.whenSaved();
+		await index.setNote('b.md', 'note-b', 1);
+		await index.deleteById('note-b');
+		await release();
+		await vi.waitFor(() => { expect(written).toHaveLength(3); });
+		await release();
+		await index.whenSaved();
+		// The disk said A, then B was being written: A again has to follow it, or B stays on disk.
+		expect(written.map(paths)).toEqual([['a.md'], ['a.md', 'b.md'], ['a.md']]);
+		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md']);
+	});
+
+	it('after a failed write the disk is unknown: going back to the text saved before writes it again', async () => {
+		const store = createMemoryPathIndexKv();
+		const reported: unknown[] = [];
+		let failNext = false;
+		// The failure of a transaction past its deadline: the engine applied it, its owner was told it failed.
+		const kv = { get: (key: string) => store.get(key), set: async (key: string, value: string) => {
+			await store.set(key, value);
+			if (failNext) { failNext = false; throw new Error('no answer in time'); }
+		} };
+		const index = await TyrianPathIndex.load(kv, 'lib-1', (error) => reported.push(error));
+		await index.setNote('a.md', 'note-a', 1);
+		await index.whenSaved();
+		failNext = true;
+		await index.setNote('b.md', 'note-b', 1);
+		await index.whenSaved();
+		expect(reported).toHaveLength(1);
+		await index.deleteById('note-b');
+		await index.whenSaved();
+		expect(paths(await kv.get('tyrian-path-index:lib-1'))).toEqual(['a.md']);
+	});
+
 	it('a kv that throws instead of rejecting is reported, and leaves nothing to wait for', async () => {
 		const reported: unknown[] = [];
 		const kv = { get: async () => undefined, set: (): Promise<void> => { throw new Error('thrown'); } };

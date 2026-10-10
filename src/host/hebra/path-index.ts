@@ -191,7 +191,7 @@ export class TyrianPathIndex {
 		};
 		const text = JSON.stringify(snapshot);
 		// Compared with what the disk will say once the writer is done: the newest text waiting, else the one in flight,
-		// else the one last read or written. A write that fails does not update `#saved`, so the next change writes again.
+		// else the one last read or written. After a write that failed `#saved` is unknown, so the next change writes again.
 		if (text === (this.#queued ?? this.#writing ?? this.#saved)) return;
 		this.#queued = text;
 		if (this.#drain !== null) return;
@@ -214,6 +214,9 @@ export class TyrianPathIndex {
 				await this.#kv.set(kvKey(this.#namespace), text);
 				this.#saved = text;
 			} catch (error) {
+				// A write that failed may still have reached the disk (a transaction past its deadline commits later), so what
+				// the disk holds is no longer known: whatever comes next is written, even the text it held before.
+				this.#saved = undefined;
 				this.#reportStorageError(error);
 			} finally {
 				this.#writing = undefined;
@@ -224,7 +227,9 @@ export class TyrianPathIndex {
 
 	/**
 	 * Resolves once no save is in flight or waiting (at once when none is): for the tests, and for whoever wants the copy on
-	 * disk current. It never rejects; whether the writes succeeded is what `onStorageError` was told.
+	 * disk current. It never rejects; whether the writes succeeded is what `onStorageError` was told. After `stopSaving()`
+	 * it resolves without writing what was dropped. It waits as long as the `kv.set` in flight does: one that never answers
+	 * keeps it waiting for ever, which production does not meet because its kv gives every call a deadline.
 	 */
 	async whenSaved(): Promise<void> {
 		while (this.#drain !== null) await this.#drain;
