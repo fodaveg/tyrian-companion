@@ -1290,7 +1290,7 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		const h = harness({ tracked: [6832], details: real, categories: parseAchievementCategories(SWEEP_SAMPLE_CATEGORIES)!, noReading: true });
 		h.view.mount();
 		await h.settle();
-		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('Los elementos son periódicos (diarios o semanales) y no se listan aquí.');
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('Los elementos son periódicos (diarios, semanales o mensuales) y no se listan aquí.');
 	});
 
 	it('without an API key the failed-categories text does not point to the disabled «Actualizar progreso»: it says the list is retried on reopening', async () => {
