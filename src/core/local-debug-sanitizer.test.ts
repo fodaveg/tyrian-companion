@@ -59,21 +59,24 @@ describe('local debug sanitizer: apiReason of a refused request', () => {
  * away, even if a caller hands it over.
  */
 describe('local debug sanitizer: origin storage estimate', () => {
-	it('keeps usageMiB and quotaUsedPercent on plugin and drops a raw quota under any of its names', () => {
+	it.each(['<50', '50-80', '80-95', '>=95'])('keeps usageMiB and the band %s on plugin, and drops the quota and an exact share under any of their names', (band) => {
 		const record = sanitizeLocalDebugRecord({
 			level: 'info', component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok',
 			actionId: 'a1', correlationId: 'c1',
-			details: { store: 'origin_storage', result: 'granted', usageMiB: '12', quotaUsedPercent: '1', quotaMiB: '4096', quota: 4_294_967_296 },
+			details: {
+				store: 'origin_storage', result: 'granted', usageMiB: '12', quotaUsedBand: band,
+				quotaUsedPercent: '1', quotaMiB: '4096', quota: 4_294_967_296,
+			},
 		}, CONTEXT);
 
-		expect(record.details).toEqual({ store: 'origin_storage', result: 'granted', usageMiB: '12', quotaUsedPercent: '1' });
+		expect(record.details).toEqual({ store: 'origin_storage', result: 'granted', usageMiB: '12', quotaUsedBand: band });
 	});
 
 	it('drops both for every component that has not reviewed them', () => {
 		const record = sanitizeLocalDebugRecord({
 			level: 'info', component: 'session', action: 'session_start', phase: 'success', code: 'ok',
 			actionId: 'a1', correlationId: 'c1',
-			details: { phase: 'observing', usageMiB: '12', quotaUsedPercent: '1' },
+			details: { phase: 'observing', usageMiB: '12', quotaUsedBand: '<50' },
 		}, CONTEXT);
 
 		expect(record.details).toEqual({ phase: 'observing' });

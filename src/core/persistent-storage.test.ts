@@ -89,7 +89,7 @@ describe('requestPersistentStorage', () => {
 describe('requestPersistentStorage with an estimate', () => {
 	const MIB = 1024 * 1024;
 
-	it('records the origin\'s usage in whole MiB and its share of the quota next to the answer, asking estimate once on the manager itself', async () => {
+	it('records the origin\'s usage in whole MiB and the band of the quota it takes next to the answer, asking estimate once on the manager itself', async () => {
 		const { probe, settled } = recorded();
 		const storage = {
 			persist: vi.fn(async () => true),
@@ -101,7 +101,7 @@ describe('requestPersistentStorage with an estimate', () => {
 
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
 		expect(storage.estimate).toHaveBeenCalledTimes(1);
-		expect(settled().detail).toEqual({ result: 'granted', usageMiB: '5', quotaUsedPercent: '1' });
+		expect(settled().detail).toEqual({ result: 'granted', usageMiB: '5', quotaUsedBand: '<50' });
 	});
 
 	it('records them with a refusal too', async () => {
@@ -110,7 +110,7 @@ describe('requestPersistentStorage with an estimate', () => {
 
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('denied');
 		expect(settled()).toMatchObject({ phase: 'skip', code: 'permission_denied' });
-		expect(settled().detail).toEqual({ result: 'denied', usageMiB: '0', quotaUsedPercent: '0' });
+		expect(settled().detail).toEqual({ result: 'denied', usageMiB: '0', quotaUsedBand: '<50' });
 	});
 
 	it.each([
@@ -126,26 +126,35 @@ describe('requestPersistentStorage with an estimate', () => {
 	});
 
 	it.each([
-		['rounds the share up', 100.2 * MIB, 200 * MIB, '51'],
-		['keeps it at 100 when the engine reports more usage than quota', 300 * MIB, 200 * MIB, '100'],
-		['keeps it at 100 at the quota', 200 * MIB, 200 * MIB, '100'],
-	])('%s', async (_label, usage, quota, percent) => {
+		['below half', 0, 200, '<50'],
+		['just below half', 99.9, 200, '<50'],
+		['at half', 100, 200, '50-80'],
+		['just below 80 %', 159.9, 200, '50-80'],
+		['at 80 %', 160, 200, '80-95'],
+		['just below 95 %', 189.9, 200, '80-95'],
+		['at 95 %', 190, 200, '>=95'],
+		['at the quota', 200, 200, '>=95'],
+		['above the quota, as an engine may report', 300, 200, '>=95'],
+	])('records the band %s', async (_label, usage, quota, band) => {
 		const { probe, settled } = recorded();
-		const storage = { persist: async () => true, estimate: async () => ({ usage, quota }) };
+		const storage = { persist: async () => true, estimate: async () => ({ usage: usage * MIB, quota: quota * MIB }) };
 
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
-		expect(settled().detail).toMatchObject({ quotaUsedPercent: percent });
+		expect(settled().detail).toMatchObject({ quotaUsedBand: band });
 	});
 
-	// The quota gives the size of the disk away: it never reaches the line, in bytes, in MiB or under any other key.
-	it('never records the quota itself', async () => {
+	// The quota gives the size of the disk away, and an exact share would give it back from the usage beside it: neither
+	// reaches the line, in bytes, in MiB, as a percentage or under any other key.
+	it('never records the quota itself nor an exact share of it', async () => {
 		const { probe, settled } = recorded();
 		const quota = 238_475 * MIB;
-		const storage = { persist: async () => true, estimate: async () => ({ usage: 3 * MIB, quota }) };
+		const storage = { persist: async () => true, estimate: async () => ({ usage: 200_000 * MIB, quota }) };
 
 		await expect(requestPersistentStorage(() => storage, probe)).resolves.toBe('granted');
 		const detail = settled().detail ?? {};
-		expect(Object.keys(detail).sort()).toEqual(['quotaUsedPercent', 'result', 'usageMiB']);
+		expect(Object.keys(detail).sort()).toEqual(['quotaUsedBand', 'result', 'usageMiB']);
+		expect(detail).toEqual({ result: 'granted', usageMiB: '200000', quotaUsedBand: '80-95' });
+		expect(Object.values(detail).some((value) => /^\d+(?:\.\d+)?%?$/u.test(value) && value !== '200000')).toBe(false);
 		expect(Object.values(detail)).not.toContain(String(quota));
 		expect(Object.values(detail)).not.toContain('238475');
 	});

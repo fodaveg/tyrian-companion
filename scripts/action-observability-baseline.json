@@ -3820,9 +3820,9 @@
 				{
 					"id": "795d0d5940341ae4485992dc5cdb0548e9dc0f22",
 					"kind": "catch_clause",
-					"line": 47,
+					"line": 48,
 					"column": 4,
-					"endLine": 50,
+					"endLine": 51,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3836,18 +3836,18 @@
 				{
 					"id": "533eb972191df4e6c9f3186c7640fbe6dd24fefe",
 					"kind": "catch_clause",
-					"line": 74,
+					"line": 75,
 					"column": 4,
-					"endLine": 77,
+					"endLine": 78,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "originEstimate",
-						"justification": "The \"originEstimate\" catch is a \"fallback_return\" of no figures: the answer to persist() is already known, and requestPersistentStorage records it on the origin_storage probe without usageMiB/quotaMiB, which is how an estimate that threw or rejected shows in the log."
+						"justification": "The \"originEstimate\" catch is a \"fallback_return\" of no figures: the answer to persist() is already known, and requestPersistentStorage records it on the origin_storage probe without usageMiB/quotaUsedBand, which is how an estimate that threw or rejected shows in the log."
 					},
-					"reason": "Allowlisted catch_clause: The \"originEstimate\" catch is a \"fallback_return\" of no figures: the answer to persist() is already known, and requestPersistentStorage records it on the origin_storage probe without usageMiB/quotaMiB, which is how an estimate that threw or rejected shows in the log. Verified recovery: \"fallback_return\" in \"originEstimate\"."
+					"reason": "Allowlisted catch_clause: The \"originEstimate\" catch is a \"fallback_return\" of no figures: the answer to persist() is already known, and requestPersistentStorage records it on the origin_storage probe without usageMiB/quotaUsedBand, which is how an estimate that threw or rejected shows in the log. Verified recovery: \"fallback_return\" in \"originEstimate\"."
 				}
 			]
 		},

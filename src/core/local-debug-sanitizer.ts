@@ -44,10 +44,10 @@ const NUMERIC_MAP_KEY = /^[A-Za-z][A-Za-z0-9]{0,31}$/u;
 export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, readonly string[]>> = {
 	// `bootMs`/`bootCounts` (the `boot_timings` line, `src/core/boot-trace.ts`): flat maps of phase to
 	// non-negative integer, enforced by `NUMERIC_MAP_FIELDS` below, never a string or a nested object.
-	// `usageMiB`/`quotaUsedPercent` (the `origin_storage` line, `src/core/persistent-storage.ts`): the origin's storage
-	// usage as a whole number of MiB and the share of the quota it takes (0-100). Never the quota itself, which gives
-	// the size of the disk away, nor the exact byte counts.
-	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts', 'usageMiB', 'quotaUsedPercent'],
+	// `usageMiB`/`quotaUsedBand` (the `origin_storage` line, `src/core/persistent-storage.ts`): the origin's storage
+	// usage as a whole number of MiB and the band of the quota it takes (`<50`, `50-80`, `80-95`, `>=95`). Never the
+	// quota itself, which gives the size of the disk away, nor an exact share, which would give the quota back.
+	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts', 'usageMiB', 'quotaUsedBand'],
 	settings: [...COMMON_DETAIL_FIELDS, 'schemaVersion', 'changedKeys', 'language'],
 	connection: [...COMMON_DETAIL_FIELDS, 'permissionCount', 'missingPermissionCount'],
 	// `itemIds` are GW2's own public catalog item ids (e.g. the batch behind a failed

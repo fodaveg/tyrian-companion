@@ -304,7 +304,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		expect(settled()[0]).toMatchObject({ component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok' });
 		// Exactly these: the quota itself (which gives the size of the disk away) never reaches the log.
 		expect(settled()[0]!.details).toEqual({
-			store: 'origin_storage', operation: 'open', result: 'granted', usageMiB: '12', quotaUsedPercent: '1',
+			store: 'origin_storage', operation: 'open', result: 'granted', usageMiB: '12', quotaUsedBand: '<50',
 		});
 	});
 
