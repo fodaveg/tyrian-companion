@@ -19,6 +19,8 @@ export const HTTP_LOGICAL_ENDPOINTS = [
 	// equipment tab (read for the amulet's enrichment slot), and the public achievement catalog
 	// batches used to convert account/achievements progress into achievement points.
 	'account_luck', 'character_equipmenttabs', 'achievements',
+	// «Logros» section: the public group and category lists (no key) its search is built from.
+	'achievement_groups', 'achievement_categories',
 	// The one endpoint that is not ArenaNet's: the once-per-session price-history
 	// seed. It is named here so diagnostics can count it without ever recording
 	// the URL, exactly like every official route above.
