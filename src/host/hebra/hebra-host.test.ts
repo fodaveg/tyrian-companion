@@ -2,6 +2,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '../../core/i18n';
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
@@ -175,7 +176,7 @@ describe('createHebraHost: output folder and index', () => {
 		// The restart runs as a separate task, never inside `save`.
 		expect(test.restarts.count).toBe(0);
 		await vi.waitFor(() => expect(test.restarts.count).toBe(1));
-		await vi.waitFor(() => expect(test.fake.recorded.notices).toEqual([outputFolderChangedNotice('Games/GW2')]));
+		await vi.waitFor(() => expect(test.fake.recorded.notices).toEqual([outputFolderChangedNotice('Games/GW2', createTranslator('es'))]));
 		expect(JSON.parse(stored[0] ?? '')).toEqual({ outputFolder: 'Games/GW2', pollingIntervalMinutes: 5 });
 	});
 
@@ -222,7 +223,7 @@ describe('createHebraHost: output folder and index', () => {
 		await new Promise((resolve) => { window.setTimeout(resolve, 10); });
 		expect(test.fake.recorded.notices).toEqual([]);
 		finish(false);
-		await vi.waitFor(() => expect(test.fake.recorded.notices).toEqual([outputFolderRestartFailedNotice('Games/GW2')]));
+		await vi.waitFor(() => expect(test.fake.recorded.notices).toEqual([outputFolderRestartFailedNotice('Games/GW2', createTranslator('es'))]));
 	});
 
 	it('compares with the core\'s normalization: the same folder written in NFD does not restart', async () => {

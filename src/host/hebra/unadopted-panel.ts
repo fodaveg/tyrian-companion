@@ -13,33 +13,34 @@
  */
 import type { PluginUi, PluginUnregister } from 'hebra-plugin-api';
 
+import type { Translator, TranslationKey } from '../../core/i18n';
 import type { TyrianNoteFamily, TyrianUnadoptedNote } from './path-index';
-import { createButtonControl } from './setting-row';
+import { createButtonControl, formatCount, type HebraTranslator } from './setting-row';
 
 /** More rows than this do not help a manual review: how many are left is said instead. */
 export const UNADOPTED_PANEL_MAX_ROWS = 50;
 
-const FAMILY_LABEL: Readonly<Record<TyrianNoteFamily, string>> = {
-	inventory: 'inventario',
-	wallet: 'monedero',
-	session: 'sesión',
-	collector_status: 'estado del recolector',
-	other: 'otra familia',
+const FAMILY_LABEL: Readonly<Record<TyrianNoteFamily, TranslationKey>> = {
+	inventory: 'hebra.unadopted.family.inventory',
+	wallet: 'hebra.unadopted.family.wallet',
+	session: 'hebra.unadopted.family.session',
+	collector_status: 'hebra.unadopted.family.collector_status',
+	other: 'hebra.unadopted.family.other',
 };
 
 /** Why the note was not adopted, in one sentence. */
-export function unadoptedReasonText(note: TyrianUnadoptedNote): string {
-	const family = FAMILY_LABEL[note.family];
+export function unadoptedReasonText(note: TyrianUnadoptedNote, translator: Translator): string {
+	const family = translator.t(FAMILY_LABEL[note.family]);
 	if (note.reason === 'path_taken') {
-		const path = note.candidates[0] ?? '';
-		return `Nota de ${family}: otra nota ya ocupa su ruta («${path}»). Probablemente es un duplicado.`;
+		return translator.t('hebra.unadopted.reason.path_taken', { family, path: note.candidates[0] ?? '' });
 	}
-	return `Nota de ${family} con un marcador de Tyrian que no se reconoce: Tyrian no la lee.`;
+	return translator.t('hebra.unadopted.reason.unknown', { family });
 }
 
-export function unadoptedSummaryText(count: number, outputFolder: string): string {
-	const notes = count === 1 ? '1 nota' : `${count.toLocaleString('es-ES')} notas`;
-	return `${notes} de «${outputFolder}» no ${count === 1 ? 'está asociada' : 'están asociadas'} a Tyrian. Hebra no las toca: ni las duplica ni las sobrescribe, y Tyrian no las ve. Revísalas a mano.`;
+export function unadoptedSummaryText(count: number, outputFolder: string, translator: Translator): string {
+	return translator.t(count === 1 ? 'hebra.unadopted.summary.one' : 'hebra.unadopted.summary.many', {
+		count: formatCount(translator, count), folder: outputFolder,
+	});
 }
 
 function settingItem(container: HTMLElement, name: string, description: string): { controlEl: HTMLElement } {
@@ -62,6 +63,8 @@ function settingItem(container: HTMLElement, name: string, description: string):
 }
 
 export interface UnadoptedPanelOptions {
+	/** The active language, read on every paint. */
+	translator: HebraTranslator;
 	notes: readonly TyrianUnadoptedNote[];
 	outputFolder: string;
 	openNote: (id: string) => void;
@@ -71,22 +74,23 @@ export interface UnadoptedPanelOptions {
 
 /** Paints the list into `el` (the panel's slot). Returns its cleanup. */
 export function mountUnadoptedNotesPanel(el: HTMLElement, options: UnadoptedPanelOptions): () => void {
+	const translator = options.translator();
 	const section = createEl('section');
 	section.className = 'hebra-tyrian-unadopted';
-	section.setAttribute('aria-label', 'Notas no adoptadas');
-	settingItem(section, 'Notas no adoptadas', unadoptedSummaryText(options.notes.length, options.outputFolder));
+	section.setAttribute('aria-label', translator.t('hebra.unadopted.title'));
+	settingItem(section, translator.t('hebra.unadopted.title'), unadoptedSummaryText(options.notes.length, options.outputFolder, translator));
 	// Cuts an ARRAY of notes, not a text: it cannot split a surrogate pair.
 	for (const note of options.notes.slice(0, UNADOPTED_PANEL_MAX_ROWS)) {
-		const title = note.title.trim() || 'Sin título';
-		const { controlEl } = settingItem(section, title, unadoptedReasonText(note));
+		const title = note.title.trim() || translator.t('hebra.unadopted.untitled');
+		const { controlEl } = settingItem(section, title, unadoptedReasonText(note, translator));
 		const button = createButtonControl(options.report)
-			.setButtonText('Abrir')
+			.setButtonText(translator.t('hebra.unadopted.open'))
 			.onClick(() => options.openNote(note.id));
-		button.buttonEl.setAttribute('aria-label', `Abrir «${title}»`);
+		button.buttonEl.setAttribute('aria-label', translator.t('hebra.unadopted.openAria', { title }));
 		controlEl.append(button.buttonEl);
 	}
 	const rest = options.notes.length - UNADOPTED_PANEL_MAX_ROWS;
-	if (rest > 0) settingItem(section, `Y ${rest.toLocaleString('es-ES')} más`, 'Revisa primero estas.');
+	if (rest > 0) settingItem(section, translator.t('hebra.unadopted.more', { count: formatCount(translator, rest) }), translator.t('hebra.unadopted.moreHint'));
 	el.append(section);
 	return () => section.remove();
 }
@@ -104,8 +108,9 @@ export function registerUnadoptedNotes(
 	const unregister = ui.settingsPanel((el) => mountUnadoptedNotesPanel(el, options));
 	if (options.seededNow) {
 		const count = options.notes.length;
+		const translator = options.translator();
 		ui.notice(
-			`Tyrian Companion: ${count === 1 ? '1 nota no se ha adoptado' : `${count.toLocaleString('es-ES')} notas no se han adoptado`}. Míralas en los ajustes de Tyrian Companion.`,
+			translator.t(count === 1 ? 'hebra.unadopted.notice.one' : 'hebra.unadopted.notice.many', { count: formatCount(translator, count) }),
 			() => ui.openSettings(),
 		);
 	}

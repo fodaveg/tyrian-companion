@@ -4433,9 +4433,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const translator = (): Translator => createTranslator(this.settings.language);
 		const specs = [
 			{ id: EXPORT_LIVE_SESSION_COMMAND_ID, name: 'commands.exportLiveSession' as const,
+				unavailable: 'commands.exportLiveUnavailable' as const,
 				available: () => this.runtimeReady && this.liveSessions?.getRuntime() != null,
 				run: () => this.exportLiveSession('timeline', 'csv') },
 			{ id: EXPORT_LEGACY_SESSION_COMMAND_ID, name: 'commands.exportLegacySession' as const,
+				unavailable: 'commands.exportLegacyUnavailable' as const,
 				available: () => this.runtimeReady && this.sessions.getPreservedLegacyRuntime() !== null,
 				run: () => this.exportPreservedLegacySession() },
 		];
@@ -4453,6 +4455,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 					}
 					return available;
 				},
+				unavailableReason: () => (spec.available() ? null : translateRuntime(translator(), spec.unavailable)),
 			});
 		}
 	}
@@ -5576,7 +5579,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 		this.renderViews();
 		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
-		if (previousLanguage !== this.settings.language) this.relabelListedSections();
+		if (previousLanguage !== this.settings.language) {
+			this.host.ui.refreshViewTitles?.();
+			this.relabelListedSections();
+		}
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
 		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot(context);

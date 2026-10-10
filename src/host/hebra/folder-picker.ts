@@ -13,9 +13,7 @@
  * `min-width: 0` and long paths end in an ellipsis (the whole path is in `title`). Styles in
  * `tyrian-host.css`, section 5.
  */
-
-/** The warning of a saved folder the library lacks. */
-export const MISSING_FOLDER_SUFFIX = ' (no existe en la biblioteca)';
+import { formatCount, type HebraTranslator } from './setting-row';
 
 /** Suggestions painted at most; the rest are summed up in one line. */
 export const FOLDER_SUGGESTION_LIMIT = 50;
@@ -35,6 +33,8 @@ export function filterFolders(paths: readonly string[], query: string): string[]
 let pickerCounter = 0;
 
 export interface FolderPickerDeps {
+	/** The active language, read when the list or the warning is painted. */
+	translator: HebraTranslator;
 	/** Paths of the library's folders. */
 	folderPaths(): Promise<readonly string[]>;
 	report(error: unknown, where: string): void;
@@ -103,7 +103,7 @@ export function attachFolderPicker(
 		const current = saved();
 		const missing = loaded && current !== '' && !paths.includes(current);
 		note.hidden = !missing;
-		note.textContent = missing ? `«${current}»${MISSING_FOLDER_SUFFIX}` : '';
+		note.textContent = missing ? deps.translator().t('hebra.folder.missing', { folder: current }) : '';
 		if (missing) field.setAttribute('aria-describedby', noteId);
 		else field.removeAttribute('aria-describedby');
 	};
@@ -142,13 +142,13 @@ export function attachFolderPicker(
 			const empty = createEl('li');
 			empty.className = 'hebra-module-folder-empty';
 			empty.setAttribute('role', 'presentation');
-			empty.textContent = loaded ? 'Ninguna carpeta coincide.' : 'Cargando carpetas…';
+			empty.textContent = deps.translator().t(loaded ? 'hebra.folder.none' : 'hebra.folder.loading');
 			items.push(empty);
 		} else if (matches.length > shown.length) {
 			const more = createEl('li');
 			more.className = 'hebra-module-folder-empty';
 			more.setAttribute('role', 'presentation');
-			more.textContent = `${String(matches.length - shown.length)} más: escribe para acotar.`;
+			more.textContent = deps.translator().t('hebra.folder.more', { count: formatCount(deps.translator(), matches.length - shown.length) });
 			items.push(more);
 		}
 		list.replaceChildren(...items);

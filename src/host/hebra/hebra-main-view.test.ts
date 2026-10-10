@@ -3,6 +3,7 @@ import type { PluginMainViewDefinition } from 'hebra-plugin-api';
 import { createFakePluginApi } from 'hebra-plugin-api/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '../../core/i18n';
 import { asHebraWithoutMainView } from '../../test/hebra-plugin-fakes';
 import { withRealHostBehaviour } from '../../test/hebra-real-host';
 import type { TyrianSectionsViewRegistration, TyrianViewSectionRegistration } from '../tyrian-host';
@@ -43,6 +44,7 @@ const hosts: Array<{ faults: string[] }> = [];
 
 async function rest() {
 	return {
+		translator: () => createTranslator('es'),
 		secrets: await createPreloadedSecrets(createMemorySecretsBackend()),
 		folderPaths: async () => [],
 		openNote: vi.fn(),

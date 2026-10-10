@@ -2,6 +2,7 @@
 import { createFakePluginApi } from 'hebra-plugin-api/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createTranslator } from '../../core/i18n';
 import { installDomHelpers } from '../dom-polyfill';
 import type { TyrianUnadoptedNote } from './path-index';
 import { mountUnadoptedNotesPanel, registerUnadoptedNotes, UNADOPTED_PANEL_MAX_ROWS, unadoptedReasonText } from './unadopted-panel';
@@ -26,13 +27,13 @@ describe('mountUnadoptedNotesPanel', () => {
 		const el = createDiv();
 		document.body.append(el);
 		const openNote = vi.fn();
-		const unmount = mountUnadoptedNotesPanel(el, { notes: [duplicate, broken], outputFolder: 'Juegos/GW2', openNote, report: vi.fn() });
+		const unmount = mountUnadoptedNotesPanel(el, { notes: [duplicate, broken], outputFolder: 'Juegos/GW2', translator: () => createTranslator('es'), openNote, report: vi.fn() });
 		const rows = Array.from(el.querySelectorAll('.setting-item'));
 		expect(rows).toHaveLength(3);
 		expect(rows[0]?.querySelector('.setting-item-name')?.textContent).toBe('Notas no adoptadas');
 		expect(rows[0]?.querySelector('.setting-item-description')?.textContent).toContain('2 notas de «Juegos/GW2» no están asociadas a Tyrian');
 		expect(rows[1]?.querySelector('.setting-item-name')?.textContent).toBe('Ectoplasma');
-		expect(rows[1]?.querySelector('.setting-item-description')?.textContent).toBe(unadoptedReasonText(duplicate));
+		expect(rows[1]?.querySelector('.setting-item-description')?.textContent).toBe(unadoptedReasonText(duplicate, createTranslator('es')));
 		expect(rows[2]?.querySelector('.setting-item-name')?.textContent).toBe('Sin título');
 		const open = rows[1]?.querySelector('button');
 		expect(open?.getAttribute('aria-label')).toBe('Abrir «Ectoplasma»');
@@ -45,21 +46,21 @@ describe('mountUnadoptedNotesPanel', () => {
 	it(`with more than ${String(UNADOPTED_PANEL_MAX_ROWS)} it says how many are left instead of painting them all`, () => {
 		const el = createDiv();
 		const notes = Array.from({ length: UNADOPTED_PANEL_MAX_ROWS + 7 }, (_, i) => ({ ...broken, id: `n-${String(i)}`, title: `Note ${String(i)}` }));
-		mountUnadoptedNotesPanel(el, { notes, outputFolder: 'Tyrian Companion', openNote: vi.fn(), report: vi.fn() });
+		mountUnadoptedNotesPanel(el, { notes, outputFolder: 'Tyrian Companion', translator: () => createTranslator('es'), openNote: vi.fn(), report: vi.fn() });
 		expect(el.querySelectorAll('button')).toHaveLength(UNADOPTED_PANEL_MAX_ROWS);
 		expect(el.textContent).toContain('Y 7 más');
 	});
 
 	it('the reason names the family and, when another note holds its path, the path', () => {
-		expect(unadoptedReasonText(duplicate)).toBe('Nota de inventario: otra nota ya ocupa su ruta («Inventory/Positions/19721-b-account.md»). Probablemente es un duplicado.');
-		expect(unadoptedReasonText(broken)).toBe('Nota de monedero con un marcador de Tyrian que no se reconoce: Tyrian no la lee.');
+		expect(unadoptedReasonText(duplicate, createTranslator('es'))).toBe('Nota de inventario: otra nota ya ocupa su ruta («Inventory/Positions/19721-b-account.md»). Probablemente es un duplicado.');
+		expect(unadoptedReasonText(broken, createTranslator('es'))).toBe('Nota de monedero con un marcador de Tyrian que no se reconoce: Tyrian no la lee.');
 	});
 });
 
 describe('registerUnadoptedNotes', () => {
 	it('without notes it registers nothing and gives no notice', () => {
 		const fake = createFakePluginApi({ id: 'tyrian-companion' });
-		registerUnadoptedNotes(fake.api.ui, { notes: [], outputFolder: 'Tyrian Companion', seededNow: true, openNote: vi.fn(), report: vi.fn() });
+		registerUnadoptedNotes(fake.api.ui, { notes: [], outputFolder: 'Tyrian Companion', translator: () => createTranslator('es'), seededNow: true, openNote: vi.fn(), report: vi.fn() });
 		expect(fake.recorded.settingsPanels).toHaveLength(0);
 		expect(fake.recorded.notices).toEqual([]);
 	});
@@ -68,10 +69,10 @@ describe('registerUnadoptedNotes', () => {
 		const fake = createFakePluginApi({ id: 'tyrian-companion' });
 		const openSettings = vi.spyOn(fake.api.ui, 'openSettings');
 		const notice = vi.spyOn(fake.api.ui, 'notice');
-		const unregister = registerUnadoptedNotes(fake.api.ui, { notes: [duplicate], outputFolder: 'Tyrian Companion', seededNow: false, openNote: vi.fn(), report: vi.fn() });
+		const unregister = registerUnadoptedNotes(fake.api.ui, { notes: [duplicate], outputFolder: 'Tyrian Companion', translator: () => createTranslator('es'), seededNow: false, openNote: vi.fn(), report: vi.fn() });
 		expect(fake.recorded.settingsPanels).toHaveLength(1);
 		expect(notice).not.toHaveBeenCalled();
-		registerUnadoptedNotes(fake.api.ui, { notes: [duplicate, broken], outputFolder: 'Tyrian Companion', seededNow: true, openNote: vi.fn(), report: vi.fn() });
+		registerUnadoptedNotes(fake.api.ui, { notes: [duplicate, broken], outputFolder: 'Tyrian Companion', translator: () => createTranslator('es'), seededNow: true, openNote: vi.fn(), report: vi.fn() });
 		expect(notice).toHaveBeenCalledTimes(1);
 		const [text, onClick] = notice.mock.calls[0] ?? [];
 		expect(text).toBe('Tyrian Companion: 2 notas no se han adoptado. Míralas en los ajustes de Tyrian Companion.');
