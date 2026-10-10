@@ -103,8 +103,10 @@ async function secondStretch(h: Host, w: World): Promise<void> {
 const eraseMark = (w: World): void => { w.store.sessionFormatMark = undefined; };
 
 describe('a live session keeps the format it started in', () => {
-	it('a session started in note version 2 keeps the baseline and the samples that changed something, counts them all, and values the pile over its total', async () => {
-		const w = world(); const h = host(w, { starts: GROSS });
+	it('a session this build starts is of note version 2: it keeps the baseline and the samples that changed something, counts them all, and values the pile over its total', async () => {
+		// Nothing is asked of the host: the format is the one LIVE_SESSION_NOTE_WRITE_VERSION gives a new session.
+		const w = world(); const h = host(w);
+		expect(h.lifecycle.getSessionFormat()).toEqual(GROSS);
 		expect(await h.lifecycle.start('Test')).toBe('session'); expect(await h.lifecycle.open(h.source())).toBe('ready');
 		// 61 samples, one a second; two of them change something (100 at second 10, 250 at second 30).
 		for (let second = 0; second <= 60; second += 1) await h.commit(second, second, { [ITEM]: second >= 30 ? 250 : second >= 10 ? 100 : 0 });
@@ -129,12 +131,13 @@ describe('a live session keeps the format it started in', () => {
 	});
 
 	it('a session from before the mark (its record has none, its prices are net) is continued and closed in version 1, to the bytes an earlier plugin gives', async () => {
-		// The same session twice. Once continued by a host that starts its own sessions in gross prices, which finds the record
-		// with no mark, as 0.6.24 left it; once from start to end by a host that keeps every sample and net prices, as 0.6.24 did.
+		// The same session twice. Once continued by this build as it is (it starts its own sessions in version 2 and gross prices),
+		// which finds the record with no mark, as 0.6.24 left it; once from start to end by a host that keeps every sample and net
+		// prices, as 0.6.24 did.
 		const upgraded = world(); const before = host(upgraded, { starts: LEGACY_LIVE_SESSION_FORMAT });
 		await firstStretch(before); await before.die(); eraseMark(upgraded);
 		expect(upgraded.store.sessionFormatMark).toBeUndefined();
-		const after = host(upgraded, { starts: GROSS }); await after.lifecycle.initialize();
+		const after = host(upgraded); await after.lifecycle.initialize();
 		expect(after.lifecycle.getSessionFormat()).toEqual(LEGACY_LIVE_SESSION_FORMAT);
 		// The panel still says 1 500 c for 250 units bought at 8 c: the 6 c the record holds is what ONE unit nets, not a bid.
 		expect(after.lifecycle.getRuntime()?.prices).toEqual([{ itemId: ITEM, unitCopper: 6 }]);
@@ -174,7 +177,7 @@ describe('a live session keeps the format it started in', () => {
 		expect(before.lifecycle.getRuntime()).toMatchObject({ phase: 'complete', summaryReceipt: null });
 		await before.die(); eraseMark(w); expect(w.closed).toHaveLength(0);
 
-		const after = host(w, { starts: GROSS }); await after.lifecycle.initialize();
+		const after = host(w); await after.lifecycle.initialize();
 		expect(after.lifecycle.getRuntime()).toMatchObject({ phase: 'complete', summaryReceipt: { path: w.closed[0]!.path } });
 		expect(w.closed[0]!.format).toEqual(LEGACY_LIVE_SESSION_FORMAT);
 		expect(w.closed[0]!.content).toContain('tc_payload_version: 1\n');
@@ -232,6 +235,30 @@ describe('a live session keeps the format it started in', () => {
 		expect(net.lifecycle.getRuntime()?.prices).toEqual([{ itemId: ITEM, unitCopper: null }]);
 		expect(net.lifecycle.getView().valuation).toMatchObject({ netItemValueKnownCopper: 0, unpricedItemIds: [ITEM] });
 		await net.die();
+	});
+});
+
+describe('what the note of a long session weighs', () => {
+	it('a session of 4 609 samples of which 75 change something keeps 76 entries in version 2, and its note is a small fraction of the version 1 one', async () => {
+		// The shape of the real note this was decided on (9 Oct 2026, 96 minutes): 4 609 entries, 4 534 of them of samples that
+		// changed nothing, 806 549 bytes. Here one item, one unit more every 61 samples, one sample a second.
+		const weigh = async (format: LiveSessionFormat) => {
+			const w = world(); const h = host(w, { starts: format });
+			expect(await h.lifecycle.start('Test')).toBe('session'); expect(await h.lifecycle.open(h.source())).toBe('ready');
+			for (let cursor = 0; cursor < 4_609; cursor += 1) await h.commit(cursor, cursor, { [ITEM]: Math.floor(cursor / 61) });
+			w.now = AT + 4_608_000; expect(await h.lifecycle.stop(w.now)).toBe(true); await h.die();
+			const read = await inspectLiveSessionNote(w.closed[0]!.content); if (read.status !== 'ok') throw new Error(read.status);
+			return { entries: read.session.journal.length, samples: read.session.sampleCount, observations: read.session.observationCount,
+				observedItemsMs: read.session.observedItemsMs, bytes: new TextEncoder().encode(w.closed[0]!.content).length };
+		};
+		const dense = await weigh(LEGACY_LIVE_SESSION_FORMAT); const sparse = await weigh(GROSS);
+		expect(dense).toMatchObject({ entries: 4_609, samples: 4_609, observations: 75, observedItemsMs: 4_608_000 });
+		expect(sparse).toMatchObject({ entries: 76, samples: 4_609, observations: 75, observedItemsMs: 4_608_000 });
+		// Measured on 10 Oct 2026: 766 544 bytes in version 1 and 83 224 in version 2, a ninth (the exact figures move with the
+		// readable text of the note, so only the proportion is held here). What is left is the 75 changes themselves: their
+		// entries, their rows in the timeline and their alerts.
+		expect(dense.bytes).toBeGreaterThan(500_000);
+		expect(sparse.bytes * 8).toBeLessThan(dense.bytes);
 	});
 });
 

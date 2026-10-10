@@ -16,12 +16,6 @@ import type { SessionHistoryVault } from './session-history';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { MemorySessionRuntimeStore } from './session-runtime-store';
 
-// The one constant that turns the version 2 writer on, set to 2 for this file only: every module reads it from the model.
-vi.mock('./live-session-model', async (importOriginal) => ({
-	...await importOriginal<Record<string, unknown>>(),
-	LIVE_SESSION_NOTE_WRITE_VERSION: 2,
-}));
-
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const ITEM = 12147;
@@ -79,7 +73,7 @@ function vaultOf(notes: readonly { path: string; content: string }[]): SessionHi
 }
 
 describe('with the version 2 writer on, a live session keeps and saves the gross price', () => {
-	it('is on in this file only', () => {
+	it('is on: a session this build starts is of note version 2 and keeps gross prices', () => {
 		expect(LIVE_SESSION_NOTE_WRITE_VERSION).toBe(2);
 		expect(newLiveSessionFormat()).toEqual({ noteVersion: 2, priceBasis: 'instant_sell_gross' });
 	});

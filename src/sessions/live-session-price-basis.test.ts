@@ -72,11 +72,11 @@ describe('what a quantity is worth under each price basis', () => {
 		expect(liveItemValueCopper('instant_sell_gross', Number.MAX_SAFE_INTEGER, 2)).toBeNull();
 		expect(liveItemValueCopper('instant_sell_net', Number.MAX_SAFE_INTEGER, 2)).toBeNull();
 	});
-	it('starts a session of note version 1 in net per unit and one of version 2 in gross per unit; this build starts version 1 sessions', () => {
+	it('starts a session of note version 1 in net per unit and one of version 2 in gross per unit; this build starts version 2 sessions', () => {
 		expect(livePriceBasisOf(1)).toBe('instant_sell_net');
 		expect(livePriceBasisOf(2)).toBe('instant_sell_gross');
-		expect(LIVE_SESSION_NOTE_WRITE_VERSION).toBe(1);
-		expect(newLiveSessionFormat()).toEqual({ noteVersion: 1, priceBasis: 'instant_sell_net' });
+		expect(LIVE_SESSION_NOTE_WRITE_VERSION).toBe(2);
+		expect(newLiveSessionFormat()).toEqual({ noteVersion: 2, priceBasis: 'instant_sell_gross' });
 	});
 	it('has no format for a version 1 session kept in gross prices, and takes a session with no mark for one from before the mark', () => {
 		expect(isLiveSessionFormat({ noteVersion: 1, priceBasis: 'instant_sell_net' })).toBe(true);

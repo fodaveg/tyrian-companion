@@ -357,7 +357,8 @@ describe('passive live session lifecycle', () => {
 		await f.service.updatePrices([{itemId:12147,unitCopper:85}],new Date(AT+1500_000).toISOString());
 		const points = f.service.getView().chartPoints;
 		expect(points[0]?.observedAt, 'starts at the first sample').toBe(new Date(AT).toISOString());
-		expect(points.at(-1), 'ends at the exact current value').toMatchObject({observedAt:new Date(AT+1500_000).toISOString(),itemQuantityNet:150,knownNetValueCopper:null,netItemValueKnownCopper:150*85});
+		// A session this build starts keeps gross prices: 150 units at a bid of 85 c are one sale of 12 750 c, less 638 c and 1 275 c of fees.
+		expect(points.at(-1), 'ends at the exact current value').toMatchObject({observedAt:new Date(AT+1500_000).toISOString(),itemQuantityNet:150,knownNetValueCopper:null,netItemValueKnownCopper:10_837});
 		expect(points.length).toBeLessThanOrEqual(600);
 		expect(points.map((point) => point.observedAt), 'in order').toEqual([...points.map((point) => point.observedAt)].sort());
 		const rebuilt = buildLiveChart(f.service.getJournal(),{...f.service.getRuntime()!,priceBasis:f.service.getSessionFormat().priceBasis});
@@ -805,7 +806,7 @@ describe('passive live session lifecycle', () => {
 		await f.service.dispose();
 	});
 	it.each([1, 5, 400])('keeps that last observation on its map in the summary, with the map closed %d ms before it was stamped', async (late) => {
-		// The same session, on map 866 from start to end, its one change worth 20 s: the map is closed at the presence's last frame
+		// The same session, on map 866 from start to end, its one change worth 17 s (two units at a bid of 10 s, less the fees over the 20 s): the map is closed at the presence's last frame
 		// and the change is stamped after it. One map and all the value on it, not a row of no identified map holding the value.
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0, 0));
 		f.setNow(AT + 1000); await f.service.commit(f.sample(1, 2));
@@ -818,7 +819,7 @@ describe('passive live session lifecycle', () => {
 		expect(session).toMatchObject({ endedAt: new Date(AT + 1000).toISOString(), mapIntervals: [{ mapId: 866, toMs: AT + 1000 - late }] });
 		const summary = await renderLiveSessionSummary({ session, locale: 'es', outputFolder: 'Tyrian', fullNotePath: 'Tyrian/sessions/live.md', itemMeta: { 12147: { flags: [], type: 'CraftingMaterial' } }, utcOffsetMinutes: () => 120 });
 		if (summary.status !== 'ok') throw new Error(summary.reason);
-		expect(summary.note.content).toContain('- Valor neto de objetos observados: 0g 20s 0c\n');
+		expect(summary.note.content).toContain('- Valor neto de objetos observados: 0g 17s 0c\n');
 		expect(summary.note.content).toContain('\n## Mapas\n\nMapa 866 · tiempo observado: 1 s\n');
 		expect(summary.note.content).not.toContain('identificado');
 		await f.service.dispose();
@@ -1149,7 +1150,9 @@ describe('durable live alert outbox', () => {
 		f.setNow(AT+4000); await f.service.commit(f.sample(2,2));
 		expect(f.service.getRuntime()?.sessionId).toBe('session-2');
 		const update = vi.spyOn(f.service,'updateAlert');
-		e.service.retryUnclaimedAlerts(); e.service.observe(f.service.getJournal()[2]!); await e.service.drain();
+		// The entry of cursor 2 is the last one, whether or not the sample before it (which changed nothing) kept an entry.
+		const loot = f.service.getJournal().at(-1)!; expect(loot.cursor).toBe(2);
+		e.service.retryUnclaimedAlerts(); e.service.observe(loot); await e.service.drain();
 		expect(update.mock.calls.map(([outboxId]) => outboxId)).not.toContain(owed);
 		// Only the new session's own alert sounded, and nothing is owed any more: asking for a retry runs no pass.
 		expect(emittedQuantities(e.emit)).toEqual([2]); expect(f.service.getAlerts().map((alert) => alert.state)).toEqual(['processed']);

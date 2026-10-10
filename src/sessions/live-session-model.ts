@@ -68,11 +68,11 @@ export type LivePriceBasis = 'instant_sell_net' | 'instant_sell_gross';
 export type LiveSessionPayloadVersion = 1 | 2;
 /**
  * The format the sessions this build STARTS are kept and written in, and nothing else: a session that already exists keeps the
- * format it started with until it is closed and its note saved (`LiveSessionFormat`). With 1 a new session is byte for byte what
- * 0.6.16 wrote; the readable text around the payload is not part of that (the title since 0.6.19 and the lines of the maps under
- * the summary are presentation, which no reader takes anything from).
+ * format it started with until it is closed and its note saved (`LiveSessionFormat`). It is 2 since the readers that understand
+ * version 2 have been out since 0.6.17: a new session keeps no entry for a sample that changed nothing and keeps gross prices.
+ * With 1 a new session would again be byte for byte what 0.6.16 wrote, which is what a session started before this still is.
  */
-export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 1;
+export const LIVE_SESSION_NOTE_WRITE_VERSION: LiveSessionPayloadVersion = 2;
 /**
  * The price basis a session that starts in note format `version` keeps: net per unit for 1, the only basis a version 1 note can
  * carry; gross per unit for 2.
