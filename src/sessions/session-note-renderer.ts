@@ -236,7 +236,7 @@ function moveNotesBeforeData(body: string): string {
 	const tail = body.slice(end + DATA_END.length).replace(/^\n+/u, '');
 	const heading = /^(.*)$/mu.exec(tail)?.[1]?.trim();
 	if (heading === undefined || !NOTES_HEADING.test(heading) || NOTES_HEADING.test(body.slice(0, start))) return body;
-	return `${body.slice(0, start)}${tail.replace(/\n+$/u, '')}\n\n${body.slice(start, end + DATA_END.length)}\n`;
+	return `${body.slice(0, start)}${tail.replace(/\n$/u, '')}\n\n${body.slice(start, end + DATA_END.length)}\n`;
 }
 
 export function frontmatterSessionRef(content: string): string | null {

@@ -1757,6 +1757,24 @@ describe('the changes of map and the readable full note', () => {
 			expect(content.slice(0, content.indexOf('\n---\n', 4))).toBe(without.slice(0, without.indexOf('\n---\n', 4)));
 			expect(without).toContain('## Mapas');
 		});
+		it('writes 0 for a stretch where a priced item came in and went out, never «sin precios de bazar»', async () => {
+			const input = fixture({ staple: [0, 10, 0, 0], other: [0, 0, 0, 5] });
+			input.record.mapIntervals = [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN }, { mapId: 873, fromMs: AT + 40 * MIN, toMs: AT + 60 * MIN }];
+			const content = await summaryOf({ ...input, utcOffsetMinutes: OFFSET });
+			expect(content).toContain('| Laberinto del Rey Loco | 17:30 | 18:10 | 40 min | 0g 0s 0c |');
+			expect(content).not.toContain('sin precios de bazar');
+			const { note } = await fullOf({ ...input, utcOffsetMinutes: OFFSET });
+			expect(note.blocks.results.content).toContain('| Mapa 866 | 2026-10-08 17:30:00 | 2026-10-08 18:10:00 | 40 min | 0 c |');
+		});
+		it('adds the stretches up to the length of the session, also when the first map absorbed an unobserved hole at the start', async () => {
+			const base = await payload(threeMaps());
+			const session: StoredLiveSessionPayloadV1 = { ...base, observedItemsMs: 77 * MIN,
+				gaps: [{ version: 1, fromAt: base.startedAt, toAt: new Date(AT + 3 * MIN).toISOString(), reason: 'disconnect', channels: ['items'] }],
+				mapIntervals: [{ mapId: 866, fromMs: AT + 3 * MIN, toMs: AT + 40 * MIN }, { mapId: 873, fromMs: AT + 40 * MIN, toMs: AT + 80 * MIN }] };
+			const { stretches } = computeSummaryFigures(session, {}, []).mapBreakdown;
+			expect(stretches[0]!.fromAt).toBe(session.startedAt);
+			expect(stretches.reduce((sum, stretch) => sum + stretch.ms, 0)).toBe(Date.parse(session.endedAt) - Date.parse(session.startedAt));
+		});
 		it('keeps five objects a stretch at most, the most valuable first (figures)', async () => {
 			const base = await payload(fixture({ prices: true }));
 			const extra = [101, 102, 103, 104, 105, 106, 107];
@@ -1849,6 +1867,12 @@ describe('the changes of map and the readable full note', () => {
 			expect(after.endsWith('<!-- tyrian-companion:managed:end:provenance -->\n')).toBe(true);
 			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session });
 			expect(await writer.writeLive(input)).toEqual({ status: 'unchanged', path: note.preferredPath });
+		});
+		it('keeps the blank lines the user left at the end of the section', async () => {
+			const input = threeMaps(); const { note } = await fullOf(input);
+			const vault = new TestVault(); vault.contents.set(note.preferredPath, oldLayout(note.content, '\nHola\n\n\n'));
+			await new SessionNoteWriter(vault).writeLive(input);
+			expect(vault.contents.get(note.preferredPath)).toContain('## Mis notas\n\nHola\n\n\n\n<!-- tyrian-companion:managed:start:provenance');
 		});
 		it('moves an empty section too, and an old note whose section was never filled ends up as a new one', async () => {
 			const input = threeMaps(); const { note } = await fullOf(input);

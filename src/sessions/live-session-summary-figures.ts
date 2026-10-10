@@ -353,7 +353,9 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 	for (const piece of pieces) {
 		if (visits.at(-1)?.mapId !== piece.mapId) {
 			visits.push({ mapId: piece.mapId, at: iso(piece.enteredAt) });
-			stretches.push({ mapId: piece.mapId, fromAt: iso(piece.enteredAt), toAt: iso(piece.to), ms: 0, observedMs: 0, netCopper: valued ? 0 : null, changes: 0, priced: false, top: [] });
+			// A stretch starts where its piece does, not at the hour the route says the map was entered: the pieces are contiguous, so the
+			// stretches add up to the session (an edge or a hole the first map absorbed is in it).
+			stretches.push({ mapId: piece.mapId, fromAt: iso(piece.from), toAt: iso(piece.to), ms: 0, observedMs: 0, netCopper: valued ? 0 : null, changes: 0, priced: false, top: [] });
 		}
 		const stretch = stretches.at(-1)!;
 		stretch.toAt = iso(piece.to); stretch.observedMs += observedIn(piece.from, piece.to); stretchOf.push(stretches.length - 1);
@@ -372,6 +374,7 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 
 	if (valued) {
 		// Units of each counted item by where they were observed. What no entry of the journal accounts for is on no identified map.
+		const pricedStretches = new Set<number>();
 		const units = new Map<number, Map<number | null, number>>(); const unitsByStretch = new Map<number, Map<number, number>>();
 		session.journal.forEach((entry, index) => {
 			const piece = placed[index]! < 0 ? undefined : pieces[placed[index]!];
@@ -382,6 +385,7 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 				byMap.set(mapId, (byMap.get(mapId) ?? 0) + row.delta); units.set(row.idNumber, byMap);
 				const byStretch = unitsByStretch.get(row.idNumber) ?? new Map<number, number>();
 				byStretch.set(stretch, (byStretch.get(stretch) ?? 0) + row.delta); unitsByStretch.set(row.idNumber, byStretch);
+				if (row.delta !== 0) pricedStretches.add(stretch);
 			}
 		});
 		const basis = session.valuation.priceBasis;
@@ -391,7 +395,8 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 			const stretch = stretches[index];
 			if (stretch === undefined) continue;
 			const moved = [...part.items].filter(([, item]) => item.quantity !== 0);
-			stretch.netCopper = part.copper; stretch.priced = moved.length > 0;
+			// Priced is that an item with a price CHANGED there, even if it came in and went out and its net is nothing: that is 0 c, not a missing price.
+			stretch.netCopper = part.copper; stretch.priced = pricedStretches.has(index);
 			stretch.top = moved.filter(([, item]) => item.quantity > 0).map(([itemId, item]) => ({ itemId, quantity: item.quantity, valueCopper: item.copper }))
 				.sort((a, b) => b.valueCopper - a.valueCopper || b.quantity - a.quantity || a.itemId - b.itemId).slice(0, SUMMARY_STRETCH_TOP);
 		}
