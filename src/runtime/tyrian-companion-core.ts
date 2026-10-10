@@ -14,7 +14,7 @@
 
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
-import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
+import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
 import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
 import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
 import { liveObservedFrom, normalizeFarmingGoal, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
@@ -23,7 +23,7 @@ import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
-import { LiveSessionLifecycle, emptyLiveSessionView } from '../sessions/live-session-lifecycle';
+import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { LiveSessionStopError } from '../sessions/live-session-stop-failure';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
@@ -34,9 +34,8 @@ import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
-import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry, liveSessionViewFromStored, liveSessionAlertsFromStored } from '../sessions/live-session-history';
-import { knownLiveDisplayNames, type StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
-import { prepareLiveSessionExportSnapshot } from '../sessions/live-session-export';
+import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import { knownLiveDisplayNames } from '../sessions/live-session-note-model';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 
 import { installDomHelpers } from '../host/dom-polyfill';
@@ -165,6 +164,7 @@ import {
 	resolveSaleSeasonalInputFor,
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
+import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -229,8 +229,6 @@ import type { DetectionCorrectionCause } from '../sessions/session-detection-qua
 import type { DetectionQualityRecorder, DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
 import type { PilotMetricsExporter, PilotMetricsExportPreview, PilotMetricsExportResult } from '../sessions/pilot-metrics-export';
 import type {
-	PilotJournalHealth,
-	PilotJournalSnapshotV1,
 	PilotPlatform,
 	PilotRecoveryKind,
 	PilotSilentLossReview,
@@ -262,7 +260,6 @@ import {
 	SessionHistoryRuntimeAuthority,
 	type SessionHistoryService,
 	type DurableSessionLookup,
-	type SessionHistoryExportResult,
 	type SessionHistoryScrubGate,
 	type SessionHistoryScrubPreview,
 	type SessionHistoryScrubResult,
@@ -509,24 +506,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly liveSourceConnections = new LiveSourceConnections();
 	private liveEconomy: LiveSessionEconomy | null = null;
 	private liveHistory: LiveSessionHistoryService | null = null;
-	private liveSetAside: readonly LiveSessionSetAside[] = [];
 	private liveSummaries: LiveSessionSummaryService | null = null;
 	/** False while the plugin loads: a summary written then uses caches only (no map-name request). */
 	private liveSummaryNetwork = false;
-	private liveComparison: LiveSessionComparisonState = { status: 'idle' };
-	private liveComparisonFlight: Promise<void> | null = null;
-	private selectedLiveHistory: {payload:StoredLiveSessionPayloadV1;view:LiveSessionViewV1;observations:LiveSessionViewV1['observations'];alerts:LiveSessionAlertViewV1[]} | null = null;
 	private assistedDetection!: AssistedDetectionService;
 	private detectionQuality!: DetectionQualityRecorder;
 	private pilotMetrics!: PilotMetricsRecorder;
 	private pilotMetricsExporter!: PilotMetricsExporter;
 	private readonly pilotRecoveryKinds = new Map<string, PilotRecoveryKind>();
 	private readonly measuredPilotRecoveries = new Set<string>();
-	private pilotMetricsExportPlan: {
-		snapshot: PilotJournalSnapshotV1;
-		health: PilotJournalHealth;
-		outputFolder: string;
-	} | null = null;
 	private pendingProposals!: PendingProposalService;
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private sessionNotes!: SessionNoteWriter;
@@ -536,7 +524,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private farmingSessionContext: FarmingSessionContext | null = null;
 	private farmingGroupContext: FarmingGroupContext = null;
 	private farmingReminders: FarmingManualReminder[] = [];
-	private farmingSettingsFlight: Promise<void> = Promise.resolve();
 	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
 	/** Economic evidence measured for the completed session on screen, or `null` while unmeasured. */
@@ -603,6 +590,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * `priceSeedBulkRefresh` and `sellSignal` and disposes them.
 	 */
 	private readonly sale: SaleRuntime = new SaleRuntime(TyrianCompanionCore.saleRuntimePort(this));
+	/**
+	 * DE-01, step 3a: the pilot metrics, the session history's export and scrub, the next session's
+	 * farming preferences and the saved live sessions. It reads the core's fields through
+	 * `sessionRuntimePort`, under their own names; the core still builds `pilotMetrics`,
+	 * `pilotMetricsExporter`, `sessionHistory`, `liveSessions` and `liveHistory`, and keeps the
+	 * history's runtime authority, the recovery's pilot hooks and the farming state a start captures.
+	 */
+	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -681,10 +676,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		{ status: 'idle', message: 'not_inspected', plan: null };
 	/** H18.18: a held automatic Base update warns once per plugin load, not on every sync. */
 	private managedAssetsAutoUpdateWarned = false;
-	private sessionHistoryView: SessionHistoryView =
-		{ status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
-	private sessionHistoryPreviewFlight: Promise<SessionHistoryScrubPreview> | null = null;
-	private sessionHistoryScrubFlight: Promise<SessionHistoryScrubResult> | null = null;
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
@@ -3067,87 +3058,73 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.runtimeReady ? this.detectionQuality.getStats() : null;
 	}
 
-	getPilotMetricsState(): PilotMetricsState {
-		return this.runtimeReady ? this.pilotMetrics.getState() : { status: 'unconfigured' };
-	}
-
-	async getPilotProfile() {
-		return this.runtimeReady ? await this.pilotMetrics.profile() : null;
-	}
-
-	async getPilotSilentLossReview(): Promise<PilotSilentLossReview> {
-		if (!this.runtimeReady) return 'unreviewed';
-		return (await this.pilotMetrics.inspect())?.verification?.silentLosses ?? 'unreviewed';
-	}
-
-	async configurePilotProfile(platform: PilotPlatform, platformVersion: string): Promise<boolean> {
-		if (!this.runtimeReady) return false;
-		const saved = await this.pilotMetrics.configure({
-			platform,
-			platformVersion,
-			obsidianVersion: this.host.environment.hostVersion,
-			tyrianVersion: this.host.environment.pluginVersion,
-		});
-		if (saved) this.pilotMetricsExportPlan = null;
-		return saved;
-	}
-
-	async previewPilotMetricsExport(): Promise<PilotMetricsExportPreview | null> {
-		if (!this.runtimeReady) return null;
-		const snapshot = await this.pilotMetrics.inspect();
-		if (!snapshot) return null;
-		const health = pilotJournalHealth(this.pilotMetrics.getState());
-		this.pilotMetricsExportPlan = { snapshot, health, outputFolder: this.settings.outputFolder };
-		return await this.pilotMetricsExporter.preview(snapshot, health, this.settings.outputFolder);
-	}
-
 	/**
-	 * H15.23 (2026-09-10 incident): this ran entirely outside `run()`, so even a rejection that
-	 * escaped `PilotMetricsExporter.export()` (it does not normally throw, but nothing here relied
-	 * on that) would have gone unlogged; now a settled `unavailable`/`conflict` result also reaches
-	 * the local debug log instead of only the UI.
+	 * What `SessionRuntime` reads from this core and asks of it (DE-01, step 3a). Getters over the
+	 * core's own fields, so a service `initializeRuntime` builds later, a setting changed or the
+	 * device turned to consult is read as it stands. Static, so the port names the core it reads.
 	 */
-	async exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
-		if (!this.runtimeReady || refusedInConsult(this)) return null;
-		const plan = this.pilotMetricsExportPlan;
-		if (!plan) return null;
-		const perform = async () => {
-			const result = await this.pilotMetricsExporter.export(plan.snapshot, plan.health, plan.outputFolder);
-			if (result.status !== 'unavailable' && result.status !== 'conflict') return result;
-			return { ...result, phase: 'failure' as const, code: 'storage_failure' as const, details: { status: result.status } };
+	private static sessionRuntimePort(core: TyrianCompanionCore): SessionRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get collectorMode() { return core.collectorMode; },
+			get localDebugActions() { return core.localDebugActions; },
+			get host() { return core.host; },
+			get settingTab() { return core.settingTab; },
+			get sessionHistory() { return core.sessionHistory; },
+			get sessionHistoryRuntimeAuthority() { return core.sessionHistoryRuntimeAuthority; },
+			get pilotMetrics() { return core.pilotMetrics; },
+			get pilotMetricsExporter() { return core.pilotMetricsExporter; },
+			get measuredPilotRecoveries() { return core.measuredPilotRecoveries; },
+			get pilotRecoveryKinds() { return core.pilotRecoveryKinds; },
+			get liveSessions() { return core.liveSessions; },
+			get liveHistory() { return core.liveHistory; },
+			notifyConsultMode: () => { core.notifyConsultMode(); },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			renderViews: () => { core.renderViews(); },
+			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
+			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
+			updateSettings: (settings) => core.updateSettings(settings),
 		};
-		return await (this.localDebugActions?.run(
-			{ component: 'session', action: 'session_projection', state: 'pilot_metrics_export' }, perform,
-		) ?? perform());
 	}
 
-	async clearPilotMetrics(): Promise<number | null> {
-		if (!this.runtimeReady) return null;
-		const cleared = await this.pilotMetrics.clear();
-		if (cleared !== null) {
-			this.pilotMetricsExportPlan = null;
-			this.measuredPilotRecoveries.clear();
-			this.pilotRecoveryKinds.clear();
-		}
-		return cleared;
+	/** The pilot journal's state for the settings panel (`SessionRuntime`). */
+	getPilotMetricsState(): PilotMetricsState {
+		return this.session.getPilotMetricsState();
 	}
 
-	async reviewPilotSilentLosses(value: PilotSilentLossReview): Promise<boolean> {
-		if (!this.runtimeReady) return false;
-		const saved = await this.pilotMetrics.reviewSilentLosses(value);
-		if (saved) this.pilotMetricsExportPlan = null;
-		return saved;
+	getPilotProfile(): ReturnType<SessionRuntime['getPilotProfile']> {
+		return this.session.getPilotProfile();
 	}
 
-	async disablePilotMetrics(): Promise<number | null> {
-		if (!this.runtimeReady) return null;
-		const deleted = await this.pilotMetrics.disable();
-		if (deleted !== null) {
-			this.pilotMetricsExportPlan = null;
-			this.measuredPilotRecoveries.clear();
-			this.pilotRecoveryKinds.clear();
-		}
-		return deleted;
+	getPilotSilentLossReview(): Promise<PilotSilentLossReview> {
+		return this.session.getPilotSilentLossReview();
+	}
+
+	configurePilotProfile(platform: PilotPlatform, platformVersion: string): Promise<boolean> {
+		return this.session.configurePilotProfile(platform, platformVersion);
+	}
+
+	previewPilotMetricsExport(): Promise<PilotMetricsExportPreview | null> {
+		return this.session.previewPilotMetricsExport();
+	}
+
+	/** The export the last preview planned (`SessionRuntime.exportPilotMetrics`), refused in consult. */
+	exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
+		return this.session.exportPilotMetrics();
+	}
+
+	clearPilotMetrics(): Promise<number | null> {
+		return this.session.clearPilotMetrics();
+	}
+
+	reviewPilotSilentLosses(value: PilotSilentLossReview): Promise<boolean> {
+		return this.session.reviewPilotSilentLosses(value);
+	}
+
+	disablePilotMetrics(): Promise<number | null> {
+		return this.session.disablePilotMetrics();
 	}
 
 	getPendingProposalState(): ProposalQueueState {
@@ -3428,29 +3405,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		catch (error) { this.recordIngameSessionFailure(error); }
 	}
 
-	/** Default intent is saved for the next session; active measurements keep their captured goal. */
-	getFarmingGoal(): FarmingGoalV1 { return normalizeFarmingGoal(this.settings.farmingGoal); }
-	async saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { await this.saveFarmingSettings({ farmingGoal: goal }); }
+	/** The next session's saved goal (`SessionRuntime`); an active session keeps the one it captured. */
+	getFarmingGoal(): FarmingGoalV1 { return this.session.getFarmingGoal(); }
+	/** Serialized with the other two preference forms (`SessionRuntime.saveFarmingSettings`). */
+	saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { return this.session.saveFarmingGoal(goal); }
 	getFarmingGroupContext(): FarmingGroupContext { return this.farmingGroupContext; }
 	setFarmingGroupContext(context: FarmingGroupContext): void { this.farmingGroupContext = context; }
-	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return { ...this.settings.farmingPreparation }; }
-	async saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
-		await this.saveFarmingSettings({ farmingPreparation: settings });
+	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return this.session.getFarmingPreparationSettings(); }
+	saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
+		return this.session.saveFarmingPreparationSettings(settings);
 	}
-	/** Raw declarations are next-session preferences; invalid drafts never replace captured active metadata. */
-	getFarmingDeclaredBuildPreference(): unknown { return this.settings.farmingDeclaredBuild; }
-	async saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
-		await this.saveFarmingSettings({ farmingDeclaredBuild: value });
-	}
-	/** Serializes the visible preference forms, merging each write against the latest saved settings. */
-	private async saveFarmingSettings(settings: Partial<TyrianSettings>): Promise<void> {
-		const save = async (): Promise<void> => {
-			const result = await this.updateSettings(settings);
-			if (result.status !== 'saved') throw new Error('Farming settings are unavailable.');
-		};
-		const flight = this.farmingSettingsFlight.then(save, save);
-		this.farmingSettingsFlight = flight;
-		await flight;
+	getFarmingDeclaredBuildPreference(): unknown { return this.session.getFarmingDeclaredBuildPreference(); }
+	saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
+		return this.session.saveFarmingDeclaredBuildPreference(value);
 	}
 	getFarmingReminders(): readonly FarmingManualReminder[] { return this.farmingReminders.map((reminder) => ({ ...reminder })); }
 	startFarmingReminder(kind: FarmingReminderKind, minutes: number): void {
@@ -3533,57 +3500,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.runtimeReady ? this.liveSessionLoot.getState() : { status: 'idle' };
 	}
 
-	getLiveSessionAlerts(): readonly LiveSessionAlertViewV1[] { return this.selectedLiveHistory?.alerts ?? this.liveSessions?.getAlerts() ?? []; }
-	getLiveSessionView(offset = 0, limit = 200): LiveSessionViewV1 {
-		if (this.selectedLiveHistory === null) return this.liveSessions?.getView(offset,limit) ?? emptyLiveSessionView();
-		const selected = this.selectedLiveHistory; const start = Math.max(0,Number.isSafeInteger(offset) ? offset : 0);
-		const size = Math.max(1,Math.min(200,Number.isSafeInteger(limit) ? limit : 200));
-		return {...selected.view,observations:structuredClone(selected.observations.slice(start,start+size)),observationOffset:start,hasMore:start+size<selected.observations.length};
-	}
-	/** A saved-note comparison and the real active runtime retain independent sample counts. */
-	getLiveSessionComparison(): LiveSessionComparisonView {
-		const live = this.liveSessions;
-		return { history: this.liveComparison, provisional: live === null ? null : provisionalLiveComparison(live.getRuntime(), live.getView().elapsedMs ?? 0, live.getSessionFormat().priceBasis) };
-	}
-	/** Loads schema7 notes only after an explicit action; comparison performs no account requests. */
-	async loadLiveSessionComparison(): Promise<void> {
-		if (this.liveComparisonFlight !== null) return this.liveComparisonFlight;
-		this.liveComparison = { status: 'loading' };
-		const flight = this.loadLiveComparisonNotes(); this.liveComparisonFlight = flight;
-		try { await flight; } finally { this.liveComparisonFlight = null; }
-	}
-	private async loadLiveComparisonNotes(): Promise<void> {
-		try {
-			const result = await this.liveHistory?.loadComparison();
-			if (result?.status === 'ok') this.liveSetAside = result.setAside;
-			this.liveComparison = result?.status === 'ok' ? { status: 'ready', comparison: result.comparison, ignored: result.ignored, setAside: result.setAside }
-				: result?.status === 'conflict' ? result : { status: 'unavailable' };
-		} catch { this.liveComparison = { status: 'unavailable' }; }
-		this.renderViews();
-	}
-	getSelectedLiveSessionHistory(): string | null { return this.selectedLiveHistory?.payload.sessionRef ?? null; }
-	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> {
-		const result = await this.liveHistory?.list(); if (result?.status !== 'ok') throw new Error('Live session history is unavailable.');
-		this.liveSetAside = result.setAside;
-		return result.sessions;
-	}
-	/** The notes the last read of the saved sessions (list or comparison) left aside; the panels name them by path. */
-	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.liveSetAside; }
-	async selectLiveSessionHistory(sessionRef: string | null): Promise<void> {
-		if (sessionRef === null) { this.selectedLiveHistory = null; this.renderViews(); return; }
-		const result = await this.liveHistory?.select(sessionRef);
-		if (result?.status !== 'found') throw new Error('The saved live session could not be read.');
-		this.selectedLiveHistory = {payload:result.session,view:liveSessionViewFromStored(result.session,Date.now()),
-			observations:result.session.journal.flatMap((entry) => entry.observations),alerts:liveSessionAlertsFromStored(result.session)};
-		this.renderViews();
-	}
-	async exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> {
-		const captured = this.selectedLiveHistory === null ? await this.liveSessions?.capture() : null;
-		const payload = this.selectedLiveHistory?.payload ?? (captured ? await prepareLiveSessionExportSnapshot(captured) : null);
-		if (payload === null || payload === undefined || this.liveHistory === null) throw new Error('The live session export is unavailable.');
-		const result = await this.liveHistory.export(this.settings.outputFolder,kind,format,payload);
-		if (result.status !== 'written' && result.status !== 'unchanged') throw new Error('The live session export could not be saved.');
-	}
+	/** The selected saved session's alerts, or the live one's (`SessionRuntime`). */
+	getLiveSessionAlerts(): readonly LiveSessionAlertViewV1[] { return this.session.getLiveSessionAlerts(); }
+	/** The selected saved session's page, or the live one's (`SessionRuntime`). */
+	getLiveSessionView(offset = 0, limit = 200): LiveSessionViewV1 { return this.session.getLiveSessionView(offset, limit); }
+	getLiveSessionComparison(): LiveSessionComparisonView { return this.session.getLiveSessionComparison(); }
+	/** One comparison load in flight at a time (`SessionRuntime`). */
+	loadLiveSessionComparison(): Promise<void> { return this.session.loadLiveSessionComparison(); }
+	getSelectedLiveSessionHistory(): string | null { return this.session.getSelectedLiveSessionHistory(); }
+	listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> { return this.session.listLiveSessionHistory(); }
+	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.session.getLiveSessionSetAside(); }
+	selectLiveSessionHistory(sessionRef: string | null): Promise<void> { return this.session.selectLiveSessionHistory(sessionRef); }
+	exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> { return this.session.exportLiveSession(kind, format); }
 	/** Explicit local export of preserved account evidence; it never calls a capture service. */
 	async exportPreservedLegacySession():Promise<void> {
 		const preserved = await this.sessions.readPreservedLegacyRuntime();
@@ -3696,20 +3624,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.host.ui.openNote(path);
 	}
 
-	/**
-	 * Opens the note a history row links to. The history was read earlier, so the note may have been
-	 * moved or deleted since: the host would create an empty one at a missing path, so the vault is
-	 * asked first (one lookup, no read) and a gone note is a notice, not an open.
-	 */
+	/** A history row's link (`SessionRuntime`): asks the vault first, a gone note is a notice. */
 	openSessionHistoryNote(path: string): void {
-		if (this.host.vault.file(path) === null) {
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.sessionHistoryNoteMissing'),
-				'session_history_note',
-			);
-			return;
-		}
-		this.host.ui.openNote(path);
+		this.session.openSessionHistoryNote(path);
 	}
 
 	/**
@@ -3753,7 +3670,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
 
-	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
+	getSessionHistoryView(): SessionHistoryView { return this.session.getSessionHistoryView(); }
 
 	/**
 	 * Reads durable session notes only after the visible history action is activated. The view's
@@ -3765,94 +3682,23 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return await this.sessionHistory.scan(source);
 	}
 
-	async exportSessionHistory(): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		this.sessionHistoryView = { status: 'working', sessions: 0, erased: 0, alreadyAbsent: 0 };
-		this.settingTab.refreshSessionHistoryRow();
-		try {
-			const result = await this.sessionHistory.export(this.settings.outputFolder);
-			this.sessionHistoryView = sessionHistoryView(result);
-		} catch {
-			this.sessionHistoryView = { status: 'unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 };
-		} finally { this.settingTab.refreshSessionHistoryRow(); }
+	/** Writes the history's export (`SessionRuntime`); the settings row follows each step. */
+	exportSessionHistory(): Promise<void> {
+		return this.session.exportSessionHistory();
 	}
 
+	/** One preview in flight at a time, the same promise to every caller (`SessionRuntime`). */
 	previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
-		if (!this.runtimeReady) {
-			this.notifyRuntimeStarting();
-			return Promise.resolve({ status: 'unavailable', message: 'Tyrian Companion is still starting.' });
-		}
-		// R1b: the scrub rewrites session notes, which only the collector writes.
-		if (refusedInConsult(this)) {
-			return Promise.resolve({ status: 'unavailable', message: 'This installation is in consult mode.' });
-		}
-		if (this.sessionHistoryPreviewFlight) return this.sessionHistoryPreviewFlight;
-		this.sessionHistoryView = { status: 'scrub_previewing', sessions: 0, erased: 0, alreadyAbsent: 0 };
-		this.settingTab.refreshSessionHistoryRow();
-		const flight = this.sessionHistory.previewScrub(this.sessionHistoryRuntimeAuthority)
-			.then((preview) => {
-				this.sessionHistoryView = scrubPreviewView(preview);
-				return preview;
-			})
-			.catch((): SessionHistoryScrubPreview => {
-				const preview = { status: 'unavailable', message: 'History scrub could not be prepared safely.' } as const;
-				this.sessionHistoryView = scrubPreviewView(preview);
-				return preview;
-			})
-			.finally(() => {
-				if (this.sessionHistoryPreviewFlight === flight) this.sessionHistoryPreviewFlight = null;
-				this.settingTab.refreshSessionHistoryRow();
-			});
-		this.sessionHistoryPreviewFlight = flight;
-		return flight;
+		return this.session.previewSessionHistoryScrub();
 	}
 
 	cancelSessionHistoryScrubPreview(token: string): void {
-		if (!this.runtimeReady) return;
-		this.sessionHistory.revokeScrub(token);
-		if (this.sessionHistoryView.status !== 'scrub_ready') return;
-		this.sessionHistoryView = { status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
-		this.settingTab.refreshSessionHistoryRow();
+		this.session.cancelSessionHistoryScrubPreview(token);
 	}
 
+	/** One scrub in flight at a time, the same promise to every caller (`SessionRuntime`). */
 	scrubSessionHistory(token: string): Promise<SessionHistoryScrubResult> {
-		if (!this.runtimeReady) {
-			this.notifyRuntimeStarting();
-			return Promise.resolve({
-				status: 'unavailable', erased: 0, alreadyAbsent: 0,
-				message: 'Tyrian Companion is still starting.',
-			});
-		}
-		if (refusedInConsult(this)) {
-			return Promise.resolve({
-				status: 'unavailable', erased: 0, alreadyAbsent: 0, message: 'This installation is in consult mode.',
-			});
-		}
-		if (this.sessionHistoryScrubFlight) return this.sessionHistoryScrubFlight;
-		this.sessionHistoryView = {
-			status: 'scrubbing', sessions: this.sessionHistoryView.status === 'scrub_ready' ? this.sessionHistoryView.sessions : 0,
-			erased: 0, alreadyAbsent: 0,
-		};
-		this.settingTab.refreshSessionHistoryRow();
-		const flight = this.sessionHistory.scrub(token, this.sessionHistoryRuntimeAuthority)
-			.then((result) => {
-				this.sessionHistoryView = scrubResultView(result);
-				return result;
-			})
-			.catch((): SessionHistoryScrubResult => {
-				const result = {
-					status: 'unavailable', erased: 0, alreadyAbsent: 0,
-					message: 'History scrub could not be completed safely.',
-				} as const;
-				this.sessionHistoryView = scrubResultView(result);
-				return result;
-			})
-			.finally(() => {
-				if (this.sessionHistoryScrubFlight === flight) this.sessionHistoryScrubFlight = null;
-				this.settingTab.refreshSessionHistoryRow();
-			});
-		this.sessionHistoryScrubFlight = flight;
-		return flight;
+		return this.session.scrubSessionHistory(token);
 	}
 
 	private sessionHistoryScrubGate(): SessionHistoryScrubGate {
@@ -5052,26 +4898,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' };
 	}
 
+	/** The kind saved for the recovery on screen (`SessionRuntime`), or null. */
 	getPilotRecoveryKind(): PilotRecoveryKind | null {
-		const recoveryId = this.pilotRecoveryIdentity();
-		return recoveryId ? this.pilotRecoveryKinds.get(recoveryId) ?? null : null;
+		return this.session.getPilotRecoveryKind();
 	}
 
 	isPilotRecoveryClassificationRequired(): boolean {
-		const recoveryId = this.pilotRecoveryIdentity();
-		return recoveryId !== null && this.measuredPilotRecoveries.has(recoveryId);
+		return this.session.isPilotRecoveryClassificationRequired();
 	}
 
-	async classifyPilotRecovery(recoveryKind: PilotRecoveryKind): Promise<boolean> {
-		const recoveryId = this.pilotRecoveryIdentity();
-		if (!recoveryId) return false;
-		if (!await this.ensurePilotRecoveryPresented(recoveryId)) return false;
-		const existing = this.pilotRecoveryKinds.get(recoveryId);
-		if (existing) return existing === recoveryKind;
-		const classified = await this.pilotMetrics.recoveryClassified(recoveryId, recoveryKind);
-		if (classified) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
-		this.renderViews();
-		return classified;
+	/** Records the recovery's kind once (`SessionRuntime`); a second, different kind is refused. */
+	classifyPilotRecovery(recoveryKind: PilotRecoveryKind): Promise<boolean> {
+		return this.session.classifyPilotRecovery(recoveryKind);
 	}
 
 	async recoverSession(): Promise<void> {
@@ -6560,42 +6398,6 @@ function formatCopperCompact(copper: number, locale: Locale): string {
 	return locale === 'es'
 		? `${String(gold)} oro · ${String(silver)} plata · ${String(remainder)} cobre`
 		: `${String(gold)} gold · ${String(silver)} silver · ${String(remainder)} copper`;
-}
-
-function sessionHistoryView(result: SessionHistoryExportResult): {
-	status: 'written' | 'unchanged' | 'conflict' | 'invalid' | 'unavailable';
-	sessions: number; erased: 0; alreadyAbsent: 0;
-} {
-	return result.status === 'written' || result.status === 'unchanged'
-		? { status: result.status, sessions: result.sessions, erased: 0, alreadyAbsent: 0 }
-		: { status: result.status, sessions: 0, erased: 0, alreadyAbsent: 0 };
-}
-
-function pilotJournalHealth(state: PilotMetricsState): PilotJournalHealth {
-	return state.status === 'unconfigured' ? 'inconsistent' : state.status;
-}
-
-function scrubPreviewView(preview: SessionHistoryScrubPreview): SessionHistoryView {
-	if (preview.status === 'ready') {
-		return { status: 'scrub_ready', sessions: preview.sessions, erased: 0, alreadyAbsent: 0 };
-	}
-	return {
-		status: preview.status === 'blocked' ? 'scrub_blocked'
-			: preview.status === 'conflict' ? 'scrub_conflict' : 'scrub_unavailable',
-		sessions: 0, erased: 0, alreadyAbsent: 0,
-	};
-}
-
-function scrubResultView(result: SessionHistoryScrubResult): SessionHistoryView {
-	if (result.status === 'erased' || result.status === 'already_absent') {
-		return { status: result.status, sessions: 0, erased: result.erased, alreadyAbsent: result.alreadyAbsent };
-	}
-	return {
-		status: result.status === 'blocked' ? 'scrub_blocked'
-			: result.status === 'stale' ? 'scrub_stale'
-				: result.status === 'conflict' ? 'scrub_conflict' : 'scrub_unavailable',
-		sessions: 0, erased: result.erased, alreadyAbsent: result.alreadyAbsent,
-	};
 }
 
 /** Retains valid sanitized records, including the internal IDs required to reconstruct one action. */

@@ -548,43 +548,8 @@ describe('assisted proposal invalidation metrics', () => {
 	});
 });
 
-describe('persisted pilot recovery classification', () => {
-	it('hydrates a reloaded classification and rejects an alternative without touching the journal', async () => {
-		const recoveryClassified = vi.fn(async () => false);
-		const recoveryId = 'session-a:7';
-		const harness = {
-			runtimeReady: true,
-			sessions: { getRecoveryState: () => ({
-				status: 'pending', state: { sessionId: 'session-a', authority: { fence: 7 } },
-			}) },
-			pilotMetrics: {
-				recoveryPresented: vi.fn(async () => true),
-				recoveryKind: vi.fn(async () => 'forced_restart' as const),
-				recoveryClassified,
-			},
-			measuredPilotRecoveries: new Set<string>(),
-			pilotRecoveryKinds: new Map<string, 'forced_restart' | 'organic'>(),
-			renderViews: vi.fn(),
-			pilotRecoveryIdentity: () => recoveryId,
-			ensurePilotRecoveryPresented: (_id: string) => Promise.resolve(false),
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensurePilotRecoveryPresented(this: typeof harness, id: string): Promise<boolean>;
-		}).ensurePilotRecoveryPresented;
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
-		const classify = (TyrianCompanionCore.prototype as unknown as {
-			classifyPilotRecovery(this: typeof harness, kind: 'forced_restart' | 'organic'): Promise<boolean>;
-		}).classifyPilotRecovery;
-		harness.ensurePilotRecoveryPresented = async (id) => await ensure.call(harness, id);
-
-		await expect(ensure.call(harness, recoveryId)).resolves.toBe(true);
-		expect(harness.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
-		await expect(classify.call(harness, 'organic')).resolves.toBe(false);
-		expect(recoveryClassified).not.toHaveBeenCalled();
-		expect(harness.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
-	});
-});
+// DE-01, step 3a: 'persisted pilot recovery classification' moved with `classifyPilotRecovery` to
+// `src/runtime/session-facade.test.ts`, over the core's own `ensurePilotRecoveryPresented`.
 
 describe('manual session start command', () => {
 	it('resolves Cancel or Esc from the real start modal without calling its backend or mutating runtime', async () => {
@@ -2523,31 +2488,8 @@ describe('managed assets preview diagnostics', () => {
 	});
 });
 
-describe('pilot metrics export diagnostics', () => {
-	// H15.23 (2026-09-10 incident): this ran entirely outside run(), so an 'unavailable' export
-	// (a Vault write conflict, a corrupt plan) never reached the local debug log, only the UI.
-	it('registers a session_projection failure when the export settles unavailable', async () => {
-		const record = vi.fn((_input: LocalDebugRecordInput) => true);
-		const diagnostics = { record } as unknown as LocalDebugLogger;
-		const harness = {
-			runtimeReady: true,
-			pilotMetricsExportPlan: { snapshot: {}, health: 'ready', outputFolder: 'Tyrian Companion' },
-			pilotMetricsExporter: { export: vi.fn(async () => ({ status: 'unavailable' as const, files: [] })) },
-			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'pilot-metrics-export' }),
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const exportMetrics = (TyrianCompanionCore.prototype as unknown as {
-			exportPilotMetrics(this: typeof harness): Promise<unknown>;
-		}).exportPilotMetrics;
-
-		await expect(exportMetrics.call(harness)).resolves.toMatchObject({ status: 'unavailable' });
-
-		const failure = record.mock.calls.map(([input]) => input).find(
-			(input) => input.component === 'session' && input.action === 'session_projection' && input.phase === 'failure',
-		);
-		expect(failure).toMatchObject({ code: 'storage_failure', state: 'pilot_metrics_export' });
-	});
-});
+// DE-01, step 3a: 'pilot metrics export diagnostics' moved with `exportPilotMetrics` to
+// `src/runtime/session-facade.test.ts`.
 
 describe('local diagnostics composition', () => {
 	it('clears a real logger without recreating a terminal record after the deletion', async () => {

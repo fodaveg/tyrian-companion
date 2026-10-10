@@ -12,6 +12,7 @@ const RUNTIME_UI_FILES = [
 	'src/runtime/core-outcomes.ts',
 	'src/runtime/core-actions.ts',
 	'src/runtime/sale-runtime.ts',
+	'src/runtime/session-facade.ts',
 	'src/ui/companion-view.ts',
 	// DE-07 (10 oct 2026): the view's modals moved here; their copy stays under this guard.
 	'src/ui/companion-modals.ts',
@@ -36,7 +37,7 @@ describe('runtime UI i18n boundary (source text)', () => {
 		expect(hasDirectVisibleCopy(source)).toBe(false);
 	});
 
-	it.each(['src/runtime/core-sale-rules.ts', 'src/runtime/core-outcomes.ts', 'src/runtime/core-actions.ts', 'src/runtime/sale-runtime.ts'] as const)(
+	it.each(['src/runtime/core-sale-rules.ts', 'src/runtime/core-outcomes.ts', 'src/runtime/core-actions.ts', 'src/runtime/sale-runtime.ts', 'src/runtime/session-facade.ts'] as const)(
 		'%s is covered by the guard: a visible literal added to it turns the check red',
 		(path) => {
 			expect(RUNTIME_UI_FILES).toContain(path);
