@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 export const SMOKE_LIVE_CONTRACT_VERSION = 1;
 const PLUGIN_ID = 'tyrian-companion';
 const EVIDENCE_PREFIX = 'TYRIAN_SMOKE_V1\t';
-/** Written by `dev-install.mjs` right after a real reload; the "arranque" the log is scanned since. */
+/**
+ * Written by `dev-install.mjs` right after a real reload; the "arranque" the log is scanned since.
+ * BRAT never renews it (RT-07), so on its own it is a cutoff weeks old: `readErrorsSinceReload` also
+ * keeps only the lines written by the version that is loaded now.
+ */
 const RELOAD_MARKER = '.tyrian-dev-reload-at';
 /**
  * `runtimeReady`, `getConnectionState()` and `alertIngameServerPort` are read
@@ -74,7 +78,9 @@ export function parseSmokeLiveArguments(argv) {
  * Reads the live plugin state through `obsidian eval` and counts `level:
  * "error"` lines the plugin itself wrote to `logs/debug.jsonl` after its own
  * last `plugin_load`. ISO-8601 timestamps sort lexically, so the cutoff is a
- * plain string compare, no `Date` parsing needed.
+ * plain string compare, no `Date` parsing needed. RT-07: when `loadedVersion` is known only the lines
+ * whose `pluginVersion` is that version count, because the marker is only renewed by `dev:install`
+ * and a BRAT install leaves it at the last dev reload, with every older version's errors after it.
  *
  * H15.27: also reads the `manifest.json` `dev-install.mjs` just copied to `pluginDir` and compares
  * it against `loadedVersion` (the version Obsidian actually has loaded). Before `dev-install.mjs`
@@ -103,7 +109,7 @@ export function runSmokeLive({
 	if (evidence.registeredVersion === null) fail('plugin-not-registered');
 	if (evidence.runtimeReady !== true) fail('runtime-not-ready');
 	if (!isRecord(evidence.connection) || typeof evidence.connection.status !== 'string') fail('runtime-state-unavailable');
-	const newErrors = readNewErrors(pluginDir);
+	const newErrors = readNewErrors(pluginDir, evidence.loadedVersion);
 	const manifestVersion = readManifestVersion(pluginDir);
 	if (typeof manifestVersion !== 'string' || manifestVersion.length === 0) fail('manifest-invalid');
 	const versionMismatch = manifestVersion !== evidence.loadedVersion || manifestVersion !== evidence.registeredVersion;
@@ -117,7 +123,7 @@ export function runSmokeLive({
 }
 
 /** Exported on its own: the exit-1 case only needs a fake log, never a live Obsidian. */
-export function readErrorsSinceReload(pluginDir) {
+export function readErrorsSinceReload(pluginDir, loadedVersion = null) {
 	const logPath = resolve(pluginDir, 'logs', 'debug.jsonl');
 	if (!existsSync(logPath)) return [];
 	const markerPath = resolve(pluginDir, RELOAD_MARKER);
@@ -132,6 +138,7 @@ export function readErrorsSinceReload(pluginDir) {
 			continue;
 		}
 		if (!isRecord(record) || record.level !== 'error') continue;
+		if (typeof loadedVersion === 'string' && record.pluginVersion !== loadedVersion) continue;
 		if (sinceIso !== null && typeof record.timestampUtc === 'string' && record.timestampUtc < sinceIso) continue;
 		errors.push(record);
 	}

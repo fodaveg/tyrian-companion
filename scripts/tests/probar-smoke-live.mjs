@@ -22,6 +22,8 @@ try {
 	testNonErrorLevelsDoNotCount();
 	testMalformedLinesAreSkippedNotCrashed();
 	testWithoutMarkerCountsEveryError();
+	testErrorsOfOtherVersionsDoNotCount();
+	testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker();
 	testRunSmokeLiveExitsRedOnInjectedError();
 	testRunSmokeLiveStaysGreenWithoutNewErrors();
 	testCliUnavailableFailsClosed();
@@ -98,6 +100,30 @@ function testWithoutMarkerCountsEveryError() {
 	const pluginDir = freshPluginDir('no-marker');
 	writeLog(pluginDir, [record({ level: 'error', timestampUtc: '2020-01-01T00:00:00.000Z' })]);
 	assert(readErrorsSinceReload(pluginDir).length === 1, 'a log with no reload marker did not count its error');
+}
+
+/** RT-07: BRAT leaves the marker at the last dev reload; errors of older versions written after it are not this load's. */
+function testErrorsOfOtherVersionsDoNotCount() {
+	const pluginDir = freshPluginDir('other-versions');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	writeLog(pluginDir, [
+		{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.2.20' },
+		{ ...record({ level: 'error', timestampUtc: '2026-02-02T00:00:00.000Z' }), pluginVersion: '0.6.35' },
+		{ ...record({ level: 'error', timestampUtc: '2026-02-03T00:00:00.000Z' }), pluginVersion: undefined },
+	]);
+	assert(readErrorsSinceReload(pluginDir, '0.6.35').length === 1, 'errors of other plugin versions were counted for the loaded one');
+	assert(readErrorsSinceReload(pluginDir).length === 3, 'without a loaded version every error since the marker must still count');
+}
+
+function testRunSmokeLiveIgnoresErrorsOfOlderVersionsAfterAStaleMarker() {
+	const pluginDir = freshPluginDir('stale-marker');
+	writeMarker(pluginDir, '2026-01-01T00:00:00.000Z');
+	writeLog(pluginDir, [{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.2.20' }]);
+	const stale = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
+	assert(stale.newErrorCount === 0, 'an error of an older version turned smoke:live red after a stale marker');
+	writeLog(pluginDir, [{ ...record({ level: 'error', timestampUtc: '2026-02-01T00:00:00.000Z' }), pluginVersion: '0.1.30' }]);
+	const own = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.30' }) });
+	assert(own.newErrorCount === 1, 'an error of the loaded version was not counted');
 }
 
 /** The end-to-end case the lote names: `smoke:live` must exit 1 when the injected line is there. */
