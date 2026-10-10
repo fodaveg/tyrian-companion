@@ -1,5 +1,26 @@
 # Changelog
 
+## Release beta 0.6.32 - Logros con sus elementos, nombres e iconos, e iconos en el resumen de sesión
+
+Se actualiza desde la 0.6.31 publicada. Lo que más se nota: cada logro seguido muestra dentro sus elementos con casilla y
+enlace a la wiki, como la nota de Leyspring Hollows, y las recompensas y objetivos salen por su nombre y con su icono en
+vez de por su número. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Logros. Dentro de cada logro seguido aparece la lista de sus elementos: hecho, pendiente o sin leer, con el nombre
+  enlazado a la wiki y el progreso de los que van a medias; primero los pendientes. En una maestría de mapa sin
+  subobjetivos propios, como la de Leyspring Hollows, los elementos son los logros de su categoría en la API, sin los
+  diarios ni los semanales; su recuento va aparte del de la maestría, porque la API no dice cuáles cuentan para ella.
+- Logros. Las recompensas y los objetivos salen por su nombre en el idioma del plugin, y los objetos, minimascotas y
+  aspectos llevan su icono. Los nombres se guardan en el equipo y se renuevan cada 7 días, sin usar la clave de API.
+- Resumen de sesión. En Obsidian, y en Hebra con la API de plugins 1.4, la tabla de objetos de más valor lleva el icono
+  de cada objeto delante de su nombre, sacado de la caché del catálogo. Solo los resúmenes nuevos llevan iconos; las
+  notas ya escritas no cambian.
+- Hebra. El fichero del plugin para Hebra pesa un 25 % menos (de 2,8 MB a 2,1 MB).
+- Diagnóstico. Una acción cancelada ya no cuenta como aviso, y abrir los almacenes locales tiene un plazo: si el
+  navegador no responde, el plugin lo dice en vez de quedarse esperando.
+- Interno. La parte de Venta sale del núcleo a su propio módulo, y más tests de la red de seguridad comprueban
+  comportamiento en vez de texto del código.
+
 ## Release beta 0.6.31 - Halloween sin esperas al comprobar la conexión, sesión en vivo que aguanta un reloj atrasado y datos locales protegidos
 
 Se actualiza desde la 0.6.30 publicada. Lo que más se nota: «Comprobar conexión» ya no espera a las notas de sesión de

@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.32: Logros con elementos, nombres e iconos, iconos en el resumen de sesión y Venta fuera del núcleo (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.32` sobre el canal 0.6.31 publicado
+(`ed1d596`, docs `5b8ff66`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
+`package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en
+[ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.32 se ha visto en un Obsidian ni en un Hebra reales.
+  Todo está medido en tests. No está medido que Hebra deje cargar imágenes remotas en el DOM de la vista del plugin;
+  el historial de precios y el inventario ya lo hacen, y si se bloquease quedaría el nombre sin icono.
+- Contenido: Logros L3 (nombres de recompensas y objetivos desde las listas públicas, caché de 7 días con negativos,
+  texto reescrito en su sitio para conservar el foco) y L4 (elementos de cada seguido con casilla, enlace y progreso;
+  maestrías de mapa por categoría; iconos de objetos, minimascotas y aspectos); iconos en la tabla de objetos del
+  resumen de sesión (N5); `hebra-main.mjs` minificado (HP-07); diagnóstico sin falsos avisos y plazo al abrir
+  almacenes (HP-12); DE-01 paso 2 (`SaleRuntime` fuera del núcleo); GR-04 y GR-13 (tests de comportamiento de vuelta
+  en `check`).
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Canal 0.6.31 publicado: Halloween sin esperas, reserva de sesión con reloj monótono y almacenamiento persistente (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Parte de `61f8ab7` (rama `integracion/0.6.31` sobre el canal
