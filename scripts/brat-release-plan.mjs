@@ -34,6 +34,7 @@ export function planBratRelease(root = process.cwd()) {
 		tagName: manifest.version,
 		name: manifest.version,
 		isDraft: false,
+		isPrerelease: false,
 		assets,
 	};
 }
@@ -80,10 +81,13 @@ export function releaseFromGitHubPayload(payload) {
 		tagName: payload.tag_name,
 		name: payload.name,
 		isDraft: payload.draft === true,
+		isPrerelease: payload.prerelease === true,
 		assets: assets.map((asset) => ({
 			name: isRecord(asset) ? asset.name : undefined,
 			state: isRecord(asset) ? asset.state : undefined,
 			size: isRecord(asset) ? asset.size : undefined,
+			// GitHub's own sha256 of the upload, for the downloaded-bytes check (absent in older payloads).
+			...(isRecord(asset) && typeof asset.digest === 'string' ? { digest: asset.digest } : {}),
 		})),
 	};
 }

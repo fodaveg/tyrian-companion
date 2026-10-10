@@ -11,7 +11,7 @@ Para volver a verificar los metadatos de la release:
 
 ```sh
 version="$(node -p "require('./manifest.json').version")"
-gh release view "$version" --json tagName,name,isDraft,assets
+gh release view "$version" --json tagName,name,isDraft,isPrerelease,assets
 ```
 
 El contrato BRAT (`npm run release:brat-verify`, ver más abajo) debe dar `PASS` con los ocho assets
@@ -94,13 +94,19 @@ plataformas). Los tres van a `.release/<id>/` junto a los de Obsidian, pasan el 
 credenciales y se publican como assets, pero no entran en el ZIP, que sigue siendo la instalación de
 Obsidian. Son generados: no se commitean (`.gitignore`).
 
+`check` cierra con el paso `hebra-bundle` (`vitest.hebra-bundle.config.mts`), que arranca el
+`hebra-main.mjs` que acaba de construir `host-esm` del mismo árbol y falla si falta: no vive en `unit`
+(que lo excluye) ni se salta nunca. Como `ci.yml` y `release.yml` corren `npm run check`, el artefacto
+que descarga Hebra queda probado en los dos.
+
 El workflow `ci.yml` ejecuta `check` y `check:guardrails` en cada push de rama o pull request;
 en `main` añade los benchmarks existentes. Los jobs del helper nativo solo se ejecutan cuando ese
 alcance cambia. Tras los gates prepara el artifact de desarrollo con `release:package` y
 `beta:artifact`. Mantiene permisos `contents: read` y no publica releases.
 
 El workflow `release.yml` es propietario de la publicación al hacer push de un tag. Ejecuta su
-propio `check`, genera el paquete y exige un plan válido de ocho assets antes de crear la release.
+propio `check` y `check:guardrails` (antes de `release:package`; `release-workflow-contract` lo exige,
+porque la publicación no depende del CI del mismo commit), genera el paquete y exige un plan válido de ocho assets antes de crear la release.
 El tag y el título deben coincidir **exactamente** con `manifest.version`, sin prefijo `v`; el cuerpo
 procede de la entrada correspondiente del changelog. Solo ese job tiene `contents: write`.
 Tras subir los assets verifica el contrato contra los metadatos reales de GitHub.
@@ -110,12 +116,17 @@ La sesión de publicación comprueba además los metadatos que sirve GitHub y el
 `hebra-styles.css`):
 
 ```sh
-gh release view "<versión>" --json tagName,name,isDraft,assets \
+gh release view "<versión>" --json tagName,name,isDraft,isPrerelease,assets \
   | npm run release:brat-verify -- --release-json -
 ```
 
-El verificador rechaza un nombre o tag distinto de `manifest.version`, una release draft y cualquier
-asset ausente, duplicado, extra, no terminado de subir o vacío. GitHub puede tardar entre 5 y 15
+El verificador rechaza un nombre o tag distinto de `manifest.version`, una release draft o prerelease
+(`isPrerelease` debe ser `false`; si el JSON no trae el campo, también falla) y cualquier
+asset ausente, duplicado, extra, no terminado de subir o vacío. Con los assets descargados
+(`gh release download "<versión>" --dir <dir>` y `--release-json - --assets-dir <dir>`) comprueba además que
+`hebra.json` declara la versión de `manifest.json` y el sha256 real de `hebra-main.mjs` y
+`hebra-styles.css`, y que cada asset cuyo `digest` informa GitHub coincide con sus bytes (`release.yml` lo
+hace tras publicar). GitHub puede tardar entre 5 y 15
 minutos en reflejar una release a BRAT. Hasta comprobar instalación y carga desde BRAT en Obsidian
 real, la formulación correcta es «canal publicado; instalación/runtime pendiente».
 

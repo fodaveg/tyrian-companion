@@ -41,6 +41,14 @@ jobs:
       - name: Gate
         run: npm run check
 
+      # `check` leaves out the guardrail suites (the frozen architecture tests,
+      # `src/platform`, and the release, BRAT, support, identity and i18n-length
+      # contracts). CI runs them as a separate job, but this workflow has no
+      # `needs` on it and a tag push does not trigger it, so a release would
+      # otherwise publish having proven only the product half.
+      - name: Guardrails
+        run: npm run check:guardrails
+
       - name: Build the release package
         run: npm run release:package
 
@@ -100,9 +108,12 @@ jobs:
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" > .release/published-release.json
           node scripts/brat-release-plan.mjs --from-github .release/published-release.json > .release/published-normalised.json
-          node scripts/brat-release-contract.mjs --release-json .release/published-normalised.json
+          # The metadata says what GitHub holds; the bytes say whether hebra.json is coherent with them
+          # (its version, the sha256 it declares for the Hebra files, GitHub's own digest of each asset).
+          gh release download "$TAG" --dir .release/downloaded
+          node scripts/brat-release-contract.mjs --release-json .release/published-normalised.json --assets-dir .release/downloaded
 
       - name: Report the published asset set
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release view "$TAG" --json tagName,isDraft,assets
+        run: gh release view "$TAG" --json tagName,isDraft,isPrerelease,assets

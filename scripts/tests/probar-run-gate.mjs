@@ -13,6 +13,7 @@ testUnknownGroupIsRed();
 testNoDuplicatedWorkInsideAGroup();
 testManifestCoversDeclaredScripts();
 testTestGroupIsContainedInCheck();
+testHebraBundleTestRunsAfterTheBuild();
 
 if (failures.length > 0) {
 	for (const failure of failures) process.stderr.write(`run gate suite: ${failure}\n`);
@@ -177,6 +178,33 @@ function testTestGroupIsContainedInCheck() {
 		checkIds.has('lint') && checkIds.has('typecheck') && checkIds.has('bundle'),
 		'check does not add lint, typecheck or bundle on top of test',
 	);
+}
+
+/**
+ * GR-01: `bundle.test.ts` loads the `hebra-main.mjs` that `host-esm` builds. It must live in its own
+ * step AFTER that build (never in `unit`, where the bundle is stale or absent), and no other vitest
+ * step may collect it a second time.
+ */
+function testHebraBundleTestRunsAfterTheBuild() {
+	const checkIds = stepsForGroup('check').map((step) => step.id);
+	const buildAt = checkIds.indexOf('host-esm');
+	const bundleAt = checkIds.indexOf('hebra-bundle');
+	assert(buildAt !== -1 && bundleAt !== -1, 'check lacks host-esm or the hebra-bundle step that tests its output');
+	assert(bundleAt > buildAt, 'the hebra-bundle step runs before host-esm builds the bundle it tests');
+	assert(
+		stepsForGroup('check:guardrails').every((step) => step.id !== 'hebra-bundle'),
+		'hebra-bundle must run in check, behind the build, not in check:guardrails',
+	);
+	const vitestConfigs = GATE_STEPS
+		.filter((step) => step.command[0] === 'vitest')
+		.map((step) => step.command[step.command.indexOf('--config') + 1] ?? 'vitest.config.mts');
+	const bundleConfig = readFileSync(resolve(process.cwd(), 'vitest.hebra-bundle.config.mts'), 'utf8');
+	assert(bundleConfig.includes("include: ['src/host/hebra/bundle.test.ts']"), 'vitest.hebra-bundle.config.mts no longer runs bundle.test.ts');
+	assert(
+		readFileSync(resolve(process.cwd(), 'vitest.config.mts'), 'utf8').includes("'src/host/hebra/bundle.test.ts'"),
+		'vitest.config.mts no longer excludes bundle.test.ts, so unit would run it before the build',
+	);
+	assert(vitestConfigs.includes('vitest.hebra-bundle.config.mts'), 'no gate step uses vitest.hebra-bundle.config.mts');
 }
 
 /**
