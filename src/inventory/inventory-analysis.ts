@@ -504,10 +504,18 @@ function coresFromAnalysis(source: InventoryAdvisorContextualPresentationSource)
 	);
 }
 
-/** The advisor degrades a failed catalog request to "every item unavailable"; notes never use that. */
+/**
+ * The advisor degrades a failed catalog request to "unavailable" for its ids; notes never use that.
+ * Not even for a single failed batch: its ids would be written as "Objeto <id>" with no type,
+ * rarity, icon or sale price. An id the catalog says does not exist (`missing`) is legitimate.
+ */
 function catalogUnavailable(source: InventoryAdvisorContextualPresentationSource): boolean {
-	const coverage = Object.values(source.input.catalog.coverage.items);
-	return Object.keys(source.input.snapshot.ownedByItem).length > 0 && coverage.every((entry) => entry.status === 'unavailable');
+	const ownedIds = Object.keys(source.input.snapshot.ownedByItem);
+	if (ownedIds.length === 0) return false;
+	const items = source.input.catalog.coverage.items;
+	const coverage = Object.values(items);
+	return coverage.every((entry) => entry.status === 'unavailable')
+		|| ownedIds.some((id) => items[id]?.status === 'unavailable');
 }
 
 /**
