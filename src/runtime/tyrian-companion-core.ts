@@ -591,10 +591,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private readonly sale: SaleRuntime = new SaleRuntime(TyrianCompanionCore.saleRuntimePort(this));
 	/**
-	 * DE-01, step 3a: the pilot metrics and the session history's export and scrub. It reads the
-	 * core's fields through `sessionRuntimePort`, under their own names; the core still builds
-	 * `pilotMetrics`, `pilotMetricsExporter` and `sessionHistory`, and keeps the history's runtime
-	 * authority and the recovery's pilot hooks.
+	 * DE-01, step 3a: the pilot metrics, the session history's export and scrub, the next session's
+	 * farming preferences and the saved live sessions. It reads the core's fields through
+	 * `sessionRuntimePort`, under their own names; the core still builds `pilotMetrics`,
+	 * `pilotMetricsExporter`, `sessionHistory`, `liveSessions` and `liveHistory`, and keeps the
+	 * history's runtime authority, the recovery's pilot hooks and the farming state a start captures.
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
