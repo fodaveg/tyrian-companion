@@ -3,30 +3,6 @@ import { seasonalWindowStatusAtMs, type SeasonalWindowV1 } from './seasonal-wind
 import type { PriceSeedV1 } from './price-seed-model';
 import type { PriceHistoryDailyV1 } from './price-history-model';
 
-/**
- * When to sell the bag and when to sit on it.
- *
- * This replaces a rule that could not fire. The previous one armed only inside
- * the festival window, compared today against the p90 of the PRECEDING THIRTY
- * DAYS, and required those thirty days to be consecutive captures of the
- * plugin's own. Every one of those three is wrong for this item:
- *
- * - The thirty days before the festival are September, the annual price peak,
- *   so the reference was at its highest exactly when the alert was armed.
- * - The bag is worth selling when it is EXPENSIVE, which is out of season. A
- *   rule armed only in season is armed only while the price is on the floor.
- * - Consecutive days meant one day without opening Obsidian voided the whole
- *   reference. The seeded series has real holes in it too (2025-10-25 to
- *   2025-10-29 is missing upstream), so consecutiveness is unobtainable.
- *
- * So the reference is a YEAR, sampled rather than enumerated: whatever days the
- * window happens to contain are the reference, a hole reduces the sample by one
- * day and nothing else. The only thing that can silence the rule is having
- * almost no days at all, which is a different statement and is said out loud as
- * `insufficient_reference`.
- */
-export const SELL_SIGNAL_VERSION = 1 as const;
-
 /** Length of the reference window, in days back from today. */
 export const SELL_SIGNAL_REFERENCE_DAYS = 365;
 
@@ -37,6 +13,8 @@ export const SELL_SIGNAL_REFERENCE_DAYS = 365;
  * in any arrangement. It exists so a fresh install with four days of capture
  * and no seed does not announce an annual maximum it measured over a long
  * weekend.
+ *
+ * Test seed (DE-09): the tests read it as the floor; production passes its own `minimumReferenceDays`.
  */
 export const SELL_SIGNAL_MINIMUM_REFERENCE_DAYS = 30;
 

@@ -28,6 +28,8 @@ export type SettingsUpdateResult =
 	| { status: 'blocked'; reason: 'runtime_starting' }
 	/** R1b: consult is refused while a session is still open; finishing it needs the API. */
 	| { status: 'blocked'; reason: 'session_in_progress' }
+	/** DU-04: the stored settings come from a newer release; this run writes none of them. */
+	| { status: 'blocked'; reason: 'settings_read_only' }
 	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
 
 /** DU-02: what answering "the vault changed path" did. `preferences` is how many inventory records were copied. */

@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto';
 
+import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { InactivityStopProposal } from './inactivity-stop-detector';
@@ -13,6 +14,7 @@ import {
 	IndexedDbPendingProposalStore,
 	MemoryPendingProposalStore,
 	PROPOSAL_QUEUE_DB_NAME,
+	vaultProposalQueueDatabaseName,
 } from './pending-proposal-store';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
 
@@ -358,6 +360,121 @@ describe('PendingProposalService', () => {
 		const { pollingIntervalMs: _legacyMissing, ...legacy } = result.proposal;
 		const normalized = normalizeProposalQueueRecord({ version: 1, revision: 1, proposals: [legacy], receipts: [] });
 		expect(normalized?.proposals[0]?.pollingIntervalMs).toBeNull();
+	});
+});
+
+describe('one confirmation queue per vault (DU-03)', () => {
+	/** What the core builds for one vault: its own database, adopting the common one an earlier release left. */
+	const vaultStore = (factory: IDBFactory, vaultId: string): IndexedDbPendingProposalStore =>
+		new IndexedDbPendingProposalStore(factory, vaultProposalQueueDatabaseName(vaultId), undefined, PROPOSAL_QUEUE_DB_NAME);
+	const names = async (factory: IDBFactory): Promise<string[]> => (await factory.databases()).map((info) => info.name ?? '').sort();
+	const stopInput = { phase: 'stop' as const, pollingIntervalMs: 60_000, proposal: stopProposal(), sessionId: 'session-a', baselineSnapshotId: 'baseline-a' };
+	const activeA = { accountId: 'account', recoveryPending: false, session: { status: 'active', sessionId: 'session-a', baselineSnapshotId: 'baseline-a' } };
+	const idle = (accountId: string | null) => ({ accountId, recoveryPending: false, session: { status: 'idle' } });
+
+	it('lets one vault reconcile its queue without touching the proposals of another vault', async () => {
+		const factory = new IDBFactory();
+		const vaultA = service(vaultStore(factory, 'vault-a'));
+		const vaultB = service(vaultStore(factory, 'vault-b'), undefined, 'window-b');
+		expect((await vaultA.enqueue(stopInput)).status).toBe('added');
+
+		// B is idle with no account connected: with one common queue this invalidated A's stop proposal.
+		await expect(vaultB.reconcile(idle(null))).resolves.toMatchObject({ status: 'ready', pendingCount: 0 });
+
+		await expect(vaultA.project()).resolves.toMatchObject({ status: 'ready', pendingCount: 1 });
+		expect(vaultA.getState().next).toMatchObject({ phase: 'stop', binding: { sessionId: 'session-a' } });
+		vaultA.dispose();
+		vaultB.dispose();
+		// Two databases, one per vault; with no common queue left by an earlier release, none is created.
+		expect(await names(factory)).toEqual([vaultProposalQueueDatabaseName('vault-a'), vaultProposalQueueDatabaseName('vault-b')].sort());
+	});
+
+	it('adopts once a copy of the proposals the common queue still holds, and each vault keeps only its own', async () => {
+		const factory = new IDBFactory();
+		const common = service(new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME));
+		await common.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal('first') });
+		// Same rule set, so the first start is superseded: the common queue carries a receipt too.
+		await common.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal('second') });
+		const stop = await common.enqueue(stopInput);
+		if (stop.status === 'unavailable') throw new Error('Expected a stop proposal.');
+		// A workflow an earlier release had in flight: its claim belongs to that queue, not to the copies.
+		expect((await common.claim(proposalIntent(stop.proposal), 'operation-earlier')).status).toBe('claimed');
+		common.dispose();
+
+		const vaultA = service(vaultStore(factory, 'vault-a'));
+		await expect(vaultA.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 2 });
+		const reader = vaultStore(factory, 'vault-a');
+		const adopted = normalizeProposalQueueRecord(await reader.read());
+		reader.close();
+		expect(adopted?.receipts).toEqual([]);
+		expect(adopted?.proposals.map((proposal) => proposal.claim)).toEqual([null, null]);
+		// A owns the session the stop is bound to: it keeps the stop and drops the start (it is not idle).
+		await expect(vaultA.reconcile(activeA)).resolves.toMatchObject({ pendingCount: 1, next: { phase: 'stop' } });
+
+		const vaultB = service(vaultStore(factory, 'vault-b'), undefined, 'window-b');
+		await expect(vaultB.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 2 });
+		// B is idle on the same account: it keeps the start and drops the stop, in its copy only.
+		await expect(vaultB.reconcile(idle('account'))).resolves.toMatchObject({ pendingCount: 1, next: { phase: 'start' } });
+		await expect(vaultA.project()).resolves.toMatchObject({ pendingCount: 1, next: { phase: 'stop' } });
+		vaultA.dispose();
+		vaultB.dispose();
+
+		// Once: after a restart B reads its own queue, not a second copy of the common one.
+		const reopenedB = service(vaultStore(factory, 'vault-b'), undefined, 'window-b');
+		await expect(reopenedB.initialize()).resolves.toMatchObject({ pendingCount: 1, next: { phase: 'start' } });
+		reopenedB.dispose();
+		// The common queue is left exactly as the earlier release wrote it: nothing moved out, nothing deleted.
+		const leftover = new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME);
+		expect(normalizeProposalQueueRecord(await leftover.read())?.proposals).toHaveLength(2);
+		leftover.close();
+	});
+
+	it('looks at the common queue once when it has nothing pending, not on every read', async () => {
+		const factory = new IDBFactory();
+		const common = service(new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME));
+		await common.initialize();
+		common.dispose();
+		let listings = 0;
+		const listDatabases = factory.databases.bind(factory);
+		factory.databases = async () => { listings += 1; return await listDatabases(); };
+
+		const store = vaultStore(factory, 'vault-a');
+		await expect(store.read()).resolves.toBeUndefined();
+		await expect(store.read()).resolves.toBeUndefined();
+		store.close();
+
+		expect(listings).toBe(1);
+	});
+
+	it('adopts nothing and creates no common queue on a factory without databases()', async () => {
+		const factory = new IDBFactory();
+		const withoutListing = { open: factory.open.bind(factory), deleteDatabase: factory.deleteDatabase.bind(factory), cmp: factory.cmp.bind(factory) } as unknown as IDBFactory;
+
+		// No common queue: checking for it does not create it.
+		const fresh = service(vaultStore(withoutListing, 'vault-a'));
+		await expect(fresh.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 0 });
+		fresh.dispose();
+		expect(await names(factory)).toEqual([vaultProposalQueueDatabaseName('vault-a')]);
+
+		// A common queue with a pending proposal: without the listing it is not adopted (the earlier rule of session storage).
+		const common = service(new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME));
+		expect((await common.enqueue(stopInput)).status).toBe('added');
+		common.dispose();
+		const vaultB = service(vaultStore(withoutListing, 'vault-b'), undefined, 'window-b');
+		await expect(vaultB.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 0 });
+		vaultB.dispose();
+	});
+
+	it('starts an empty queue of its own when the common queue cannot be read as a queue', async () => {
+		const factory = new IDBFactory();
+		const common = new IndexedDbPendingProposalStore(factory, PROPOSAL_QUEUE_DB_NAME);
+		await common.transaction(() => ({ result: undefined, next: { version: 1, unexpected: true } as never }));
+		common.close();
+
+		const vaultA = service(vaultStore(factory, 'vault-a'));
+		await expect(vaultA.initialize()).resolves.toMatchObject({ status: 'ready', pendingCount: 0 });
+		expect((await vaultA.enqueue(stopInput)).status).toBe('added');
+		vaultA.dispose();
 	});
 });
 

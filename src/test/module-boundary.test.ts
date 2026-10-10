@@ -140,11 +140,11 @@ const TEST_INFRASTRUCTURE_DIRECTORY = 'src/test/';
  * them. An EXPLICIT list with a ratchet, like the UI one.
  */
 const NODE_TEST_FIXTURES: readonly string[] = [
-	'src/economy/__fixtures__/datawars2-real-history-36038-2026-09-26.ts',
-	'src/economy/__fixtures__/datawars2-real-history-36041-2026-09-26.ts',
-	'src/economy/__fixtures__/datawars2-real-history-43320-2026-09-26.ts',
-	'src/economy/__fixtures__/datawars2-real-history-47909-2026-09-26.ts',
-	'src/economy/__fixtures__/datawars2-real-history-48805-2026-09-26.ts',
+	'src/test/fixtures/economy/datawars2-real-history-36038-2026-09-26.ts',
+	'src/test/fixtures/economy/datawars2-real-history-36041-2026-09-26.ts',
+	'src/test/fixtures/economy/datawars2-real-history-43320-2026-09-26.ts',
+	'src/test/fixtures/economy/datawars2-real-history-47909-2026-09-26.ts',
+	'src/test/fixtures/economy/datawars2-real-history-48805-2026-09-26.ts',
 	'src/platform/test/mumble-v2-helper-package-fixture.ts',
 ];
 const NODE_BUILTINS = new Set(builtinModules.map((name) => name.replace(/^node:/u, '')));

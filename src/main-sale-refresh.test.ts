@@ -11,11 +11,11 @@ import { indexedDbPriceHistoryPort } from './host/indexed-db-price-history';
 import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
 import type { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import type { PriceSeedDayV1 } from './economy/price-seed-model';
-import { datawars2RealHistorySacoDays } from './economy/__fixtures__/datawars2-real-history-36038-2026-09-26';
-import { datawars2RealHistoryTrozoDays } from './economy/__fixtures__/datawars2-real-history-36041-2026-09-26';
-import { datawars2RealHistoryBarraDays } from './economy/__fixtures__/datawars2-real-history-47909-2026-09-26';
-import { datawars2RealHistoryJorcameloDays } from './economy/__fixtures__/datawars2-real-history-43320-2026-09-26';
-import { datawars2RealHistoryColmillosAltaCalidadDays } from './economy/__fixtures__/datawars2-real-history-48805-2026-09-26';
+import { datawars2RealHistorySacoDays } from './test/fixtures/economy/datawars2-real-history-36038-2026-09-26';
+import { datawars2RealHistoryTrozoDays } from './test/fixtures/economy/datawars2-real-history-36041-2026-09-26';
+import { datawars2RealHistoryBarraDays } from './test/fixtures/economy/datawars2-real-history-47909-2026-09-26';
+import { datawars2RealHistoryJorcameloDays } from './test/fixtures/economy/datawars2-real-history-43320-2026-09-26';
+import { datawars2RealHistoryColmillosAltaCalidadDays } from './test/fixtures/economy/datawars2-real-history-48805-2026-09-26';
 
 const NOW_MS = Date.parse('2026-09-26T07:35:00.000Z');
 const daysById = new Map<number, () => readonly PriceSeedDayV1[]>([

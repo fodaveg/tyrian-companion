@@ -2,6 +2,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createBootTrace } from '../core/boot-trace';
+import { createTranslator } from '../core/i18n';
+import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugStoragePort } from '../core/local-debug-writer';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION } from '../core/settings';
@@ -693,12 +695,12 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 	afterEach(() => { vi.unstubAllGlobals(); });
 
 	/** A host whose settings live in a store the test can change from outside, as another device would. */
-	async function readyOverStore(load?: () => Promise<unknown>) {
+	async function readyOverStore(load?: () => Promise<unknown>, initial?: Record<string, unknown>) {
 		vi.stubGlobal('window', {
 			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
 		});
 		const { host, registered, records } = neutralHost();
-		const store = { value: { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug' } as Record<string, unknown> | null };
+		const store = { value: { ...DEFAULT_SETTINGS, schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'debug', ...initial } as Record<string, unknown> | null };
 		const patched: string[] = [];
 		const saves: Array<Record<string, unknown>> = [];
 		const wired: TyrianHost = {
@@ -721,8 +723,8 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 		await vi.waitFor(() => {
 			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
 		}, { timeout: 10_000 });
-		saves.length = 0;
-		return { runtime, store, patched, saves };
+		const bootSaves = saves.splice(0);
+		return { runtime, store, patched, saves, bootSaves, notices: registered.notices };
 	}
 
 	it('keeps a key that changed in the store while the plugin was running', async () => {
@@ -814,7 +816,6 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 
 	it.each([
 		['an older schema', { schemaVersion: SETTINGS_SCHEMA_VERSION - 1 }],
-		['a newer schema', { schemaVersion: SETTINGS_SCHEMA_VERSION + 1, unknownKey: true }],
 		['an empty object', null],
 	])('keeps its memory as the base when the store holds %s', async (_label, foreign) => {
 		const { runtime, store, saves } = await readyOverStore();
@@ -840,5 +841,97 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 
 		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 30_000 })).resolves.toMatchObject({ status: 'saved' });
 		expect(store.value).toMatchObject({ valuableLootThresholdCopper: 30_000 });
+	});
+
+	it('loses none of three concurrent writers: a Settings edit, the inventory sync receipt and another edit (DU-04)', async () => {
+		const { runtime, saves, store } = await readyOverStore();
+		// A receipt the settings migration accepts: the save after it re-reads the store and keeps it only if it is valid.
+		const receipt = { status: 'success', finishedAt: '2026-10-10T10:00:00.000Z', durationMs: 5, summary: null, error: null } as never;
+
+		await Promise.all([
+			runtime.updateSettings({ valuableLootThresholdCopper: 20_000 }),
+			(runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome(receipt),
+			runtime.updateSettings({ preferredCharacter: 'Kasmeer' }),
+		]);
+
+		expect(saves).toHaveLength(3);
+		expect(store.value).toMatchObject({ valuableLootThresholdCopper: 20_000, preferredCharacter: 'Kasmeer', inventorySyncLastRun: receipt });
+		expect(runtime.settings).toMatchObject({ valuableLootThresholdCopper: 20_000, preferredCharacter: 'Kasmeer', inventorySyncLastRun: receipt });
+	});
+});
+
+describe('a data.json written by a newer release (DU-04)', { timeout: 20_000 }, () => {
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	const NEWER = { schemaVersion: SETTINGS_SCHEMA_VERSION + 1, preferredCharacter: 'Kasmeer', futureOnlyKey: 'kept' };
+	const warning = (): string => translateRuntime(createTranslator('en'), 'notices.settingsNewerSchema');
+
+	/** Same host as above: a settings store the test reads and changes from outside. */
+	async function bootOver(initial: Record<string, unknown>) {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered } = neutralHost();
+		const store = { value: { ...DEFAULT_SETTINGS, debugLoggingEnabled: true, debugLoggingLevel: 'debug', ...initial } as Record<string, unknown> };
+		const saves: Array<Record<string, unknown>> = [];
+		const wired: TyrianHost = {
+			...host,
+			settings: {
+				load: async () => structuredClone(store.value),
+				save: async (value) => { saves.push(structuredClone(value) as never); store.value = structuredClone(value) as never; },
+			},
+		};
+		const runtime = createTyrianRuntime(wired);
+		await runtime.start();
+		registered.ready[0]!();
+		// Not through the log: a schema other than this one reads the debug opt-in as its default, off.
+		await vi.waitFor(() => {
+			expect((runtime as unknown as { runtimeReady: boolean }).runtimeReady).toBe(true);
+		}, { timeout: 10_000 });
+		return { runtime, store, saves, notices: registered.notices };
+	}
+
+	it('starts without writing the settings, warns once, and refuses every later settings write', async () => {
+		const { runtime, store, saves, notices } = await bootOver(NEWER);
+		const untouched = structuredClone(store.value);
+
+		expect(saves).toEqual([]);
+		expect(runtime.settings.preferredCharacter).toBe('Kasmeer');
+		expect(notices.filter((notice) => notice === warning())).toHaveLength(1);
+
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).resolves.toEqual({ status: 'blocked', reason: 'settings_read_only' });
+		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome({ at: 1 } as never);
+
+		expect(saves).toEqual([]);
+		expect(store.value).toEqual(untouched);
+		expect(runtime.settings.valuableLootThresholdCopper).toBe(DEFAULT_SETTINGS.valuableLootThresholdCopper);
+		// A refused Settings edit says why, with the same warning.
+		expect(notices.filter((notice) => notice === warning())).toHaveLength(2);
+	});
+
+	it('stops writing as soon as a save finds that another device wrote a newer schema meanwhile', async () => {
+		const { runtime, store, saves, notices } = await bootOver({ schemaVersion: SETTINGS_SCHEMA_VERSION });
+		saves.length = 0;
+		store.value = { ...store.value, ...NEWER };
+		const untouched = structuredClone(store.value);
+
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).resolves.toEqual({ status: 'blocked', reason: 'settings_read_only' });
+		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome({ at: 1 } as never);
+
+		expect(saves).toEqual([]);
+		expect(store.value).toEqual(untouched);
+		expect(notices.filter((notice) => notice === warning())).toHaveLength(1);
+	});
+
+	it.each([
+		['the same schema', SETTINGS_SCHEMA_VERSION],
+		['an older schema', SETTINGS_SCHEMA_VERSION - 1],
+	])('keeps the usual behaviour over %s: no warning, and Settings saves', async (_label, schemaVersion) => {
+		const { runtime, store, notices } = await bootOver({ schemaVersion });
+
+		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).resolves.toMatchObject({ status: 'saved' });
+
+		expect(store.value).toMatchObject({ schemaVersion: SETTINGS_SCHEMA_VERSION, valuableLootThresholdCopper: 20_000 });
+		expect(notices).not.toContain(warning());
 	});
 });

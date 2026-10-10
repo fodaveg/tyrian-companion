@@ -29,6 +29,7 @@ export interface DetectionQualityStore {
 	close(): void;
 }
 
+/** Test seed (DE-09): in-memory double of the IndexedDB store; only the detection quality tests build it. */
 export class MemoryDetectionQualityStore implements DetectionQualityStore {
 	private readonly values = new Map<string, unknown>();
 

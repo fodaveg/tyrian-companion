@@ -78,6 +78,30 @@ describe('createTyrianCoreRuntime: the boot, before any UI (R1a)', () => {
 		expect(upgraded.saved).toEqual([]);
 	});
 
+	it('DU-04: a data.json from a newer settings schema is used as read but never written back', async () => {
+		const newer = neutralHost({ ...LOGGING, schemaVersion: SETTINGS_SCHEMA_VERSION + 1, preferredCharacter: 'Kasmeer', futureOnlyKey: 1 });
+		const boot = await createTyrianCoreRuntime(newer.host).boot();
+		await boot.diagnosticsReady;
+
+		expect(newer.saved).toEqual([]);
+		expect(boot.settingsReadOnly).toBe(true);
+		expect(boot.settings).toMatchObject({ preferredCharacter: 'Kasmeer', schemaVersion: SETTINGS_SCHEMA_VERSION });
+	});
+
+	it('DU-04: an older or equal settings schema boots as always, writable and migrated when it changed', async () => {
+		const older = neutralHost({ ...LOGGING, schemaVersion: SETTINGS_SCHEMA_VERSION - 1 });
+		const olderBoot = await createTyrianCoreRuntime(older.host).boot();
+		await olderBoot.diagnosticsReady;
+		expect(olderBoot.settingsReadOnly).toBe(false);
+		expect(older.saved).toEqual([expect.objectContaining({ schemaVersion: SETTINGS_SCHEMA_VERSION })]);
+
+		const same = neutralHost(LOGGING);
+		const sameBoot = await createTyrianCoreRuntime(same.host).boot();
+		await sameBoot.diagnosticsReady;
+		expect(sameBoot.settingsReadOnly).toBe(false);
+		expect(sameBoot.settings).toMatchObject({ debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+	});
+
 	it('records a settings load failure, flushes it and rethrows it from start', async () => {
 		const failure = new Error('settings unreadable');
 		const { host } = neutralHost(LOGGING, { loadFails: failure });

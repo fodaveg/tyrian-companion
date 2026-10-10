@@ -22,7 +22,7 @@ import type { PriceHistoryDailyV1 } from './economy/price-history-model';
 import { PRICE_SEED_MAX_RESPONSE_BYTES } from './economy/price-seed-source';
 import { PRICE_SEED_BASE_URL, PRICE_SEED_FIELDS } from './economy/price-seed-model';
 import type { SellSignalRuntimeState } from './economy/sell-signal-runtime';
-import { trickOrTreatBagHistoryRecords } from './economy/__fixtures__/trick-or-treat-bag-history';
+import { trickOrTreatBagHistoryRecords } from './test/fixtures/economy/trick-or-treat-bag-history';
 
 /**
  * Cabling, not shape.

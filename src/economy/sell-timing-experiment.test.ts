@@ -21,8 +21,8 @@ import {
 import {
 	SELL_TIMING_HISTORY_BAG_GAP,
 	sellTimingHistoryBagDays,
-} from './__fixtures__/sell-timing-history-36038';
-import { sellTimingHistoryCornDays } from './__fixtures__/sell-timing-history-47909';
+} from '../test/fixtures/economy/sell-timing-history-36038';
+import { sellTimingHistoryCornDays } from '../test/fixtures/economy/sell-timing-history-47909';
 
 function festivalYear(year: number) {
 	const festival = HALLOWEEN_FESTIVAL_STARTS.find((entry) => entry.year === year);

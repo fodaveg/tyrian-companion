@@ -66,6 +66,8 @@ export interface DurableSessionLootLine {
 }
 
 export interface DurableSessionHistoryRecord {
+	/** Vault path of the note this record was read from; set by `scan` only, absent on a decoded or fixture record. */
+	notePath?: string;
 	farmingGoal?: FarmingGoalV1;
 	farmingGoalResult?: FarmingGoalProgress;
 	comparisonMetadata?: DurableSessionComparisonMetadata;
@@ -311,7 +313,8 @@ export class SessionHistoryService {
 					if (index !== null && lifetime === this.indexLifetime
 						&& (this.changedDuringScan.get(file.path) ?? 0) <= startedAt) index.set(file.path, decoded);
 				}
-				if (decoded.status === 'ok') sessions.push(decoded.session);
+				// The path is where the note is NOW, so it is stamped on the way out and never kept in the index.
+				if (decoded.status === 'ok') sessions.push({ ...decoded.session, notePath: file.path });
 				else if (decoded.status === 'non_candidate') ignored += 1;
 				else invalid += 1;
 			}
@@ -839,7 +842,7 @@ function serializeCsv(sessions: readonly DurableSessionHistoryRecord[]): string 
 	return `${rows.join('\r\n')}\r\n`;
 }
 function valueForColumn(session: DurableSessionHistoryRecord, column: typeof CSV_COLUMNS[number]): string | number | null {
-	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult' | 'legacyPositiveNetSacks'>;
+	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'notePath' | 'lootRows' | 'outcome' | 'comparisonMetadata' | 'sackObservation' | 'farmingGoal' | 'farmingGoalResult' | 'legacyPositiveNetSacks'>;
 	return session[key];
 }
 /**

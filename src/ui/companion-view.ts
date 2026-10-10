@@ -164,6 +164,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	/** Vault path of the note written for the session currently on screen, or null when none is durable. */
 	getSavedSessionNotePath?(): string | null;
 	openSavedSessionNote?(): void;
+	/** Opens the note a history row links to, or tells the player it is gone; the panel never reaches the host. */
+	openSessionHistoryNote?(path: string): void;
 	/**
 	 * "Copiar detalle técnico" (incident callout, H18.36): resolves to a Notice on a refused write,
 	 * never rejects. Optional only for the shell that lacks `navigator.clipboard`/`Notice` context.
@@ -615,7 +617,10 @@ export class TyrianCompanionView {
 		if (this.sessionHistoryLocale !== locale) this.releaseSessionHistoryMount();
 		const mounted = this.sessionHistoryMount ?? null;
 		if (mounted === null) {
-			this.sessionHistoryMount = mountSessionHistoryPanel(container, locale, this.sessionHistoryController);
+			this.sessionHistoryMount = mountSessionHistoryPanel(
+				container, locale, this.sessionHistoryController,
+				this.actions.openSessionHistoryNote === undefined ? undefined : (path) => this.actions.openSessionHistoryNote?.(path),
+			);
 			this.sessionHistoryLocale = locale;
 		} else {
 			// The card was just appended after the retained panel: it moves, the panel does not.

@@ -53,6 +53,7 @@ const ES = {
 		'notices.vaultFreshCollector': 'Empiezas de cero en esta ruta. Los datos de la ruta anterior se conservan sin tocar. Esta instalación está en modo recolector.',
 		'notices.vaultFresh': 'Empiezas de cero en esta ruta. Los datos de la ruta anterior se conservan sin tocar. La instalación sigue en modo consulta: cámbiala a recolector en Ajustes si procede.',
 		'notices.pluginStartFailed': 'Tyrian Companion no pudo iniciarse. Haz clic aquí para revisar el registro de depuración.',
+		'notices.settingsNewerSchema': 'Los ajustes los guardó una versión más nueva de Tyrian Companion. Esta los usa sin cambiarlos y no guardará ninguno: actualiza el plugin para editarlos.',
 		'notices.liveObservationUnavailable': 'La sesión sigue activa, pero la observación en vivo no pudo iniciarse. No habrá avisos hasta que se recupere.',
 		'notices.valuableLoot': 'Hallazgo valioso: {{name}} ×{{quantity}} · {{value}}.',
 		'notices.alwaysAlertLoot': 'Hallazgo destacado: {{name}} ×{{quantity}} · {{reason}}.',
@@ -1100,6 +1101,7 @@ const ES = {
 		'sessionHistory.title': 'Historial durable',
 		'sessionHistory.intro': 'Compara las sesiones finalizadas guardadas en notas. El vault solo se lee al activar esta acción.',
 		'sessionHistory.refresh': 'Actualizar historial',
+		'sessionHistory.openNote': 'Abrir la nota de la sesión terminada {{ended}}',
 		'sessionHistory.loadingAction': 'Cargando…',
 		'sessionHistory.idle': 'Aún no se ha leído el historial. Cargar no consulta la cuenta ni cambia ninguna nota.',
 		'sessionHistory.loadingTitle': 'Leyendo notas de sesión…',
@@ -1208,6 +1210,7 @@ const ES = {
 		// El detalle solo va al portapapeles (nunca como texto legible), así que un portapapeles que
 		// rechaza la escritura tiene que decirlo: si no, el jugador cree que copió y no copió nada.
 		'sessionCard.copyTechnicalDetailFailed': 'No se pudo copiar el detalle técnico.',
+		'notices.sessionHistoryNoteMissing': 'Esa nota de sesión ya no está donde se guardó. Actualiza el historial.',
 		// H18.36 (boceto lámina 2.2/2.3): recorrido del cierre y su meta con la hora del reintento.
 		'sessionCard.earnedSoFar': 'Ganado hasta ahora',
 		'sessionCard.receipt.closureAria': 'Recorrido del cierre',
@@ -1310,6 +1313,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'notices.vaultFreshCollector': 'You start fresh on this path. The data under the previous path is kept untouched. This installation is in collector mode.',
 	'notices.vaultFresh': 'You start fresh on this path. The data under the previous path is kept untouched. This installation stays in consult mode: switch it to collector in Settings if needed.',
 	'notices.pluginStartFailed': 'Tyrian Companion failed to start. Click here to check the debug log.',
+	'notices.settingsNewerSchema': 'The settings were saved by a newer version of Tyrian Companion. This one uses them as they are and saves none: update the plugin to edit them.',
 	'notices.liveObservationUnavailable': 'The session is still active, but live observation could not start. There will be no alerts until it recovers.',
 	'notices.valuableLoot': 'Valuable find: {{name}} ×{{quantity}} · {{value}}.',
 	'notices.alwaysAlertLoot': 'Notable find: {{name}} ×{{quantity}} · {{reason}}.',
@@ -2294,6 +2298,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionHistory.title': 'Durable history',
 	'sessionHistory.intro': 'Compare completed sessions saved in notes. The Vault is read only when you activate this action.',
 	'sessionHistory.refresh': 'Refresh history',
+	'sessionHistory.openNote': 'Open the note of the session ended {{ended}}',
 	'sessionHistory.loadingAction': 'Loading…',
 	'sessionHistory.idle': 'History has not been read yet. Loading does not query the account or change any note.',
 	'sessionHistory.loadingTitle': 'Reading session notes…',
@@ -2383,6 +2388,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sessionCard.lastErrorLine': 'Last failure: {{component}}/{{action}}, {{timestamp}}',
 	'sessionCard.copyTechnicalDetail': 'Copy technical detail',
 	'sessionCard.copyTechnicalDetailFailed': 'The technical detail could not be copied.',
+	'notices.sessionHistoryNoteMissing': 'That session note is no longer where it was saved. Refresh the history.',
 	'sessionCard.earnedSoFar': 'Earned so far',
 	'sessionCard.receipt.closureAria': 'Closing recorrido',
 	'sessionCard.receipt.stopMarked': 'End marked',

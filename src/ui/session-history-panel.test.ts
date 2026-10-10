@@ -305,6 +305,64 @@ describe('mountSessionHistoryPanel', () => {
 	});
 });
 
+describe('session note link in the history rows', () => {
+	const mountWith = async (
+		locale: 'es' | 'en', sessions: DurableSessionHistoryRecord[], openNote?: (path: string) => void,
+	) => {
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({ status: 'ok', ignored: 0, sessions }));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, locale, controller, openNote);
+		await controller.load();
+		return { document, container };
+	};
+	const links = (container: FakeElement) => descendants(container)
+		.filter((element) => element.tag === 'button' && element.className.includes('tyrian-session-history__note-link'));
+
+	it('gives each session its own link, named after the session, that opens ITS note', async () => {
+		const openNote = vi.fn();
+		const { container } = await mountWith('en', [
+			record('2026-08-20T10:00:00.000Z', 3_600_000, { notePath: 'Sessions/first.md' }),
+			record('2026-08-21T10:00:00.000Z', 3_600_000, { notePath: 'Sessions/second.md' }),
+		], openNote);
+		const found = links(container);
+		expect(found).toHaveLength(2);
+		for (const link of found) {
+			expect(link.className).toContain('mod-link');
+			expect(link.attributes.get('type')).toBe('button');
+			expect(link.attributes.get('aria-label')).toMatch(/^Open the note of the session ended /u);
+			expect(link.attributes.get('aria-label')).toContain(link.textContent);
+		}
+		// Newest first: the second record leads the ledger.
+		found[0]!.click();
+		found[1]!.click();
+		expect(openNote.mock.calls).toEqual([['Sessions/second.md'], ['Sessions/first.md']]);
+	});
+
+	it('names the link in Spanish and is a real, focusable button (keyboard activation is the browser\'s)', async () => {
+		const openNote = vi.fn();
+		const { container, document } = await mountWith('es', [
+			record('2026-08-20T10:00:00.000Z', 3_600_000, { notePath: 'Sessions/a.md' }),
+		], openNote);
+		const [link] = links(container);
+		expect(link!.attributes.get('aria-label')).toMatch(/^Abrir la nota de la sesión terminada /u);
+		link!.focus();
+		expect(document.activeElement).toBe(link);
+		// The link sits in the row header cell, so the row keeps its `scope="row"` name.
+		const header = descendants(container).find((element) => element.tag === 'th' && element.children.includes(link!));
+		expect(header?.attributes.get('scope')).toBe('row');
+	});
+
+	it('draws no link for a session without a known note, or when nothing can open it', async () => {
+		const withoutPath = await mountWith('en', [record('2026-08-20T10:00:00.000Z')], vi.fn());
+		expect(links(withoutPath.container)).toHaveLength(0);
+		const withoutOpener = await mountWith('en', [
+			record('2026-08-20T10:00:00.000Z', 3_600_000, { notePath: 'Sessions/a.md' }),
+		]);
+		expect(links(withoutOpener.container)).toHaveLength(0);
+	});
+});
+
 describe('formatSessionHistoryDuration', () => {
 	it.each([
 		[30_000, 'es' as const, '30 segundos'],

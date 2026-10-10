@@ -11,8 +11,8 @@ import { HALLOWEEN_FESTIVAL_ANCHORS } from '../economy/models/halloween-festival
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { festivalCalendarEntryForItem, resolveFestivalCalendarWindow } from '../economy/seasonal-window';
 import { HALLOWEEN_FESTIVAL_STARTS, addUtcDays, type SellTimingPriceDay } from '../economy/sell-timing-experiment';
-import { SELL_TIMING_HISTORY_BAG_ITEM_ID, sellTimingHistoryBagDays } from '../economy/__fixtures__/sell-timing-history-36038';
-import { SELL_TIMING_HISTORY_CORN_ITEM_ID, sellTimingHistoryCornDays } from '../economy/__fixtures__/sell-timing-history-47909';
+import { SELL_TIMING_HISTORY_BAG_ITEM_ID, sellTimingHistoryBagDays } from '../test/fixtures/economy/sell-timing-history-36038';
+import { SELL_TIMING_HISTORY_CORN_ITEM_ID, sellTimingHistoryCornDays } from '../test/fixtures/economy/sell-timing-history-47909';
 
 /**
  * H18.19, audit 2026-09-24 §8 prueba 2 ("Precios") and §3.D's acceptance criteria, through the

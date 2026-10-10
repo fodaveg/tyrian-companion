@@ -5,6 +5,7 @@ import {
 	DEFAULT_SETTINGS,
 	hasLegacyPaths,
 	collectorModeSeed,
+	isNewerSettingsSchema,
 	mergeSettingsUpdate,
 	migrateSettings,
 	normalizeVaultFolder,
@@ -606,5 +607,17 @@ describe('independent manual build preferences', () => {
 		const loaded=migrateSettings({farmingDeclaredBuild:raw}); raw.label='Changed later';
 		expect(loaded.farmingDeclaredBuild).toMatchObject({label:'Manual'}); expect(loaded.farmingPreparation.enabled).toBe(false);
 		expect(shouldPersistSettingsOnLoad(loaded,migrateSettings(loaded))).toBe(false);
+	});
+});
+
+describe('isNewerSettingsSchema (DU-04)', () => {
+	it('is true only for a settings object whose numeric schema is above this release\'s', () => {
+		expect(isNewerSettingsSchema({ schemaVersion: SETTINGS_SCHEMA_VERSION + 1 })).toBe(true);
+		expect(isNewerSettingsSchema({ schemaVersion: SETTINGS_SCHEMA_VERSION })).toBe(false);
+		expect(isNewerSettingsSchema({ schemaVersion: SETTINGS_SCHEMA_VERSION - 1 })).toBe(false);
+		for (const other of [null, undefined, [], 'x', {}, { schemaVersion: String(SETTINGS_SCHEMA_VERSION + 1) },
+			{ schemaVersion: Number.NaN }, { schemaVersion: Number.POSITIVE_INFINITY }]) {
+			expect(isNewerSettingsSchema(other)).toBe(false);
+		}
 	});
 });

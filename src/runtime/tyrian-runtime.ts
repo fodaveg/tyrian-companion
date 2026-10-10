@@ -16,19 +16,33 @@ import type { BootTrace } from '../core/boot-trace';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { LocalDebugJsonlWriter } from '../core/local-debug-writer';
-import { migrateSettings, shouldPersistSettingsOnLoad, type TyrianSettings } from '../core/settings';
+import { isNewerSettingsSchema, migrateSettings, shouldPersistSettingsOnLoad, type TyrianSettings } from '../core/settings';
+
+/** What the boot read from the settings port, and whether it may ever write them back. */
+export interface LoadedTyrianSettings {
+	readonly settings: TyrianSettings;
+	/** DU-04: the stored settings come from a newer settings schema; nothing writes them in this run. */
+	readonly readOnly: boolean;
+}
 
 /**
  * The one production path that reads `data.json`: through the host's settings port, migrated to
  * the current schema (`hostLocale` answers only a missing language), and written back once when
  * the migration changed something `shouldPersistSettingsOnLoad` cares about (a dropped legacy
- * credential, a new schema). Rejects when the host cannot read or write the settings.
+ * credential, a new schema). A file from a newer settings schema (DU-04) is migrated into memory
+ * but never written back, and the answer says so. Rejects when the host cannot read or write the settings.
  */
-export async function loadTyrianSettings(host: TyrianHost): Promise<TyrianSettings> {
+export async function loadTyrianSettingsState(host: TyrianHost): Promise<LoadedTyrianSettings> {
 	const persisted = await host.settings.load();
 	const settings = migrateSettings(persisted, host.vault.configDir, host.locale());
-	if (shouldPersistSettingsOnLoad(persisted, settings)) await host.settings.save(settings);
-	return settings;
+	const readOnly = isNewerSettingsSchema(persisted);
+	if (!readOnly && shouldPersistSettingsOnLoad(persisted, settings)) await host.settings.save(settings);
+	return { settings, readOnly };
+}
+
+/** `loadTyrianSettingsState` without the read-only answer, for callers that only need the settings. */
+export async function loadTyrianSettings(host: TyrianHost): Promise<TyrianSettings> {
+	return (await loadTyrianSettingsState(host)).settings;
 }
 
 /** What the boot leaves ready before the diagnostics log has finished initializing. */
@@ -37,6 +51,8 @@ export interface TyrianBoot {
 	readonly settings: TyrianSettings;
 	/** Why loading the settings failed; null when they loaded. */
 	readonly settingsLoadFailure: unknown;
+	/** DU-04: the stored settings come from a newer settings schema, so this run never writes them. */
+	readonly settingsReadOnly: boolean;
 	readonly localDebug: LocalDebugLogger;
 	readonly localDebugActions: LocalDebugActionRunner;
 	/**
@@ -84,9 +100,10 @@ export function createTyrianCoreRuntime(host: TyrianHost, trace?: BootTrace): Ty
 
 async function bootTyrian(host: TyrianHost, trace: BootTrace | undefined): Promise<TyrianBoot> {
 	let settings: TyrianSettings;
+	let settingsReadOnly = false;
 	let settingsLoadFailure: unknown = null;
 	try {
-		settings = await loadTyrianSettings(host);
+		({ settings, readOnly: settingsReadOnly } = await loadTyrianSettingsState(host));
 	} catch (error) {
 		settings = migrateSettings(null, host.vault.configDir, host.locale());
 		settingsLoadFailure = error;
@@ -105,7 +122,7 @@ async function bootTyrian(host: TyrianHost, trace: BootTrace | undefined): Promi
 	});
 	const localDebugActions = new LocalDebugActionRunner({ diagnostics: localDebug });
 	const diagnosticsReady = initializeLocalDebug(localDebug, localDebugActions, settings, settingsLoadFailure === null, trace);
-	return { settings, settingsLoadFailure, localDebug, localDebugActions, diagnosticsReady };
+	return { settings, settingsLoadFailure, settingsReadOnly, localDebug, localDebugActions, diagnosticsReady };
 }
 
 async function initializeLocalDebug(
