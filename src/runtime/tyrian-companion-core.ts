@@ -4703,8 +4703,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (!hostSupportsManagedAssets(this.host)) return [];
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return []; }
 		if (refusedInConsult(this)) return [];
+		if (this.settings.legacyManagedAssetsRoot !== null) {
+			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
+			this.settingTab.refreshManagedAssetsRow();
+			return [];
+		}
+		// No root and no legacy one: nothing to list, silent as Repair is in that same case.
 		const root = this.settings.managedAssetsRoot;
-		if (!root || this.settings.legacyManagedAssetsRoot !== null) return [];
+		if (!root) return [];
 		let found: Array<{ id: string; path: string }> = [];
 		const perform = async () => {
 			try {

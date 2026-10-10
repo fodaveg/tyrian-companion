@@ -2343,6 +2343,12 @@ describe('managed assets preview diagnostics', () => {
 
 		listUnowned.mockResolvedValueOnce([{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base' }]);
 		await expect(list.call(harness)).resolves.toEqual([{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base' }]);
+
+		const legacy = { ...harness, settings: { ...harness.settings, legacyManagedAssetsRoot: 'Old Root' }, managedAssetsView: { status: 'idle' as const, message: 'idle', plan: null } };
+		listUnowned.mockClear();
+		await expect(list.call(legacy as unknown as typeof harness)).resolves.toEqual([]);
+		expect(legacy.managedAssetsView).toEqual({ status: 'error', message: 'legacy_explicit_only', plan: null });
+		expect(listUnowned).not.toHaveBeenCalled();
 	});
 });
 
