@@ -53,5 +53,7 @@ export const PUBLISHED_BASE_FINGERPRINTS: readonly PublishedBaseFingerprint[] = 
 	{ assetId: 'session-summaries-base', locale: 'es', contentVersion: 3, semanticHash: 'c9458f92b36e7357e057808d15dbb03def2611a241e03dddd57bc2bbf54da81b' },
 	{ assetId: 'sessions-base', locale: 'neutral', contentVersion: 2, semanticHash: '6482732191c7f9c9ef53f140c7c3fa854d1cd88abba06ac8465b5ed4ca73e993' },
 	{ assetId: 'wallet-base', locale: 'en', contentVersion: 1, semanticHash: '9b8b18ed917fe5cadcb6dbc9bdf34eb75c3f8941ef7f349561c6a319531e3ba6' },
+	{ assetId: 'wallet-base', locale: 'en', contentVersion: 2, semanticHash: 'cf4c5c830d19a1e195de22d06bde17096f4dff3ca9454adb6ada09afa3716035' },
 	{ assetId: 'wallet-base', locale: 'es', contentVersion: 1, semanticHash: 'a0aff9de867534b692e79a0ce0381ff77b78630f82945471a9af9d3cc738ca05' },
+	{ assetId: 'wallet-base', locale: 'es', contentVersion: 2, semanticHash: 'a97445d569917027f1f82c08cf879df325097ea7efad94b7eac7cd059a4716a9' },
 ];

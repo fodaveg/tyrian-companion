@@ -16,7 +16,7 @@ const COPY = {
 
 function walletBaseBody(locale: WalletBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.currency_icon, tc_currency_name, tc_quantity, tc_currency_order, tc_captured_at]';
+	const order = '[formula.currency_icon, tc_currency_name, tc_quantity, tc_currency_order, file.mtime]';
 	return `filters:
   and:
     - tc_schema == 1
@@ -34,7 +34,7 @@ properties:
     displayName: "${copy.quantity}"
   note.tc_currency_order:
     displayName: "${copy.order}"
-  note.tc_captured_at:
+  file.mtime:
     displayName: "${copy.captured}"
 views:
   - type: table
@@ -64,8 +64,11 @@ views:
 /** Locale variants share one managed path; the manager installs only the active locale. */
 export async function walletManagedAssets(): Promise<PackagedAsset[]> {
 	return await Promise.all((['es', 'en'] as const).map(async (locale) => {
+		// Version 2 (Z29): the "updated" column reads `file.mtime` instead of the retired
+		// `note.tc_captured_at`. Semantic bytes moved, so the version must move with them: an
+		// unchanged `contentVersion` over different bytes is a corrupt manifest (`conflict`), not an `update`.
 		const draft = {
-			id: 'wallet-base', kind: 'base', contentVersion: 1, locale,
+			id: 'wallet-base', kind: 'base', contentVersion: 2, locale,
 			relativePath: 'Wallet.base',
 		} as const;
 		const bytes = `${managedAssetMarker(draft)}\n${walletBaseBody(locale)}`;

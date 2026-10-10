@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { managedAssetsBundle } from './generic-assets';
 import { walletManagedAssets } from './wallet-base';
+import { sha256Text } from './managed-asset-hash';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker } from './managed-assets-model';
 import { WalletVaultSyncService, type WalletVaultFile, type WalletVaultPort } from '../wallet/wallet-vault-sync';
@@ -20,8 +21,8 @@ describe('wallet Base assets', () => {
 	it('packages Wallet once per locale in the single managed bundle', async () => {
 		const assets = await walletManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'wallet-base', kind: 'base', contentVersion: 1, locale: 'es', relativePath: 'Wallet.base' },
-			{ id: 'wallet-base', kind: 'base', contentVersion: 1, locale: 'en', relativePath: 'Wallet.base' },
+			{ id: 'wallet-base', kind: 'base', contentVersion: 2, locale: 'es', relativePath: 'Wallet.base' },
+			{ id: 'wallet-base', kind: 'base', contentVersion: 2, locale: 'en', relativePath: 'Wallet.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) expect(bundle).toContainEqual(expected);
@@ -63,8 +64,10 @@ describe('wallet Base assets', () => {
 			const keys = Object.keys(document.properties ?? {});
 			expect(keys.filter((key) => !/^(?:note|formula|file)\./u.test(key))).toEqual([]);
 			expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
-				'note.tc_currency_name', 'note.tc_quantity', 'note.tc_currency_order', 'note.tc_captured_at',
+				'note.tc_currency_name', 'note.tc_quantity', 'note.tc_currency_order',
 			]);
+			expect(keys).toContain('file.mtime');
+			expect(asset.bytes).not.toContain('tc_captured_at');
 			expect(keys.filter((key) => key.startsWith('formula.'))).toEqual(['formula.currency_icon']);
 		}
 	});
@@ -85,6 +88,32 @@ describe('wallet Base assets', () => {
 		expect(preview.steps.filter((step) => step.id !== 'wallet-base').every((step) => step.status === 'unchanged')).toBe(true);
 		expect((await v6.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		expect(vault.contents.has('Tyrian Companion/Bases/Wallet.base')).toBe(true);
+	});
+
+	it('upgrades an install of the published version 1 Base to version 2 on its own, reading the file date', async () => {
+		const bundle = await managedAssetsBundle();
+		const v1Bundle = await Promise.all(bundle.map(async (asset) => {
+			if (asset.id !== 'wallet-base') return asset;
+			const bytes = asset.bytes
+				.replace('version=2', 'version=1')
+				.replace(', file.mtime]', ', tc_captured_at]')
+				.replaceAll('  file.mtime:', '  note.tc_captured_at:');
+			expect(bytes).toContain('note.tc_captured_at');
+			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
+		}));
+		const vault = new MemoryBaseVault();
+		const old = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: v1Bundle });
+		expect((await old.apply('Tyrian Companion', 'install')).status).toBe('applied');
+		const path = 'Tyrian Companion/Bases/Wallet.base';
+		expect(vault.contents.get(path)).toContain('tc_captured_at');
+
+		const current = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 7, locale: 'es', assets: bundle });
+		const preview = await current.preview('Tyrian Companion', 'upgrade');
+		expect(preview.steps.find((step) => step.id === 'wallet-base')).toMatchObject({ status: 'update' });
+		expect((await current.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+		expect(vault.contents.get(path)).toContain('file.mtime');
+		expect(vault.contents.get(path)).not.toContain('tc_captured_at');
+		expect((await current.preview('Tyrian Companion', 'upgrade')).steps.every((step) => step.status === 'unchanged')).toBe(true);
 	});
 
 	it('references only fields emitted by a real rendered wallet note', async () => {

@@ -370,7 +370,13 @@ La versión `0.1.0` valida la base técnica:
   reutilizando el permiso `wallet` ya declarado en la matriz de capacidades. Produce una fila por
   divisa del catálogo público, con cantidad y orden del juego; una divisa que desaparece del catálogo
   queda inactiva sin borrarse, conservando su último saldo conocido en vez de ponerlo a cero. La Base
-  `Wallet.base` es un asset ES/EN del mismo bundle gestionado.
+  `Wallet.base` es un asset ES/EN del mismo bundle gestionado (contentVersion 2). Ninguna nota de
+  divisa lleva `tc_captured_at` (Z29, 10 oct 2026): entraba en el hash de la nota y reescribía las más
+  de 100 notas en cada captura aunque ningún saldo cambiara. Sin cambio de cantidad, nombre, icono u
+  orden, la sincronización escribe 0 notas; la columna «Actualizado» de la Base lee `file.mtime`. Una
+  nota escrita por una versión anterior (con `tc_captured_at`, reconocida como propia por su hash
+  antiguo) se reescribe una sola vez sin ese campo; una nota de divisa editada a mano o ajena sigue
+  siendo un conflicto y no se toca. La hora de la captura de cartera no se muestra en ningún panel.
 - La nota resumen de cada sesión cerrada (carpeta `summaries/`) lleva en su frontmatter las claves `tyrian_summary_*` que lista la tabla de `Session summaries.base`, un asset ES/EN del bundle v7 que filtra por la etiqueta `gw2/session-summary` y no por carpeta. Una instalación con manifiesto v6 la recibe como entrada nueva al aplicar o reparar; volver a 0.6.12 deja los assets gestionados en `conflict` hasta repararlos.
 - H5.9 permite usar ajustes, Companion, confirmaciones, menús, modales, notas de sesión, botín y Bases en español o inglés sin cambiar los datos que consultan Bases ni los identificadores de acciones. El cambio de idioma refresca las superficies abiertas y selecciona el bundle localizado; la paleta de comandos de Obsidian puede conservar el nombre registrado hasta recargar el plugin.
 - H5.10 permite exportar manualmente el historial durable validado como JSON y CSV. El export no recorre el vault hasta que el usuario lo pide, no acepta esquemas futuros, referencias duplicadas ni bloques alterados, y no incluye IDs crudos, rutas, nombres de personaje/build ni notas humanas.
