@@ -131,6 +131,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	retrySessionSummarySave?(): Promise<void>;
 	confirmClearCompletedSession(): void;
 	getSessionRecoveryState(): SessionRecoveryState;
+	/** The live session cannot finish by itself: the panel then offers to discard it (see `LiveSessionLifecycle.isStuck`). */
+	isLiveSessionStuck?(): boolean;
 	isPilotRecoveryClassificationRequired?(): boolean;
 	getPilotRecoveryKind?(): PilotRecoveryKind | null;
 	classifyPilotRecovery?(kind: PilotRecoveryKind): Promise<boolean>;

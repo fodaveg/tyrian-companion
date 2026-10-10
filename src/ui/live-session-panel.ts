@@ -232,6 +232,9 @@ export class LiveSessionPanel {
 		this.alert.setAttribute('role', 'alert');
 		this.oldLine = this.node('div', 'tyrian-live-session__old');
 		this.oldText = this.node('p', 'tyrian-live-session__hint');
+		// Born empty like the rest of the notices, so what is written into it later is announced.
+		this.oldText.setAttribute('role', 'status');
+		this.oldText.setAttribute('aria-live', 'polite');
 		this.discard = this.button('tyrian-live-session__discard', () => { void this.discardOld(); });
 		this.oldLine.append(this.oldText, this.discard);
 		this.gapNotice = this.node('p', 'tyrian-live-session__notice');
@@ -550,8 +553,9 @@ export class LiveSessionPanel {
 		this.toggle.classList.toggle('mod-cta', !stopMode);
 
 		const startMode = !stopMode && !busy;
-		const oldBlocks = startMode && control.oldSession !== null && !control.consult;
-		const stuck = control.stuckSession === true && !control.consult && !oldBlocks && !busy;
+		// A live session that cannot finish comes before an old one blocking the start: the button discards that one.
+		const stuck = control.stuckSession === true && !control.consult && !busy;
+		const oldBlocks = startMode && control.oldSession !== null && !control.consult && !stuck;
 		let hint = '';
 		if (control.consult) hint = this.copy('hintConsult');
 		else if (startMode && !control.gameConnected) hint = this.copy('hintGameOff');

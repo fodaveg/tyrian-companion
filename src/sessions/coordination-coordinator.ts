@@ -93,7 +93,7 @@ type WrittenLease = { lease: ActiveSessionLease; runsOutAt: number };
  * What the first transaction of an acquisition found that the second one may take: a lease that ran out, or
  * one whose owner may be shown to be gone, with how long ago it last renewed by the clock that judged it.
  */
-type TakeableLease = { status: 'expired'; lease: ActiveSessionLease } | { status: 'held'; lease: ActiveSessionLease; silentMs: number };
+type TakeableLease = { status: 'expired'; lease: ActiveSessionLease } | { status: 'held'; lease: ActiveSessionLease; silentMs: number; ahead?: true };
 
 /**
  * Cross-window/process active-session lease with durable fencing and fail-closed storage.
@@ -366,7 +366,15 @@ export class ActiveSessionLeaseCoordinator {
 				const state = parseState(raw);
 				if (!state) return { result: { status: 'error', code: 'corrupt' } };
 				if (state.lease === null) return this.acquireVacant(state, sessionId, now, leaseTtlMs, keep);
-				if (this.renewedAhead(state.lease, now)) return { result: { status: 'error', code: 'clock_anomaly' } };
+				if (this.renewedAhead(state.lease, now)) {
+					// Renewed «in the future» by somebody else: this clock was set back, or the owner's was ahead. How long it has
+					// been silent cannot be told from the clocks; only its life lock can say whether it is there at all. An owner
+					// that holds one is respected as before; one whose lock is free is gone, and its lease is taken at once.
+					if (this.life === 'proven' && hasLifeMark(state.lease.instanceId) && state.lease.instanceId !== this.instanceId) {
+						return { result: { status: 'held', lease: structuredClone(state.lease), silentMs: DEAD_OWNER_SILENCE_MS, ahead: true } };
+					}
+					return { result: { status: 'error', code: 'clock_anomaly' } };
+				}
 				const ranOut = this.ranOut(state.lease, now);
 				if (
 					!ranOut &&
@@ -396,8 +404,12 @@ export class ActiveSessionLeaseCoordinator {
 		if (first.status === 'held') {
 			const lock = await this.lifeLockState(lifeLockName(observed.instanceId));
 			// Held is the ordinary case of another window that is alive, and whoever asked already records it.
-			if (lock === 'held') return busyUnder(observed);
-			if (lock === null) { this.reportRefusal(observed, 'unavailable', 'owner_lock_unanswered'); return busyUnder(observed); }
+			// A lease renewed ahead of this clock whose owner is alive, or not shown to be gone, stays the clock anomaly it was.
+			if (lock === 'held') return first.ahead === true ? { status: 'error', code: 'clock_anomaly' } : busyUnder(observed);
+			if (lock === null) {
+				this.reportRefusal(observed, 'unavailable', 'owner_lock_unanswered');
+				return first.ahead === true ? { status: 'error', code: 'clock_anomaly' } : busyUnder(observed);
+			}
 			// Free, and still not enough: an owner that renewed this recently is taken for alive whatever the
 			// manager says of its lock (`DEAD_OWNER_SILENCE_MS`). The next attempt asks again. Recorded, because
 			// seen again and again it is what two live owners that cannot see each other's locks look like.

@@ -39,7 +39,7 @@ export interface LiveSessionSourceInput { sourceInstance: string; epoch: string;
  * renewing a lease that ran out and renewing from the data path, no longer planned. Reasoning in SPEC-live-loot §4.
  */
 /** What `discard` did: whether the session left the runtime key, and whether its note was written on the way. */
-export interface LiveSessionDiscard { cleared: boolean; note: 'written' | 'not_written' | 'none' }
+export interface LiveSessionDiscard { cleared: boolean; note: 'written' | 'not_written' | 'none'; reason?: LiveStopFailure }
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
 export interface LiveSessionLifecycleOptions {
 	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'> & Partial<Pick<SessionRuntimeStore, 'forceClear'>>;
@@ -163,6 +163,8 @@ export class LiveSessionLifecycle {
 	private lostGap: { reason: LiveGapV1['reason']; sourceDisconnectedAt: string | null } | null = null;
 	private noteNeedsVerification = false;
 	private stopFailure: LiveStopFailure | null = null;
+	/** The last answer about the reservation was `clock_anomaly` (the wall clock went back), not a lost reservation. */
+	private leaseClock = false;
 	private noteFailure: LiveStopFailure | null = null;
 	/** Characters seen and the summary-written mark: kept apart from the closed record (see `live-session-summary-state.ts`). */
 	private summaryState: LiveSessionSummaryState | null = null;
@@ -460,37 +462,81 @@ export class LiveSessionLifecycle {
 	 * record that does not load): it writes the note with what the session has, if it can, releases the reservation and
 	 * takes the session off the runtime key, so the addon is accepted again and a new session starts. Nothing in the vault
 	 * is touched, and the journal stays where it is: when the note could not be written, that journal is the only copy of
-	 * the evidence. `cleared: false` says storage refused even the forced clear, and memory is left as it was.
+	 * the evidence.
+	 *
+	 * It only deletes a session this host holds the reservation of (or takes the one nobody can be shown to keep alive, which
+	 * is the coordinator's rule for any acquisition): the record of a session another instance runs is never cleared from here,
+	 * and a `stale` answer from the store is a refusal, not a reason to force. The one record it clears without a reservation
+	 * is one the store says does not validate (`corrupt`), which nobody can hold. A record it could not read is read again first.
+	 * `cleared: false` carries the reason; the session is as it was, except that the stop attempted on the way may have closed it.
 	 */
 	async discard(): Promise<LiveSessionDiscard> {
-		return await this.enqueue(async () => {
-			const before = this.record;
+		return await this.enqueue(async (): Promise<LiveSessionDiscard> => {
+			let target = this.record;
+			if (target === null) {
+				const loaded = await this.options.persistence.loadLive();
+				if (loaded.status === 'error' && loaded.code === 'unavailable') return { cleared: false, note: 'none', reason: 'storage_unavailable' };
+				if (loaded.status === 'error') {
+					// Unreadable: nobody can hold it, and it is what the player asked to drop.
+					const forced = await this.options.persistence.forceClear?.();
+					if (forced?.status !== 'cleared') return { cleared: false, note: 'none', reason: 'storage_unavailable' };
+					this.resetAfterDiscard(); return { cleared: true, note: 'none' };
+				}
+				// Nothing of the live session is saved (or the key holds the manual session's, which is not ours to touch).
+				if (loaded.status !== 'loaded') { this.resetAfterDiscard(); return { cleared: true, note: 'none' }; }
+				target = loaded.record;
+			}
+			const reserved = await this.reserve(target.sessionId);
+			if (reserved !== 'owned') return { cleared: false, note: 'none', reason: reserved };
 			let note: LiveSessionDiscard['note'] = 'none';
-			if (before !== null && this.options.enabled()) {
+			if (this.record !== null && this.options.enabled()) {
 				try {
-					if (before.phase === 'active') await this.stopInternal(this.options.now());
-					else if (before.phase === 'complete') await this.saveCompletedNote();
+					if (this.record.phase === 'active') await this.stopInternal(this.options.now());
+					else if (this.record.phase === 'complete') await this.saveCompletedNote();
 				} catch (error) { this.options.onError(error); }
 				note = this.record?.summaryReceipt != null ? 'written' : 'not_written';
 			}
+			const authority = this.record?.authority ?? (this.handle === null ? target.authority : sessionAuthorityFromLease(this.handle));
+			let status: string;
+			try { status = (await this.options.persistence.clear(authority)).status; }
+			catch (error) { this.options.onError(error); return { cleared: false, note, reason: 'storage_unavailable' }; }
+			if (status !== 'cleared') return { cleared: false, note, reason: status === 'stale' ? 'record_stale' : 'storage_unavailable' };
 			const held = this.handle; this.handle = null;
 			if (held !== null) { try { await this.options.coordinator.release(held); } catch { /* the lease runs out by itself */ } }
-			const authority = this.record?.authority ?? before?.authority ?? null;
-			let cleared = false;
-			try {
-				cleared = authority !== null && (await this.options.persistence.clear(authority)).status === 'cleared';
-				if (!cleared) cleared = (await this.options.persistence.forceClear?.())?.status === 'cleared';
-			} catch (error) { this.options.onError(error); }
-			if (!cleared) { this.failure = true; this.options.onStateChange(); return { cleared: false, note }; }
 			const receipt = this.record?.summaryReceipt ?? null;
 			if (this.record !== null && receipt !== null) { this.sealedForPrune.set(this.record.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
-			this.record = null; this.format = newLiveSessionFormat(); this.journal = []; this.observations = []; this.chart = this.newChart();
-			this.failure = false; this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false;
-			this.lostPresence = null; this.lostGap = null; this.noteNeedsVerification = false; this.summaryState = null;
-			this.unread = false; this.ownStarts.clear(); this.stopFailure = null; this.noteFailure = null;
-			this.options.onStateChange();
+			this.resetAfterDiscard();
 			return { cleared: true, note };
 		});
+	}
+	/** This host's own reservation of `sessionId`, taken if nobody can be shown to keep it alive; otherwise why not. */
+	private async reserve(sessionId: string): Promise<'owned' | LiveStopFailure> {
+		if (this.handle !== null && this.handle.sessionId === sessionId && await this.ownership() === 'owned') return 'owned';
+		const acquired = await this.options.coordinator.acquire(sessionId);
+		if (acquired.status === 'acquired' || acquired.status === 'already_owned') {
+			if (acquired.handle.sessionId !== sessionId) return 'lease_not_owned';
+			const asserted = await this.options.coordinator.assertOwned(acquired.handle);
+			if (asserted.status !== 'owned') return asserted.status === 'error' && asserted.code === 'clock_anomaly' ? 'clock_anomaly' : 'lease_not_owned';
+			this.handle = acquired.handle; return 'owned';
+		}
+		if (acquired.status === 'error') return acquired.code === 'clock_anomaly' ? 'clock_anomaly' : 'storage_unavailable';
+		return 'lease_not_owned';
+	}
+	private resetAfterDiscard(): void {
+		this.record = null; this.format = newLiveSessionFormat(); this.journal = []; this.observations = []; this.chart = this.newChart();
+		this.failure = false; this.unsaved = null; this.recovering = false; this.reclaimingAs = null; this.hostRestarted = false;
+		this.lostPresence = null; this.lostGap = null; this.noteNeedsVerification = false; this.summaryState = null;
+		this.unread = false; this.ownStarts.clear(); this.stopFailure = null; this.noteFailure = null; this.handle = null;
+		this.options.onStateChange();
+	}
+	/**
+	 * The session cannot get out by itself: its last stop was refused and nothing has been written since, it is closed without
+	 * its note, or it is in error with nothing in course that would clear it (a saved session still to be read, a reclaim).
+	 */
+	isStuck(): boolean {
+		if (this.stopFailure !== null) return true;
+		if (this.record?.phase === 'complete' && this.record.summaryReceipt === null) return true;
+		return this.failure && !this.unread && !this.recovering && this.reclaimingAs === null;
 	}
 	/** Why the last `stop` answered false (null while none failed): the caller names it in its diagnostic and in what it tells the player. */
 	getStopFailure(): LiveStopFailure | null { return this.stopFailure; }
@@ -499,7 +545,7 @@ export class LiveSessionLifecycle {
 			if (this.record === null) return this.refuse('no_session');
 			if (!this.options.enabled()) return this.refuse('disabled');
 			if (this.record.phase === 'complete') return await this.saveCompletedNote() || this.refuse(this.noteFailure ?? 'note_not_saved');
-			if (await this.ready() !== 'owned') return this.refuse('lease_not_owned');
+			if (await this.ready() !== 'owned') return this.refuse(this.leaseClock ? 'clock_anomaly' : 'lease_not_owned');
 			for (const entry of this.journal) {
 				// Only an intent still owed is closed; an entry with none is left as it is, without being copied and compared.
 				if (!entry.outbox.some((intent) => intent.state === 'awaiting_price' || intent.state === 'ready')) continue;
@@ -780,7 +826,10 @@ export class LiveSessionLifecycle {
 	private async ownership(): Promise<LeaseOwnership> {
 		if (this.handle === null) return 'lost';
 		const asserted = await this.options.coordinator.assertOwned(this.handle);
+		this.leaseClock = false;
 		if (asserted.status === 'owned') return 'owned';
+		// A clock that went back is not another instance: it is told apart for what the player reads.
+		this.leaseClock = asserted.status === 'error' && asserted.code === 'clock_anomaly';
 		return asserted.status === 'error' && asserted.code === 'unavailable' ? 'unavailable' : 'lost';
 	}
 	/**
@@ -845,6 +894,8 @@ export class LiveSessionLifecycle {
 		this.keepStampForward(next);
 		try { status = (await this.options.persistence.saveLive(next, journal, expected)).status; }
 		catch { status = 'error'; }
+		// An accepted write of the running session says the last refused stop no longer describes it.
+		if (status === 'saved' && next.phase === 'active') this.stopFailure = null;
 		if (status === 'saved' || status === 'stale') return status;
 		this.storageLost();
 		return 'unavailable';
@@ -975,7 +1026,9 @@ export class LiveSessionLifecycle {
 		if (this.handle === null) {
 			const acquired = await this.options.coordinator.acquire(this.record.sessionId);
 			if ((acquired.status !== 'acquired' && acquired.status !== 'already_owned') || acquired.handle.sessionId !== this.record.sessionId
-				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') { this.noteFailure = 'lease_not_owned'; return false; }
+				|| (await this.options.coordinator.assertOwned(acquired.handle)).status !== 'owned') {
+				this.noteFailure = acquired.status === 'error' && acquired.code === 'clock_anomaly' ? 'clock_anomaly' : 'lease_not_owned'; return false;
+			}
 			this.handle = acquired.handle;
 			await this.refreshRecovery();
 			this.record = { ...this.record, authority: sessionAuthorityFromLease(acquired.handle), persistedAt: Math.max(this.options.now(), this.record.persistedAt) };
@@ -988,7 +1041,7 @@ export class LiveSessionLifecycle {
 		const next = { ...this.record, summaryReceipt: { version: 1 as const, sessionId: this.record.sessionId, path, savedAt: this.options.now() }, persistedAt: Math.max(this.options.now(), this.record.persistedAt) };
 		if ((await this.options.persistence.saveLive(next)).status !== 'saved') { this.noteFailure = 'record_stale'; return false; }
 		// The receipt is durable: a failure flagged by an earlier attempt (`enqueue` sets it when onComplete throws) no longer describes this session.
-		this.record = next; this.noteNeedsVerification = false; this.failure = false; await this.options.coordinator.release(this.handle); this.handle = null;
+		this.record = next; this.noteNeedsVerification = false; this.failure = false; this.stopFailure = null; await this.options.coordinator.release(this.handle); this.handle = null;
 		this.options.onStateChange(); return true;
 	}
 	private observeMap(record: LiveSessionRuntimeRecord, mapId: number | null, atMs: number): LiveSessionRuntimeRecord {

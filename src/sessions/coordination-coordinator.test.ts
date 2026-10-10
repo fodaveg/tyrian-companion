@@ -707,6 +707,35 @@ describe('ActiveSessionLeaseCoordinator with the host\'s lock manager', () => {
 		owner.dispose(); contender.dispose();
 	});
 
+	// 10 Oct 2026: the plugin reloaded with the wall clock set back found its dead predecessor's lease renewed «in the future»
+	// and answered clock_anomaly to every acquisition, so the addon was turned away although nobody held the session.
+	it('takes at once the lease of a marked owner that died, even when its stamp is ahead of this clock', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = BORN + 60_000;
+		const ownerContext = locks.context();
+		const owner = fiveMinutes(factory, 'ahead dead', { instanceId: 'owner', locks: ownerContext, clock: () => now });
+		const original = requireHandle(await owner.acquire('session-1'));
+		ownerContext.die();
+		now = BORN + 30_000;
+		const contender = fiveMinutes(factory, 'ahead dead', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep: async () => undefined });
+		const taken = await contender.acquire('session-2');
+		expect(taken).toMatchObject({ status: 'acquired', handle: { instanceId: 'wl1:contender', sessionId: 'session-2', fence: 2 } });
+		await expect(owner.assertOwned(original)).resolves.toEqual({ status: 'lost' });
+		await expect(contender.assertOwned(requireHandle(taken))).resolves.toEqual({ status: 'owned' });
+		owner.dispose(); contender.dispose();
+	});
+
+	it('keeps answering clock_anomaly to a lease renewed ahead whose owner is alive', async () => {
+		const factory = new IDBFactory(); const locks = fakeLocks();
+		let now = BORN + 60_000;
+		const owner = fiveMinutes(factory, 'ahead alive', { instanceId: 'owner', locks: locks.context(), clock: () => now });
+		await owner.acquire('session-1');
+		now = BORN + 30_000;
+		const contender = fiveMinutes(factory, 'ahead alive', { instanceId: 'contender', locks: locks.context(), clock: () => now, sleep: async () => undefined });
+		await expect(contender.acquire('session-2')).resolves.toEqual({ status: 'error', code: 'clock_anomaly' });
+		owner.dispose(); contender.dispose();
+	});
+
 	it('does not take a marked owner that is alive until its lease runs out', async () => {
 		const factory = new IDBFactory(); const locks = fakeLocks();
 		let now = BORN;

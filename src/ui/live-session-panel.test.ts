@@ -801,6 +801,15 @@ describe('Session tab: a session that cannot finish can be discarded', () => {
 			expect(h.discard).toHaveBeenCalledOnce();
 		});
 
+	it('writes the line into a live region that was born empty, and the stuck one comes before an old one that blocks', () => {
+		const h = harness(idleView(), control({ stuckSession: false }));
+		const text = h.panel.element.querySelector('.tyrian-live-session__old .tyrian-live-session__hint')!;
+		expect(text.getAttribute('role')).toBe('status'); expect(text.getAttribute('aria-live')).toBe('polite'); expect(text.textContent).toBe('');
+		h.state.control = control({ stuckSession: true, oldSession: { canDiscard: false } }); h.panel.refresh();
+		expect(text.textContent).toContain('This session cannot finish.');
+		expect(h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!.hasAttribute('hidden')).toBe(false);
+	});
+
 	it('says nothing about it for a session that can finish, or while it is finishing', () => {
 		const h = harness(liveView(3), control({ stuckSession: false }));
 		expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(true);

@@ -11,6 +11,8 @@ export interface LiveSessionControlSource {
 	getProductActionController?(): ProductActionController;
 	getIngamePresence?(): IngamePresenceSnapshot;
 	getCollectorMode?(): CollectorMode;
+	/** The live session cannot finish by itself (the core's own rule); the shared discard then belongs to it. */
+	isLiveSessionStuck?(): boolean;
 	getSessionState(): SessionState;
 	getSessionRecoveryState(): SessionRecoveryState;
 }
@@ -56,14 +58,15 @@ export function liveSessionControl(
 			const finish = controller?.describe('finish-farming-session');
 			const discard = controller?.describe('discard-saved-session');
 			const blocked = oldSessionBlocksStart(view(), source.getSessionState(), source.getSessionRecoveryState());
+			const liveStuck = source.isLiveSessionStuck?.() === true;
 			return {
 				gameConnected: source.getIngamePresence?.().status === 'present',
 				consult: source.getCollectorMode?.() === 'consult',
 				canStart: start?.available === true,
 				canStop: finish?.available === true,
 				busy: start?.state === 'running' ? 'start' : finish?.state === 'running' ? 'stop' : null,
-				oldSession: blocked ? { canDiscard: discard?.available === true } : null,
-				stuckSession: !blocked && view().phase !== 'idle' && discard?.available === true,
+				oldSession: blocked ? { canDiscard: discard?.available === true && !liveStuck } : null,
+				stuckSession: liveStuck ? discard?.available === true : !blocked && view().phase !== 'idle' && discard?.available === true,
 			};
 		},
 		startLiveSession: () => run('start-farming-session'),

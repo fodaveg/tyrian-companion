@@ -70,6 +70,14 @@ describe('the one button reaches the product actions that already exist', () => 
 		expect(liveSessionControl(none.value, () => ({ phase: 'error' }) as never).getLiveSessionControl().stuckSession).toBe(false);
 	});
 
+	it('a stuck live session takes the shared discard from the old session that also blocks the start', () => {
+		const { value } = source({
+			describe: (id) => id === 'discard-saved-session' ? descriptor(id, { available: true }) : descriptor(id),
+			getSessionRecoveryState: () => recovery('error'), isLiveSessionStuck: () => true,
+		});
+		expect(liveSessionControl(value, view).getLiveSessionControl()).toMatchObject({ stuckSession: true, oldSession: { canDiscard: false } });
+	});
+
 	it('starts, finishes and discards through run(); only a rejection is a failure, never unavailable or cancelled', async () => {
 		const { value, run } = source();
 		const control = liveSessionControl(value, view);

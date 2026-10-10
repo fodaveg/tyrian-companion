@@ -96,12 +96,12 @@ export class SessionCommandController {
 				level: 'error',
 				phase: 'failure',
 				code: stop === null ? 'unknown_failure' : liveStopFailureLogCode(stop.code),
-				...(stop === null ? {} : { state: `finish_${stop.code}` }),
+				...(stop === null ? {} : { state: `${stop.during}_${stop.code}` }),
 				details: unmappedErrorLogDetails(error),
 			});
 			if (!this.disposed) {
 				const translator = createTranslator(this.ports.getLocale?.() ?? 'en');
-				this.ports.notify(translator.t(stop === null ? 'commands.actionFailed' : liveStopFailureNoticeKey(stop.code)));
+				this.ports.notify(translator.t(stop === null ? 'commands.actionFailed' : liveStopFailureNoticeKey(stop)));
 			}
 			return 'failed';
 		});

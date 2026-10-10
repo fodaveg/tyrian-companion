@@ -297,6 +297,31 @@ describe('SessionCommandController', () => {
 		expect(harness.ports.notify).not.toHaveBeenCalledWith('The session action could not be completed.');
 	});
 
+	it.each([
+		['lease_not_owned', 'another plugin instance is still using it'],
+		['clock_anomaly', 'the system clock went back'],
+		['record_stale', 'newer record from another instance'],
+		['storage_unavailable', 'local storage does not answer'],
+	] as const)('a discard refused for %s is logged once, under its own state, and says why', async (reason, text) => {
+		const harness = controllerHarness('active');
+		harness.ports.getContext.mockReturnValue({ source: 'nexus_inventory', sessionId: 's', phase: 'complete', fence: 1, canStart: false, canFinish: false, canDiscard: true } as unknown as SessionCommandContext);
+		harness.ports.prepare.mockResolvedValue(async () => { throw new LiveSessionStopError(reason, 'discard'); });
+		await expect(harness.controller.runWithOutcome('discard-saved-session')).resolves.toBe('failed');
+		const events = (harness.ports.diagnostics.event as ReturnType<typeof vi.fn>).mock.calls.map(([record]) => record as Record<string, unknown>);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ action: 'session_discard', phase: 'failure', state: `discard_${reason}` });
+		expect(events[0]!.code).not.toBe('unknown_failure');
+		expect(harness.ports.notify).toHaveBeenCalledWith(expect.stringContaining(text));
+	});
+
+	it('the finish refused for another instance\'s reservation does not push the player to discard it', async () => {
+		const harness = controllerHarness('active');
+		harness.ports.prepare.mockResolvedValue(async () => { throw new LiveSessionStopError('lease_not_owned'); });
+		await harness.controller.runWithOutcome('finish-farming-session');
+		const [message] = harness.ports.notify.mock.calls.at(-1) as [string];
+		expect(message).not.toMatch(/discard/iu);
+	});
+
 	it('dispose prevents a confirmed late intent from executing', async () => {
 		const harness = controllerHarness('complete');
 		const confirmation = deferred<(() => Promise<void>) | null>();

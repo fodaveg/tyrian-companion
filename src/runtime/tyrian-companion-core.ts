@@ -5805,19 +5805,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				&& (presence.context?.source === 'nexus' || live?.sourceInstance !== null && live?.sourceInstance !== undefined),
 			canFinish:!consulting(this) && !this.unloaded && live !== null && live !== undefined
 				&& (live.phase === 'active' || live.summaryReceipt === null),
-			canDiscard:!this.unloaded && !consulting(this) && this.liveSessionIsStuck()};
+			canDiscard:!this.unloaded && !consulting(this) && this.isLiveSessionStuck()};
 	}
 
 	/**
 	 * A live session that cannot get out by itself: in error, finished without its note, or whose last stop was refused.
 	 * The player may drop it («Descartar la sesión atascada»); an ordinary running or sealed one is never offered.
 	 */
-	private liveSessionIsStuck(): boolean {
-		const lifecycle = this.liveSessions;
-		if (lifecycle === null) return false;
-		const live = lifecycle.getRuntime();
-		return lifecycle.getView().phase === 'error' || lifecycle.getStopFailure() !== null
-			|| (live !== null && live.phase === 'complete' && live.summaryReceipt === null);
+	isLiveSessionStuck(): boolean {
+		return this.liveSessions?.isStuck() ?? false;
 	}
 
 	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {
@@ -5872,12 +5868,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const lifecycle = this.liveSessions;
 		if (lifecycle === null) return;
 		const result = await lifecycle.discard();
+		// A refusal is thrown with its reason and logged ONCE, by the command controller, under the code of that reason.
+		if (!result.cleared) throw new LiveSessionStopError(result.reason ?? 'unknown', 'discard');
 		this.localDebugActions?.event({
-			component: 'session', action: 'session_discard', state: `live_discard_${result.cleared ? result.note : 'refused'}`,
-			level: result.cleared ? 'warn' : 'error', phase: result.cleared ? 'success' : 'failure',
-			code: result.cleared ? 'ok' : 'storage_failure',
+			component: 'session', action: 'session_discard', state: `live_discard_${result.note}`,
+			level: 'warn', phase: 'success', code: 'ok',
 		});
-		if (!result.cleared) throw new Error('Live session discard was refused by storage.');
 		this.ingameSessionMarker?.clearStoppedByPlayer();
 		this.sessionSummarySaveState = 'unknown'; this.savedSessionNotePath = null;
 		const t = createTranslator(this.settings.language);
