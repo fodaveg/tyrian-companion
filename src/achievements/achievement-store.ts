@@ -47,6 +47,12 @@ export interface StoredTrackedProgress {
 	accountRef: string;
 	/** ISO instant of the reading. */
 	capturedAt: string;
+	/**
+	 * The tracked ids this reading asked about, once each. The API omits the achievements an account
+	 * has not started, so an asked id without an entry is "not started", while an id tracked after
+	 * this reading is "not read yet".
+	 */
+	trackedIds: number[];
 	entries: AccountAchievementEntry[];
 }
 
@@ -67,6 +73,8 @@ export interface TrackedProgressStore {
 	readProgress(vaultId: string, accountRef: string | null): Promise<StoredTrackedProgress | null>;
 	/** Replaces the vault's reading; refuses one that does not validate. */
 	writeProgress(vaultId: string, progress: StoredTrackedProgress): Promise<boolean>;
+	/** Forgets the vault's reading (the API key changed); `false` when storage failed. */
+	clearProgress(vaultId: string): Promise<boolean>;
 }
 
 export function achievementPublicKey(locale: CatalogLocale, kind: AchievementPublicKind, part?: number): string {
@@ -120,11 +128,17 @@ export class IndexedDbAchievementStore implements AchievementPublicStore, Tracke
 			vaultId,
 			accountRef: progress.accountRef,
 			capturedAt: progress.capturedAt,
+			trackedIds: [...progress.trackedIds],
 			entries: progress.entries.map(apiShapedEntry),
 		};
 		if (parseProgressRecord(record, vaultId) === null) return false;
 		const written = await this.run('write', ACHIEVEMENTS_PROGRESS_STORE, 'readwrite', (store) => [store.put(record, vaultId)]);
 		return written !== null;
+	}
+
+	async clearProgress(vaultId: string): Promise<boolean> {
+		const cleared = await this.run('delete', ACHIEVEMENTS_PROGRESS_STORE, 'readwrite', (store) => [store.delete(vaultId)]);
+		return cleared !== null;
 	}
 
 	/** Closes the connection; every later call answers as a store with nothing kept. */
@@ -139,7 +153,7 @@ export class IndexedDbAchievementStore implements AchievementPublicStore, Tracke
 	 * when storage failed (closed, refused, aborted, unanswered in time).
 	 */
 	private async run(
-		operation: 'read' | 'write',
+		operation: 'read' | 'write' | 'delete',
 		storeName: string,
 		mode: IDBTransactionMode,
 		requests: (store: IDBObjectStore) => IDBRequest[],
@@ -213,8 +227,10 @@ function parseProgressRecord(raw: unknown, vaultId: string): StoredTrackedProgre
 	if (typeof raw.accountRef !== 'string' || !/^[a-f0-9]{8,64}$/u.test(raw.accountRef)) return null;
 	if (typeof raw.capturedAt !== 'string' || Number.isNaN(Date.parse(raw.capturedAt))
 		|| new Date(Date.parse(raw.capturedAt)).toISOString() !== raw.capturedAt) return null;
+	if (!Array.isArray(raw.trackedIds) || !(raw.trackedIds as unknown[]).every(positiveId)
+		|| new Set(raw.trackedIds).size !== raw.trackedIds.length) return null;
 	const entries = parseAccountAchievements(raw.entries, 'full');
-	return entries === null ? null : { accountRef: raw.accountRef, capturedAt: raw.capturedAt, entries };
+	return entries === null ? null : { accountRef: raw.accountRef, capturedAt: raw.capturedAt, trackedIds: [...raw.trackedIds as number[]], entries };
 }
 
 /** The entry as `account/achievements` answers it: the fields the API omits are left out, not null. */
@@ -227,6 +243,10 @@ function apiShapedEntry(entry: AccountAchievementEntry): Record<string, unknown>
 		...(entry.repeated === null ? {} : { repeated: entry.repeated }),
 		...(entry.bits === null ? {} : { bits: [...entry.bits] }),
 	};
+}
+
+function positiveId(value: unknown): value is number {
+	return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
 function validSavedAt(value: unknown): value is number {

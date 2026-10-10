@@ -22,29 +22,42 @@ class MemoryProgressStore implements TrackedProgressStore {
 		this.records.set(vaultId, structuredClone(progress));
 		return Promise.resolve(true);
 	}
+
+	clearProgress(vaultId: string): Promise<boolean> {
+		this.records.delete(vaultId);
+		return Promise.resolve(true);
+	}
 }
 
 function response(body: unknown, status = 200) { return { status, body, headers: {} } as never; }
+
+function httpError(status: number | null): HttpTransportError {
+	return status === null
+		? new HttpTransportError('network', null, null, 'Network request failed.')
+		: new HttpTransportError('http', status, null, `Request failed with status ${String(status)}.`);
+}
 
 function harness(options: {
 	account?: unknown;
 	achievements?: unknown;
 	achievementsStatus?: number;
-	error?: Error;
+	accountError?: Error;
+	achievementsError?: Error;
 	noKey?: boolean;
 	hold?: Promise<void>;
+	store?: MemoryProgressStore;
 } = {}) {
 	const requested: string[] = [];
 	const operation: GuildWars2Operation = {
 		request: async (path) => {
 			requested.push(path);
 			if (options.hold) await options.hold;
-			if (options.error) throw options.error;
+			if (options.accountError) throw options.accountError;
 			return 'account' in options ? options.account : { id: 'ABCD-1234', name: 'Tester.1234' };
 		},
 		requestDetailed: async (path) => {
 			requested.push(path);
-			if (options.error) throw options.error;
+			if (options.achievementsError) throw options.achievementsError;
 			return response('achievements' in options ? options.achievements : [
 				{ id: 10, done: false, current: 2, max: 4, bits: [0, 3] },
 				{ id: 11, done: true, repeated: 3 },
@@ -56,7 +69,7 @@ function harness(options: {
 		if (options.noKey) throw new MissingApiKeyError();
 		return operation;
 	});
-	const store = new MemoryProgressStore();
+	const store = options.store ?? new MemoryProgressStore();
 	const service = new TrackedProgressService({ beginOperation }, store, () => NOW);
 	return { service, store, beginOperation, requested };
 }
@@ -77,6 +90,11 @@ describe('TrackedProgressService.refresh', () => {
 		expect(store.records.get(VAULT)).toEqual(result.reading);
 	});
 
+	it('keeps the ids it asked about, once each, so a later tracked id is told apart from a not-started one', async () => {
+		const result = await harness().service.refresh(VAULT, [12, 10, 12, 11]);
+		expect(result.status === 'ok' && result.reading.trackedIds).toEqual([12, 10, 11]);
+	});
+
 	it('says the reading was not kept when the store refuses it, and still returns it', async () => {
 		const { service, store } = harness();
 		store.failWrites = true;
@@ -87,14 +105,21 @@ describe('TrackedProgressService.refresh', () => {
 		expect(await harness({ noKey: true }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'missing_key' });
 	});
 
-	it.each([401, 403])('answers missing_scope to a %i', async (status) => {
-		const error = new HttpTransportError('http', status, null, `Request failed with status ${String(status)}.`);
-		expect(await harness({ error }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'missing_scope' });
+	it.each([401, 403])('answers key_rejected to a %i on account: the key itself is invalid or revoked', async (status) => {
+		expect(await harness({ accountError: httpError(status) }).service.refresh(VAULT, [10]))
+			.toEqual({ status: 'unavailable', reason: 'key_rejected' });
+		expect(await harness({ accountError: httpError(status), achievementsError: httpError(status) }).service.refresh(VAULT, [10]))
+			.toEqual({ status: 'unavailable', reason: 'key_rejected' });
+	});
+
+	it.each([401, 403])('answers missing_scope to a %i on account/achievements: the key lacks progression', async (status) => {
+		expect(await harness({ achievementsError: httpError(status) }).service.refresh(VAULT, [10]))
+			.toEqual({ status: 'unavailable', reason: 'missing_scope' });
 	});
 
 	it('answers request_failed to a network failure or an unexpected status', async () => {
-		const network = new HttpTransportError('network', null, null, 'Network request failed.');
-		expect(await harness({ error: network }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'request_failed' });
+		expect(await harness({ accountError: httpError(null) }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'request_failed' });
+		expect(await harness({ achievementsError: httpError(503) }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'request_failed' });
 		expect(await harness({ achievementsStatus: 206 }).service.refresh(VAULT, [10])).toEqual({ status: 'unavailable', reason: 'request_failed' });
 	});
 
@@ -119,22 +144,43 @@ describe('TrackedProgressService.refresh', () => {
 });
 
 describe('TrackedProgressService without the explicit action', () => {
-	it('reads what was kept, and only for the same account once one is known', async () => {
+	it('answers what was kept as verified once a refresh of this session has named the same account', async () => {
 		const { service, store } = harness();
 		const refreshed = await service.refresh(VAULT, [10]);
 		if (refreshed.status !== 'ok') throw new Error('expected a reading');
-		expect(await service.lastReading(VAULT)).toEqual(refreshed.reading);
+		expect(await service.lastReading(VAULT)).toEqual({ reading: refreshed.reading, accountVerified: true });
 
 		store.records.set(VAULT, { ...refreshed.reading, accountRef: 'f'.repeat(24) });
 		expect(await service.lastReading(VAULT)).toBeNull();
 	});
 
+	it('after a restart (new service, same store) answers what was kept as not verified: the account cannot be known without the API', async () => {
+		const store = new MemoryProgressStore();
+		await harness({ store }).service.refresh(VAULT, [10]);
+		const restarted = harness({ store });
+		const last = await restarted.service.lastReading(VAULT);
+		expect(last?.accountVerified).toBe(false);
+		expect(last?.reading.entries.map((entry) => entry.id)).toEqual([10]);
+		expect(restarted.beginOperation).not.toHaveBeenCalled();
+	});
+
+	it('clears the kept reading of a vault (the API key changed) and forgets its account', async () => {
+		const { service, store } = harness();
+		await service.refresh(VAULT, [10]);
+		await expect(service.clearProgress(VAULT)).resolves.toBe(true);
+		expect(store.records.has(VAULT)).toBe(false);
+		expect(await service.lastReading(VAULT)).toBeNull();
+
+		store.records.set(VAULT, { accountRef: 'f'.repeat(24), capturedAt: '2026-10-09T00:00:00.000Z', trackedIds: [], entries: [] });
+		expect((await service.lastReading(VAULT))?.accountVerified).toBe(false);
+	});
+
 	it('never begins an authenticated operation from any method other than refresh (docs/PRODUCT.md:9)', async () => {
 		const { service, beginOperation, store } = harness();
-		store.records.set(VAULT, { accountRef: 'a'.repeat(24), capturedAt: '2026-10-09T00:00:00.000Z', entries: [] });
+		store.records.set(VAULT, { accountRef: 'a'.repeat(24), capturedAt: '2026-10-09T00:00:00.000Z', trackedIds: [10], entries: [] });
 		const methods = Object.getOwnPropertyNames(TrackedProgressService.prototype)
 			.filter((name) => name !== 'constructor' && name !== 'refresh');
-		expect(methods.length).toBeGreaterThan(0);
+		expect(methods).toEqual(expect.arrayContaining(['lastReading', 'clearProgress']));
 		for (const name of methods) {
 			const method = (service as unknown as Record<string, (...args: unknown[]) => unknown>)[name]!;
 			await method.call(service, VAULT, [10]);

@@ -41,8 +41,12 @@ class MemoryPublicStore implements AchievementPublicStore {
 		return Promise.resolve(found);
 	}
 
+	/** Keys whose write the store refuses, as a whole transaction would: nothing of that write is kept. */
+	failKeys = new Set<string>();
+
 	writePublic(records: readonly AchievementPublicRecord[]): Promise<boolean> {
 		this.writes += 1;
+		if (records.some((record) => this.failKeys.has(record.key))) return Promise.resolve(false);
 		for (const record of records) this.records.set(record.key, structuredClone(record));
 		return Promise.resolve(true);
 	}
@@ -178,6 +182,56 @@ describe('AchievementCatalogService · search index', () => {
 		const [first, second] = await Promise.all([service.buildIndex('es'), service.buildIndex('es')]);
 		expect(first).toEqual(second);
 		expect(pagePaths(paths)).toHaveLength(3);
+	});
+
+	it('lets each caller cancel its own wait: the first cancels and the second still gets the whole index', async () => {
+		const { service, paths, gate } = harness();
+		await service.loadCategories('es');
+		gate.hold = true;
+		const first = new AbortController();
+		const secondProgress: number[] = [];
+		const firstBuild = service.buildIndex('es', { signal: first.signal });
+		const secondBuild = service.buildIndex('es', { onProgress: ({ done }) => secondProgress.push(done) });
+		await vi.waitFor(() => { expect(pagePaths(paths)).toHaveLength(1); });
+		first.abort();
+		gate.hold = false;
+		gate.release();
+
+		expect(await firstBuild).toEqual({ status: 'cancelled', done: 0, total: 450 });
+		expect(await secondBuild).toMatchObject({ status: 'complete', total: 450 });
+		expect(pagePaths(paths)).toHaveLength(3);
+		expect(secondProgress).toEqual([0, 200, 400, 450]);
+	});
+
+	it('shares the progress with every live caller and stops only when all of them have cancelled', async () => {
+		const { service, paths } = harness();
+		const first = new AbortController();
+		const second = new AbortController();
+		const seen: string[] = [];
+		const builds = [
+			service.buildIndex('es', { signal: first.signal, onProgress: ({ done }) => { seen.push(`a${String(done)}`); if (done === 200) first.abort(); } }),
+			service.buildIndex('es', { signal: second.signal, onProgress: ({ done }) => { seen.push(`b${String(done)}`); if (done === 400) second.abort(); } }),
+		];
+		expect(await Promise.all(builds)).toEqual([
+			{ status: 'cancelled', done: 200, total: 450 },
+			{ status: 'cancelled', done: 400, total: 450 },
+		]);
+		expect(seen).toEqual(['a0', 'b0', 'a200', 'b200', 'b400']);
+		expect(pagePaths(paths)).toHaveLength(2);
+	});
+
+	it('fails, resumably, when a page cannot be saved, and keeps no part of that page', async () => {
+		const store = new MemoryPublicStore();
+		store.failKeys.add('es:index-page:1');
+		const failing = harness({ store });
+		expect(await failing.service.buildIndex('es')).toEqual({ status: 'failed', reason: 'storage_failed', done: 200, total: 450 });
+		expect(failing.service.search('es', { query: 'logro', categoryId: null })).toBeNull();
+		expect([...store.records.keys()].filter((key) => key.startsWith('es:index-page:'))).toEqual(['es:index-page:0']);
+
+		store.failKeys.clear();
+		const again = harness({ store });
+		expect(await again.service.buildIndex('es')).toMatchObject({ status: 'complete', total: 450 });
+		expect(pagePaths(again.paths).map((path) => idsOf(path)[0])).toEqual([201, 401]);
 	});
 
 	it('resumes after a failure from the first page it did not save', async () => {

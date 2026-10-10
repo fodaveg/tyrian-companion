@@ -49,8 +49,10 @@ export interface TrackedAchievementView {
 	wikiUrl: string | null;
 }
 
-/** The entries of one reading; only the entries are needed here. */
+/** What the view needs of one reading of the account. */
 export interface TrackedReadingEntries {
+	/** The ids that reading asked about: one tracked later is `unread`, not "not started". */
+	trackedIds: readonly number[];
 	entries: readonly AccountAchievementEntry[];
 }
 
@@ -112,16 +114,19 @@ function statusOf(
 	entry: AccountAchievementEntry | null,
 ): TrackedAchievementStatus {
 	if (input.retired) return { kind: 'retired' };
-	if (input.reading === null) return { kind: 'unread' };
+	// No reading, or one made before this id was tracked: nothing is known of it yet. An id the
+	// reading asked about and got no entry for is a different case: the API omits the not started.
+	if (input.reading === null || !input.reading.trackedIds.includes(input.id)) return { kind: 'unread' };
 	const tierMax = detail === null || detail.tiers.length === 0 ? null : Math.max(...detail.tiers.map((tier) => tier.count));
+	const bits = detail?.bits.length ?? 0;
+	const current = entry?.current ?? doneBitCount(entry, bits);
 	if (detail?.flags.includes('Repeatable') === true) {
-		return { kind: 'repeatable', timesDone: entry?.repeated ?? 0, current: entry?.current ?? 0, max: entry?.max ?? tierMax };
+		return { kind: 'repeatable', timesDone: entry?.repeated ?? 0, current, max: entry?.max ?? tierMax };
 	}
 	if (entry?.done === true) return { kind: 'completed' };
 	const max = entry?.max ?? tierMax;
-	if (max !== null) return { kind: 'in_progress', current: entry?.current ?? 0, max };
-	const bits = detail?.bits.length ?? 0;
-	if (bits > 0) return { kind: 'in_progress', current: doneBits(entry, bits).size, max: bits };
+	if (max !== null) return { kind: 'in_progress', current, max };
+	if (bits > 0) return { kind: 'in_progress', current, max: bits };
 	return { kind: 'no_objectives' };
 }
 
@@ -132,9 +137,13 @@ function objectiveState(index: number, status: TrackedAchievementStatus, entry: 
 	return entry?.bits?.includes(index) === true ? 'done' : 'pending';
 }
 
-/** The account's done indices that exist in the catalog's list of `count` bits. */
-function doneBits(entry: AccountAchievementEntry | null, count: number): Set<number> {
-	return new Set((entry?.bits ?? []).filter((index) => index < count));
+/**
+ * The progress an entry without `current` shows: its done bits. Counted within the catalog's
+ * `catalogBits` when the catalog lists them, so an index the catalog does not have adds nothing.
+ */
+function doneBitCount(entry: AccountAchievementEntry | null, catalogBits: number): number {
+	const done = entry?.bits ?? [];
+	return catalogBits > 0 ? done.filter((index) => index < catalogBits).length : done.length;
 }
 
 function rewardsOf(detail: AchievementDetail): TrackedReward[] {

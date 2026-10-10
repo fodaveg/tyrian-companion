@@ -19,6 +19,7 @@ function progress(overrides: Partial<StoredTrackedProgress> = {}): StoredTracked
 	return {
 		accountRef: ACCOUNT_A,
 		capturedAt: '2026-10-10T08:40:12.000Z',
+		trackedIds: [10, 11, 12],
 		entries: [
 			{ id: 10, done: false, current: 2, max: 4, repeated: null, bits: [0, 3] },
 			{ id: 11, done: true, current: null, max: null, repeated: 3, bits: null },
@@ -117,6 +118,8 @@ describe('IndexedDbAchievementStore', () => {
 		await expect(store.writeProgress(VAULT, progress({ entries: [{ id: -1, done: true, current: null, max: null, repeated: null, bits: null }] })))
 			.resolves.toBe(false);
 		await expect(store.writeProgress(VAULT, progress({ capturedAt: 'ayer' }))).resolves.toBe(false);
+		await expect(store.writeProgress(VAULT, progress({ trackedIds: [10, 10] }))).resolves.toBe(false);
+		await expect(store.writeProgress(VAULT, progress({ trackedIds: [0] }))).resolves.toBe(false);
 		store.dispose();
 
 		const raw = await openRaw(factory, ACHIEVEMENTS_DB_NAME);
@@ -125,6 +128,40 @@ describe('IndexedDbAchievementStore', () => {
 		const reopened = new IndexedDbAchievementStore(factory);
 		expect(await reopened.readProgress(VAULT, ACCOUNT_A)).toBeNull();
 		reopened.dispose();
+	});
+
+	it('clears the reading of one vault and leaves the others', async () => {
+		const store = new IndexedDbAchievementStore(new IDBFactory());
+		await store.writeProgress(VAULT, progress());
+		await store.writeProgress('vault-b', progress({ accountRef: ACCOUNT_B }));
+		await expect(store.clearProgress(VAULT)).resolves.toBe(true);
+		expect(await store.readProgress(VAULT, null)).toBeNull();
+		expect(await store.readProgress('vault-b', null)).toEqual(progress({ accountRef: ACCOUNT_B }));
+		store.dispose();
+		await expect(store.clearProgress('vault-b')).resolves.toBe(false);
+	});
+
+	it('opens a new connection once when the engine dropped the one it held, and goes on', async () => {
+		const factory = new IDBFactory();
+		const opened: IDBDatabase[] = [];
+		const watching = {
+			open: (name: string, version?: number) => {
+				const request = factory.open(name, version);
+				request.addEventListener('success', () => { opened.push(request.result); });
+				return request;
+			},
+		} as unknown as IDBFactory;
+		const store = new IndexedDbAchievementStore(watching);
+		await store.writePublic([{ key: 'es:groups', savedAt: 1, value: ['kept'] }]);
+		expect(opened).toHaveLength(1);
+
+		// The engine closes it under the store (no `close` event reaches it), so the next
+		// `transaction()` throws and `withIndexedDbReopen` must open once more.
+		opened[0]!.close();
+		expect((await store.readPublic(['es:groups'])).get('es:groups')?.value).toEqual(['kept']);
+		await expect(store.writeProgress(VAULT, progress())).resolves.toBe(true);
+		expect(opened).toHaveLength(2);
+		store.dispose();
 	});
 
 	it('answers empty and refuses writes once disposed, without throwing', async () => {

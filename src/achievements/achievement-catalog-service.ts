@@ -49,15 +49,23 @@ export interface AchievementIndexProgress {
 }
 
 export interface AchievementIndexBuildOptions {
-	/** Stops the build between pages; what was saved stays and the next build resumes from it. */
+	/**
+	 * Ends THIS caller's wait with `cancelled`, seen between pages. The shared build goes on for the
+	 * other callers and stops only when every caller has cancelled (or on `dispose`); what was saved
+	 * stays and the next build resumes from it.
+	 */
 	signal?: AbortSignal;
+	/** Called on every page while this caller waits. Must not throw. */
 	onProgress?: (progress: AchievementIndexProgress) => void;
 }
+
+/** `storage_failed`: a page could not be saved; the build stops there so it can resume from it. */
+export type AchievementIndexBuildFailureReason = AchievementCatalogFailureReason | 'storage_failed';
 
 export type AchievementIndexBuildResult =
 	| { status: 'complete'; total: number; freshness: AchievementFreshness }
 	| { status: 'cancelled'; done: number; total: number }
-	| { status: 'failed'; reason: AchievementCatalogFailureReason; done: number; total: number };
+	| { status: 'failed'; reason: AchievementIndexBuildFailureReason; done: number; total: number };
 
 export type AchievementIndexState =
 	| { status: 'ready'; total: number; freshness: AchievementFreshness }
@@ -79,11 +87,25 @@ export interface AchievementDetailsRead {
 	stale: boolean;
 }
 
-type PublicAnswer ={ status: 'ok'; body: unknown } | { status: 'not_found' } | { status: 'failed' };
+type PublicAnswer = { status: 'ok'; body: unknown } | { status: 'not_found' } | { status: 'failed' };
 
 interface IndexPageRecord {
 	ids: number[];
 	entries: AchievementIndexEntry[];
+}
+
+/** One caller waiting on the shared build of a language. */
+interface IndexBuildCaller {
+	signal: AbortSignal | undefined;
+	onProgress: ((progress: AchievementIndexProgress) => void) | undefined;
+	settle: (result: AchievementIndexBuildResult) => void;
+}
+
+/** The build of one language, shared by every caller that waits on it and owned by none. */
+interface SharedIndexBuild {
+	callers: IndexBuildCaller[];
+	done: number;
+	total: number;
 }
 
 /**
@@ -97,10 +119,11 @@ interface IndexPageRecord {
  * resumes from the first page it did not save.
  *
  * Every function keeps at most one request in flight per argument set: a second call while one runs
- * joins it (and, for `buildIndex`, its `signal` and `onProgress` are those of the first call).
+ * joins it. For `buildIndex`, each caller keeps its own `signal` and `onProgress` (see there).
  */
 export class AchievementCatalogService {
 	private readonly inFlight = new Map<string, Promise<unknown>>();
+	private readonly builds = new Map<CatalogLocale, SharedIndexBuild>();
 	private readonly lists = new Map<string, AchievementCatalogRead<unknown>>();
 	private readonly indexes = new Map<CatalogLocale, AchievementIndexEntry[]>();
 	private disposed = false;
@@ -155,9 +178,36 @@ export class AchievementCatalogService {
 	 * Builds the search index, only when asked. Pages younger than 7 days are reused; each page
 	 * fetched is saved before the next one is asked for. Without network, it completes from the
 	 * pages kept up to 30 days, saying how old they are.
+	 *
+	 * One build per language at a time, shared: a call while one runs joins it. The build depends on
+	 * no caller's `signal`: an aborted caller gets `cancelled` with the progress so far while the
+	 * others keep waiting, and the build stops only once every caller has cancelled, or on `dispose`.
+	 * `onProgress` reaches every caller still waiting.
 	 */
-	buildIndex(locale: CatalogLocale, options: AchievementIndexBuildOptions = {}): Promise<AchievementIndexBuildResult> {
-		return this.once(`build-index:${locale}`, async () => await this.runBuild(locale, options));
+	async buildIndex(locale: CatalogLocale, options: AchievementIndexBuildOptions = {}): Promise<AchievementIndexBuildResult> {
+		const running = this.builds.get(locale);
+		if (this.disposed || options.signal?.aborted === true) {
+			return { status: 'cancelled', done: running?.done ?? 0, total: running?.total ?? 0 };
+		}
+		let settle: (result: AchievementIndexBuildResult) => void = () => undefined;
+		const result = new Promise<AchievementIndexBuildResult>((resolve) => { settle = resolve; });
+		const caller: IndexBuildCaller = { signal: options.signal, onProgress: options.onProgress, settle };
+		if (running !== undefined) {
+			running.callers.push(caller);
+			if (running.total > 0) caller.onProgress?.({ done: running.done, total: running.total });
+			return await result;
+		}
+		const build: SharedIndexBuild = { callers: [caller], done: 0, total: 0 };
+		this.builds.set(locale, build);
+		let outcome: AchievementIndexBuildResult | null = null;
+		try {
+			outcome = await this.runBuild(locale, build);
+		} finally {
+			this.builds.delete(locale);
+			const final = outcome ?? { status: 'failed', reason: 'request_failed', done: build.done, total: build.total };
+			for (const live of build.callers.splice(0)) live.settle(final);
+		}
+		return await result;
 	}
 
 	/** Details of the tracked achievements, in the language and, for the wiki link, in English. */
@@ -176,8 +226,27 @@ export class AchievementCatalogService {
 		this.disposed = true;
 	}
 
-	private async runBuild(locale: CatalogLocale, options: AchievementIndexBuildOptions): Promise<AchievementIndexBuildResult> {
-		const cancelled = (): boolean => this.disposed || options.signal?.aborted === true;
+	/** Settles with `cancelled` every caller whose signal aborted (all of them after `dispose`). */
+	private releaseCancelled(build: SharedIndexBuild): void {
+		const cancelled = { status: 'cancelled', done: build.done, total: build.total } as const;
+		build.callers = build.callers.filter((caller) => {
+			const gone = this.disposed || caller.signal?.aborted === true;
+			if (gone) caller.settle({ ...cancelled });
+			return !gone;
+		});
+	}
+
+	private async runBuild(locale: CatalogLocale, build: SharedIndexBuild): Promise<AchievementIndexBuildResult> {
+		const cancelled = (): boolean => {
+			this.releaseCancelled(build);
+			return build.callers.length === 0;
+		};
+		const report = (done: number, total: number): void => {
+			build.done = done;
+			build.total = total;
+			this.releaseCancelled(build);
+			for (const caller of [...build.callers]) caller.onProgress?.({ done, total });
+		};
 		if (cancelled()) return { status: 'cancelled', done: 0, total: 0 };
 		const plan = await this.indexPlan(locale);
 		if (plan.status !== 'ok') return { status: 'failed', reason: plan.reason, done: 0, total: 0 };
@@ -187,7 +256,7 @@ export class AchievementCatalogService {
 		let done = 0;
 		let oldest = now;
 		let fetchedAny = false;
-		options.onProgress?.({ done, total });
+		report(done, total);
 		for (const [index, ids] of pages.entries()) {
 			if (cancelled()) return { status: 'cancelled', done, total };
 			const fresh = usablePage(kept.get(keys[index]!), ids, now, 'fresh');
@@ -207,16 +276,21 @@ export class AchievementCatalogService {
 						entries.push(...page.entries);
 						oldest = Math.min(oldest, page.savedAt);
 					}
-					options.onProgress?.({ done: total, total });
+					done = total;
+					report(done, total);
 					break;
 				}
 				const record: IndexPageRecord = { ids, entries: fetched.entries };
-				await this.store.writePublic([{ key: keys[index]!, savedAt: now, value: record }]);
+				// One transaction per page: a page is kept whole or not at all, so a build that stops
+				// here resumes from this very page.
+				if (!await this.store.writePublic([{ key: keys[index]!, savedAt: now, value: record }])) {
+					return { status: 'failed', reason: 'storage_failed', done, total };
+				}
 				entries.push(...fetched.entries);
 				fetchedAny = true;
 			}
 			done += ids.length;
-			options.onProgress?.({ done, total });
+			report(done, total);
 		}
 		this.indexes.set(locale, entries);
 		return { status: 'complete', total, freshness: freshness(fetchedAny ? 'network' : 'cache', oldest, now) };
