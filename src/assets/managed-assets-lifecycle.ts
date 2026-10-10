@@ -15,6 +15,12 @@ export class ManagedAssetsLifecycle {
 		private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'relocate' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>,
 		private readonly pointer: ManagedAssetsPointerStore,
 		private readonly diagnostics?: LocalDebugActionPort,
+		/**
+		 * False for a root the vault cannot read at all (Hebra: the vault is the output folder, so a root outside it is
+		 * out of reach). What an inspection of it shows is then an alias of another path (the old root's `Bases` folder
+		 * seen as the output folder), not the root's own state, so it counts as abandoned. Absent: every root is readable.
+		 */
+		private readonly rootReadable: (root: string) => boolean = () => true,
 	) {}
 
 	/** `guard` is handed to the manager's apply (see `ManagedAssetsManager.apply`): the caller's last word on the inspection it acts on. */
@@ -122,7 +128,8 @@ export class ManagedAssetsLifecycle {
 			adopt = requested.manifestStatus === 'missing' && requested.assets.some((entry) => entry.status === 'recoverable' || entry.status === 'update');
 			if (!adopt) {
 				const stale = await this.manager.inspect(staleRoot);
-				const abandoned = stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create');
+				const abandoned = !this.rootReadable(staleRoot)
+					|| (stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create'));
 				if (!abandoned || (requested.manifestStatus !== 'ready' && requested.manifestStatus !== 'missing')) return null;
 				// Fresh (case 3): no manifest to extend, so it is installed like an adopted root.
 				adopt = requested.manifestStatus === 'missing';
@@ -144,8 +151,10 @@ export class ManagedAssetsLifecycle {
 		const installed = await this.manager.apply(root, 'install', guard);
 		if (isSuccess(installed) && installed.status === 'unchanged' && installed.inspection.manifestStatus === 'missing') {
 			// The guard refused (or nothing was left to install): no manifest exists at the new root, so it must not keep the pointer.
-			await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
-			return { status: 'unchanged', root: previousRoot, generation: claim.generation };
+			const back = await this.pointer.compareAndSet(claim, { status: 'ready', root: previousRoot, targetRoot: null });
+			// Losing the race leaves the pointer wherever the other window put it: report that, not what we wanted.
+			const held = back ?? await this.pointer.read();
+			return { status: 'unchanged', root: held.root, generation: held.generation };
 		}
 		if (isSuccess(installed)) return successResult(installed, 'applied', claim);
 		const inspection = await this.manager.inspect(root);

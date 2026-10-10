@@ -100,7 +100,6 @@ import { ManagedAssetsManager, type ManagedAssetsFailureCause, type ManagedAsset
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import {
 	decideManagedAssetsAutoUpdate,
-	MANAGED_ASSETS_MANIFEST,
 	planManagedAssets,
 	type ManagedAssetsAutoUpdateDecision,
 	type ManagedAssetsInspection,
@@ -933,6 +932,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.managedAssets,
 			this.managedAssetsPointer,
 			this.localDebugActions ?? undefined,
+			(root) => canMoveManagedAssets(host, root, this.settings.outputFolder),
 		);
 
 		const apiKeyProvider = new HostApiKeyProvider(
@@ -4628,7 +4628,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** False when the host cannot move assets between roots (Hebra): no Move button, no automatic follow. */
 	managedAssetsCanMove(): boolean {
-		return canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot);
+		return canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder);
 	}
 
 	hasManagedAssetsRoot(): boolean {		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
@@ -4755,7 +4755,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
 	 * pointer could not be confirmed to match the retained root first). */
 	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
-		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot)) return null;
+		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return null;
 		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return null; }
 		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return null; }
 		const destination = this.settings.outputFolder;
@@ -4800,7 +4800,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * that into something that fires on its own the next time Obsidian starts.
 	 */
 	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot)) return;
+		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return;
 		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
 		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
@@ -6496,12 +6496,14 @@ async function ensureAdapterDirectory(
 /**
  * Whether the managed assets can be moved off the root the settings name. A host that declared
  * `capabilities.managedAssetsMove: false` (Hebra: the vault IS the output folder) can only do it while that root is
- * still READABLE in the vault, which is when its manifest is visible there; once the output folder moved away from
- * it (a sibling, or a folder inside it) nothing of the old root can be read and Apply installs afresh instead.
+ * still READABLE in the vault. There the vault is the output folder, so that is decided by paths alone: the root is
+ * the output folder or lies inside it (the manifest may be lost and its Bases intact, which Move adopts). Once the
+ * output folder moved away from it (a sibling, or a folder inside it) nothing of the old root can be read and
+ * Apply installs afresh instead.
  */
-function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null): boolean {
+function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null, outputFolder: string): boolean {
 	if (host?.capabilities?.managedAssetsMove !== false) return true;
-	return root !== null && host.vault.file(`${root}/${MANAGED_ASSETS_MANIFEST}`) !== null;
+	return root !== null && (root === outputFolder || root.startsWith(`${outputFolder}/`));
 }
 
 /**

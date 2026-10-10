@@ -87,6 +87,28 @@ describe('Tyrian in Hebra: «Aplicar» on managed assets after the output folder
 		await second.cleanup();
 	}, 30_000);
 
+	/** Second review: the manifest of the old root is lost but its Bases are intact; the parent folder is still the output. */
+	it('moves the Bases when the new output folder is the PARENT of the old root and its manifest is lost', async () => {
+		const test = nestedHebra();
+		const factory = new IDBFactory();
+		saveSettings(test, { outputFolder: 'Other/Tyrian Companion' });
+		const first = await activate(test, factory);
+		await clickApply(test);
+		await first.cleanup();
+		for (const file of test.library.files.values()) if (file.name === 'Tyrian Companion Assets.json') file.trashedAt = Date.now();
+
+		saveSettings(test, { outputFolder: 'Other', managedAssetsRoot: 'Other/Tyrian Companion' });
+		const second = await activate(test, factory);
+		await new Promise((resolve) => { window.setTimeout(resolve, 600); });
+		await clickApply(test);
+
+		expect(second.core.getManagedAssetsView()).toMatchObject({ status: 'ready' });
+		expect(second.core.settings.managedAssetsRoot).toBe('Other');
+		const live = [...test.library.files.values()].filter((file) => file.trashedAt === null);
+		expect(live.some((file) => file.folderId === 'outer' && file.name === 'Tyrian Companion Assets.json')).toBe(true);
+		await second.cleanup();
+	}, 30_000);
+
 	it('installs by Apply when the new output folder is INSIDE the old root (the old root is not readable)', async () => {
 		const test = nestedHebra();
 		test.library.addFolder('inner', 'first', 'Sub');
@@ -102,6 +124,24 @@ describe('Tyrian in Hebra: «Aplicar» on managed assets after the output folder
 		expect(second.core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'lifecycle_ready' });
 		expect(second.core.settings.managedAssetsRoot).toBe('Other/Tyrian Companion/Sub');
 		expect([...test.library.files.values()].some((file) => file.folderId === 'inner' && file.name === 'Tyrian Companion Assets.json')).toBe(true);
+		await second.cleanup();
+	}, 30_000);
+
+	it('installs by Apply when the new output folder is the «Bases» folder of the old root', async () => {
+		const test = nestedHebra();
+		const factory = new IDBFactory();
+		saveSettings(test, { outputFolder: 'Other/Tyrian Companion' });
+		const first = await activate(test, factory);
+		await clickApply(test);
+		await first.cleanup();
+
+		saveSettings(test, { outputFolder: 'Other/Tyrian Companion/Bases', managedAssetsRoot: 'Other/Tyrian Companion' });
+		const second = await activate(test, factory);
+		await clickApply(test);
+		expect(second.core.getManagedAssetsView()).toMatchObject({ status: 'ready', message: 'lifecycle_ready' });
+		const inner = test.library.folders.find((folder) => folder.name === 'Bases' && folder.parentId === 'first')!.id;
+		expect([...test.library.files.values()].some((file) => file.folderId === inner && file.name === 'Tyrian Companion Assets.json')).toBe(true);
+		expect(second.core.settings.managedAssetsRoot).toBe('Other/Tyrian Companion/Bases');
 		await second.cleanup();
 	}, 30_000);
 });
