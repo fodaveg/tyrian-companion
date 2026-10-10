@@ -30,6 +30,12 @@ export type SettingsUpdateResult =
 	| { status: 'blocked'; reason: 'session_in_progress' }
 	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
 
+/** DU-02: what answering "the vault changed path" did. `preferences` is how many inventory records were copied. */
+export type VaultRelocationResult =
+	| { status: 'none' }
+	| { status: 'fresh' }
+	| { status: 'adopted'; preferences: number; mode: CollectorMode | null };
+
 export interface LocalDebugExportPreview {
 	readonly included: readonly ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'];
 	readonly excluded: readonly ['secret_name', 'character', 'paths', 'payloads'];
@@ -64,6 +70,11 @@ export interface SettingsPanelActions {
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	getCollectorMode(): CollectorMode;
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
+	/** DU-02, optional: whether the vault changed path and the user has not chosen what to do with the old data. */
+	getVaultRelocation?(): { pending: boolean };
+	/** DU-02, optional: an answer is being applied; Settings shows it and disables both actions. */
+	isApplyingVaultRelocation?(): boolean;
+	resolveVaultRelocation?(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult>;
 	/**
 	 * Optional: absent means FALSE, the reverse of `managedAssetsSupported`. True shows the row
 	 * where this device picks the host's main screen or its sidebar.

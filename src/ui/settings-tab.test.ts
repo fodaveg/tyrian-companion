@@ -735,6 +735,145 @@ describe('legendary targets setting (M4)', () => {
 	});
 });
 
+describe('vault relocation row (DU-02)', () => {
+	const ROW = 'The vault changed path';
+
+	/** A Setting that only records its buttons: the text each one shows and what its click runs. */
+	function buttonsOf(definition: RenderableSettingDefinition) {
+		const buttons: Array<{ text: string; click: () => Promise<void> | void }> = [];
+		const setting = {
+			addButton: (render: (button: unknown) => unknown) => {
+				const entry = { text: '', click: (): Promise<void> | void => undefined };
+				const button = {
+					setButtonText: (text: string) => { entry.text = text; return button; },
+					setCta: () => button,
+					setDisabled: () => button,
+					onClick: (handler: () => Promise<void> | void) => { entry.click = handler; return button; },
+				};
+				render(button);
+				buttons.push(entry);
+				return setting;
+			},
+		};
+		definition.render(setting as never);
+		return buttons;
+	}
+
+	function tabFor(plugin: ReturnType<typeof settingsPlugin>, notice = vi.fn()) {
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' }, ui: { notice } } as never, plugin as never);
+		return { tab, notice };
+	}
+
+	function rowOf(tab: TyrianCompanionSettingTab): RenderableSettingDefinition {
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[]).find(({ name }) => name === ROW);
+		if (definition === undefined) throw new Error('Expected the vault relocation row.');
+		return definition;
+	}
+
+	it('is mounted first only while the question is pending, with the two actions', async () => {
+		const plugin = Object.assign(settingsPlugin(), {
+			pending: true,
+			getVaultRelocation: () => ({ pending: plugin.pending }),
+			resolveVaultRelocation: vi.fn(async () => ({ status: 'fresh' as const })),
+		});
+		const { tab } = tabFor(plugin);
+		expect(tab.getMountedSettingNames('main')[0]).toBe(ROW);
+		const buttons = buttonsOf(rowOf(tab));
+		expect(buttons.map(({ text }) => text)).toEqual(['Adopt the previous path\'s data', 'Start fresh here']);
+
+		await buttons[0]?.click();
+		await buttons[1]?.click();
+
+		expect(plugin.resolveVaultRelocation.mock.calls).toEqual([['adopt'], ['fresh']]);
+		plugin.pending = false;
+		expect(tab.getMountedSettingNames('main')).not.toContain(ROW);
+	});
+
+	it('shows "Applying…" and disables both buttons while an answer is applied', () => {
+		const plugin = Object.assign(settingsPlugin(), {
+			applying: true,
+			getVaultRelocation: () => ({ pending: true }),
+			isApplyingVaultRelocation: () => plugin.applying,
+			resolveVaultRelocation: vi.fn(async () => ({ status: 'fresh' as const })),
+		});
+		const { tab } = tabFor(plugin);
+		const disabled: boolean[] = [];
+		const definition = rowOf(tab) as RenderableSettingDefinition & { desc: string };
+		const setting = {
+			addButton: (render: (button: unknown) => unknown) => {
+				const button = {
+					setButtonText: () => button, setCta: () => button, onClick: () => button,
+					setDisabled: (value: boolean) => { disabled.push(value); return button; },
+				};
+				render(button);
+				return setting;
+			},
+		};
+		definition.render(setting as never);
+
+		expect(disabled).toEqual([true, true]);
+		expect(definition.desc).toBe('Applying…');
+		plugin.applying = false;
+		expect((rowOf(tab) as RenderableSettingDefinition & { desc: string }).desc).not.toBe('Applying…');
+	});
+
+	it('gives both buttons back once the answer ends, also when it fails', async () => {
+		let during: boolean[] = [];
+		let tabRef: TyrianCompanionSettingTab | null = null;
+		const disabledNow = (): boolean[] => {
+			const flags: boolean[] = [];
+			const setting = {
+				addButton: (render: (button: unknown) => unknown) => {
+					const button = {
+						setButtonText: () => button, setCta: () => button, onClick: () => button,
+						setDisabled: (value: boolean) => { flags.push(value); return button; },
+					};
+					render(button);
+					return setting;
+				},
+			};
+			if (tabRef === null) throw new Error('Expected the tab.');
+			rowOf(tabRef).render(setting as never);
+			return flags;
+		};
+		const plugin = Object.assign(settingsPlugin(), {
+			applying: false,
+			getVaultRelocation: () => ({ pending: true }),
+			isApplyingVaultRelocation: () => plugin.applying,
+			resolveVaultRelocation: vi.fn(async () => {
+				plugin.applying = true;
+				during = disabledNow();
+				await Promise.resolve();
+				plugin.applying = false;
+				throw new Error('storage unavailable');
+			}),
+		});
+		const { tab } = tabFor(plugin);
+		tabRef = tab;
+		expect(disabledNow()).toEqual([false, false]);
+
+		await buttonsOf(rowOf(tab))[0]?.click();
+
+		expect(during).toEqual([true, true]);
+		expect(disabledNow()).toEqual([false, false]);
+	});
+
+	it('tells the user when the answer fails and leaves the question for the next click', async () => {
+		const plugin = Object.assign(settingsPlugin(), {
+			getVaultRelocation: () => ({ pending: true }),
+			resolveVaultRelocation: vi.fn(async () => { throw new Error('storage unavailable'); }),
+		});
+		const { tab, notice } = tabFor(plugin);
+
+		await buttonsOf(rowOf(tab))[0]?.click();
+
+		expect(notice).toHaveBeenCalledWith('Could not finish. It is still pending: try again.');
+		await buttonsOf(rowOf(tab))[0]?.click();
+		expect(plugin.resolveVaultRelocation).toHaveBeenCalledTimes(2);
+		expect(tab.getMountedSettingNames('main')[0]).toBe(ROW);
+	});
+});
+
 function settingsPlugin() {
 	const plugin = {
 		settings: { ...DEFAULT_SETTINGS, language: 'en' as const } as TyrianSettings,

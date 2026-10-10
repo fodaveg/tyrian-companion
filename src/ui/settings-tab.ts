@@ -86,7 +86,7 @@ export function goldThresholdToCopper(value: string): number | 'invalid' {
 
 /** What the settings panel needs from the host: rows, modals, the folder picker and the config folder. */
 export interface SettingsPanelHost {
-	readonly ui: Pick<TyrianUiPort, 'setting' | 'openModal' | 'pickFolder'>;
+	readonly ui: Pick<TyrianUiPort, 'setting' | 'openModal' | 'pickFolder'> & Partial<Pick<TyrianUiPort, 'notice'>>;
 	readonly vault: Pick<TyrianVault, 'configDir'>;
 }
 
@@ -306,8 +306,36 @@ export class TyrianCompanionSettingTab {
 		return await this.plugin.updateSettings(settings);
 	}
 
+	/** DU-02: a failed answer is told to the user and leaves the question pending, so the same button retries it. */
+	private async answerVaultRelocation(choice: 'adopt' | 'fresh'): Promise<void> {
+		try { await this.plugin.resolveVaultRelocation?.(choice); }
+		catch { this.host.ui.notice?.(this.t('settings.vaultRelocation.failed')); }
+		this.refreshForSettingsChange();
+	}
+
+	private vaultRelocationApplying(): boolean {
+		return this.plugin.isApplyingVaultRelocation?.() === true;
+	}
+
 	private definitions(): CategorizedSettingDefinition[] {
 		return [
+			// DU-02: only while the vault changed path and the user has not answered.
+			{
+				group: 'main',
+				visible: () => this.plugin.getVaultRelocation?.().pending === true,
+				name: this.t('settings.vaultRelocation.name'),
+				desc: this.t(this.vaultRelocationApplying() ? 'settings.vaultRelocation.applying' : 'settings.vaultRelocation.desc'),
+				render: (setting) => {
+					// While the answer is applied both buttons are off: the other option cannot be chosen halfway.
+					const applying = this.vaultRelocationApplying();
+					setting.addButton((button) => button
+						.setButtonText(this.t('settings.vaultRelocation.adopt')).setCta().setDisabled(applying)
+						.onClick(async () => { await this.answerVaultRelocation('adopt'); }));
+					setting.addButton((button) => button
+						.setButtonText(this.t('settings.vaultRelocation.fresh')).setDisabled(applying)
+						.onClick(async () => { await this.answerVaultRelocation('fresh'); }));
+				},
+			},
 			{
 				group: 'main',
 				name: this.t('settings.collectorMode.name'), desc: this.t('settings.collectorMode.desc'),

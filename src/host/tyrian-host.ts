@@ -460,6 +460,12 @@ export interface TyrianHostCapabilities {
 	 * Hebra declares it where its plugin API has the main view (1.3.0); Obsidian never does.
 	 */
 	readonly mainView?: boolean;
+	/**
+	 * The vault's identity (`vault.canonicalIdentity()`) is a path the user can rename or move (DU-02). Default true, as
+	 * Obsidian has always been. Hebra declares false: its identity is the library id, the same on every device and
+	 * never changed by moving files, so there is no relocation to detect.
+	 */
+	readonly pathBoundIdentity?: boolean;
 }
 
 export interface TyrianHost {
