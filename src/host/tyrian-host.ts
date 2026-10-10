@@ -412,7 +412,7 @@ export interface TyrianUiPort {
 	onVisibilityChange(listener: (visible: boolean) => void): TyrianDisposer;
 	/** main.ts:2627 (`openLinkText`, the only delivery of the session summary). */
 	openNote(path: string): void;
-	/** ui/settings-tab.ts:1412-1616 (7), ui/companion-view.ts:1672-1809 (5), ui/manual-session-start-modal.ts:11, ui/alert-ingame-secret-modal.ts:15. */
+	/** ui/settings-tab.ts:1412-1616 (7), ui/companion-modals.ts (6), ui/manual-session-start-modal.ts:11, ui/alert-ingame-secret-modal.ts:15. */
 	openModal(modal: TyrianModalRequest): TyrianModalHandle;
 	/** ui/inventory-advisor-view.ts, ui/product-shell.ts, ui/receipt.ts, ui/sale-view.ts (8 calls). */
 	setIcon(element: HTMLElement, icon: string): void;

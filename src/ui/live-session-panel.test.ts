@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { Window } from 'happy-dom';
 import { formatCopperVisual } from '../core/copper-format';
+import { installDomHelpers } from '../host/dom-polyfill';
 import type { LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { sha256Text } from '../sessions/session-note-renderer';
 import type { LiveGapV1, LiveObservationV1, LiveSessionViewV1 } from '../sessions/live-session-model';
@@ -9,6 +10,9 @@ import {
 	LiveSessionPanel, liveChartHitAt, liveChartTipSide, liveSessionRatePerHour, liveSessionValue,
 	type LiveChartGeometry, type LiveSessionControlState, type LiveSessionPanelActions,
 } from './live-session-panel';
+
+// The money figure builds with Obsidian's `createSpan`, which both hosts provide (Hebra through the polyfill).
+beforeAll(() => { installDomHelpers(window); });
 
 const at = (seconds: number): string => new Date(Date.UTC(2026, 9, 6, 8, 0, seconds)).toISOString();
 function observation(cursor: number, delta = 1, id = 12147): LiveObservationV1 {

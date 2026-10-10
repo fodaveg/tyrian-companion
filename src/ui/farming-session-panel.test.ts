@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { installDomHelpers } from '../host/dom-polyfill';
 import type { FarmingGroupContext } from '../runtime/farming-session-context';
 import { emptyFarmingIngameState } from '../alerts/farming-ingame-state';
 import { DEFAULT_FARMING_PREPARATION, type FarmingManualReminder } from '../sessions/farming-goal-preparation';
 import type { LiveSessionViewV1 } from '../sessions/live-session-model';
 import { FarmingSessionPanel, type FarmingSessionPanelActions } from './farming-session-panel';
+
+// The panel builds with Obsidian's `createEl`, which both hosts provide (Hebra through the polyfill).
+beforeAll(() => { installDomHelpers(window); });
 
 function panelHarness() {
 	const reminders: FarmingManualReminder[] = [];

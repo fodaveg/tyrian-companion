@@ -35,66 +35,42 @@ export class FarmingPreparationPanel {
 		const wasOpen = container.querySelector('details')?.open ?? false;
 		container.replaceChildren();
 		container.classList.add('tyrian-farming');
-		const document = container.ownerDocument;
 		const locale = this.ports.locale();
 		const current = this.ports.settings();
-		const details = document.createElement('details');
+		const details = container.createEl('details');
 		details.open = wasOpen;
-		const summary = document.createElement('summary');
-		summary.textContent = farmingCopy(locale, 'preparation');
-		details.append(summary);
-		const fieldset = document.createElement('fieldset');
-		fieldset.className = 'tyrian-farming__editor';
+		details.createEl('summary', { text: farmingCopy(locale, 'preparation') });
+		const fieldset = details.createEl('fieldset', { cls: 'tyrian-farming__editor' });
 		fieldset.disabled = this.busy;
-		const enabledLabel = document.createElement('label');
-		const enabled = document.createElement('input');
-		enabled.type = 'checkbox';
+		const enabledLabel = fieldset.createEl('label');
+		const enabled = enabledLabel.createEl('input', { type: 'checkbox' });
 		enabled.checked = current.enabled;
-		enabledLabel.append(enabled, farmingCopy(locale, 'enabled'));
-		fieldset.append(enabledLabel);
-		const body = document.createElement('div');
+		enabledLabel.append(farmingCopy(locale, 'enabled'));
+		// `hidden` before the class, as it always was, so the attribute order does not move.
+		const body = fieldset.createDiv();
 		body.hidden = !current.enabled;
 		body.className = 'tyrian-farming__preparation';
-		const facts = document.createElement('dl');
-		facts.className = 'tyrian-farming__facts';
-		body.append(facts);
-		const bonusLabel = document.createElement('label');
-		bonusLabel.textContent = farmingCopy(locale, 'manual');
-		const bonus = numericInput(document, current.manualMagicFindBonus, 0, 100_000);
+		const facts = body.createEl('dl', { cls: 'tyrian-farming__facts' });
+		const bonusLabel = body.createEl('label', { text: farmingCopy(locale, 'manual') });
+		const bonus = numericInput(bonusLabel, current.manualMagicFindBonus, 0, 100_000);
 		bonus.placeholder = farmingCopy(locale, 'unknown');
-		bonusLabel.append(bonus);
-		body.append(bonusLabel);
-		const limit = document.createElement('div');
-		limit.className = 'tyrian-farming__caption';
-		limit.textContent = farmingCopy(locale, 'mfLimit');
-		body.append(limit);
-		const reviewedLabel = document.createElement('label');
-		const reviewed = document.createElement('input');
-		reviewed.type = 'checkbox';
+		body.createDiv({ cls: 'tyrian-farming__caption', text: farmingCopy(locale, 'mfLimit') });
+		const reviewedLabel = body.createEl('label');
+		const reviewed = reviewedLabel.createEl('input', { type: 'checkbox' });
 		reviewed.checked = this.reviewed;
 		reviewed.addEventListener('change', () => { this.reviewed = reviewed.checked; });
-		reviewedLabel.append(reviewed, farmingCopy(locale, 'reviewed'));
-		body.append(reviewedLabel);
+		reviewedLabel.append(farmingCopy(locale, 'reviewed'));
 		const reminderInputs = new Map<FarmingReminderKind, HTMLInputElement>();
 		const reminderDisplays = new Map<FarmingReminderKind, { status: HTMLElement; action: HTMLButtonElement }>();
 		for (const kind of ['food', 'utility'] as const) {
-			const row = document.createElement('div');
-			row.className = 'tyrian-farming__reminder';
-			const label = document.createElement('label');
-			label.textContent = `${farmingCopy(locale, kind)} · ${farmingCopy(locale, 'reminder')}`;
-			const interval = numericInput(document, kind === 'food' ? current.foodReminderMinutes : current.utilityReminderMinutes, 1, 1_440);
+			const row = body.createDiv({ cls: 'tyrian-farming__reminder' });
+			const label = row.createEl('label', { text: `${farmingCopy(locale, kind)} · ${farmingCopy(locale, 'reminder')}` });
+			const interval = numericInput(label, kind === 'food' ? current.foodReminderMinutes : current.utilityReminderMinutes, 1, 1_440);
 			interval.setAttribute('aria-label', `${farmingCopy(locale, kind)} · ${farmingCopy(locale, 'reminderMinutes')}`);
 			interval.placeholder = '—';
-			label.append(interval);
-			row.append(label);
 			reminderInputs.set(kind, interval);
-			const status = document.createElement('span');
-			status.setAttribute('role', 'status');
-			status.title = farmingCopy(locale, 'reminderLimit');
-			row.append(status);
-			const action = document.createElement('button');
-			action.type = 'button';
-			action.title = farmingCopy(locale, 'reminderLimit');
+			const status = row.createSpan({ attr: { role: 'status' }, title: farmingCopy(locale, 'reminderLimit') });
+			const action = row.createEl('button', { attr: { type: 'button' }, title: farmingCopy(locale, 'reminderLimit') });
 			reminderDisplays.set(kind, { status, action });
 			action.addEventListener('click', () => {
 				const active = this.ports.reminders().find((reminder) => reminder.kind === kind);
@@ -115,18 +91,12 @@ export class FarmingPreparationPanel {
 				this.ports.startReminder(kind, minutes);
 				this.refreshReadOnly(container);
 			});
-			row.append(action);
-			body.append(row);
 		}
 		enabled.addEventListener('change', () => { body.hidden = !enabled.checked; });
-		fieldset.append(body);
-		const save = document.createElement('button');
-		save.type = 'button';
-		save.textContent = farmingCopy(locale, 'save');
-		const feedback = document.createElement('span');
-		feedback.className = 'tyrian-farming__feedback';
-		feedback.setAttribute('role', 'status');
-		feedback.textContent = this.busy ? farmingCopy(locale, 'saving') : '';
+		const save = fieldset.createEl('button', { text: farmingCopy(locale, 'save'), attr: { type: 'button' } });
+		const feedback = fieldset.createSpan({
+			cls: 'tyrian-farming__feedback', text: this.busy ? farmingCopy(locale, 'saving') : '', attr: { role: 'status' },
+		});
 		this.rendered = { fieldset, feedback };
 		save.addEventListener('click', () => {
 			const candidate: FarmingPreparationSettingsV1 = {
@@ -141,9 +111,6 @@ export class FarmingPreparationPanel {
 			}
 			void this.apply(candidate, fieldset, feedback, locale);
 		});
-		fieldset.append(save, feedback);
-		details.append(fieldset);
-		container.append(details);
 		this.readOnly = { container, facts, reminders: reminderDisplays };
 		this.refreshReadOnly(container);
 	}
@@ -154,14 +121,10 @@ export class FarmingPreparationPanel {
 		if (nodes === null || nodes.container !== container) return;
 		const locale = this.ports.locale();
 		const context = this.ports.context();
-		const document = container.ownerDocument;
 		nodes.facts.replaceChildren();
 		const fact = (label: string, value: string): void => {
-			const term = document.createElement('dt');
-			term.textContent = label;
-			const description = document.createElement('dd');
-			description.textContent = value;
-			nodes.facts.append(term, description);
+			nodes.facts.createEl('dt', { text: label });
+			nodes.facts.createEl('dd', { text: value });
 		};
 		const age = (observedAt: string | null | undefined): string => {
 			const milliseconds = observedAt == null ? NaN : Date.parse(this.ports.now()) - Date.parse(observedAt);
@@ -212,9 +175,9 @@ export class FarmingPreparationPanel {
 	}
 }
 
-function numericInput(document: Document, value: number | null, minimum: number, maximum: number): HTMLInputElement {
-	const input = document.createElement('input');
-	input.type = 'number';
+/** A whole-number input appended to `parent`; blank means unknown, never zero. */
+function numericInput(parent: HTMLElement, value: number | null, minimum: number, maximum: number): HTMLInputElement {
+	const input = parent.createEl('input', { type: 'number' });
 	input.min = String(minimum);
 	input.max = String(maximum);
 	input.step = '1';

@@ -35,20 +35,21 @@ export class FarmingDeclaredBuildEditor {
 
 	constructor(document: Document, private readonly actions: FarmingDeclaredBuildActions) {
 		const copy = COPY[actions.getLocale()];
+		// The root has no parent yet (the caller places it), so only it comes from `document`.
 		this.element = document.createElement('fieldset'); this.element.className = 'tyrian-farming__editor tyrian-declared-build';
-		const legend = document.createElement('legend'); legend.textContent = copy.title;
-		const limit = document.createElement('p'); limit.textContent = copy.limit;
-		const codeLabel = document.createElement('label'); codeLabel.textContent = copy.code;
-		this.code = document.createElement('textarea'); this.code.rows = 2; this.code.maxLength = MAX_BUILD_TEMPLATE_CODE_LENGTH; codeLabel.append(this.code);
-		const label = document.createElement('label'); label.textContent = copy.label;
-		this.label = document.createElement('input'); this.label.type = 'text'; this.label.maxLength = MAX_DECLARED_BUILD_LABEL_LENGTH; label.append(this.label);
-		this.preview = document.createElement('p'); this.preview.setAttribute('role', 'status');
-		this.feedback = document.createElement('p'); this.feedback.setAttribute('role', 'status');
-		this.saveButton = document.createElement('button'); this.saveButton.type = 'button'; this.saveButton.textContent = copy.save;
+		this.element.createEl('legend', { text: copy.title });
+		this.element.createEl('p', { text: copy.limit });
+		const codeLabel = this.element.createEl('label', { text: copy.code });
+		this.code = codeLabel.createEl('textarea'); this.code.rows = 2; this.code.maxLength = MAX_BUILD_TEMPLATE_CODE_LENGTH;
+		const label = this.element.createEl('label', { text: copy.label });
+		this.label = label.createEl('input', { type: 'text' }); this.label.maxLength = MAX_DECLARED_BUILD_LABEL_LENGTH;
+		this.preview = this.element.createEl('p', { attr: { role: 'status' } });
+		this.saveButton = this.element.createEl('button', { text: copy.save, attr: { type: 'button' } });
+		this.feedback = this.element.createEl('p', { attr: { role: 'status' } });
 		this.code.addEventListener('input', () => { this.dirty = true; this.renderPreview(); });
 		this.label.addEventListener('input', () => { this.dirty = true; this.renderPreview(); });
 		this.saveButton.addEventListener('click', () => { void this.save(); });
-		this.element.append(legend, limit, codeLabel, label, this.preview, this.saveButton, this.feedback); this.refresh();
+		this.refresh();
 	}
 	refresh(): void {
 		const saved = this.actions.getFarmingDeclaredBuildPreference();

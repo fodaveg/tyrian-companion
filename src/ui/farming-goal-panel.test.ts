@@ -1,11 +1,15 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { installDomHelpers } from '../host/dom-polyfill';
 import { projectFarmingGoal, type FarmingGoalV1 } from '../sessions/farming-goal';
 import {
 	DEFAULT_FARMING_PREPARATION, type FarmingManualReminder, type FarmingPreparationContext,
 } from '../sessions/farming-goal-preparation';
 import { FarmingGoalEditor, renderFarmingGoalProgress } from './farming-goal-panel';
 import { FarmingPreparationPanel, type FarmingPreparationPanelPorts } from './farming-preparation-panel';
+
+// The panels build with Obsidian's `createEl`, which both hosts provide (Hebra through the polyfill).
+beforeAll(() => { installDomHelpers(window); });
 
 function container(): HTMLDivElement { return document.createElement('div'); }
 const observation = {

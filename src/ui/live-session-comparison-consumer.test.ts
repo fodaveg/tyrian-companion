@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from '../sessions/manual-build-model';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Window } from 'happy-dom';
+import { installDomHelpers } from '../host/dom-polyfill';
 const document = new Window().document as unknown as Document;
+// The panels build with Obsidian's `createEl`, which both hosts provide (Hebra through the polyfill).
+installDomHelpers(document.defaultView ?? {});
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { createRuntimeHarness, type RuntimeHarness } from '../test/runtime-harness';
 import { FarmingSessionPanel } from './farming-session-panel';

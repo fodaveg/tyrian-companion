@@ -12,17 +12,12 @@ export function renderFarmingGoalProgress(container: HTMLElement, progress: Farm
 	container.replaceChildren();
 	container.classList.add('tyrian-farming');
 	if (progress.goal.kind === 'none') return;
-	const document = container.ownerDocument;
-	const row = document.createElement('div');
-	row.className = 'tyrian-farming__metrics';
-	const value = document.createElement('strong');
+	const row = container.createDiv({ cls: 'tyrian-farming__metrics' });
 	const target = progress.goal.kind === 'bags' ? progress.goal.targetBags : progress.goal.targetDurationMs;
-	value.textContent = progress.goal.kind === 'bags'
+	row.createEl('strong', { text: progress.goal.kind === 'bags'
 		? `${formatCount(progress.observedBags, locale)} / ${formatCount(target, locale)} ${farmingCopy(locale, 'bags')}`
-		: `${progress.elapsedMs === null ? '—' : formatFarmingTime(progress.elapsedMs)} / ${formatFarmingTime(target)}`;
-	row.append(value);
-	const remaining = document.createElement('span');
-	remaining.setAttribute('role', 'status');
+		: `${progress.elapsedMs === null ? '—' : formatFarmingTime(progress.elapsedMs)} / ${formatFarmingTime(target)}` });
+	const remaining = row.createSpan({ attr: { role: 'status' } });
 	if (progress.status === 'reached') {
 		remaining.textContent = farmingCopy(locale, progress.goal.kind === 'duration' ? 'durationReached' : 'reached');
 	} else if (progress.remainingMs !== null && progress.remainingKind !== null) {
@@ -31,30 +26,20 @@ export function renderFarmingGoalProgress(container: HTMLElement, progress: Farm
 		remaining.textContent = farmingCopy(locale, 'unavailable');
 		remaining.title = progress.etaUnavailableReason === null ? '' : farmingCopy(locale, progress.etaUnavailableReason);
 	}
-	row.append(remaining);
-	container.append(row);
 	if (progress.progressRatio !== null) {
-		const bar = document.createElement('progress');
-		bar.className = 'tyrian-farming__progress';
+		// `max` and `value` before the label, as they always were, so the attribute order does not move.
+		const bar = container.createEl('progress', { cls: 'tyrian-farming__progress' });
 		bar.max = 1;
 		bar.value = progress.progressRatio;
 		bar.setAttribute('aria-label', farmingCopy(locale, 'goal'));
-		container.append(bar);
 	}
 	if (progress.goal.kind === 'bags') {
-		const disclosure = document.createElement('details');
-		const summary = document.createElement('summary');
-		summary.textContent = farmingCopy(locale, 'observed');
-		disclosure.append(summary);
-		const limit = document.createElement('div');
-		limit.textContent = farmingCopy(locale, 'unknownTotal');
-		disclosure.append(limit);
+		const disclosure = container.createEl('details');
+		disclosure.createEl('summary', { text: farmingCopy(locale, 'observed') });
+		disclosure.createDiv({ text: farmingCopy(locale, 'unknownTotal') });
 		if (progress.finalNetBags !== null) {
-			const net = document.createElement('div');
-			net.textContent = `${farmingCopy(locale, 'net')}: ${formatCount(progress.finalNetBags, locale)}`;
-			disclosure.append(net);
+			disclosure.createDiv({ text: `${farmingCopy(locale, 'net')}: ${formatCount(progress.finalNetBags, locale)}` });
 		}
-		container.append(disclosure);
 	}
 }
 
@@ -76,22 +61,16 @@ export class FarmingGoalEditor {
 	render(container: HTMLElement): void {
 		container.replaceChildren();
 		container.classList.add('tyrian-farming');
-		const document = container.ownerDocument;
 		const locale = this.ports.locale();
 		const current = this.ports.value();
 		let kind = current.kind;
-		const fieldset = document.createElement('fieldset');
-		fieldset.className = 'tyrian-farming__editor';
+		const fieldset = container.createEl('fieldset', { cls: 'tyrian-farming__editor' });
 		fieldset.disabled = this.busy;
-		const legend = document.createElement('legend');
-		legend.textContent = farmingCopy(locale, 'goal');
-		fieldset.append(legend);
-		const options = document.createElement('div');
-		options.className = 'tyrian-farming__options';
-		const numberLabel = document.createElement('label');
-		numberLabel.textContent = farmingCopy(locale, 'target');
-		const number = document.createElement('input');
-		number.type = 'number';
+		fieldset.createEl('legend', { text: farmingCopy(locale, 'goal') });
+		// The choices go first and the number after them, but the radios' listeners need the number.
+		const options = fieldset.createDiv({ cls: 'tyrian-farming__options' });
+		const numberLabel = fieldset.createEl('label', { text: farmingCopy(locale, 'target') });
+		const number = numberLabel.createEl('input', { type: 'number' });
 		number.min = '1';
 		number.step = '1';
 		number.disabled = current.kind === 'none';
@@ -104,9 +83,8 @@ export class FarmingGoalEditor {
 		};
 		updateNumber();
 		for (const choice of ['none', 'bags', 'duration'] as const) {
-			const label = document.createElement('label');
-			const radio = document.createElement('input');
-			radio.type = 'radio';
+			const label = options.createEl('label');
+			const radio = label.createEl('input', { type: 'radio' });
 			radio.name = this.radioName;
 			radio.value = choice;
 			radio.checked = choice === kind;
@@ -115,19 +93,12 @@ export class FarmingGoalEditor {
 				number.value = String(choice === 'duration' ? DEFAULT_FARMING_TARGET_DURATION_MS / 60_000 : DEFAULT_FARMING_TARGET_BAGS);
 				updateNumber();
 			});
-			label.append(radio, farmingCopy(locale, choice));
-			options.append(label);
+			label.append(farmingCopy(locale, choice));
 		}
-		fieldset.append(options);
-		numberLabel.append(number);
-		fieldset.append(numberLabel);
-		const save = document.createElement('button');
-		save.type = 'button';
-		save.textContent = farmingCopy(locale, 'save');
-		const feedback = document.createElement('span');
-		feedback.className = 'tyrian-farming__feedback';
-		feedback.setAttribute('role', 'status');
-		feedback.textContent = this.busy ? farmingCopy(locale, 'saving') : '';
+		const save = fieldset.createEl('button', { text: farmingCopy(locale, 'save'), attr: { type: 'button' } });
+		const feedback = fieldset.createSpan({
+			cls: 'tyrian-farming__feedback', text: this.busy ? farmingCopy(locale, 'saving') : '', attr: { role: 'status' },
+		});
 		this.rendered = { fieldset, feedback };
 		save.addEventListener('click', () => {
 			const parsed = Number(number.value);
@@ -144,8 +115,6 @@ export class FarmingGoalEditor {
 			number.removeAttribute('aria-invalid');
 			void this.apply(goal, fieldset, feedback, locale);
 		});
-		fieldset.append(save, feedback);
-		container.append(fieldset);
 	}
 
 	private async apply(goal: FarmingGoalV1, fieldset: HTMLFieldSetElement, feedback: HTMLElement, locale: 'es' | 'en'): Promise<void> {

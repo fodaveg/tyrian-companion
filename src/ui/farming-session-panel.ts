@@ -40,13 +40,13 @@ export class FarmingSessionPanel {
 	private preparationKey: string | null = null;
 
 	constructor(document: Document, private readonly actions: FarmingSessionPanelActions) {
+		// The root has no parent yet (the view places it), so only it comes from `document`.
 		this.element = document.createElement('section');
 		this.element.className = 'tyrian-farming tyrian-farming-session';
-		this.figures = document.createElement('div');
-		this.figures.className = 'tyrian-farming__metrics';
-		this.progress = document.createElement('div');
-		this.goalEditor = document.createElement('div');
-		this.preparation = document.createElement('div');
+		this.figures = this.element.createDiv({ cls: 'tyrian-farming__metrics' });
+		this.progress = this.element.createDiv();
+		const defaults = this.element.createEl('details');
+		defaults.createEl('summary', { text: actions.getLocale() === 'es' ? 'Preparar la próxima tanda' : 'Prepare the next session' });
 		this.editor = new FarmingGoalEditor({ value: () => actions.getFarmingGoal(),
 			save: async (goal) => { await actions.saveFarmingGoal(goal); }, locale: () => actions.getLocale() });
 		this.preparationPanel = new FarmingPreparationPanel({
@@ -56,19 +56,17 @@ export class FarmingSessionPanel {
 			startReminder: (kind, minutes) => { actions.startFarmingReminder(kind, minutes); },
 			clearReminder: (kind) => { actions.clearFarmingReminder(kind); },
 		});
-		const defaults = document.createElement('details');
-		const summary = document.createElement('summary');
-		summary.textContent = actions.getLocale() === 'es' ? 'Preparar la próxima tanda' : 'Prepare the next session';
 		this.declaredBuild = actions.getFarmingDeclaredBuildPreference !== undefined && actions.saveFarmingDeclaredBuildPreference !== undefined
 			? new FarmingDeclaredBuildEditor(document, actions as FarmingDeclaredBuildActions) : null;
 		if (this.declaredBuild) defaults.append(this.declaredBuild.element);
-		defaults.prepend(summary);
-		defaults.append(this.goalEditor, this.groupEditor(document), this.preparation);
+		this.goalEditor = defaults.createDiv();
+		this.groupEditor(defaults);
+		this.preparation = defaults.createDiv();
 		// The comparison module stays here with its tests; the simplified Session tab does not mount this panel.
 		this.comparison = actions.getLiveSessionComparison !== undefined && actions.loadLiveSessionComparison !== undefined
 			? new LiveSessionComparisonPanel(document, actions as LiveSessionComparisonActions) : null;
-		if (this.comparison) this.element.append(this.comparison.element);
-		this.element.append(this.figures, this.progress, defaults);
+		// Built last, as before, but it goes first: ahead of the figures, the progress and the defaults.
+		if (this.comparison) this.element.prepend(this.comparison.element);
 		this.refresh();
 	}
 
@@ -100,24 +98,19 @@ export class FarmingSessionPanel {
 		if (detail) detail.open = expanded;
 	}
 
-	private groupEditor(document: Document): HTMLElement {
-		const label = document.createElement('label');
-		label.className = 'tyrian-farming__editor';
+	/** The declared group for the next session, appended to `parent`. */
+	private groupEditor(parent: HTMLElement): void {
 		const es = this.actions.getLocale() === 'es';
-		label.textContent = es ? 'Grupo de la próxima tanda (declarado)' : 'Next-session group (declared)';
-		const select = document.createElement('select');
+		const label = parent.createEl('label', { cls: 'tyrian-farming__editor', text: es ? 'Grupo de la próxima tanda (declarado)' : 'Next-session group (declared)' });
+		const select = label.createEl('select');
 		for (const [value, text] of [['', es ? 'Sin declarar' : 'Undeclared'],
 			['with_bosses', es ? 'Con jefes' : 'With bosses'], ['without_bosses', es ? 'Sin jefes' : 'Without bosses']]) {
-			const option = document.createElement('option');
+			const option = select.createEl('option', { text: text ?? '' });
 			option.value = value ?? '';
-			option.textContent = text ?? '';
-			select.append(option);
 		}
 		select.value = this.actions.getFarmingGroupContext() ?? '';
 		select.addEventListener('change', () => {
 			this.actions.setFarmingGroupContext(select.value === 'with_bosses' || select.value === 'without_bosses' ? select.value : null);
 		});
-		label.append(select);
-		return label;
 	}
 }

@@ -319,7 +319,13 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 			&& decision.discardProof?.rulePackSha256 !== value.rulePack.sha256) return false;
 	}
 	for (const line of value.lines) {
-		const lineExplanations = line.decisions.map((decision) => explanations.get(decision.explanationRef)!);
+		// Every decision already found its explanation above; a missing one still rejects rather than throws.
+		const lineExplanations: InventoryAdvisorExplanationV1[] = [];
+		for (const decision of line.decisions) {
+			const explanation = explanations.get(decision.explanationRef);
+			if (explanation === undefined) return false;
+			lineExplanations.push(explanation);
+		}
 		if (lineExplanations.some((explanation) => explanation.reasonCodes.some((code) => !line.reasons.some((reason) => reason.code === code)))
 			|| line.reasons.some((reason) => !lineExplanations.some((explanation) => explanation.reasonCodes.includes(reason.code)))) return false;
 	}
@@ -383,16 +389,16 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 		if (selected.some((position) => position === undefined)
 			|| sum(decision.allocations.map((allocation) => allocation.quantity)) !== decision.quantity) return false;
 		for (const allocation of decision.allocations) {
-			const position = positions.get(allocation.positionRef)!;
+			const position = positions.get(allocation.positionRef);
 			const allocated = sum([allocatedByPosition.get(allocation.positionRef) ?? 0, allocation.quantity]);
-			if (!Number.isSafeInteger(allocated) || allocated > position.quantity) return false;
+			if (position === undefined || !Number.isSafeInteger(allocated) || allocated > position.quantity) return false;
 			allocatedByPosition.set(allocation.positionRef, allocated);
 		}
 		if (decision.action === 'keep') kept += decision.quantity;
 		else if (decision.action === 'review') reviewed += decision.quantity;
 		else {
 			actioned += decision.quantity;
-			if (selected.some((position) => position!.state !== 'loose')) return false;
+			if (selected.some((position) => position === undefined || position.state !== 'loose')) return false;
 			if (!coverageComplete(value.coverage)
 				&& !(isManualMarketAction(decision.action) && coverageSupportsManualMarket(value.coverage))
 				&& !(decision.action === 'deposit_material' && coverageSupportsMaterialDeposit(value.coverage))) return false;
@@ -710,7 +716,7 @@ function coverageEvidence(value: unknown): value is AccountSignalsV1['unlockCove
 	return ['complete', 'partial', 'unavailable'].includes(String(value));
 }
 function nullableNonNegative(value: unknown): boolean { return value === null || nonNegative(value); }
-function bitArray(value: unknown): value is number[] { return Array.isArray(value) && value.every(nonNegative) && value.every((entry, index) => index === 0 || value[index - 1]! < entry); }
+function bitArray(value: unknown): value is number[] { return Array.isArray(value) && value.every(nonNegative) && inOrder(value, (left, right) => left < right); }
 function fresh(evidenceAt: string, asOf: string, maxAgeMs: number, maxFutureSkewMs: number): boolean {
 	const evidence = Date.parse(evidenceAt);
 	const now = Date.parse(asOf);
@@ -763,14 +769,24 @@ function sameNumbers(left: number[], right: number[]): boolean {
 	return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 function idArray(value: unknown): value is number[] {
-	return Array.isArray(value) && value.every(positive)
-		&& value.every((entry, index) => index === 0 || value[index - 1]! < entry);
+	return Array.isArray(value) && value.every(positive) && inOrder(value, (left, right) => left < right);
 }
 function sortedStrings(value: string[]): boolean {
-	return value.every((entry, index) => index === 0 || value[index - 1]! < entry);
+	return inOrder(value, (left, right) => left < right);
 }
 function strictlySorted<T>(value: T[], compare: (left: T, right: T) => number): boolean {
-	return value.every((entry, index) => index === 0 || compare(value[index - 1]!, entry) < 0);
+	return inOrder(value, (left, right) => compare(left, right) < 0);
+}
+/**
+ * Whether every entry goes `before` the next one. An entry right after a hole of a sparse array
+ * fails, as `undefined < entry` always did (no JSON input has holes).
+ */
+function inOrder<T>(value: readonly T[], before: (left: T, right: T) => boolean): boolean {
+	return value.every((entry, index) => {
+		if (index === 0) return true;
+		const previous = value[index - 1];
+		return previous !== undefined && before(previous, entry);
+	});
 }
 function unique(values: string[]): boolean { return new Set(values).size === values.length; }
 function bounded(value: unknown, minimum: number, maximum: number): value is number {
@@ -827,12 +843,12 @@ function legacySha256(message: string): string {
 	const words: number[] = [];
 	const encoded = new TextEncoder().encode(message);
 	const bitLength = encoded.length * 8;
-	for (let index = 0; index < encoded.length; index += 1) {
-		words[index >> 2] = (words[index >> 2] ?? 0) | encoded[index]! << (24 - (index % 4) * 8);
+	for (const [index, byte] of encoded.entries()) {
+		words[index >> 2] = (words[index >> 2] ?? 0) | byte << (24 - (index % 4) * 8);
 	}
 	words[encoded.length >> 2] = (words[encoded.length >> 2] ?? 0) | 0x80 << (24 - (encoded.length % 4) * 8);
 	words[((encoded.length + 8 >> 6) + 1) * 16 - 1] = bitLength;
-	const hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+	let hash: [number, number, number, number, number, number, number, number] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
 		0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
 	const constants: number[] = [];
 	let candidate = 2;
@@ -847,20 +863,27 @@ function legacySha256(message: string): string {
 	for (let offset = 0; offset < words.length; offset += 16) {
 		const schedule = words.slice(offset, offset + 16);
 		for (let index = 16; index < 64; index += 1) {
-			const first = schedule[index - 15]!; const second = schedule[index - 2]!;
-			schedule[index] = (schedule[index - 16]! + (rotate(first, 7) ^ rotate(first, 18) ^ first >>> 3)
-				+ schedule[index - 7]! + (rotate(second, 17) ^ rotate(second, 19) ^ second >>> 10)) | 0;
+			const first = legacyWord(schedule, index - 15); const second = legacyWord(schedule, index - 2);
+			schedule[index] = (legacyWord(schedule, index - 16) + (rotate(first, 7) ^ rotate(first, 18) ^ first >>> 3)
+				+ legacyWord(schedule, index - 7) + (rotate(second, 17) ^ rotate(second, 19) ^ second >>> 10)) | 0;
 		}
 		let [a, b, c, d, e, f, g, h] = hash;
-		for (let index = 0; index < 64; index += 1) {
-			const temporary1 = (h! + (rotate(e!, 6) ^ rotate(e!, 11) ^ rotate(e!, 25))
-				+ (e! & f! ^ ~e! & g!) + constants[index]! + schedule[index]!) | 0;
-			const temporary2 = ((rotate(a!, 2) ^ rotate(a!, 13) ^ rotate(a!, 22)) + (a! & b! ^ a! & c! ^ b! & c!)) | 0;
-			h = g; g = f; f = e; e = (d! + temporary1) | 0; d = c; c = b; b = a; a = (temporary1 + temporary2) | 0;
+		for (const [index, constant] of constants.entries()) {
+			const temporary1 = (h + (rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25))
+				+ (e & f ^ ~e & g) + constant + legacyWord(schedule, index)) | 0;
+			const temporary2 = ((rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22)) + (a & b ^ a & c ^ b & c)) | 0;
+			h = g; g = f; f = e; e = (d + temporary1) | 0; d = c; c = b; b = a; a = (temporary1 + temporary2) | 0;
 		}
-		const next = [a!, b!, c!, d!, e!, f!, g!, h!];
-		for (let index = 0; index < 8; index += 1) hash[index] = (hash[index]! + next[index]!) | 0;
+		hash = [(hash[0] + a) | 0, (hash[1] + b) | 0, (hash[2] + c) | 0, (hash[3] + d) | 0,
+			(hash[4] + e) | 0, (hash[5] + f) | 0, (hash[6] + g) | 0, (hash[7] + h) | 0];
 	}
 	return hash.map((value) => (value >>> 0).toString(16).padStart(8, '0')).join('');
 }
+/**
+ * A word of the legacy schedule. Its zero padding was never written, so those words are holes
+ * of a sparse array, which this digest has always read as `undefined`: NaN in a sum and 0 in a
+ * bitwise operation. `NaN` gives exactly both, so the digest stays byte for byte (that is also
+ * why it is not standard SHA-256; `inventory-advisor-contract.test.ts` pins it).
+ */
+function legacyWord(words: readonly number[], index: number): number { return words[index] ?? Number.NaN; }
 function rotate(value: number, count: number): number { return value >>> count | value << (32 - count); }
