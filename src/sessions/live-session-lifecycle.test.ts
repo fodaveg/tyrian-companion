@@ -2,6 +2,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
+import { fakeLocks } from '../test/fake-lock-manager';
 import { MemorySessionRuntimeStore, IndexedDbSessionRuntimeStore } from './session-runtime-store';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveSessionViewV1 } from './live-session-model';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
@@ -684,6 +685,207 @@ describe('passive live session lifecycle', () => {
 			await expect(f.service.presence(false,AT+1000)).resolves.toBeUndefined(); await f.service.dispose();
 		});
 	});
+	describe('why a stop answered false', () => {
+		async function running() { const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); return f; }
+		it('names a lease that is not the host\'s', async () => {
+			const f = await running(); f.loseLease();
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('lease_not_owned');
+			await f.service.dispose();
+		});
+		it('names a record the store refuses as stale', async () => {
+			const f = await running(); vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'stale' });
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('record_stale');
+			await f.service.dispose();
+		});
+		it('names a storage that does not answer', async () => {
+			const f = await running(); vi.spyOn(f.store,'saveLive').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('storage_unavailable');
+			await f.service.dispose();
+		});
+		it('names a note that was not saved, and clears the reason once a stop works', async () => {
+			const f = await running(); f.onComplete.mockResolvedValueOnce(null as unknown as string);
+			await expect(f.service.stop(AT+1000)).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('note_not_saved');
+			await expect(f.service.stop(AT+1000)).resolves.toBe(true); expect(f.service.getStopFailure()).toBeNull();
+			await f.service.dispose();
+		});
+		it('names another session', async () => {
+			const f = await running();
+			await expect(f.service.stop(AT+1000,'other')).resolves.toBe(false); expect(f.service.getStopFailure()).toBe('other_session');
+			await f.service.dispose();
+		});
+	});
+	describe('discarding a session that cannot finish', () => {
+		async function running() { const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.commit(f.sample(1,3)); return f; }
+		it('writes the note with what the session has, frees the key and lets the addon open a new session', async () => {
+			const f = await running();
+			await expect(f.service.discard()).resolves.toEqual({ cleared: true, note: 'written' });
+			expect(f.onComplete).toHaveBeenCalledOnce(); expect(f.service.getRuntime()).toBeNull(); expect(f.service.getView().phase).toBe('idle');
+			await expect(f.service.start('Test')).resolves.toBe('session-2');
+			await expect(f.service.open(f.source)).resolves.toBe('ready');
+			await f.service.dispose();
+		});
+		it('a session finished without its note is dropped, its journal kept where it is, and the next start works', async () => {
+			const f = await running(); f.onComplete.mockResolvedValue(null as unknown as string);
+			await expect(f.service.stop(AT+2000)).resolves.toBe(false);
+			expect(f.service.getRuntime()).toMatchObject({ phase: 'complete', summaryReceipt: null }); await expect(f.service.start('Test')).resolves.toBeNull();
+			await expect(f.service.discard()).resolves.toEqual({ cleared: true, note: 'not_written' });
+			expect(await f.store.readLiveJournal('session'), 'the evidence of the dropped session stays in the journal').not.toHaveLength(0);
+			await expect(f.service.start('Test')).resolves.toBe('session-2');
+			await f.service.dispose();
+		});
+		it('a session whose stop the store keeps refusing is dropped all the same', async () => {
+			const f = await running(); const save = vi.spyOn(f.store,'saveLive').mockResolvedValue({ status: 'stale' });
+			await expect(f.service.stop(AT+2000)).resolves.toBe(false);
+			await expect(f.service.discard()).resolves.toMatchObject({ cleared: true });
+			save.mockRestore();
+			await expect(f.service.start('Test')).resolves.toBe('session-2');
+			await f.service.dispose();
+		});
+		it('a record that does not load is cleared by force', async () => {
+			const f = fixture(); await f.service.start('Test'); const original = f.service.getRuntime()!; await f.service.dispose();
+			const store = new MemorySessionRuntimeStore({ ...original, declaredBuild: { version: 1, source: 'manual_template', templateCode: 'invalid' } });
+			const broken = new LiveSessionLifecycle({ ...f.options, persistence: store }); await broken.initialize();
+			expect(broken.getView().phase).toBe('error');
+			await expect(broken.discard()).resolves.toEqual({ cleared: true, note: 'none' });
+			expect(broken.getView().phase).toBe('idle'); await expect(broken.start('Test')).resolves.not.toBeNull();
+			await broken.dispose();
+		});
+		it('says so, and keeps the session as it was, when storage refuses even the forced clear', async () => {
+			const f = await running(); vi.spyOn(f.store,'clear').mockResolvedValue({ status: 'stale' }); vi.spyOn(f.store,'forceClear').mockResolvedValue({ status: 'error', code: 'unavailable' });
+			await expect(f.service.discard()).resolves.toMatchObject({ cleared: false });
+			expect(f.service.getRuntime()).not.toBeNull();
+			await f.service.dispose();
+		});
+	});
+	describe('discarding only what this host may', () => {
+		/** A second host over the same store whose coordinator says the session is somebody else\'s. */
+		async function otherHost(f: ReturnType<typeof fixture>, acquire: unknown) {
+			const coordinator = { ...f.options.coordinator, acquire: vi.fn(async () => acquire), assertOwned: vi.fn(async () => ({ status: 'lost' as const })) };
+			const b = new LiveSessionLifecycle({ ...f.options, coordinator: coordinator as never });
+			await b.initialize();
+			return b;
+		}
+		async function running() { const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.commit(f.sample(1,3)); return f; }
+		it('never clears the record of a session another instance keeps alive', async () => {
+			const f = await running();
+			const b = await otherHost(f, { status: 'busy', ownerExpiresAt: AT + 300_000, ownerInstanceId: 'a', ownerMachineId: 'm' });
+			await expect(b.discard()).resolves.toEqual({ cleared: false, note: 'none', reason: 'lease_not_owned' });
+			await expect(f.store.loadLive(), 'the record of the live session is still there').resolves.toMatchObject({ status: 'loaded', record: { sessionId: 'session', phase: 'active' } });
+			await b.dispose(); await f.service.dispose();
+		});
+		it('says the clock when the reservation answers clock_anomaly, and clears nothing', async () => {
+			const f = await running();
+			const b = await otherHost(f, { status: 'error', code: 'clock_anomaly' });
+			await expect(b.discard()).resolves.toEqual({ cleared: false, note: 'none', reason: 'clock_anomaly' });
+			await expect(f.store.loadLive()).resolves.toMatchObject({ status: 'loaded' });
+			await b.dispose(); await f.service.dispose();
+		});
+		it('does not force the clear when the store answers stale', async () => {
+			const f = await running(); const force = vi.spyOn(f.store, 'forceClear');
+			vi.spyOn(f.store, 'clear').mockResolvedValue({ status: 'stale' });
+			await expect(f.service.discard()).resolves.toMatchObject({ cleared: false, reason: 'record_stale' });
+			expect(force).not.toHaveBeenCalled();
+			await f.service.dispose();
+		});
+		it('never forces a record it could not read, only one the store says is corrupt', async () => {
+			const f = await running(); await f.service.dispose();
+			const force = vi.spyOn(f.store, 'forceClear');
+			const lost = new LiveSessionLifecycle({ ...f.options });
+			vi.spyOn(f.store, 'loadLive').mockResolvedValue({ status: 'error', code: 'unavailable' });
+			await lost.initialize();
+			await expect(lost.discard()).resolves.toMatchObject({ cleared: false, reason: 'storage_unavailable' });
+			vi.spyOn(f.store, 'loadLive').mockResolvedValue({ status: 'legacy' });
+			await expect(lost.discard(), 'the manual session of the same key is not ours').resolves.toEqual({ cleared: true, note: 'none' });
+			expect(force).not.toHaveBeenCalled();
+			await lost.dispose();
+		});
+	});
+	describe('what counts as stuck', () => {
+		async function running() { const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.commit(f.sample(1,3)); return f; }
+		it('a stop that left the note unwritten is stuck until the heartbeat writes it', async () => {
+			const f = await running(); f.onComplete.mockResolvedValueOnce(null as unknown as string);
+			await expect(f.service.stop(AT + 2000)).resolves.toBe(false);
+			expect(f.service.isStuck()).toBe(true);
+			await f.tick();
+			expect(f.service.getRuntime()?.summaryReceipt).not.toBeNull();
+			expect(f.service.isStuck(), 'the note is written: nothing is stuck').toBe(false);
+			expect(f.service.getStopFailure()).toBeNull();
+			await f.service.dispose();
+		});
+		it('a stop that failed once on a session that goes on is healthy again at its next accepted write', async () => {
+			const f = await running(); vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
+			await expect(f.service.stop(AT + 2000)).resolves.toBe(false);
+			expect(f.service.isStuck()).toBe(true);
+			f.setNow(AT + 3000); await expect(f.service.commit(f.sample(2, 4))).resolves.toBe('stored');
+			expect(f.service.isStuck()).toBe(false);
+			await f.service.dispose();
+		});
+		it('a stop aimed at another session says nothing about this one', async () => {
+			const f = await running();
+			await expect(f.service.stop(AT + 2000, 'other')).resolves.toBe(false);
+			expect(f.service.getStopFailure()).toBe('other_session'); expect(f.service.isStuck()).toBe(false);
+			await f.service.dispose();
+			const idle = fixture();
+			await expect(idle.service.stop(AT + 2000, 'other')).resolves.toBe(false);
+			expect(idle.service.isStuck(), 'nor does one on a host with no session').toBe(false);
+			await idle.service.dispose();
+		});
+		it('a saved session still to be read is an error in course, not a stuck one', async () => {
+			const f = await running(); await f.service.dispose();
+			vi.spyOn(f.store, 'loadLive').mockResolvedValue({ status: 'error', code: 'unavailable' });
+			const b = new LiveSessionLifecycle({ ...f.options }); await b.initialize();
+			expect(b.getView().phase).toBe('error'); expect(b.isStuck()).toBe(false);
+			await b.dispose();
+		});
+	});
+	describe('after a reload with the wall clock set back, with the real lease coordinator and the host\'s lock manager', () => {
+		/** Host A runs a session and dies without releasing; host B loads the same storage 30 s EARLIER by the wall clock. */
+		async function reloaded() {
+			const store = new IndexedDbSessionRuntimeStore(new IDBFactory(), 'live-reload-back') as unknown as MemorySessionRuntimeStore;
+			const factory = new IDBFactory(); const locks = fakeLocks(); const aContext = locks.context();
+			let now = AT + 60_000; let mono = 0; let beatB: (() => void) | null = null;
+			const f = fixture(store);
+			const a = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, monotonicClock: () => mono, sleep: async () => undefined, instanceId: 'a', locks: aContext });
+			const hostA = new LiveSessionLifecycle({ ...f.options, coordinator: a, now: () => now });
+			f.setNow(now);
+			await hostA.start('Test'); await hostA.open(f.source); await hostA.commit(f.sample(0,0)); await hostA.commit(f.sample(1,3));
+			aContext.die();
+			now = AT + 30_000; f.setNow(now);
+			const b = new ActiveSessionLeaseCoordinator({ indexedDb: factory, databaseName: 'reload-back', clock: () => now, monotonicClock: () => mono, sleep: async () => undefined, instanceId: 'b', locks: locks.context() });
+			const hostB = new LiveSessionLifecycle({ ...f.options, coordinator: b, now: () => now, setInterval: (callback: () => void) => { beatB = callback; return 1; } });
+			return { f, hostB, store, setWall: (at: number) => { now = at; f.setNow(at); }, wait: async (ms: number) => { mono += ms; beatB?.(); await hostB.capture(); } };
+		}
+		it('does not take the reservation at the first look, tells the clock apart in a stop, then takes it after 15 s and the addon is accepted', async () => {
+			const { f, hostB, wait } = await reloaded();
+			await hostB.initialize();
+			await expect(hostB.stop(AT + 31_000, 'session')).resolves.toBe(false);
+			expect(hostB.getStopFailure(), 'the clock, not «another instance»').toBe('clock_anomaly');
+			await wait(15_000);
+			await expect(hostB.open(f.source)).resolves.toBe('ready');
+			expect(hostB.getView().phase).toBe('active');
+			await hostB.dispose();
+		});
+		it('keeps saying the clock, not another instance, while the wall clock catches up with the stamp and the lease has not run out', async () => {
+			const { hostB, wait, setWall } = await reloaded();
+			await hostB.initialize();
+			await wait(1_000);
+			// The wall clock reaches the stamp of the dead host\'s lease: it is no longer ahead, and it has not run out.
+			setWall(AT + 61_000); await wait(1_000);
+			await expect(hostB.stop(AT + 31_000, 'session')).resolves.toBe(false);
+			expect(hostB.getStopFailure()).toBe('clock_anomaly');
+			await hostB.dispose();
+		});
+		it('discards a session whose reservation it can take, with the clock still behind', async () => {
+			const { hostB, store, wait } = await reloaded();
+			await hostB.initialize();
+			await expect(hostB.discard()).resolves.toMatchObject({ cleared: false, reason: 'clock_anomaly' });
+			await wait(15_000);
+			await expect(hostB.discard()).resolves.toMatchObject({ cleared: true });
+			await expect(store.loadLive()).resolves.toMatchObject({ status: 'empty' });
+			await expect(hostB.start('Test')).resolves.not.toBeNull();
+			await hostB.dispose();
+		});
+	});
 	describe('after a suspension, with the real lease coordinator', () => {
 		/** A lifecycle over the REAL coordinator on fake-indexeddb with a clock the test moves: the lease really expires. */
 		function suspended() {
@@ -701,6 +903,34 @@ describe('passive live session lifecycle', () => {
 			for (let index = 0; index < 4; index += 1) { setNow(AT+2*3_600_000+(index+1)*5_000); await beat(); }
 			setNow(AT+2*3_600_000+700_000); await beat(); await beat();
 			expect(svc.getRuntime()).toMatchObject({phase:'complete',endedAt:new Date(T0).toISOString(),summaryReceipt:{path:'Sessions/live.md'}});
+			await svc.dispose();
+		});
+		it('a wall clock set back under a running session still stops it with its note', async () => {
+			const f = fixture(new IndexedDbSessionRuntimeStore(new IDBFactory(),'live-stepback') as unknown as MemorySessionRuntimeStore); let beat: (() => void) | null = null; let now = AT;
+			const coordinator = new ActiveSessionLeaseCoordinator({ indexedDb: new IDBFactory(), databaseName: 'lease-stepback', clock: () => now, monotonicClock: () => monotonic, sleep: async () => undefined, instanceId: 'host' });
+			let monotonic = 1000;
+			const svc = new LiveSessionLifecycle({...f.options,coordinator,now:() => now,setInterval:(callback) => {beat=callback;return 1;}});
+			const at = (ms: number, tick = true): void => { if (tick) monotonic += Math.max(0, ms - now); now = ms; f.setNow(ms); };
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0));
+			for (let cursor = 1; cursor <= 20; cursor += 1) { at(AT+cursor*5_000); beat!(); await svc.capture(); await svc.commit(f.sample(cursor,cursor)); }
+			at(AT+100_000-30_000, false); monotonic += 5_000;
+			for (let cursor = 21; cursor <= 23; cursor += 1) { at(now+5_000); beat!(); await svc.capture(); }
+			await expect(svc.stop(now, 'session')).resolves.toBe(true);
+			expect(svc.getRuntime()).toMatchObject({phase:'complete',summaryReceipt:{path:'Sessions/live.md'}});
+			await expect(svc.start('Test')).resolves.not.toBeNull();
+			await svc.dispose();
+		});
+		it('samples that arrive with the wall clock set back are stored, the session stays active and the addon stays connected', async () => {
+			const { f, svc, setNow } = suspended();
+			await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0));
+			for (let cursor = 1; cursor <= 3; cursor += 1) { setNow(AT+cursor*1000); await expect(svc.commit(f.sample(cursor,cursor))).resolves.toBe('stored'); }
+			setNow(AT+500);
+			await expect(svc.commit(f.sample(4,4))).resolves.toBe('stored');
+			await expect(svc.commit(f.sample(5,5))).resolves.toBe('stored');
+			await expect(svc.open(f.source), 'the addon is still answered ready').resolves.toBe('ready');
+			expect(svc.getView().phase).toBe('active');
+			expect(svc.getRuntime()?.totals.find((row) => row.idNumber === 12147)?.net, 'every quantity counted').toBe(5);
+			await expect(svc.stop(AT+4000, 'session')).resolves.toBe(true);
 			await svc.dispose();
 		});
 		it('keeps the session running when the game never stopped being linked', async () => {

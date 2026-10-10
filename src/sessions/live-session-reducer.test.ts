@@ -119,10 +119,15 @@ describe('live inventory ledger', () => {
 		current = reduceLiveInventorySample(restored.record, currencies(3, 18, 28)).record;
 		expect(current.observedCurrenciesMs).toBe(1000);
 	});
-	it('a backwards receipt clock never creates a negative observation window', () => {
+	it('a backwards receipt clock never creates a negative observation window: the sample keeps the latest stamp of the session', () => {
 		const baseline = reduceLiveInventorySample(initial(), sample(0, 0)).record;
 		const first = reduceLiveInventorySample(baseline, sample(1, 2)).record;
-		expect(() => reduceLiveInventorySample(first, sample(2, 4, { observedAt: new Date(AT).toISOString() }))).toThrow('continuity');
+		const back = reduceLiveInventorySample(first, sample(2, 4, { observedAt: new Date(AT).toISOString() }));
+		expect(back.record.lastSample?.observedAt).toBe(first.lastSample?.observedAt);
+		expect(back.record.lastObservationAt).toBe(first.lastObservationAt);
+		expect(back.journal.observations.map((row) => row.delta), 'deltas come from the quantities, not from the stamp').toEqual([2]);
+		expect(back.journal.observations.every((row) => row.windowStartAt <= row.observedAt)).toBe(true);
+		expect(() => reduceLiveInventorySample(first, sample(3, 4))).toThrow('continuity');
 	});
 	it('missing currency ID is missing coverage, never a zero saldo', () => {
 		const baseline = reduceLiveInventorySample(initial(), sample(0, 0, { currencyCoverage: 'listed', rows: [{ kind: 'currency', idNumber: 1, quantity: 10 }] })).record;

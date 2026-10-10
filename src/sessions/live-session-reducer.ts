@@ -24,12 +24,17 @@ export function liveSessionGap(record: LiveSessionRuntimeRecord, reason: LiveGap
 }
 
 /** Reduces a committed complete sample. A baseline only resets boundaries, never adds acquisitions. */
-export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, sample: LiveInventorySampleV1): {
+export function reduceLiveInventorySample(record: LiveSessionRuntimeRecord, received: LiveInventorySampleV1): {
 	record: LiveSessionRuntimeRecord; journal: LiveJournalEntryV1;
 } {
-	if (!isLiveInventorySample(sample) || record.phase !== 'active' || sample.sourceInstance !== record.sourceInstance
-		|| sample.epoch !== record.epoch) throw new Error('Invalid live inventory sample.');
+	if (!isLiveInventorySample(received) || record.phase !== 'active' || received.sourceInstance !== record.sourceInstance
+		|| received.epoch !== record.epoch) throw new Error('Invalid live inventory sample.');
 	const previous = record.lastSample;
+	// The reception stamp of a session never goes back: a sample stamped before the last one (the wall clock was set back) is
+	// kept with the latest stamp the session has, so the addon is not turned away until the clock catches up. Order, counts and
+	// deltas come from the cursor and the source's own elapsed time, never from this stamp.
+	const floor = [record.startedAt, record.lastObservationAt ?? '', previous?.observedAt ?? ''].reduce((latest, at) => at > latest ? at : latest);
+	const sample = received.observedAt < floor ? { ...received, observedAt: floor } : received;
 	const continuing = previous !== null && previous.epoch === sample.epoch && sample.mode === 'sample';
 	if (continuing && (sample.cursor !== previous.cursor + 1 || sample.sourceElapsedMs <= previous.sourceElapsedMs || sample.observedAt < previous.observedAt)) {
 		throw new Error('Invalid live inventory continuity.');

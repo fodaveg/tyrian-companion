@@ -163,11 +163,31 @@ export class IngameSessionMarker {
 		const presence = this.options.presence();
 		return this.link?.stoppedByPlayer === true && this.link.presenceId === presence.presenceId;
 	}
-	markStoppedByPlayer(sessionId: string): void {
+	/** Returns the link as it was, for `restoreLink` when the stop this mark announced did not happen. */
+	markStoppedByPlayer(sessionId: string): { previous: IngameSessionLink | null; written: IngameSessionLink } | null {
 		const presence = this.options.presence();
-		if (presence.presenceId === null) return;
+		if (presence.presenceId === null) return null;
+		const previous = this.link === null ? null : { ...this.link };
+		this.markStopped(sessionId, presence.presenceId);
+		return this.link === null ? null : { previous, written: { ...this.link } };
+	}
+	/**
+	 * A stop that failed leaves the session running: the mark «stopped by the player» would then keep the addon out of a
+	 * session that is still open (`blocksAutomaticRestart`) for as long as the game stays connected.
+	 */
+	restoreLink(mark: { previous: IngameSessionLink | null; written: IngameSessionLink }): void {
+		// Only the link this mark wrote: one the presence or a restart replaced since is somebody else's and stays.
+		if (this.link === null || JSON.stringify(this.link) !== JSON.stringify(mark.written)) return;
+		if (mark.previous !== null) { this.setLink(mark.previous); return; }
+		this.link = null; this.options.port.saveLink(null);
+	}
+	/** The player dropped the session they had stopped by hand: the addon of this same connection may open the next one. */
+	clearStoppedByPlayer(): void {
+		if (this.link?.stoppedByPlayer === true) this.setLink({ ...this.link, stoppedByPlayer: false });
+	}
+	private markStopped(sessionId: string, presenceId: string): void {
 		if (this.link?.sessionId === sessionId) this.setLink({...this.link,stoppedByPlayer:true});
-		else this.setLink({version:1,presenceId:presence.presenceId,sessionId,owner:'adopted',labyrinthAt:null,stoppedByPlayer:true,mapCoveragePartial:true});
+		else this.setLink({version:1,presenceId,sessionId,owner:'adopted',labyrinthAt:null,stoppedByPlayer:true,mapCoveragePartial:true});
 	}
 	/** Explicit manual restart and durable source rollover move the link to their actual new session. */
 	linkReplacement(previousSessionId: string | null, sessionId: string, owner: 'automatic' | 'adopted'): void {

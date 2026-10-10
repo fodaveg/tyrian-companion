@@ -57,9 +57,25 @@ describe('the one button reaches the product actions that already exist', () => 
 			getSessionRecoveryState: () => recovery('error'),
 		});
 		expect(liveSessionControl(value, view).getLiveSessionControl()).toEqual({
-			gameConnected: true, consult: false, canStart: true, canStop: false, busy: 'stop', oldSession: { canDiscard: true } });
+			gameConnected: true, consult: false, canStart: true, canStop: false, busy: 'stop', oldSession: { canDiscard: true }, stuckSession: false });
 		const away = source({ getIngamePresence: () => ({ status: 'lost' }) as never, getCollectorMode: () => 'consult' });
 		expect(liveSessionControl(away.value, view).getLiveSessionControl()).toMatchObject({ gameConnected: false, consult: true, oldSession: null });
+	});
+
+	it('offers the discard of a stuck live session only when a live session exists and the shared action allows it', () => {
+		const { value } = source({ describe: (id) => id === 'discard-saved-session' ? descriptor(id, { available: true }) : descriptor(id) });
+		expect(liveSessionControl(value, () => ({ phase: 'error' }) as never).getLiveSessionControl()).toMatchObject({ stuckSession: true, oldSession: null });
+		expect(liveSessionControl(value, view).getLiveSessionControl().stuckSession, 'an idle session is not stuck').toBe(false);
+		const none = source();
+		expect(liveSessionControl(none.value, () => ({ phase: 'error' }) as never).getLiveSessionControl().stuckSession).toBe(false);
+	});
+
+	it('a stuck live session takes the shared discard from the old session that also blocks the start', () => {
+		const { value } = source({
+			describe: (id) => id === 'discard-saved-session' ? descriptor(id, { available: true }) : descriptor(id),
+			getSessionRecoveryState: () => recovery('error'), isLiveSessionStuck: () => true,
+		});
+		expect(liveSessionControl(value, view).getLiveSessionControl()).toMatchObject({ stuckSession: true, oldSession: { canDiscard: false } });
 	});
 
 	it('starts, finishes and discards through run(); only a rejection is a failure, never unavailable or cancelled', async () => {

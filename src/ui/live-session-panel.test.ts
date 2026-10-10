@@ -787,6 +787,37 @@ describe('Session tab: timeline', () => {
 	});
 });
 
+describe('Session tab: a session that cannot finish can be discarded', () => {
+	it.each([['en', 'This session cannot finish.', 'Discard session'], ['es', 'Esta sesión no puede terminar.', 'Descartar sesión']] as const)(
+		'offers a keyboard-reachable button in %s that runs the discard', (locale, line, label) => {
+			const h = harness({ ...liveView(3), phase: 'error' }, control({ canStop: false, stuckSession: true }), locale);
+			expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(false);
+			expect(h.panel.element.textContent).toContain(line);
+			const discard = h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!;
+			expect(discard.tagName).toBe('BUTTON'); expect(discard.type).toBe('button'); expect(discard.hasAttribute('hidden')).toBe(false);
+			expect(discard.textContent).toBe(label);
+			discard.focus(); expect(document.activeElement).toBe(discard);
+			discard.click();
+			expect(h.discard).toHaveBeenCalledOnce();
+		});
+
+	it('writes the line into a live region that was born empty, and the stuck one comes before an old one that blocks', () => {
+		const h = harness(idleView(), control({ stuckSession: false }));
+		const text = h.panel.element.querySelector('.tyrian-live-session__old .tyrian-live-session__hint')!;
+		expect(text.getAttribute('role')).toBe('status'); expect(text.getAttribute('aria-live')).toBe('polite'); expect(text.textContent).toBe('');
+		h.state.control = control({ stuckSession: true, oldSession: { canDiscard: false } }); h.panel.refresh();
+		expect(text.textContent).toContain('This session cannot finish.');
+		expect(h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!.hasAttribute('hidden')).toBe(false);
+	});
+
+	it('says nothing about it for a session that can finish, or while it is finishing', () => {
+		const h = harness(liveView(3), control({ stuckSession: false }));
+		expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(true);
+		const busy = harness({ ...liveView(3), phase: 'error' }, control({ stuckSession: true, busy: 'stop' }));
+		expect(busy.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(true);
+	});
+});
+
 describe('Session tab: an old session blocks the start', () => {
 	it('says so in one line and offers the discard only when the existing action can drop it', async () => {
 		const h = harness(idleView(), control({ oldSession: { canDiscard: false } }));

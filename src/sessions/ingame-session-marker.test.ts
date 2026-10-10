@@ -401,3 +401,21 @@ describe('H18.26: the in-game presence marks the session', () => {
 		expect(isIngameSessionLink(null)).toBe(false);
 	});
 });
+
+describe('restoring the link after a failed stop', () => {
+	it('gives back the link the mark replaced, and leaves alone one that changed since', () => {
+		let saved: unknown = null;
+		const presence = { status: 'present', presenceId: 'p1', context: null, lastSeenAtMs: null } as never;
+		const port = { enabled: () => true, session: () => ({ status: 'active', sessionId: 's', canStart: false }), start: async () => null, stopAt: async () => undefined,
+			loadLink: () => null, saveLink: (link: unknown) => { saved = link; }, recordFailure: () => undefined };
+		const marker = new IngameSessionMarker({ port: port as never, presence: () => presence, now: () => 1 });
+		const mark = marker.markStoppedByPlayer('s')!;
+		expect(marker.blocksAutomaticRestart()).toBe(true);
+		marker.restoreLink(mark);
+		expect(marker.blocksAutomaticRestart()).toBe(false); expect(saved).toBeNull();
+		const again = marker.markStoppedByPlayer('s')!;
+		marker.linkReplacement('s', 'next', 'adopted');
+		marker.restoreLink(again);
+		expect(saved, 'the link of the new session is not overwritten').toMatchObject({ sessionId: 'next' });
+	});
+});

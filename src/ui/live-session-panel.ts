@@ -37,6 +37,8 @@ export interface LiveSessionControlState {
 	busy: 'start' | 'stop' | null;
 	/** An older session blocks a new one; `canDiscard` says whether an existing action can drop it. */
 	oldSession: { canDiscard: boolean } | null;
+	/** The live session cannot finish by itself and the player may drop it (after a confirmation the host asks). */
+	stuckSession?: boolean;
 }
 
 export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory' | 'getLiveSessionSetAside'> {
@@ -230,6 +232,9 @@ export class LiveSessionPanel {
 		this.alert.setAttribute('role', 'alert');
 		this.oldLine = this.node('div', 'tyrian-live-session__old');
 		this.oldText = this.node('p', 'tyrian-live-session__hint');
+		// Born empty like the rest of the notices, so what is written into it later is announced.
+		this.oldText.setAttribute('role', 'status');
+		this.oldText.setAttribute('aria-live', 'polite');
 		this.discard = this.button('tyrian-live-session__discard', () => { void this.discardOld(); });
 		this.oldLine.append(this.oldText, this.discard);
 		this.gapNotice = this.node('p', 'tyrian-live-session__notice');
@@ -548,6 +553,8 @@ export class LiveSessionPanel {
 		this.toggle.classList.toggle('mod-cta', !stopMode);
 
 		const startMode = !stopMode && !busy;
+		// A live session that cannot finish comes before an old one blocking the start: the button discards that one.
+		const stuck = control.stuckSession === true && !control.consult && !busy;
 		const oldBlocks = startMode && control.oldSession !== null && !control.consult;
 		let hint = '';
 		if (control.consult) hint = this.copy('hintConsult');
@@ -561,8 +568,13 @@ export class LiveSessionPanel {
 		this.setText(this.alert, failureCopy === null ? '' : this.copy(failureCopy));
 		this.alert.hidden = failureCopy === null;
 
-		this.oldLine.hidden = !oldBlocks;
-		if (oldBlocks) {
+		this.oldLine.hidden = !oldBlocks && !stuck;
+		if (stuck) {
+			this.setText(this.oldText, this.copy('stuckSession'));
+			this.discard.hidden = false;
+			this.setText(this.discard, this.copy('discardStuck'));
+			this.discard.setAttribute('aria-disabled', String(this.pending === 'discard'));
+		} else if (oldBlocks) {
 			this.setText(this.oldText, this.copy('oldSessionBlocks'));
 			const canDiscard = control.oldSession?.canDiscard === true;
 			this.discard.hidden = !canDiscard;

@@ -153,10 +153,137 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		}));
 		await cleanup();
 	}, 30_000);
+
+	it('«Terminar sesión» inside the plugin writes the note, also when the clock went back under the session, and frees the next one', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		core.settings.alertIngameEnabled = true;
+		const tracker = core.ingamePresenceTracker();
+		const source = sourceOf(FIRST_EPOCH);
+		tracker.apply({ kind: 'authenticated', connectionId: 'a', client: 'nexus', instance: INSTANCE, atMs: now });
+		tracker.apply({ kind: 'context', connectionId: 'a', context: source.context, atMs: now });
+		await settle(core);
+		const port = core.liveIngamePort();
+		expect(await port.open(source)).toBe('ready');
+		const readAt = now;
+		now = readAt + HANDSHAKE_MS;
+		expect(await port.commit(sampleOf(source, 0, 0))).toBe('stored');
+		for (let cursor = 1; cursor <= SAMPLES; cursor += 1) {
+			now = readAt + cursor * 1000 + RECEPTION_MS;
+			expect(await port.commit(sampleOf(source, cursor, cursor * 1000))).toBe('stored');
+		}
+		const first = core.getLiveSessionView().sessionId!;
+		// The system clock is set back 20 s (a time sync, a VM resume) and the player presses «Terminar sesión».
+		now -= 20_000;
+		await core.getProductActionController().run('finish-farming-session');
+		await settle(core);
+		expect(core.getLiveSessionView(), 'the session is finished').toMatchObject({ phase: 'complete', sessionId: first });
+		expect(liveNotes(test), 'and its note is in the library').toHaveLength(1);
+		expect(core.liveSessions.getRuntime()?.summaryReceipt).not.toBeNull();
+		// The player stopped it by hand in this presence, so the addon does not reopen it by itself; «Iniciar sesión» does.
+		now += 60_000;
+		await core.getProductActionController().run('start-farming-session');
+		expect(core.getLiveSessionView()).toMatchObject({ phase: 'active' });
+		expect(core.getLiveSessionView().sessionId).not.toBe(first);
+		await cleanup();
+	}, 30_000);
+
+	it('«Terminar sesión» that fails says which step refused, and a session still running keeps accepting the addon', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS, 'none');
+		const logged = vi.spyOn(core.localDebugActions, 'event');
+		vi.spyOn(core.liveSessions, 'stop').mockResolvedValue(false);
+		vi.spyOn(core.liveSessions, 'getStopFailure').mockReturnValue('record_stale');
+		await expect(core.getProductActionController().run('finish-farming-session')).rejects.toThrow();
+		expect(logged.mock.calls.map(([context]) => context), 'the log keeps the step that refused').toContainEqual(expect.objectContaining({
+			component: 'session', action: 'session_finish', level: 'error', phase: 'failure', code: 'storage_failure', state: 'finish_record_stale',
+		}));
+		expect(core.getLiveSessionView(), 'the session is still running').toMatchObject({ phase: 'active', sessionId: first });
+		expect(await core.liveIngamePort().open(sourceOf(FIRST_EPOCH)), 'and the addon is not turned away because of the failed stop').toBe('ready');
+		await cleanup();
+	}, 30_000);
+
+	it('«Descartar sesión» frees a session that cannot finish: after confirming, the addon is accepted and a new session starts', async () => {
+		const test = collectorHebra();
+		// The fake API\'s modal never mounts: this one puts the dialog in the document, as Hebra does.
+		(test.api.ui as { openModal: unknown }).openModal = (render: (element: HTMLElement) => unknown, options?: { onClosed?: () => void }) => {
+			const element = document.createElement('div');
+			document.body.append(element);
+			render(element);
+			return { close: () => { element.remove(); options?.onClosed?.(); } };
+		};
+		const factory = new IDBFactory();
+		const { core, cleanup } = await activate(test, factory);
+		test.library.noteCreate = async () => { throw new Error('the library refuses the write'); };
+		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS, 'game_exit');
+		expect(core.liveSessions.getRuntime(), 'the fixture: a finished session without its note').toMatchObject({ phase: 'complete', sessionId: first, summaryReceipt: null });
+		// The player\'s way out is offered, and asks before it deletes anything.
+		const controller = core.getProductActionController();
+		expect(controller.describe('discard-saved-session').available).toBe(true);
+		const logged = vi.spyOn(core.localDebugActions, 'event');
+		const running = controller.run('discard-saved-session');
+		await vi.waitFor(() => { expect(confirmButton(), 'the confirmation shows what is lost and what is not').not.toBeNull(); });
+		expect(document.body.textContent).toMatch(/No se borra ninguna nota del vault|No vault note is deleted/u);
+		expect(core.liveSessions.getRuntime(), 'nothing is deleted before the player confirms').not.toBeNull();
+		confirmButton()!.click();
+		await running;
+		expect(core.liveSessions.getRuntime(), 'the stuck session left the runtime key').toBeNull();
+		expect(liveNotes(test), 'no note was deleted or invented').toHaveLength(0);
+		expect(logged.mock.calls.map(([context]) => context), 'the discard leaves its own code').toContainEqual(expect.objectContaining({
+			component: 'session', action: 'session_discard', state: 'live_discard_not_written', phase: 'success', code: 'ok',
+		}));
+		await expectTheNextConnectionToStartASession(core, first);
+		await cleanup();
+
+		// A restart does not bring it back.
+		now += 60_000;
+		const again = await activate(test, factory);
+		expect(again.core.liveSessions.getRuntime()?.sessionId, 'the discarded session is not restored').not.toBe(first);
+		await again.cleanup();
+	}, 30_000);
+
+	it('keeping the session in the discard dialog deletes nothing', async () => {
+		const test = collectorHebra();
+		(test.api.ui as { openModal: unknown }).openModal = (render: (element: HTMLElement) => unknown, options?: { onClosed?: () => void }) => {
+			const element = document.createElement('div');
+			document.body.append(element);
+			render(element);
+			return { close: () => { element.remove(); options?.onClosed?.(); } };
+		};
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		test.library.noteCreate = async () => { throw new Error('the library refuses the write'); };
+		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS, 'game_exit');
+		const running = core.getProductActionController().run('discard-saved-session');
+		await vi.waitFor(() => { expect(confirmButton()).not.toBeNull(); });
+		Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Conservar sesión' || button.textContent === 'Keep session')!.click();
+		await running;
+		expect(core.liveSessions.getRuntime(), 'the session is still there').toMatchObject({ sessionId: first });
+		await cleanup();
+	}, 30_000);
+
+	it('a finish whose note cannot be saved logs note_not_saved, not the unmapped failure', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		await playUntilGameExit(core, 'a', FIRST_EPOCH, RECEPTION_MS, 'none');
+		test.library.noteCreate = async () => { throw new Error('the library refuses the write'); };
+		const logged = vi.spyOn(core.localDebugActions, 'event');
+		await expect(core.getProductActionController().run('finish-farming-session')).rejects.toThrow();
+		const failures = logged.mock.calls.map(([context]) => context as { action?: string; code?: string; state?: string })
+			.filter((context) => context.action === 'session_finish' && context.state?.startsWith('finish_'));
+		expect(failures).toContainEqual(expect.objectContaining({ code: 'storage_failure', state: 'finish_note_not_saved' }));
+		expect(core.liveSessions.getRuntime(), 'it did stop: the session is finished and waits for its note').toMatchObject({ phase: 'complete', summaryReceipt: null });
+		await cleanup();
+	}, 30_000);
 });
 
+/** The confirm button of the «discard the stuck session» dialog, in either language. */
+function confirmButton(): HTMLButtonElement | null {
+	return Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Descartar sesión' || button.textContent === 'Discard session') ?? null;
+}
+
 /** The game connects, plays `SAMPLES` seconds with the addon's real timing and exits. Resolves to the session id. */
-async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS): Promise<string> {
+async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS, ending: 'game_exit' | 'finish_button' | 'none' = 'game_exit'): Promise<string> {
 	core.settings.alertIngameEnabled = true;
 	const tracker = core.ingamePresenceTracker();
 	const source = sourceOf(epoch);
@@ -176,6 +303,13 @@ async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: st
 	const sessionId = core.getLiveSessionView().sessionId;
 	if (sessionId === null) throw new Error('No live session is running.');
 	now = readAt + SAMPLES * 1000 + 500;
+	if (ending === 'none') return sessionId;
+	if (ending === 'finish_button') {
+		// «Terminar sesión» inside the plugin, while the game stays connected.
+		await core.getProductActionController().run('finish-farming-session');
+		await settle(core);
+		return sessionId;
+	}
 	tracker.apply({ kind: 'closed', connectionId, atMs: now, lastSeenAtMs: now, reason: 'game_exit' });
 	await settle(core);
 	return sessionId;

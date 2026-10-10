@@ -6,6 +6,7 @@ import { LocalDebugActionRunner, type LocalDebugActionPort } from '../core/local
 import type { LocalDebugRecordV1 } from '../core/local-debug-contract';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from '../core/local-debug-writer';
+import { LiveSessionStopError } from '../sessions/live-session-stop-failure';
 import { SessionCommandBackendFailure, SessionCommandController, type SessionCommandPorts } from './session-command-controller';
 import {
 	createSessionCommandDispatch,
@@ -14,7 +15,7 @@ import {
 	registerSessionPalette,
 	type PaletteCommandSpec,
 } from './session-command-adapter';
-import { projectSessionCommands, SESSION_COMMAND_IDS, type SessionCommandContext } from './session-command-model';
+import { projectSessionCommand, projectSessionCommands, SESSION_COMMAND_IDS, type SessionCommandContext } from './session-command-model';
 
 describe('projectSessionCommands', () => {
 	it.each([
@@ -104,6 +105,14 @@ describe('projectSessionCommands', () => {
 		expect(commands.find((command) => command.id === 'start-farming-session')).toMatchObject({
 			id: 'start-farming-session', name: 'Iniciar sesión de farmeo',
 		});
+	});
+});
+
+describe('the live session may be discarded only when it cannot finish', () => {
+	const live = (canDiscard: boolean) => ({ source: 'nexus_inventory' as const, sessionId: 's', phase: 'complete' as const, fence: 1, canStart: false, canFinish: false, canDiscard });
+	it('offers it, named for what it is, only when the core says the session is stuck', () => {
+		expect(projectSessionCommand('discard-saved-session', live(true), 'en')).toMatchObject({ available: true, name: 'Discard the stuck session', destructive: true });
+		expect(projectSessionCommand('discard-saved-session', live(false), 'es')).toMatchObject({ available: false, name: 'Descartar la sesión atascada' });
 	});
 });
 
@@ -268,6 +277,49 @@ describe('SessionCommandController', () => {
 		const [record] = (harness.ports.diagnostics.event as ReturnType<typeof vi.fn>).mock.calls.at(-1) as [Record<string, unknown>];
 		expect(record.message).toBeUndefined();
 		expect(record.stack).toBeUndefined();
+	});
+
+	it.each([
+		['record_stale', 'storage_failure', 'local storage refused the close'],
+		['lease_not_owned', 'precondition_failed', 'another plugin instance holds'],
+		['storage_unavailable', 'storage_failure', 'local storage does not answer'],
+		['note_not_saved', 'storage_failure', 'its note could not be saved'],
+		['unknown', 'internal_failure', 'could not be finished. Try again'],
+	] as const)('a finish refused for %s keeps that reason in the log and tells the player what to do', async (reason, code, text) => {
+		const harness = controllerHarness('active');
+		harness.ports.prepare.mockResolvedValue(async () => { throw new LiveSessionStopError(reason); });
+		await expect(harness.controller.runWithOutcome('finish-farming-session')).resolves.toBe('failed');
+		expect(harness.ports.diagnostics.event).toHaveBeenCalledWith(expect.objectContaining({
+			action: 'session_finish', level: 'error', phase: 'failure', code, state: `finish_${reason}`,
+			details: { reason: 'LiveSessionStopError', code: reason },
+		}));
+		expect(harness.ports.notify).toHaveBeenCalledWith(expect.stringContaining(text));
+		expect(harness.ports.notify).not.toHaveBeenCalledWith('The session action could not be completed.');
+	});
+
+	it.each([
+		['lease_not_owned', 'another plugin instance is using it'],
+		['clock_anomaly', 'the system clock went back'],
+		['record_stale', 'another instance saved a newer record'],
+		['storage_unavailable', 'local storage does not answer'],
+	] as const)('a discard refused for %s is logged once, under its own state, and says why', async (reason, text) => {
+		const harness = controllerHarness('active');
+		harness.ports.getContext.mockReturnValue({ source: 'nexus_inventory', sessionId: 's', phase: 'complete', fence: 1, canStart: false, canFinish: false, canDiscard: true } as unknown as SessionCommandContext);
+		harness.ports.prepare.mockResolvedValue(async () => { throw new LiveSessionStopError(reason, 'discard'); });
+		await expect(harness.controller.runWithOutcome('discard-saved-session')).resolves.toBe('failed');
+		const events = (harness.ports.diagnostics.event as ReturnType<typeof vi.fn>).mock.calls.map(([record]) => record as Record<string, unknown>);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ action: 'session_discard', phase: 'failure', state: `discard_${reason}` });
+		expect(events[0]!.code).not.toBe('unknown_failure');
+		expect(harness.ports.notify).toHaveBeenCalledWith(expect.stringContaining(text));
+	});
+
+	it('the finish refused for another instance\'s reservation does not push the player to discard it', async () => {
+		const harness = controllerHarness('active');
+		harness.ports.prepare.mockResolvedValue(async () => { throw new LiveSessionStopError('lease_not_owned'); });
+		await harness.controller.runWithOutcome('finish-farming-session');
+		const [message] = harness.ports.notify.mock.calls.at(-1) as [string];
+		expect(message).not.toMatch(/discard/iu);
 	});
 
 	it('dispose prevents a confirmed late intent from executing', async () => {
