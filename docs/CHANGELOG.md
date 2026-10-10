@@ -1,5 +1,24 @@
 # Changelog
 
+## Release beta 0.6.29 - fecha de cada sesión que abre su nota, ajustes de una versión más nueva que no se pisan y una cola de confirmaciones por vault
+
+Se actualiza desde la 0.6.28 publicada. Lo que más se nota: en el historial de sesiones la fecha de cada sesión abre su
+nota de resumen, un Tyrian más antiguo ya no pisa los ajustes que guardó uno más nuevo y cada vault tiene su propia cola
+de confirmaciones. [ESTADO](ESTADO.md) separa lo medido de lo que nadie ha visto en un cliente real.
+
+- Historial de sesiones. La fecha de cada sesión abre su nota de resumen. Si la nota ya no existe donde se guardó, lo avisa
+  («Esa nota de sesión ya no está donde se guardó. Actualiza el historial») en vez de abrir una nota vacía.
+- Ajustes de una versión más nueva (DU-04). Si un Tyrian más antiguo encuentra ajustes guardados por una versión más
+  nueva, arranca usándolos sin escribirlos y lo avisa. Al guardar desde Ajustes explica por qué no se guarda; para
+  editarlos hay que actualizar el plugin.
+- Confirmaciones por vault (DU-03). Cada vault tiene su propia cola de confirmaciones, así que un vault ya no anula las
+  propuestas de otro. La primera vez, cada vault copia las propuestas pendientes de la cola común antigua.
+- Interno. Se retiran exports sin uso y los que solo usan los tests quedan marcados (DE-09). Las fixtures de economía se
+  mueven a `src/test/fixtures/economy` (DE-14). ARCHITECTURE se corrige con la matriz de imports entre carpetas generada
+  desde el código (DE-15). Los tests de arranque con motor silencioso tienen un plazo de 15 s por encima de sus esperas
+  (GR-09). ESTADO deja de arrastrar líneas previas a la publicación de la 0.6.24 (RT-11).
+- Fuera de esta versión. La sección Logros va en la 0.6.30.
+
 ## Release beta 0.6.28 - aviso cuando el vault cambia de ruta, cursor de la gráfica de sesión que no salta, aviso de puerto del juego ocupado y poda del historial de precios que no se atasca
 
 Se actualiza desde la 0.6.27 publicada. Lo que más se nota: Tyrian Companion avisa si el vault se ha renombrado o movido

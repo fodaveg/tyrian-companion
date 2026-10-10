@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.29: historial con nota abrible, ajustes de versión más nueva respetados y cola de confirmaciones por vault (10 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `15c9363` (rama `integracion/0.6.29` sobre el canal
+0.6.28, `3ee0c30`) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md) y en [ARCHITECTURE](ARCHITECTURE.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.29 se ha visto en un Obsidian ni en un Hebra reales.
+  Todo está medido en tests. En particular, la fecha del historial que abre la nota (y el aviso de nota desaparecida), el
+  arranque con ajustes de una versión más nueva (DU-04) y la copia inicial de la cola común a la de cada vault (DU-03) no
+  se han visto en un cliente.
+- Contenido: la fecha de cada sesión del historial abre su nota de resumen, con aviso si ya no existe; ajustes guardados
+  por una versión más nueva se usan sin escribirlos, con aviso y explicación al guardar (DU-04); una cola de
+  confirmaciones por vault, con copia única de las propuestas pendientes de la cola común antigua (DU-03). Interno:
+  exports sin uso (DE-09), fixtures movidas (DE-14), ARCHITECTURE con la matriz de imports generada desde el código
+  (DE-15), plazos de los tests de arranque (GR-09) y ESTADO de la 0.6.24 (RT-11).
+- Fuera de esta versión: la sección Logros va en la 0.6.30.
+- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+
 ## Canal 0.6.28 publicado: aviso de vault movido, cursor de gráfica estable y aviso de puerto ocupado (10 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Parte de `952a393` (rama `integracion/0.6.28` sobre el canal
