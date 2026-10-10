@@ -183,7 +183,7 @@ ui            14    .   17    9    5    .   63   31    3   13    5    .    .    
 wallet         2    .    .    .    1    3    3    .    .    .    .    .    .    .    .    .    .    .    .
 ```
 
-Generada el 10 oct 2026 con `node <scratchpad>/folder-imports.mjs <raíz del repo>`, un script de solo lectura que no está versionado en el repositorio (cuenta los imports por AST sobre los 382 ficheros).
+Generada el 10 oct 2026 contando los imports por AST, con el parser de TypeScript, sobre los 382 ficheros de fuente que recorre `sourceModulePaths` de `src/test/module-boundary.ts` (sin `.test.ts` ni `.d.ts`). Es una fotografía: no la regenera ningún script del repositorio.
 
 - Concentradoras de entrada: `core` (300 imports desde 15 carpetas), `economy` (187, 10), `sessions` (148, 7), `account` (112, 11).
 - Concentradoras de salida: `runtime` (272 hacia 14 carpetas), `ui` (226, 12), `sessions` (140, 9), `advisor` (122, 4).
