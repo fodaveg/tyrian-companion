@@ -51,6 +51,7 @@ export const GATE_STEPS = Object.freeze([
 	step('release-identity-contract', 'Suite del contrato de identidad', ['node', 'scripts/tests/probar-release-identity-contract.mjs'], ['test', 'check:guardrails']),
 	step('beta-channel', 'Suite del canal beta', ['node', 'scripts/tests/probar-beta-channel.mjs'], ['test', 'check:guardrails']),
 	step('beta-runtime', 'Suite del runtime beta', ['bash', 'scripts/tests/probar-beta-runtime.sh'], ['test', 'check:guardrails']),
+	step('hebra-install-suite', 'Suite de hebra:verify-install (directorio de Hebra falso, sin gh ni red)', ['node', 'scripts/tests/probar-hebra-install.mjs'], ['test', 'check:guardrails']),
 	step('support-contract', 'Suite del contrato de soporte', ['node', 'scripts/tests/probar-support-contract.mjs'], ['test', 'check:guardrails']),
 	step('h8-helper-decision-contract', 'Suite del contrato de decision del helper H8', ['node', 'scripts/tests/probar-h8-helper-decision-contract.mjs'], ['test', 'check:guardrails']),
 	step('dev-install-suite', 'Suite de dev:install (copia + sha256 sobre un directorio temporal)', ['node', 'scripts/tests/probar-dev-install.mjs'], ['test', 'check:guardrails']),

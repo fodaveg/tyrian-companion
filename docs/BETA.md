@@ -211,6 +211,10 @@ procedimiento completo y no necesita nada de esto.
    `gh release view <versión> --json assets` (`installed-asset-mismatch` si difieren). Necesita `gh`
    autenticado en el `PATH` (`--gh-cli <ruta>` para otro); `--release-tag <versión>` cambia la etiqueta
    y `--no-release-check` omite la comparación, sin que el `PASS` diga entonces `release-bytes=match`.
+   Para Hebra (instalación, no carga): `npm run hebra:verify-install -- --plugins-dir "<datos de Hebra>/plugins"`
+   lee `installed.json` y los tres ficheros de `plugins/tyrian-companion/<versión>/` y compara su sha256
+   con el registro y con el `digest` de `gh release view`. En macOS y Linux hay ruta por defecto
+   (la de la SPEC de Hebra, que puede llevar un perfil como `fresh-v1`); en Windows `--plugins-dir` es obligatorio.
    La QA de instalación o actualización no es válida sin `PASS`, incluso si
    la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
    reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del
