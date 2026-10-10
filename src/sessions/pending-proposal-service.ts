@@ -236,6 +236,9 @@ export class PendingProposalService {
 	}
 
 	async reconcile(context: ProposalReconcileContext): Promise<ProposalQueueState> {
+		// GR-05 F1: no caller reconciles through the store `dispose()` closed (the boot's `queue_initialize`, which an early
+		// unload outlives, was the one seen doing it).
+		if (this.disposed) return this.unavailable();
 		try {
 			const now = this.timestamp();
 			await this.store.transaction((raw) => {

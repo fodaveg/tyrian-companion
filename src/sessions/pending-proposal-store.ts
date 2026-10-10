@@ -74,11 +74,20 @@ export class MemoryPendingProposalStore implements PendingProposalStore {
 }
 
 /**
+ * GR-05 F1: what an operation meets because this store's own `close()` ended the queue (an open the close turned down,
+ * or no connection to open any more). The caller gets it as before; the diagnostic records a cancellation, because an
+ * orderly unload is not a storage failure. A real upgrade from another context still fails as it did.
+ */
+export class ProposalQueueClosedError extends Error {}
+
+/**
  * A connection the engine dropped, or that a `versionchange` other than an upgrade released, is replaced on the next
  * operation (DU-05); `close()` and a real upgrade end the queue for good.
  */
 export class IndexedDbPendingProposalStore implements PendingProposalStore {
 	private readonly connection: ReopeningIndexedDbConnection;
+	/** Set by `close()`: from then on, what the closed connection refuses is a cancellation (GR-05 F1). */
+	private closed = false;
 	/** The diagnostic context of the operation that is opening, if one is; an open is recorded under it. */
 	private openingContext: LocalDebugPersistenceContext | undefined;
 	/** DU-03: this store's own record is known to exist, or the common queue had nothing to adopt; it is never read again. */
@@ -103,19 +112,18 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 					databaseVersion: PROPOSAL_QUEUE_DB_VERSION,
 					schema: [{ name: PROPOSAL_QUEUE_STORE_NAME }],
 					...hooks,
-					toError: (reason) => new Error(reason === 'blocked'
-						? 'Confirmation queue upgrade was blocked.'
-						: reason === 'refused'
-							? 'Confirmation queue was closed while opening.'
-							: 'Could not open confirmation queue.'),
+					toError: (reason) => reason === 'refused'
+						? this.closedError('Confirmation queue was closed while opening.')
+						: new Error(reason === 'blocked' ? 'Confirmation queue upgrade was blocked.' : 'Could not open confirmation queue.'),
 				});
 				attempt.success();
 				return database;
 			} catch (error) {
-				attempt.failure(localDebugStorageFailureCode(error), error);
+				if (error instanceof ProposalQueueClosedError) attempt.skip('cancelled');
+				else attempt.failure(localDebugStorageFailureCode(error), error);
 				throw error;
 			}
-		}, () => new Error('Confirmation queue is unavailable.'));
+		}, () => this.closedError('Confirmation queue is unavailable.'));
 	}
 
 	async read(context?: LocalDebugPersistenceContext): Promise<unknown> {
@@ -129,7 +137,8 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return value;
 		} catch (error) {
-			attempt.failure(indexedDbFailureCode(error), error);
+			if (error instanceof ProposalQueueClosedError) attempt.skip('cancelled');
+			else attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -175,15 +184,22 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return value;
 		} catch (error) {
-			attempt.failure(indexedDbFailureCode(error), error);
+			if (error instanceof ProposalQueueClosedError) attempt.skip('cancelled');
+			else attempt.failure(indexedDbFailureCode(error), error);
 			throw error;
 		}
 	}
 
 	close(): void {
 		const attempt = this.diagnostics.begin('pending_proposal', 'close');
+		this.closed = true;
 		this.connection.close();
 		attempt.success();
+	}
+
+	/** The error of a connection that is gone: a cancellation once `close()` ran, the plain error otherwise (a real upgrade). */
+	private closedError(message: string): Error {
+		return this.closed ? new ProposalQueueClosedError(message) : new Error(message);
 	}
 
 	/**

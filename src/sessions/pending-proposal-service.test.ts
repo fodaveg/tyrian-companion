@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent } from '../core/local-debug-persistence';
 import type { InactivityStopProposal } from './inactivity-stop-detector';
 import { isPendingProposal, normalizeProposalQueueRecord, proposalIntent } from './pending-proposal-model';
 import {
@@ -14,6 +15,7 @@ import {
 	IndexedDbPendingProposalStore,
 	MemoryPendingProposalStore,
 	PROPOSAL_QUEUE_DB_NAME,
+	PROPOSAL_QUEUE_DB_VERSION,
 	vaultProposalQueueDatabaseName,
 } from './pending-proposal-store';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
@@ -48,6 +50,68 @@ describe('PendingProposalService', () => {
 		request.onsuccess?.(new Event('success'));
 		await expect(reading).rejects.toThrow('closed while opening');
 		expect(closes).toBe(1);
+	});
+
+	it('journals an open its own close cut short as cancelled, and an open the engine fails as a storage failure (GR-05 F1)', async () => {
+		const outcomes = async (closeFirst: boolean): Promise<string[]> => {
+			const events: LocalDebugPersistenceEvent[] = [];
+			const probe = new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } });
+			const request = { result: { close: () => undefined }, error: new DOMException('gone', 'UnknownError') } as unknown as IDBOpenDBRequest;
+			const store = new IndexedDbPendingProposalStore({ open: () => request } as unknown as IDBFactory, 'controlled-open', probe);
+			const writing = store.transaction(() => ({ result: undefined }));
+			if (closeFirst) { store.close(); request.onsuccess?.(new Event('success')); }
+			else request.onerror?.(new Event('error'));
+			await writing.catch(() => undefined);
+			if (closeFirst) await store.read().catch(() => undefined);
+			return events.filter(({ phase }) => phase !== 'start').map(({ operation, phase, code }) => `${operation}/${phase}/${code}`);
+		};
+
+		expect({ closed: await outcomes(true), engineError: await outcomes(false) }).toEqual({
+			closed: ['close/success/ok', 'open/skip/cancelled', 'transaction/skip/cancelled', 'read/skip/cancelled'],
+			engineError: ['open/failure/storage_failure', 'transaction/failure/storage_failure'],
+		});
+	});
+
+	it('still journals a queue retired by another context\'s upgrade as a storage failure, never as cancelled (GR-05 F1)', async () => {
+		const name = databaseName();
+		const events: LocalDebugPersistenceEvent[] = [];
+		const probe = new LocalDebugPersistenceProbe({ sink: (event) => { events.push(event); } });
+		const store = new IndexedDbPendingProposalStore(indexedDB, name, probe);
+		await store.transaction(() => ({ result: undefined, next: { version: 1, revision: 1, proposals: [], receipts: [] } }));
+		// Another context raises the version: the queue's connection gets an upgrade `versionchange` and retires, not closed.
+		const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
+			const request = indexedDB.open(name, PROPOSAL_QUEUE_DB_VERSION + 1);
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error ?? new Error('Upgrade open failed.'));
+			request.onblocked = () => reject(new Error('Upgrade open was blocked.'));
+		});
+		upgraded.close();
+		const fromUpgrade = events.length;
+
+		await expect(store.read()).rejects.toThrow('Confirmation queue is unavailable.');
+		await expect(store.transaction(() => ({ result: undefined }))).rejects.toThrow('Confirmation queue is unavailable.');
+		expect(events.slice(fromUpgrade).filter(({ phase }) => phase !== 'start').map(({ operation, phase, code }) => `${operation}/${phase}/${code}`))
+			.toEqual(['read/failure/storage_failure', 'transaction/failure/storage_failure']);
+		store.close();
+	});
+
+	it('does not reconcile through a store it already closed (GR-05 F1)', async () => {
+		let transactions = 0;
+		const store = new MemoryPendingProposalStore();
+		const counted = {
+			read: () => store.read(),
+			transaction: async <T>(mutator: Parameters<MemoryPendingProposalStore['transaction']>[0]) => {
+				transactions += 1;
+				return await store.transaction(mutator) as T;
+			},
+			close: () => undefined,
+		};
+		const queue = new PendingProposalService(counted, 'window-a');
+		queue.dispose();
+
+		await expect(queue.reconcile({ accountId: null, session: { status: 'idle' }, recoveryPending: false }))
+			.resolves.toMatchObject({ status: 'unavailable' });
+		expect(transactions).toBe(0);
 	});
 
 	it('does not publish a transaction result after service dispose', async () => {

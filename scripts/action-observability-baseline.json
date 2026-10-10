@@ -12549,9 +12549,9 @@
 				{
 					"id": "8c85853123d6891cba656c39371132cc02525a05",
 					"kind": "catch_clause",
-					"line": 257,
+					"line": 260,
 					"column": 5,
-					"endLine": 257,
+					"endLine": 260,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12565,9 +12565,9 @@
 				{
 					"id": "e97e762e6e917fe273403c0803bfd0cd6bcbddc6",
 					"kind": "catch_clause",
-					"line": 284,
+					"line": 287,
 					"column": 5,
-					"endLine": 284,
+					"endLine": 287,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12585,43 +12585,43 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "f5ac746e59ed87d6128c1ee7fee073dad400c343",
+					"id": "0bc30f2fd6086a2595c31a0f8d2c3744353dc8ff",
 					"kind": "catch_clause",
-					"line": 114,
+					"line": 121,
 					"column": 6,
-					"endLine": 117,
+					"endLine": 125,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "constructor",
-						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure) and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome."
+						"justification": "The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure), or a cancellation (attempt.skip cancelled) when the store's own close() turned the open down, and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome."
 					},
-					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure) and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
+					"reason": "Allowlisted catch_clause: The \"constructor\" owner builds the connect callback, which records a failed open on the pending_proposal probe (attempt.failure), or a cancellation (attempt.skip cancelled) when the store's own close() turned the open down, and then does a \"rethrow\", so the read or transaction that caused the open fails and records its own outcome. Verified recovery: \"rethrow\" in \"constructor\"."
 				},
 				{
-					"id": "0d96685483f6222de3420bc544030258fc826cd4",
+					"id": "bb4200181702709250ebbfaae2b358e1271486d4",
 					"kind": "catch_clause",
-					"line": 131,
+					"line": 139,
 					"column": 5,
-					"endLine": 134,
+					"endLine": 143,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "read",
-						"justification": "The \"read\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error."
+						"justification": "The \"read\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure, coded timeout when the engine did not answer in time, or attempt.skip cancelled when the store's own close() ended it) and hands the caller the same error."
 					},
-					"reason": "Allowlisted catch_clause: The \"read\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error. Verified recovery: \"rethrow\" in \"read\"."
+					"reason": "Allowlisted catch_clause: The \"read\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure, coded timeout when the engine did not answer in time, or attempt.skip cancelled when the store's own close() ended it) and hands the caller the same error. Verified recovery: \"rethrow\" in \"read\"."
 				},
 				{
 					"id": "c57b9c275048744acf89e3016738a5b19f2247b0",
 					"kind": "catch_clause",
-					"line": 164,
+					"line": 173,
 					"column": 9,
-					"endLine": 167,
+					"endLine": 176,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12633,27 +12633,27 @@
 					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"local_recovery\": a mutator that throws aborts the transaction, which rejects as a failed mutation, and the same method records that rejection through attempt.failure. Verified recovery: \"local_recovery\" in \"transaction\"."
 				},
 				{
-					"id": "85934f319cc6338d984bfb3be503a29d6e9497b0",
+					"id": "62a8b036db8405317e3576b4436a7aff707b8638",
 					"kind": "catch_clause",
-					"line": 177,
+					"line": 186,
 					"column": 5,
-					"endLine": 180,
+					"endLine": 190,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "transaction",
-						"justification": "The \"transaction\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error."
+						"justification": "The \"transaction\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure, coded timeout when the engine did not answer in time, or attempt.skip cancelled when the store's own close() ended it) and hands the caller the same error."
 					},
-					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure), coded timeout when the engine did not answer in time, and hands the caller the same error. Verified recovery: \"rethrow\" in \"transaction\"."
+					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"rethrow\" that records the one outcome on the pending_proposal probe (attempt.failure, coded timeout when the engine did not answer in time, or attempt.skip cancelled when the store's own close() ended it) and hands the caller the same error. Verified recovery: \"rethrow\" in \"transaction\"."
 				},
 				{
 					"id": "86cb84f52649dfe95e33f37ac4c6d392bac8b2c3",
 					"kind": "catch_clause",
-					"line": 197,
+					"line": 213,
 					"column": 5,
-					"endLine": 200,
+					"endLine": 216,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
