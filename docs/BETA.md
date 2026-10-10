@@ -77,7 +77,7 @@ escriben notas, cada una en lo suyo, y las sesiones quedan partidas entre las do
 
 El addon del juego habla con una sola app: la que tenga el puerto 47823. La otra lo intenta cinco
 veces y se rinde. Desde 0.6.28 lo dice: un aviso al arrancar («el puerto 47823 lo tiene otra app») y,
-en Ajustes, bajo la fila del aviso en el juego, «Otra app (¿Obsidian o Hebra?) tiene el puerto. El
+en Ajustes, bajo la fila del aviso en el juego, «Otra app (¿Tyrian Companion en otro programa?) tiene el puerto. El
 addon hablará con ella.». Si lo ves, no es un fallo del juego: la otra app está recolectando.
 
 Para dejar una en Consulta: en la que no vayas a usar como recolector, abre Ajustes, fila **Modo de esta

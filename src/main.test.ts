@@ -2311,7 +2311,7 @@ describe('in-game alert server start diagnostics', () => {
 			expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
 			expect(emitNotice).toHaveBeenCalledTimes(1);
 			expect(emitNotice).toHaveBeenCalledWith(expect.stringContaining('Port 47823'), 'ingame_port_busy');
-			expect(emitNotice.mock.calls[0]?.[0]).toContain('other Tyrian Companion host');
+			expect(emitNotice.mock.calls[0]?.[0]).toContain('Tyrian Companion in another program');
 		} finally { alertIngameServerMocks.start.mockReset(); }
 	});
 

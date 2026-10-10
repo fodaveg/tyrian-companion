@@ -161,10 +161,10 @@ describe('settings page: one list, a closed maintenance block', () => {
 		const { tab, container } = mountPage(p as never);
 		const feedback = (): HTMLElement | null => container.querySelector('[role="alert"], [role="status"]');
 		code = 'EADDRINUSE'; tab.refreshAlertIngameServerRow();
-		expect(container.textContent).toContain('Another app (Obsidian or Hebra?) has the port. The addon will talk to it.');
+		expect(container.textContent).toContain('Another app (Tyrian Companion elsewhere?) has the port. The addon will talk to it.');
 		code = 'EACCES'; tab.refreshAlertIngameServerRow();
 		expect(container.textContent).toContain('The server could not start (EACCES).');
-		expect(container.textContent).not.toContain('Another app (Obsidian or Hebra?)');
+		expect(container.textContent).not.toContain('Another app (Tyrian Companion elsewhere?)');
 		expect(feedback()).not.toBeNull();
 	});
 
