@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AccountAchievementEntry } from '../account/account-achievements';
-import type { AchievementCategory, AchievementDetail } from './achievement-catalog-model';
+import { parseAchievementCategories, parseAchievementPage, type AchievementCategory, type AchievementDetail } from './achievement-catalog-model';
+import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from './api-fixtures';
 import {
 	achievementWikiAnchorUrl,
 	achievementWikiSearchUrl,
@@ -143,7 +144,8 @@ const META_ID = 9417;
 function meta(overrides: Partial<AchievementDetail> = {}): AchievementDetail {
 	return detail({
 		id: META_ID, name: 'Dominio de las Hondonadas', flags: ['RepairOnLogin', 'CategoryDisplay', 'MoveToTop', 'Permanent'],
-		tiers: [{ count: 9, points: 1 }, { count: 18, points: 2 }, { count: 27, points: 2 }, { count: 36, points: 5 }], bits: [],
+		// The real tiers go to 36 of the 47 members of its category; the fixture lists 5, so it asks for 5 (`plausibleCategoryMembers`).
+		tiers: [{ count: 1, points: 1 }, { count: 3, points: 2 }, { count: 5, points: 5 }], bits: [],
 		rewards: [{ kind: 'item', itemId: 110_148, count: 1 }, { kind: 'mastery', masteryId: 956, region: 'Magic' }], ...overrides,
 	});
 }
@@ -223,6 +225,49 @@ describe('trackedReadingIds', () => {
 		expect(trackedReadingIds({ trackedIds: [META_ID], details: MEMBER_DETAILS, retired: new Set([META_ID]), categories: CATEGORIES })).toEqual([META_ID]);
 		expect(trackedReadingIds({ trackedIds: [META_ID], details: new Map(), retired: new Set(), categories: CATEGORIES })).toEqual([META_ID]);
 		expect(trackedReadingIds({ trackedIds: [10], details: new Map([[10, detail()]]), retired: new Set(), categories: [{ id: 2, name: 'X', order: 1, icon: null, achievementIds: [10, 11] }] })).toEqual([10]);
+	});
+});
+
+describe('a meta whose category cannot be what its bar counts («Temporadas de los dragones», 5790)', () => {
+	// The API as it answered on 10 oct 2026: the bar asks for 24 «Return» metas, its category lists five other achievements.
+	const details = new Map(parseAchievementPage(SEASONS_OF_THE_DRAGONS_PAGE)!.details.map((each) => [each.id, each]));
+	const categories = parseAchievementCategories(SEASONS_OF_THE_DRAGONS_CATEGORIES)!;
+	const read = { trackedIds: [SEASONS_OF_THE_DRAGONS_ID], entries: [entry({ id: SEASONS_OF_THE_DRAGONS_ID, current: 3, max: 24 })] };
+
+	it('keeps the bar at 24 and lists no elements instead of the five of a category that is not its own', () => {
+		const [view] = buildTrackedAchievementsView({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details, englishNames: new Map(), retired: new Set(), reading: read, categories });
+		expect(view!.status).toEqual({ kind: 'in_progress', current: 3, max: 24 });
+		expect(view!.elements).toEqual({ source: 'category', items: [], done: 0, total: 0 });
+	});
+
+	it('does not ask the account about the members of that category either', () => {
+		expect(trackedReadingIds({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details, retired: new Set(), categories })).toEqual([SEASONS_OF_THE_DRAGONS_ID]);
+	});
+
+	it('still lists the category when it can hold what the bar counts', () => {
+		const small = new Map(details);
+		small.set(SEASONS_OF_THE_DRAGONS_ID, { ...details.get(SEASONS_OF_THE_DRAGONS_ID)!, tiers: [{ count: 5, points: 25 }] });
+		const [view] = buildTrackedAchievementsView({ trackedIds: [SEASONS_OF_THE_DRAGONS_ID], details: small, englishNames: new Map(), retired: new Set(), reading: read, categories });
+		expect(view!.elements).toMatchObject({ source: 'category', total: 5 });
+	});
+});
+
+describe('achievements that share a name are never merged', () => {
+	const details = new Map(parseAchievementPage(SAME_NAME_PAGE)!.details.map((each) => [each.id, each]));
+	const categories = parseAchievementCategories(SAME_NAME_CATEGORIES)!;
+
+	it('tracks «Portero de bar» (8903, 9307) and «Muerte al Dominio» (5391, 5403) as four separate achievements, each with its own detail', () => {
+		const views = buildTrackedAchievementsView({ trackedIds: [8903, 9307, 5391, 5403], details, englishNames: new Map(), retired: new Set(), reading: null, categories });
+		expect(views.map((view) => [view.id, view.name])).toEqual([[8903, 'Portero de bar'], [9307, 'Portero de bar'], [5391, 'Muerte al Dominio'], [5403, 'Muerte al Dominio']]);
+	});
+
+	it('lists both as elements of a category meta', () => {
+		const metaDetail = meta({ tiers: [{ count: 2, points: 5 }] });
+		const [view] = buildTrackedAchievementsView({
+			trackedIds: [META_ID], details: new Map([...details, [META_ID, metaDetail]]), englishNames: new Map(), retired: new Set(), reading: null,
+			categories: [{ id: 1, name: 'Meta', order: 1, icon: null, achievementIds: [META_ID, 5391, 5403] }],
+		});
+		expect(elements(view!).map((element) => [element.refId, element.text])).toEqual([[5391, 'Muerte al Dominio'], [5403, 'Muerte al Dominio']]);
 	});
 });
 

@@ -3,6 +3,7 @@ import {
 	categoryMembersOf,
 	isCategoryMetaAchievement,
 	isPeriodicAchievement,
+	plausibleCategoryMembers,
 	type AchievementBit,
 	type AchievementCategory,
 	type AchievementDetail,
@@ -125,8 +126,10 @@ export function buildTrackedAchievementsView(input: {
 }): TrackedAchievementView[] {
 	return input.trackedIds.map((id) => {
 		const detail = input.details.get(id) ?? null;
-		const members = detail !== null && !input.retired.has(id) && isCategoryMetaAchievement(detail)
+		const listed = detail !== null && !input.retired.has(id) && isCategoryMetaAchievement(detail)
 			? categoryMembersOf(input.categories ?? [], id) : null;
+		// A category too small for what the meta counts lists nothing: «La API no lista los elementos de este logro», not a short list under a bigger bar.
+		const members = detail === null || listed === null ? null : plausibleCategoryMembers(detail, listed) ?? [];
 		return buildTrackedAchievementView({
 			id,
 			detail,
@@ -337,7 +340,8 @@ export function trackedReadingIds(input: {
 	for (const id of input.trackedIds) {
 		const detail = input.details.get(id);
 		if (detail === undefined || input.retired.has(id) || !isCategoryMetaAchievement(detail)) continue;
-		for (const member of categoryMembersOf(input.categories, id) ?? []) ids.add(member);
+		const listed = categoryMembersOf(input.categories, id);
+		for (const member of listed === null ? [] : plausibleCategoryMembers(detail, listed) ?? []) ids.add(member);
 	}
 	return [...ids];
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE } from './api-fixtures';
 import {
 	ACHIEVEMENT_CATEGORIES_SCHEMA,
 	categoryMembersOf,
@@ -219,5 +220,15 @@ describe('searchAchievementIndex', () => {
 	it('answers nothing for an empty text without a category, and honours the limit', () => {
 		expect(searchAchievementIndex(INDEX, { query: '   ', categoryId: null })).toEqual([]);
 		expect(searchAchievementIndex(INDEX, { query: 'de', categoryId: null }, 2)).toHaveLength(2);
+	});
+});
+
+describe('achievements with the same name (real ids of the API, 10 oct 2026)', () => {
+	it('are all indexed and all found: the index is by id, never by name', () => {
+		const plan = planAchievementIndex(parseAchievementCategories(SAME_NAME_CATEGORIES)!);
+		expect(plan.ids).toEqual([5391, 5403, 8903, 9307]);
+		const entries = parseAchievementPage(SAME_NAME_PAGE)!.details.map((detail) => toAchievementIndexEntry(detail, plan.categoryOf.get(detail.id) ?? null));
+		expect(searchAchievementIndex(entries, { query: 'portero de bar', categoryId: null }).map((entry) => [entry.id, entry.categoryId])).toEqual([[8903, 463], [9307, 482]]);
+		expect(searchAchievementIndex(entries, { query: 'muerte al dominio', categoryId: null }).map((entry) => entry.id)).toEqual([5403, 5391]);
 	});
 });

@@ -3323,7 +3323,7 @@
 	width: var(--size-4-4); height: var(--size-4-4); border: 1px solid var(--text-faint); border-radius: var(--radius-s);
 	font-size: var(--font-smallest); line-height: calc(var(--size-4-4) - 2px); text-align: center; color: var(--text-on-accent);
 }
-.tyrian-achievements__elements li[data-state="done"]::before { content: '✓' / ''; background: var(--interactive-accent); border-color: var(--interactive-accent); }
+.tyrian-achievements__elements li[data-state="done"]::before { content: '✓'; content: '✓' / ''; background: var(--interactive-accent); border-color: var(--interactive-accent); }
 .tyrian-achievements__elements li[data-state="done"] > a, .tyrian-achievements__elements li[data-state="done"] > span { color: var(--text-muted); }
 .tyrian-achievements__elements li[data-state="unknown"]::before { border-style: dashed; }
 .tyrian-achievements__elements-count { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }

@@ -103,6 +103,19 @@ export function categoryMembersOf(categories: readonly AchievementCategory[], id
 	return category === undefined ? null : category.achievementIds.filter((member) => member !== id);
 }
 
+/**
+ * The members that can be the elements of a category meta, or null when the category cannot be
+ * where its count comes from. A meta counts up to its last tier (`tiers`); a category that lists
+ * fewer achievements than that cannot be what it counts. Measured on «Temporadas de los dragones»
+ * (5790, 10 oct 2026): the bar asks for 24 «Return» metas, but its category «Eventos actuales»
+ * lists it with five unrelated achievements, and the API links the real ones (33 «Regreso a …»
+ * metas, each in its own category) to it nowhere. Showing those five under a 24 was the bug.
+ */
+export function plausibleCategoryMembers(detail: AchievementDetail, members: readonly number[]): number[] | null {
+	const tierMax = detail.tiers.length === 0 ? null : Math.max(...detail.tiers.map((tier) => tier.count));
+	return tierMax !== null && members.length < tierMax ? null : [...members];
+}
+
 /** What the search needs of each achievement, and nothing else: about 8,355 of them per language. */
 export interface AchievementIndexEntry {
 	id: number;

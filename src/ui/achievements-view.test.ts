@@ -2,8 +2,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { AccountAchievementEntry } from '../account/account-achievements';
-import { searchAchievementIndex, type AchievementCategory, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
+import { parseAchievementCategories, parseAchievementPage, searchAchievementIndex, toAchievementIndexEntry, type AchievementCategory, type AchievementDetail, type AchievementIndexEntry } from '../achievements/achievement-catalog-model';
 import { achievementNameKey, type AchievementFreshness, type AchievementIndexBuildOptions, type AchievementIndexBuildResult, type AchievementNameEntry, type AchievementNameRef } from '../achievements/achievement-catalog-service';
+import { SAME_NAME_CATEGORIES, SAME_NAME_PAGE, SEASONS_OF_THE_DRAGONS_CATEGORIES, SEASONS_OF_THE_DRAGONS_ID, SEASONS_OF_THE_DRAGONS_PAGE } from '../achievements/api-fixtures';
 import type { TrackedProgressRefreshResult } from '../achievements/tracked-progress-service';
 import { installDomHelpers } from '../host/dom-polyfill';
 import { AchievementsView, type AchievementCatalogPort, type AchievementsViewActions, type TrackedProgressPort } from './achievements-view';
@@ -81,6 +82,8 @@ function harness(options: {
 	icons?: Record<string, string>;
 	/** The `item_id` of each minipet, by `achievementNameKey`. */
 	miniItems?: Record<string, number>;
+	/** The light index the search runs over, instead of the 120 of the fixture. */
+	index?: AchievementIndexEntry[];
 	/** The public categories, instead of the four of the fixture. */
 	categories?: AchievementCategory[];
 	/** How many of the first `loadCategories` calls fail (the network, then it comes back). */
@@ -135,7 +138,7 @@ function harness(options: {
 			indexReady = true;
 			return { status: 'complete', total: 450, freshness: fresh(), saved: options.indexSaved ?? true };
 		},
-		search: (_locale, filter, limit) => indexReady ? searchAchievementIndex(INDEX, filter, limit) : null,
+		search: (_locale, filter, limit) => indexReady ? searchAchievementIndex(options.index ?? INDEX, filter, limit) : null,
 		loadNames: async (askedLocale, refs, namesOptions = {}) => {
 			nameRequests.push({ locale: askedLocale, refs: [...refs], signal: namesOptions.signal });
 			if (options.holdNames) await namesGate.wait;
@@ -895,7 +898,8 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 	/** 9417 as the API gives it: `CategoryDisplay`, no bits, the mirror 110148 and a Magic mastery as rewards. */
 	const meta = (): AchievementDetail => detail(META_ID, {
 		name: 'Dominio de las Hondonadas del Manantial de Ley', flags: ['RepairOnLogin', 'CategoryDisplay', 'MoveToTop', 'Permanent'], bits: [],
-		tiers: [{ count: 9, points: 1 }, { count: 18, points: 2 }, { count: 27, points: 2 }, { count: 36, points: 5 }],
+		// The real tiers go to 36 of the 47 members of its category; the fixture lists 3, so it asks for 3 (`plausibleCategoryMembers`).
+		tiers: [{ count: 1, points: 1 }, { count: 2, points: 4 }, { count: 3, points: 5 }],
 		rewards: [{ kind: 'item', itemId: 110_148, count: 1 }, { kind: 'mastery', masteryId: 956, region: 'Magic' }],
 	});
 	const LEYSPRING: AchievementCategory = { id: 486, name: 'Leyspring Hollows', order: 4, icon: null, achievementIds: [9351, META_ID, 9410, 9468] };
@@ -1029,7 +1033,7 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		await unread.settle();
 		expect(counter(unread)).toBe('2 elementos · sin leer');
 		expect(rows(unread).map((row) => row.getAttribute('data-state'))).toEqual(['unknown', 'unknown']);
-		const single = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, { ...LEYSPRING, achievementIds: [META_ID, 9468] }], noReading: true });
+		const single = harness({ tracked: [META_ID], details: new Map([...members, [META_ID, { ...meta(), tiers: [{ count: 1, points: 5 }] }]]), categories: [...CATEGORIES, { ...LEYSPRING, achievementIds: [META_ID, 9468] }], noReading: true });
 		single.view.mount();
 		await single.settle();
 		expect(counter(single)).toBe('1 elemento · sin leer');
@@ -1122,5 +1126,68 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		expect(h.container.querySelector('.tyrian-achievements__body h4')?.textContent).toBe('Elements');
 		expect(counter(h)).toBe('Done: 1 of 2');
 		expect(rows(h).map((row) => row.querySelector('.tyrian-visually-hidden')?.textContent)).toEqual(['pending: ', 'done: ']);
+	});
+});
+
+describe('AchievementsView: real data of the API (10 oct 2026) and the refresh of a meta', () => {
+	const detailsOf = (page: unknown) => new Map(parseAchievementPage(page)!.details.map((each) => [each.id, each]));
+	const rows = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll<HTMLElement>('.tyrian-achievements__elements li'));
+
+	it('«Temporadas de los dragones» counts 24 and does not list the five achievements of a category that is not its own', async () => {
+		const h = harness({
+			tracked: [SEASONS_OF_THE_DRAGONS_ID], details: detailsOf(SEASONS_OF_THE_DRAGONS_PAGE), categories: parseAchievementCategories(SEASONS_OF_THE_DRAGONS_CATEGORIES)!,
+			entries: [{ id: SEASONS_OF_THE_DRAGONS_ID, done: false, current: 3, max: 24, repeated: null, bits: null }],
+		});
+		h.view.mount();
+		await h.settle();
+		expect(h.items()[0]!.querySelector('.tyrian-achievements__count')?.textContent).toBe('3/24');
+		expect(rows(h)).toEqual([]);
+		expect(h.container.querySelector('.tyrian-achievements__elements-count')?.textContent).toBe('La API no lista los elementos de este logro.');
+		// No details of the five were asked for: nothing is shown or read for them.
+		expect(h.calls.filter((call) => call.startsWith('details:'))).toEqual([`details:${String(SEASONS_OF_THE_DRAGONS_ID)}`]);
+	});
+
+	it('«Actualizar progreso» asks about the members of a meta even when the list has not finished loading', async () => {
+		const meta = detail(9417, { name: 'Dominio', flags: ['CategoryDisplay'], bits: [], tiers: [{ count: 2, points: 5 }] });
+		const h = harness({
+			tracked: [9417], details: new Map([[9417, meta], [9351, detail(9351, { bits: [] })], [9468, detail(9468, { bits: [] })]]),
+			categories: [{ id: 486, name: 'Leyspring Hollows', order: 4, icon: null, achievementIds: [9351, 9417, 9468] }], noReading: true,
+		});
+		h.view.mount();
+		// Pressed at once: the first load of the list (and its `this.tracked`) has not arrived.
+		h.refreshButton().click();
+		await h.settle();
+		expect(h.refresh).toHaveBeenCalledTimes(1);
+		expect(h.refresh).toHaveBeenCalledWith(VAULT, [9417, 9351, 9468]);
+	});
+
+	it('achievements with the same name are all in the results, told apart by category and id, and all followable', async () => {
+		const page = parseAchievementPage(SAME_NAME_PAGE)!.details;
+		const plan = parseAchievementCategories(SAME_NAME_CATEGORIES)!;
+		const categoryOf = new Map(plan.flatMap((category) => category.achievementIds.map((id) => [id, category.id] as const)));
+		const index = page.map((each) => toAchievementIndexEntry(each, categoryOf.get(each.id) ?? null));
+		const h = harness({ index, categories: plan });
+		h.view.mount();
+		await h.settle();
+		await h.search('portero');
+		expect(h.results().map((row) => [row.querySelector('strong')?.textContent, row.querySelector('small')?.textContent])).toEqual([
+			['Portero de bar', 'Litoral del Naufragio · #8903'], ['Portero de bar', 'Jardín de la Eternidad · #9307'],
+		]);
+		await h.search('muerte al');
+		expect(h.results().map((row) => [row.querySelector('small')?.textContent, row.querySelector('button')?.getAttribute('data-id')])).toEqual([
+			['Jormag desatado · #5403', '5403'], ['Jormag desatado · #5391', '5391'],
+		]);
+		// A name that is alone carries no id.
+		await h.search('portero de bar');
+		expect(h.results()).toHaveLength(2);
+	});
+
+	it('followed achievements with the same name are all listed, each with its category and id', async () => {
+		const h = harness({ tracked: [8903, 9307, 5403], details: detailsOf(SAME_NAME_PAGE), categories: parseAchievementCategories(SAME_NAME_CATEGORIES)! });
+		h.view.mount();
+		await h.settle();
+		expect(h.items().map((item) => item.querySelector('.tyrian-achievements__name')?.textContent)).toEqual([
+			'Portero de bar (Litoral del Naufragio · #8903)', 'Portero de bar (Jardín de la Eternidad · #9307)', 'Muerte al Dominio',
+		]);
 	});
 });

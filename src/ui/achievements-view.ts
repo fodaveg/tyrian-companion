@@ -1,4 +1,5 @@
 import type { AchievementCategory, AchievementGroup, AchievementIndexEntry } from '../achievements/achievement-catalog-model';
+import { normalizeAchievementSearchText } from '../achievements/achievement-catalog-model';
 import {
 	achievementNameKey,
 	type AchievementCatalogService,
@@ -453,7 +454,9 @@ export class AchievementsView {
 		this.refreshState = { status: 'running' };
 		this.renderBar();
 		this.renderNotice();
-		const result = await services.progress.refresh(services.vaultId, this.readingIds());
+		const ids = await this.readingIds(services);
+		if (this.disposed) return;
+		const result = await services.progress.refresh(services.vaultId, ids);
 		if (this.disposed) return;
 		this.refreshState = result.status === 'ok' ? { status: 'idle' } : { status: 'failed', reason: result.reason };
 		if (result.status === 'ok') {
@@ -466,13 +469,21 @@ export class AchievementsView {
 
 	/**
 	 * What «Actualizar progreso» asks the account about: the tracked ids and, for a meta of its
-	 * category, the members of the category (so each element gets its done/pending). The same
-	 * one reading as before; only its filter grows.
+	 * category, the members of the category (so each element gets its done/pending). It never
+	 * depends on what the list has painted: a list still loading, or a meta whose details are not
+	 * in `this.tracked`, left the members unasked and every element «sin leer». The details and
+	 * the categories are public reads the service keeps, so asking again costs nothing.
 	 */
-	private readingIds(): number[] {
+	private async readingIds(services: AchievementsViewServices): Promise<number[]> {
 		const ids = this.actions.getTrackedAchievementIds();
-		if (this.tracked.status !== 'ready') return [...ids];
-		return trackedReadingIds({ trackedIds: ids, details: this.tracked.details.details, retired: this.tracked.details.retired, categories: this.tracked.categories });
+		if (ids.length === 0) return [];
+		const locale = this.actions.getLocale();
+		const key = `${locale}:${ids.join(',')}:${services.vaultId}`;
+		const cached = this.detailsKey === key && this.details !== null && !this.details.failed;
+		const [details, categories] = await Promise.all([cached ? this.details! : services.catalog.loadDetails(locale, ids), services.catalog.loadCategories(locale)]);
+		// What was just read is what the list reload right after the reading will use: one read, not two.
+		if (!cached && !details.failed) { this.details = details; this.detailsKey = key; }
+		return trackedReadingIds({ trackedIds: ids, details: details.details, retired: details.retired, categories: categories.status === 'ok' ? categories.value : [] });
 	}
 
 	// ----- search --------------------------------------------------------------------------------
@@ -731,11 +742,14 @@ export class AchievementsView {
 		const results = this.results ?? [];
 		const tracked = new Set(this.actions.getTrackedAchievementIds());
 		const names = this.catalog.status === 'ready' ? this.catalog.categoryNames : new Map<number, string>();
+		const sharedNames = sharedNameKeys(results.slice(0, this.shown).map((entry) => entry.name));
 		for (const entry of results.slice(0, this.shown)) {
 			const row = this.resultsList.createEl('li', { cls: 'tyrian-achievements__result' });
 			const text = row.createDiv({ cls: 'tyrian-achievements__result-text' });
 			text.createEl('strong', { text: entry.name });
-			text.createEl('small', { text: entry.categoryId === null ? t.t('achievements.search.noCategory') : names.get(entry.categoryId) ?? t.t('achievements.search.noCategory') });
+			const categoryName = entry.categoryId === null ? t.t('achievements.search.noCategory') : names.get(entry.categoryId) ?? t.t('achievements.search.noCategory');
+			// Achievements of the same name are all listed (they are different ids); the id tells them apart when the category does not.
+			text.createEl('small', { text: sharedNames.has(normalizeAchievementSearchText(entry.name)) ? `${categoryName} · #${String(entry.id)}` : categoryName });
 			const following = tracked.has(entry.id);
 			const button = row.createEl('button', {
 				text: following ? t.t('achievements.search.following') : t.t('achievements.search.follow'),
@@ -760,16 +774,21 @@ export class AchievementsView {
 			this.trackedList.createEl('p', { text: this.catalog.status === 'starting' ? t.t('achievements.view.runtimeStarting') : t.t('achievements.tracked.loading') });
 			return;
 		}
+		const sharedNames = sharedNameKeys(this.tracked.views.flatMap((view) => view.name === null ? [] : [view.name]));
+		const categories = this.tracked.categories;
 		this.tracked.views.forEach((view, index) => {
-			const item = this.renderTrackedItem(view, index);
+			const shared = view.name !== null && sharedNames.has(normalizeAchievementSearchText(view.name));
+			const category = shared ? categories.find((candidate) => candidate.achievementIds.includes(view.id)) ?? null : null;
+			const item = this.renderTrackedItem(view, index, shared ? `${category === null ? '' : `${category.name} · `}#${String(view.id)}` : null);
 			if (open.has(String(view.id))) item.setAttribute('open', '');
 			this.trackedList.append(item);
 		});
 	}
 
-	private renderTrackedItem(view: TrackedAchievementView, index: number): HTMLElement {
+	/** `tag` tells apart tracked achievements that share a name (category and id); null when the name is not shared. */
+	private renderTrackedItem(view: TrackedAchievementView, index: number, tag: string | null): HTMLElement {
 		const t = this.t;
-		const name = this.nameOf(view);
+		const name = tag === null ? this.nameOf(view) : `${this.nameOf(view)} (${tag})`;
 		const item = createEl('details', { cls: 'tyrian-achievements__item', attr: { 'data-id': String(view.id), 'data-status': view.status.kind } });
 		const summary = item.createEl('summary');
 		summary.createSpan({ cls: 'tyrian-achievements__name', text: name });
@@ -951,6 +970,17 @@ function nameRefsOf(views: readonly TrackedAchievementView[]): AchievementNameRe
 		}
 	}
 	return [...refs.values()];
+}
+
+/** The normalized names that more than one achievement of the list carries. */
+function sharedNameKeys(names: readonly string[]): Set<string> {
+	const seen = new Set<string>();
+	const shared = new Set<string>();
+	for (const name of names) {
+		const key = normalizeAchievementSearchText(name);
+		if (seen.has(key)) shared.add(key); else seen.add(key);
+	}
+	return shared;
 }
 
 /** The visible n/m of a followed achievement, when it has one. */
