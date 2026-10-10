@@ -284,17 +284,17 @@ describe('the boot_timings line (Z26)', () => {
 		expect(lines).toHaveLength(1);
 		const bootMs = (lines[0]!.details as { bootMs: Record<string, number> }).bootMs;
 		expect(Object.keys(bootMs).sort()).toEqual([
-			'diagnostics', 'halloween', 'live', 'mode', 'module', 'onload', 'painted', 'priceHistory', 'ready', 'registered',
+			'diagnostics', 'halloween', 'live', 'mode', 'module', 'onload', 'priceHistory', 'ready', 'registered', 'renderRequested',
 			'runtimeStart', 'sessions', 'settings',
 		]);
 		const values = Object.values(bootMs);
 		expect(values.every((value) => Number.isInteger(value) && value >= 0)).toBe(true);
 		expect(values).toEqual([...values].sort((left, right) => left - right));
-		// The sequence the start walks: runtimeStart..painted are in this order whatever the diagnostics' own timing.
+		// The sequence the start walks: runtimeStart..renderRequested are in this order whatever the diagnostics' own timing.
 		const order = Object.keys(bootMs);
 		for (const [earlier, later] of [['module', 'onload'], ['onload', 'settings'], ['settings', 'registered'], ['registered', 'runtimeStart'],
 			['runtimeStart', 'mode'], ['mode', 'sessions'], ['sessions', 'live'], ['live', 'ready'], ['ready', 'priceHistory'],
-			['priceHistory', 'halloween'], ['halloween', 'painted']] as const) {
+			['priceHistory', 'halloween'], ['halloween', 'renderRequested']] as const) {
 			expect(order.indexOf(earlier), `${earlier} before ${later}`).toBeLessThan(order.indexOf(later));
 		}
 		expect(lines[0]).toMatchObject({ component: 'plugin', action: 'plugin_load', state: 'boot_timings', phase: 'success' });
@@ -327,7 +327,7 @@ describe('the boot_timings line (Z26)', () => {
 		const details = bootLines(records)[0]!.details as { bootMs: Record<string, number>; result: string; reason: string };
 		expect(details.result).toBe('incomplete');
 		expect(details.reason).toBe('sessions');
-		expect(Object.keys(details.bootMs)).not.toContain('painted');
+		expect(Object.keys(details.bootMs)).not.toContain('renderRequested');
 		await runtime.stop();
 	}, 30_000);
 });

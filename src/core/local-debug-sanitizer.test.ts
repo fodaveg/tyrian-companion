@@ -146,10 +146,10 @@ describe('local debug sanitizer: boot timings', () => {
 
 	it('keeps the phases and counters when they are integers', () => {
 		const record = bootRecord({
-			bootMs: { module: 812, onload: 840, painted: 2_301 }, bootCounts: { pages: 3, notesRead: 120, newlyAdopted: 0 },
+			bootMs: { module: 812, onload: 840, renderRequested: 2_301 }, bootCounts: { pages: 3, notesRead: 120, newlyAdopted: 0 },
 		});
 		expect(record.details).toEqual({
-			bootMs: { module: 812, onload: 840, painted: 2_301 }, bootCounts: { pages: 3, notesRead: 120, newlyAdopted: 0 },
+			bootMs: { module: 812, onload: 840, renderRequested: 2_301 }, bootCounts: { pages: 3, notesRead: 120, newlyAdopted: 0 },
 		});
 	});
 
@@ -176,7 +176,7 @@ describe('local debug sanitizer: boot timings', () => {
 	});
 
 	it('survives re-sanitization on export unchanged', () => {
-		const record = bootRecord({ bootMs: { module: 812, painted: 2_301 } });
-		expect(resanitizeLocalDebugRecord(record)?.details).toEqual({ bootMs: { module: 812, painted: 2_301 } });
+		const record = bootRecord({ bootMs: { module: 812, renderRequested: 2_301 } });
+		expect(resanitizeLocalDebugRecord(record)?.details).toEqual({ bootMs: { module: 812, renderRequested: 2_301 } });
 	});
 });

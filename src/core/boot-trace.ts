@@ -12,7 +12,7 @@
 export const BOOT_PHASES = [
 	'module', 'hebraReady', 'hebraSettings', 'hebraIndex', 'hebraSeed', 'hebraHost',
 	'onload', 'settings', 'diagnostics', 'registered', 'runtimeStart', 'mode', 'sessions', 'live', 'ready',
-	'priceHistory', 'halloween', 'painted',
+	'priceHistory', 'halloween', 'renderRequested',
 ] as const;
 export type BootPhase = typeof BOOT_PHASES[number];
 

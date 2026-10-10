@@ -71,11 +71,11 @@ describe('boot_timings on Hebra', () => {
 		const details = lines[0]!.details as { bootMs: Record<string, number>; bootCounts: Record<string, number> };
 		const phases = Object.keys(details.bootMs);
 		expect(phases.slice(0, 6)).toEqual(['module', 'hebraReady', 'hebraSettings', 'hebraIndex', 'hebraSeed', 'hebraHost']);
-		for (const phase of ['onload', 'settings', 'registered', 'diagnostics', 'runtimeStart', 'mode', 'sessions', 'live', 'ready', 'priceHistory', 'halloween', 'painted']) {
+		for (const phase of ['onload', 'settings', 'registered', 'diagnostics', 'runtimeStart', 'mode', 'sessions', 'live', 'ready', 'priceHistory', 'halloween', 'renderRequested']) {
 			expect(phases, phase).toContain(phase);
 		}
 		expect(phases.indexOf('hebraHost')).toBeLessThan(phases.indexOf('onload'));
-		expect(phases.indexOf('painted')).toBe(phases.length - 1);
+		expect(phases.indexOf('renderRequested')).toBe(phases.length - 1);
 		const values = Object.values(details.bootMs);
 		expect(values.every((value) => Number.isInteger(value))).toBe(true);
 		expect(values).toEqual([...values].sort((left, right) => left - right));

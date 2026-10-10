@@ -175,13 +175,15 @@ Traza de tiempos de arranque (Z26): cada arranque escribe UNA línea `plugin_loa
 `details.bootMs`, un objeto plano `{fase: milisegundos}` (enteros, desde la evaluación del módulo, en el orden en que
 se alcanzó cada fase). Las fases comunes son `module`, `onload`, `settings` (tras `boot()`), `diagnostics` (registro
 listo), `registered` (vistas y comandos), `runtimeStart`, `mode` (modo recolector leído), `sessions`, `live` (sesión en
-vivo), `ready` (`runtimeReady`), `priceHistory`, `halloween` y `painted` (tras pedir el primer repintado completo; el
-repintado coalescido corre en la microtarea siguiente). En Hebra se añaden antes `hebraReady` (`ui.onReady`),
+vivo), `ready` (`runtimeReady`), `priceHistory`, `halloween` y `renderRequested` (justo después de pedir el primer repintado
+completo; el repintado diferido corre después). En Hebra se añaden antes `hebraReady` (`ui.onReady`),
 `hebraSettings`, `hebraIndex` (índice de rutas cargado), `hebraSeed` (recorrido inicial) y `hebraHost`, y
-`details.bootCounts` lleva `pages`, `notesRead` y `newlyAdopted` de ese recorrido. La línea sale al llegar a `painted`;
+`details.bootCounts` lleva `pages`, `notesRead` y `newlyAdopted` de ese recorrido. La línea sale al llegar a `renderRequested`;
 si `initializeRuntime` falla antes, sale con lo que hubiera y `result: 'incomplete'` + `reason` con la última fase
 alcanzada. Las marcas son `performance.now()` en un objeto en memoria (`src/core/boot-trace.ts`): sin E/S ni formateo con
-el registro apagado. El saneador admite `bootMs` y `bootCounts` solo en `plugin` y solo como mapa plano de enteros no
+el registro apagado. Los valores de `bootMs` son milisegundos acumulados desde el origen de la traza, no duraciones por
+fase: la duración de una fase se obtiene restando dos marcas. Ninguna marca mide el primer pintado visible:
+`renderRequested` solo dice que la inicialización terminó y que se pidió el repintado. El saneador admite `bootMs` y `bootCounts` solo en `plugin` y solo como mapa plano de enteros no
 negativos con nombre corto alfanumérico: una cadena, un objeto anidado o un número negativo o fraccionario se descartan.
 
 `scripts/action-observability-census.mjs` mantiene un inventario AST exacto y sin contenido de cada

@@ -855,16 +855,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * Writes the `plugin_load` line `boot_timings` once: after the first complete paint, or from the failure handler of the
+	 * Writes the `plugin_load` line `boot_timings` once: once the first repaint is requested, or from the failure handler of the
 	 * boot when it broke halfway. The phases come in the order they were reached, in milliseconds since the module began
-	 * evaluating, and (Hebra) the counters of the first library walk. A start that did not reach `painted` says
+	 * evaluating, and (Hebra) the counters of the first library walk. A start that did not reach `renderRequested` says
 	 * `result: 'incomplete'` and `reason` names the last phase it did reach. Only numbers and those two closed words leave
 	 * here, and the sanitizer holds `bootMs`/`bootCounts` to integers.
 	 */
 	private writeBootTimings(): void {
 		const snapshot = this.bootTrace.take();
 		if (snapshot === null) return;
-		const complete = 'painted' in snapshot.bootMs;
+		const complete = 'renderRequested' in snapshot.bootMs;
 		this.localDebugActions?.event({
 			component: 'plugin', action: 'plugin_load', state: 'boot_timings',
 			level: complete ? 'info' : 'warn', phase: complete ? 'success' : 'failure', code: complete ? 'ok' : 'unknown_failure',
@@ -1460,7 +1460,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.bootTrace.mark('halloween');
 		await this.halloweenPriceAlert.configure(halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled);
 		this.renderViews();
-		this.bootTrace.mark('painted');
+		this.bootTrace.mark('renderRequested');
 		this.writeBootTimings();
 		this.renderInventoryAdvisorViews();
 		// Heals a root left behind by a folder change made before this version shipped the
