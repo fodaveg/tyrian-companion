@@ -1,8 +1,8 @@
 # Estado
 
-## Candidato 0.6.31: Halloween sin esperas, reserva de sesión con reloj monótono y almacenamiento persistente (10 oct 2026)
+## Canal 0.6.31 publicado: Halloween sin esperas, reserva de sesión con reloj monótono y almacenamiento persistente (10 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Parte de `61f8ab7` (rama `integracion/0.6.31` sobre el canal
+**Canal publicado; instalación/runtime pendiente.** Parte de `61f8ab7` (rama `integracion/0.6.31` sobre el canal
 0.6.30 publicado, `395d1e0`) y añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
 `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
@@ -14,7 +14,13 @@
   de almacenamiento persistente al cargar, con su respuesta en el diagnóstico (DU-13); división del núcleo en módulos de
   funciones de venta y de resultados de acciones, y del modelo de vista del Asesor, con el censo y la guarda de i18n al
   día; `noImplicitOverride` activado con los métodos sobrescritos marcados.
-- Pendiente: el gate sobre el commit definitivo, la publicación y verla en un Obsidian y un Hebra reales.
+- Publicación (medida el 10 oct 2026). Tag `0.6.31` sobre `ed1d596` (commit de atestación; candidato `8ea78e4`;
+  árbol `c075fdede32829e07d5217239af134856c25b3b8`). CI de GitHub: run `38048257013`, success. Workflow de release: run
+  `38048701653`, success. «BRAT release contract: PASS (version=0.6.31; assets=8)» sobre la salida real de
+  `gh release view 0.6.31 --json tagName,name,isDraft,isPrerelease,assets`, con `isDraft` false e `isPrerelease` false.
+  SHA-256 del zip `tyrian-companion-0.6.31.zip`: `4b15027e96c6689ba76f818a6b73a99c76c424558ed80e269e5264f297a38e20`.
+- Pendiente: verificar la instalación y la carga de la 0.6.31 en un Obsidian y un Hebra reales. Nada de eso se ha
+  comprobado.
 
 ## Canal 0.6.30 publicado: sección Logros, historial acotado a las notas de Tyrian y almacenes locales que se recuperan solos (10 oct 2026)
 
