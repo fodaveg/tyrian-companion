@@ -140,6 +140,34 @@ interface NameNode {
 	href?: () => string | null;
 }
 
+/** The official gold coin (`/v2/files/ui_coin_gold`), the icon of a coin reward. */
+const COIN_REWARD_ICON = 'https://render.guildwars2.com/file/090A980A96D39FD36FBB004903644C6DBEFB1FFB/156904.png';
+
+/** Path of the small local mark of each reward the API gives no icon for (24x24 box, drawn with currentColor). */
+const REWARD_MARK_PATHS = {
+	title: 'M12 2 14.6 8.4 21.5 8.9 16.2 13.3 17.9 20 12 16.4 6.1 20 7.8 13.3 2.5 8.9 9.4 8.4Z',
+	mastery: 'M12 2 21 7V17L12 22 3 17V7Z M12 7 16.5 12 12 17 7.5 12Z',
+	achievement_points: 'M12 2 22 12 12 22 2 12Z',
+} as const;
+
+/** Draws the local mark of a reward kind in its icon slot, once. Decorative: the reward text is beside it. */
+function appendRewardMark(slot: HTMLElement, kind: keyof typeof REWARD_MARK_PATHS): void {
+	if (slot.querySelector('svg') !== null) return;
+	const ns = 'http://www.w3.org/2000/svg';
+	const svg = document.createElementNS(ns, 'svg');
+	svg.setAttribute('viewBox', '0 0 24 24');
+	svg.setAttribute('width', String(ACHIEVEMENT_ICON_SIZE));
+	svg.setAttribute('height', String(ACHIEVEMENT_ICON_SIZE));
+	svg.setAttribute('aria-hidden', 'true');
+	svg.setAttribute('class', `tyrian-achievements__icon tyrian-achievements__reward-mark tyrian-achievements__reward-mark--${kind}`);
+	const path = document.createElementNS(ns, 'path');
+	path.setAttribute('d', REWARD_MARK_PATHS[kind]);
+	path.setAttribute('fill', 'currentColor');
+	path.setAttribute('fill-rule', 'evenodd');
+	svg.append(path);
+	slot.append(svg);
+}
+
 /** A catalog read with nothing in it, for a list whose metas have no category members to ask about. */
 const NO_DETAILS: AchievementDetailsRead = { details: new Map(), englishNames: new Map(), retired: new Set(), failed: false, savedAt: null, stale: false };
 
@@ -827,15 +855,16 @@ export class AchievementsView {
 			const rewards = body.createEl('ul', { cls: 'tyrian-achievements__rewards' });
 			for (const reward of view.rewards) {
 				const row = rewards.createEl('li');
-				// An item reward carries its icon before the name; the other kinds are text alone.
-				const slot = reward.kind === 'item' ? row.createSpan({ cls: 'tyrian-achievements__icon-slot' }) : null;
+				// Every reward carries an icon before the name: the item's own, the official coin, or a small local mark.
+				const slot = row.createSpan({ cls: 'tyrian-achievements__icon-slot' });
 				const label = row.createSpan();
 				const node: NameNode = {
 					el: label,
 					text: () => this.rewardText(reward),
 					slot,
-					icon: () => (reward.kind === 'item' ? this.entryFor('item', reward.itemId)?.icon ?? null : null),
+					icon: () => (reward.kind === 'item' ? this.entryFor('item', reward.itemId)?.icon ?? null : reward.kind === 'coins' ? COIN_REWARD_ICON : null),
 				};
+				if (reward.kind === 'mastery' || reward.kind === 'title' || reward.kind === 'achievement_points') appendRewardMark(slot, reward.kind);
 				this.applyNode(node);
 				if (reward.kind === 'item' || reward.kind === 'title') this.nameNodes.push(node);
 			}

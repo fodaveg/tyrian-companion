@@ -1318,3 +1318,36 @@ describe('AchievementsView: real data of the API (10 oct 2026) and the refresh o
 		expect(h.text()).not.toContain('No se pudo cargar la lista de elementos');
 	});
 });
+
+describe('AchievementsView: icon of every reward', () => {
+	const rows = (h: ReturnType<typeof harness>) => Array.from(h.container.querySelectorAll<HTMLElement>('.tyrian-achievements__rewards li'));
+	const open = async (rewards: AchievementDetail['rewards'], tiers = detail(1).tiers) => {
+		const h = harness({ tracked: [5790], details: new Map([[5790, detail(5790, { rewards, tiers })]]) });
+		h.view.mount();
+		await h.settle();
+		return h;
+	};
+
+	it('5790: the title and the achievement points carry an icon before their text', async () => {
+		const h = await open([{ kind: 'title', titleId: 369 }], [{ count: 4, points: 100 }]);
+		const [title, points] = rows(h);
+		expect(title!.querySelector('.tyrian-achievements__icon-slot svg.tyrian-achievements__reward-mark--title')).not.toBeNull();
+		expect(points!.textContent).toBe('100 PL');
+		expect(points!.querySelector('.tyrian-achievements__icon-slot svg.tyrian-achievements__reward-mark--achievement_points')).not.toBeNull();
+	});
+
+	it('coins carry the official coin icon from the render host', async () => {
+		const h = await open([{ kind: 'coins', copper: 500 }]);
+		expect(rows(h)[0]!.querySelector('img')?.getAttribute('src')).toMatch(/^https:\/\/render\.guildwars2\.com\/file\/[0-9A-F]+\/156904\.png$/);
+	});
+
+	it('a mastery point carries its local mark', async () => {
+		const h = await open([{ kind: 'mastery', masteryId: 1, region: 'Tyria' }]);
+		expect(rows(h)[0]!.querySelector('.tyrian-achievements__icon-slot svg.tyrian-achievements__reward-mark--mastery')).not.toBeNull();
+	});
+
+	it('an item without a known icon keeps its text alone', async () => {
+		const h = await open([{ kind: 'item', itemId: 500, count: 3 }]);
+		expect(rows(h)[0]!.querySelector('img, svg')).toBeNull();
+	});
+});
