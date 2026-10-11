@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.49: arreglos de la QA de año normal (11 oct 2026)
+## Canal 0.6.49 publicado: arreglos de la QA de año normal (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.49` sobre el canal 0.6.48 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.49` = `d29b4a6c` (atestación; candidato `2a0fc368`,
+árbol `84b367c4`). Gate local verde (check 9/9 con 7583 tests, guardrails 25/25, BRAT PASS); CI 38138624652 y Release
+38139422917 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `integracion/0.6.49` sobre el canal 0.6.48 publicado
 (`dfe03655`, más su documentación y evidencias hasta `9fd87e04`); añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
@@ -24,7 +27,7 @@
   equipo, rareza fuera de alcance o nivel menor de 68: su caducidad (25 feb 2027) solo afecta al equipo cubierto.
 - F3 (`8b62499c`): docs/QA-MVP.md (pruebas 3 a 8) y docs/INVENTORY-VAULT-SYNC.md (sin confirmación al desactivar
   filas, H18.37).
-- Pendiente: gate, publicación y verlo en hosts reales; de H18.29 quedan las pruebas 2, 3, 4 y 7 con el juego.
+- Pendiente: verlo en hosts reales; de H18.29 quedan las pruebas 2, 3, 4 y 7 con el juego.
 
 ## Canal 0.6.48 publicado: el panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta (11 oct 2026)
 
