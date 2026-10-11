@@ -422,6 +422,7 @@ export class TyrianCompanionView {
 			...(actions.getLiveSessionCharacter === undefined ? {} : { getLiveSessionCharacter: () => actions.getLiveSessionCharacter!() }),
 			...(actions.listLiveSessionHistory === undefined ? {} : { listLiveSessionHistory: () => actions.listLiveSessionHistory!() }),
 			...(actions.getLiveSessionSetAside === undefined ? {} : { getLiveSessionSetAside: () => actions.getLiveSessionSetAside!() }),
+			...(actions.openSessionHistoryNote === undefined ? {} : { openSessionSummaryNote: (path: string) => actions.openSessionHistoryNote!(path) }),
 			...liveSessionControl(actions, view),
 		};
 	}

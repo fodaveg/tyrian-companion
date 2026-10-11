@@ -39,7 +39,7 @@ const idleView = (): LiveSessionViewV1 => ({ ...liveView(0), sessionId: null, ph
 const control = (patch: Partial<LiveSessionControlState> = {}): LiveSessionControlState => ({
 	gameConnected: true, consult: false, canStart: false, canStop: true, busy: null, oldSession: null, ...patch });
 
-function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en', list?: LiveSessionPanelActions['listLiveSessionHistory'], entity?: LiveSessionPanelActions['getLiveSessionEntity']) {
+function harness(initial = liveView(), initialControl = control(), locale: 'es' | 'en' = 'en', list?: LiveSessionPanelActions['listLiveSessionHistory'], entity?: LiveSessionPanelActions['getLiveSessionEntity'], extra: Partial<LiveSessionPanelActions> = {}) {
 	const state = { view: initial, control: initialControl };
 	const start = vi.fn(async () => {});
 	const stop = vi.fn(async () => {});
@@ -52,6 +52,7 @@ function harness(initial = liveView(), initialControl = control(), locale: 'es' 
 		getLiveSessionEntity: entity ?? ((_kind, id) => ({ name: `Item ${String(id)}`, icon: 'https://render.guildwars2.com/file/hash/1.png' })),
 		getLiveSessionControl: () => state.control, startLiveSession: start, stopLiveSession: stop, discardOldSession: discard,
 		...(list === undefined ? {} : { listLiveSessionHistory: list }),
+		...extra,
 	};
 	const panel = new LiveSessionPanel(document, actions);
 	document.body.append(panel.element);
@@ -952,6 +953,29 @@ describe('previous sessions block', () => {
 			await vi.waitFor(() => expect(block(h.panel).querySelector('[role="status"]')!.textContent).toBe(text));
 			expect(rowsOf(h.panel)).toHaveLength(0);
 		}
+	});
+
+	it('links a session to its summary note by its date and hours, and leaves a session without one as plain text', async () => {
+		for (const [locale, label] of [['en', 'Open the summary note of the session of'], ['es', 'Abrir la nota resumen de la sesión del']] as const) {
+			const openSessionSummaryNote = vi.fn();
+			const rows = [entry(0, { summaryPath: 'GW2/summaries/a - summary.md' }), entry(1), entry(2, { summaryPath: null })];
+			const h = harness(idleView(), control(), locale, vi.fn(async () => rows), undefined, { openSessionSummaryNote });
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(3));
+			const links = rowsOf(h.panel).map((row) => row.querySelector<HTMLButtonElement>('button.mod-link'));
+			expect(links[1]).toBeNull(); expect(links[2]).toBeNull();
+			const link = links[0]!;
+			expect(link.type).toBe('button');
+			expect(link.getAttribute('aria-label')).toBe(`${label} ${Array.from(link.children, (part) => part.textContent).join(' ')}`);
+			expect(link.querySelector('time')!.getAttribute('datetime')).toBe(rows[0]!.startedAt);
+			link.click();
+			expect(openSessionSummaryNote).toHaveBeenCalledExactlyOnceWith('GW2/summaries/a - summary.md');
+		}
+		// Without the action there is nothing to press, even when the entry knows its note.
+		const bare = harness(idleView(), control(), 'en', vi.fn(async () => [entry(0, { summaryPath: 'x.md' })]));
+		open(bare.panel);
+		await vi.waitFor(() => expect(rowsOf(bare.panel)).toHaveLength(1));
+		expect(rowsOf(bare.panel)[0]!.querySelector('button')).toBeNull();
 	});
 
 	it('lists each session in order with day, hours, duration, saved value and objects', async () => {

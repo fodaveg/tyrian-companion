@@ -19,6 +19,8 @@ export interface LiveSessionHistoryEntry {
 	items: LiveHistoryItem[];
 	/** The session's observed coins (net other than 0): gold first, the rest by id. An unobserved coin is absent, never zero. */
 	currencies: LiveHistoryItem[];
+	/** Vault path of the session's summary note when the vault holds it; absent or null, the row has no link. */
+	summaryPath?: string | null;
 }
 interface LiveHistoryItem { idNumber: number; net: number }
 /** The coins of a saved session: currency rows with a net other than 0, gold (id 1) first and the rest by ascending id. */

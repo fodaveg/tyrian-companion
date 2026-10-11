@@ -3401,3 +3401,11 @@
 @media (prefers-reduced-motion: reduce) {
 	.tyrian-achievements * { transition: none !important; animation: none !important; }
 }
+
+/* The summary link of a previous-sessions row: a text button, never a boxed control. */
+.tyrian-live-session__summary-link {
+	min-height: 24px;
+	padding: 0;
+	text-align: start;
+	font: inherit;
+}

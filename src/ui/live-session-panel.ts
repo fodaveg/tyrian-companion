@@ -53,6 +53,8 @@ export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'g
 	startLiveSession(): Promise<void>;
 	stopLiveSession(): Promise<void>;
 	discardOldSession(): Promise<void>;
+	/** Opens the summary note a previous-sessions row links to (the core tells the player if it is gone). */
+	openSessionSummaryNote?(path: string): void;
 }
 
 const PAGE_SIZE = 50;
@@ -468,7 +470,7 @@ export class LiveSessionPanel {
 				return { net: item.net, icon: entity?.icon ?? null, name: entity?.name ?? `${this.copy('kindItem')} ${String(item.idNumber)}`, quantity: this.number(item.net) };
 			});
 			const coins = entry.currencies.filter((row) => row.net !== 0).sort((a, b) => compareCoins(a.idNumber, b.idNumber)).map((row) => this.coinOf(row.idNumber, row.net));
-			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale(), hidden,
+			const sig = [entry.startedAt, entry.endedAt, entry.estimatedValueCopper, entry.itemCount, this.actions.getLocale(), hidden, entry.summaryPath ?? '',
 				...tiles.map((tile) => `${tile.name}|${tile.icon ?? ''}|${tile.quantity}`), 'coins', ...coins.map((coin) => coin.sig)].join('|');
 			let cached = this.previousCache.get(entry.sessionRef);
 			if (cached === undefined) { cached = { li: this.node('li', 'tyrian-live-session__previous-row'), sig: '' }; this.previousCache.set(entry.sessionRef, cached); }
@@ -479,7 +481,18 @@ export class LiveSessionPanel {
 				const range = this.node('span', '', `${this.timeOfDay(entry.startedAt, false)}–${this.timeOfDay(entry.endedAt, false)}`);
 				const duration = this.node('span', '', this.clock(Date.parse(entry.endedAt) - Date.parse(entry.startedAt)));
 				const when = this.node('span', 'tyrian-live-session__previous-line');
-				when.append(started, range);
+				const summaryPath = entry.summaryPath ?? null;
+				const openSummary = this.actions.openSessionSummaryNote?.bind(this.actions);
+				if (summaryPath !== null && openSummary !== undefined) {
+					// A native button answers Enter and Space by itself; the accessible name says which session it opens.
+					// The session's date and hours are the link text, as in the durable history's rows.
+					const link = this.node('button', 'mod-link tyrian-live-session__summary-link');
+					link.setAttribute('type', 'button');
+					link.setAttribute('aria-label', this.copy('previousOpenSummaryLabel').replace('{when}', `${started.textContent ?? ''} ${range.textContent ?? ''}`));
+					link.addEventListener('click', () => { openSummary(summaryPath); });
+					link.append(started, range);
+					when.append(link);
+				} else when.append(started, range);
 				const figures = this.node('span', 'tyrian-live-session__previous-line');
 				figures.append(duration, this.node('b', '', this.money(entry.estimatedValueCopper)), this.node('span', '', objects));
 				const parts: HTMLElement[] = [when, figures];

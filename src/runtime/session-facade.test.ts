@@ -476,6 +476,23 @@ describe('the saved live sessions through SessionRuntime', () => {
 		}).toEqual({ phase: 'idle', alerts: [], selected: null });
 	});
 
+	it('gives each saved session the path of its summary note when the vault holds it, and none otherwise', async () => {
+		const sessionRef = 'ab'.repeat(32);
+		const startedAt = '2026-10-08T15:30:00.000Z';
+		const session = { sessionRef, startedAt, endedAt: '2026-10-08T16:00:00.000Z', observationCount: 1, estimatedValueCopper: 0, itemCount: 0, items: [], currencies: [] };
+		const summary = `${SETTINGS.outputFolder}/summaries/2026-10-08 153000Z - ${sessionRef.slice(0, 16)} - summary.md`;
+		const listed = async (existing: readonly string[]) => {
+			const base = port();
+			const runtime = new SessionRuntime(port({
+				liveHistory: history({ list: async () => ({ status: 'ok', sessions: [session], ignored: 0, setAside: [] }) }),
+				host: { ...base.host, vault: { ...base.host.vault, file: (path) => existing.includes(path) ? { path } : null } },
+			}));
+			return (await runtime.listLiveSessionHistory())[0]!.summaryPath;
+		};
+		expect(await listed([summary])).toBe(summary);
+		expect(await listed([])).toBeUndefined();
+	});
+
 	it('an unreadable saved list is refused, and an export with nothing to export says so', async () => {
 		const runtime = new SessionRuntime(port({ liveHistory: history({ list: async () => ({ status: 'unavailable' }) }) }));
 

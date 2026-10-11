@@ -42,6 +42,8 @@ import {
 	type LiveSessionSetAside,
 } from '../sessions/live-session-history';
 import { emptyLiveSessionView, type LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
+import { liveSessionSummaryRelativePath } from '../sessions/live-session-summary-note';
+import { normalizeSessionOutputFolder } from '../sessions/session-note-model';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 import type { LiveSessionAlertViewV1, LiveSessionViewV1 } from '../sessions/live-session-model';
 import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
@@ -352,7 +354,14 @@ export class SessionRuntime {
 	async listLiveSessionHistory(): Promise<LiveSessionHistoryEntry[]> {
 		const result = await this.liveHistory?.list(); if (result?.status !== 'ok') throw new Error('Live session history is unavailable.');
 		this.liveSetAside = result.setAside;
-		return result.sessions;
+		// The summary note sits at a path its writer derives from the session alone, so older sessions link too;
+		// one the vault does not hold gets no link at all (a dead button would only ever say «gone»).
+		const folder = normalizeSessionOutputFolder(this.settings.outputFolder);
+		return result.sessions.map((session) => {
+			if (folder === null) return session;
+			const path = `${folder}/${liveSessionSummaryRelativePath(session.startedAt, session.sessionRef)}`;
+			return this.host.vault.file(path) === null ? session : { ...session, summaryPath: path };
+		});
 	}
 	/** The notes the last read of the saved sessions (list or comparison) left aside; the panels name them by path. */
 	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.liveSetAside; }
