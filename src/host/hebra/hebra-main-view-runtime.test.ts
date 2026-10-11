@@ -3,6 +3,7 @@ import type { HebraPluginApi } from 'hebra-plugin-api';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { LocalDebugLogger } from '../../core/local-debug-logger';
 import { VIEW_PLACEMENT_KEY } from '../../runtime/view-placement';
 import { createTyrianRuntime, TYRIAN_MAIN_VIEW_TYPE, type TyrianCompanionCore } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraDeviceKey, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
@@ -699,6 +700,93 @@ describe('(h) a device storage that cannot be read', () => {
 		// The choice can still be written, and takes effect.
 		await started.core.updateViewPlacement('sidebar');
 		expect(started.hebra!.ownViews.registered()).toEqual(OWN_VIEWS);
+		await started.cleanup();
+	}, 30_000);
+});
+
+/** The message WebKitGTK 2.54 throws at a Trusted Types sink fed a plain string (measured in Hebra 0.2.0-21, 11 Oct 2026). */
+const TRUSTED_HTML = 'This assignment requires a TrustedHTML';
+
+/**
+ * Makes happy-dom behave like Hebra's desktop page on Linux, whose CSP carries
+ * `require-trusted-types-for 'script'` and whose WebKitGTK enforces it: every HTML-from-string sink
+ * throws, as the real one did. Returns what puts the originals back.
+ */
+function enforceTrustedTypes(): () => void {
+	const restores: Array<{ owner: object; name: string; undo: () => void }> = [];
+	// happy-dom keeps most members on a base class of the window's own one, so each is closed where it is defined.
+	const replace = (start: object, name: string, patch: (original: PropertyDescriptor) => PropertyDescriptor): void => {
+		let owner: object | null = start;
+		while (owner !== null && !Object.prototype.hasOwnProperty.call(owner, name)) owner = Object.getPrototypeOf(owner) as object | null;
+		const original = owner === null ? undefined : Object.getOwnPropertyDescriptor(owner, name);
+		if (owner === null || original === undefined || restores.some((entry) => entry.owner === owner && entry.name === name)) return;
+		const at = owner;
+		Object.defineProperty(at, name, { ...patch(original), configurable: true });
+		restores.push({ owner: at, name, undo: () => { Object.defineProperty(at, name, original); } });
+	};
+	const refuse = (): never => { throw new TypeError(TRUSTED_HTML); };
+	for (const [owner, name] of [
+		[Range.prototype, 'createContextualFragment'], [Element.prototype, 'insertAdjacentHTML'],
+		[DOMParser.prototype, 'parseFromString'], [Document.prototype, 'write'], [Document.prototype, 'writeln'],
+	] as const) replace(owner, name, (original) => ({ ...original, value: refuse }));
+	// The HTML setters live on more than one prototype in happy-dom; each one found is closed.
+	for (const owner of [Element.prototype, HTMLElement.prototype, ShadowRoot.prototype, HTMLTemplateElement.prototype]) {
+		for (const name of ['innerHTML', 'outerHTML']) replace(owner, name, (original) => ({ ...original, set: refuse }));
+	}
+	// An `on*` attribute set from a string is a TrustedScript sink.
+	replace(Element.prototype, 'setAttribute', (original) => {
+		const setAttribute = original.value as (this: Element, name: string, value: string) => void;
+		return { ...original, value(this: Element, name: string, value: string) {
+			if (/^on/iu.test(name)) throw new TypeError('This assignment requires a TrustedScript');
+			setAttribute.call(this, name, value);
+		} };
+	});
+	return () => { for (const { undo } of restores.reverse()) undo(); };
+}
+
+describe('(j) a Hebra whose page enforces Trusted Types (desktop CSP on Linux, HP-03)', () => {
+	let restore: (() => void) | null = null;
+	afterEach(() => { restore?.(); restore = null; });
+
+	it('the stand-in refuses what WebKitGTK refused in Hebra', () => {
+		restore = enforceTrustedTypes();
+		const el = document.body.appendChild(document.createElementNS('http://www.w3.org/1999/xhtml', 'div'));
+		expect(() => document.createRange().createContextualFragment('')).toThrow(TRUSTED_HTML);
+		expect(() => { el.innerHTML = ''; }).toThrow(TRUSTED_HTML);
+		expect(() => { el.outerHTML = ''; }).toThrow(TRUSTED_HTML);
+		expect(() => { el.insertAdjacentHTML('beforeend', ''); }).toThrow(TRUSTED_HTML);
+		expect(() => { el.setAttribute('onclick', ''); }).toThrow('TrustedScript');
+		// What is not a sink still works, and reading the markup is not writing it.
+		el.setAttribute('data-kind', 'probe');
+		expect(el.innerHTML).toBe('');
+	});
+
+	it('mounts every section with its content, and the plugin throws nothing', async () => {
+		restore = enforceTrustedTypes();
+		// A section whose mount throws is caught by the host and logged as `global_error`, as it was in Hebra.
+		const failures: string[] = [];
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Called through with the spied instance as `this` below.
+		const record = LocalDebugLogger.prototype.record;
+		vi.spyOn(LocalDebugLogger.prototype, 'record').mockImplementation(function (this: LocalDebugLogger, input) {
+			if (input.action === 'global_error') failures.push(input.message instanceof Error ? input.message.message : String(input.message));
+			return record.call(this, input);
+		});
+		const started = await start({ mainView: true });
+		const main = started.hebra!.view(TYRIAN_MAIN_VIEW_TYPE);
+		main.open();
+		for (const id of ['session', 'inventory', 'sale', 'achievements']) main.select(id);
+		await new Promise((resolve) => { window.setTimeout(resolve, 50); });
+		const text = (id: string): string => main.element(id)?.textContent ?? '';
+
+		expect(failures).toEqual([]);
+		// The Session the real Hebra left empty: its state, its start button and the live panel under them.
+		expect(text('session')).toContain('Sin sesión');
+		expect(text('session')).toContain('Iniciar sesión');
+		expect(main.element('session')!.querySelector('.tyrian-live-session')).not.toBeNull();
+		// The other three, as they already showed in Hebra.
+		expect(text('inventory')).toContain('Falta vincular la clave API');
+		expect(text('sale')).toContain('modo consulta');
+		expect(main.element('achievements')!.querySelector('.tyrian-achievements')).not.toBeNull();
 		await started.cleanup();
 	}, 30_000);
 });
