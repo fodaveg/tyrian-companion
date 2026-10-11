@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.48: el panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta (11 oct 2026)
+## Canal 0.6.48 publicado: el panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.48` sobre el canal 0.6.47 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.48` = `dfe03655` (atestación; candidato `c36dcf62`,
+árbol `6d5c71b8`). Gate local verde (check 9/9 con 7568 tests, guardrails 25/25, BRAT PASS); CI 38136199518 y Release
+38136945018 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `integracion/0.6.48` sobre el canal 0.6.47 publicado
 (`026a4d5d`, más su documentación y evidencias hasta `5007acae`); añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
@@ -17,7 +20,7 @@
   ausente) deja `canStart` en falso; el panel muestra `hintOutputFolder`. Cuatro tests del runtime rojos antes y verdes
   después. Una sesión ya activa cuya carpeta desaparezca después no se cubre. Contrato: decisión «Carpeta de salida
   ausente en Hebra» de [ARCHITECTURE](ARCHITECTURE.md), que sigue sin crear la carpeta fuera de «Aplicar».
-- Pendiente: gate, publicación y verlo en hosts reales.
+- Pendiente: verlo en hosts reales.
 
 ## Canal 0.6.47 publicado: la sesión se recupera al pasar a recolector con el almacén mudo (11 oct 2026)
 
