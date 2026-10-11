@@ -284,7 +284,15 @@ export class AlertRuntime {
 
 	async emitLiveSessionAlert(intent: LiveAlertOutboxV1) {
 		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
-		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
+		const report = await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
+		// The Nexus path skips `dispatchAlert`, so a failed channel would otherwise be written to the outbox only.
+		if (report.failed.length > 0) {
+			this.localDebugActions?.event({
+				component: 'notification', action: 'notification_emit', state: alertNoticeSource(intent.alert.kind),
+				level: 'error', phase: 'failure', code: 'unavailable', details: { failed: report.failed },
+			});
+		}
+		return report;
 	}
 
 	/**
@@ -480,7 +488,7 @@ export class AlertRuntime {
 				this.localDebugActions?.event({
 					component: 'notification', action: 'notification_emit', state: 'ingame_server_start',
 					level: 'error', phase: 'failure', code: 'unavailable',
-					details: { errorName: mapped.reason, code: mapped.code },
+					details: { reason: mapped.reason, code: mapped.code },
 				});
 				this.settingTab.refreshAlertIngameServerRow();
 				return null;
@@ -662,7 +670,7 @@ export class AlertRuntime {
 		this.localDebugActions?.event({
 			component: 'notification', action: 'notification_emit', state: 'ingame_presence_listener',
 			level: 'error', phase: 'failure', code: 'internal_failure',
-			details: { errorName: mapped.reason },
+			details: { reason: mapped.reason },
 		});
 	}
 
