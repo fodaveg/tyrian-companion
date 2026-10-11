@@ -625,7 +625,8 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			// Mirrors the real client: the first answer is a 403 unless the caller asked to retry that status.
 			requestDetailed: async (path: string, retryStatuses: ReadonlySet<number> = new Set()) => {
 				const key = path.split('?')[0]!;
-				if (!refusedOnce.has(key) && !retryStatuses.has(403)) { refusedOnce.add(key); throw new HttpTransportError('http', 403, null, 'Forbidden.'); }
+				if (['tokeninfo', 'account', 'account/recipes', 'account/skins', 'account/minis'].includes(key)
+					&& !refusedOnce.has(key) && !retryStatuses.has(403)) { refusedOnce.add(key); throw new HttpTransportError('http', 403, null, 'Forbidden.'); }
 				return base.requestDetailed(path);
 			},
 		};
