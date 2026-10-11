@@ -62,7 +62,7 @@ export async function writeSessionNoteWithDiagnostics(
 			...note,
 			phase: 'failure' as const,
 			code: 'storage_failure' as const,
-			details: { status: note.status, errorName: 'errorName' in note ? note.errorName : undefined },
+			details: { status: note.status, reason: 'errorName' in note ? note.errorName : undefined },
 		};
 	};
 	return actions

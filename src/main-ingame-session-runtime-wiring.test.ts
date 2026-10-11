@@ -107,7 +107,7 @@ describe('the core hands the in-game session to IngameSessionRuntime', () => {
 		expect(read()).toBeNull();
 		expect(harness.diagnostics()).toEqual([expect.objectContaining({
 			component: 'session', action: 'session_start', state: 'ingame_presence',
-			level: 'error', phase: 'failure', code: 'internal_failure', details: { errorName: 'TypeError' },
+			level: 'error', phase: 'failure', code: 'internal_failure', details: { reason: 'TypeError' },
 		})]);
 		app.loadLocalStorage = (key) => ({ key });
 		expect(read()).toEqual({ key: 'tyrian-companion:ingame-session-link' });

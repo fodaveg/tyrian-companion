@@ -94,7 +94,7 @@ describe('the link in the host\'s local storage', () => {
 		expect(save).toHaveBeenCalledWith('tyrian-companion:ingame-session-link', null);
 		expect(refused.events).toEqual([{
 			component: 'session', action: 'session_start', state: 'ingame_presence',
-			level: 'error', phase: 'failure', code: 'internal_failure', details: { errorName: 'RangeError' },
+			level: 'error', phase: 'failure', code: 'internal_failure', details: { reason: 'RangeError' },
 		}]);
 
 		const without = port();

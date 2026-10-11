@@ -212,7 +212,7 @@ export class IngameSessionRuntime {
 		this.localDebugActions?.event({
 			component: 'session', action: 'session_start', state: 'ingame_presence',
 			level: 'error', phase: 'failure', code: 'internal_failure',
-			details: { errorName: mapped.reason },
+			details: { reason: mapped.reason },
 		});
 	}
 }
