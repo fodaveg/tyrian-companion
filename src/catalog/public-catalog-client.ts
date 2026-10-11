@@ -17,6 +17,14 @@ export function isPublicCatalogNotFound(error: unknown): boolean {
 	return error instanceof HttpTransportError && error.status === 404;
 }
 
+/**
+ * Whether a gateway call failed with the transport's HTTP 429. The real transport never resolves with a 429: it
+ * retries and then throws, so a caller that wants the shared cooldown has to read it from the error (Z5).
+ */
+export function isPublicCatalogRateLimited(error: unknown): error is HttpTransportError {
+	return error instanceof HttpTransportError && error.status === 429;
+}
+
 /** The answer a public gateway call resolves to. */
 export type PublicCatalogResponse = HttpResponse;
 

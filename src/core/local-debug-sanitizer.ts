@@ -72,7 +72,8 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	// `message`), and without this key the allowlist silently dropped it, leaving a record
 	// that only ever named the same fixed string regardless of which of the 11 fired.
 	assets: [...COMMON_DETAIL_FIELDS, 'operationCount', 'managed', 'conflict', 'message'],
-	notification: [...COMMON_DETAIL_FIELDS, 'surface', 'visible'],
+	// `failed` is `[{id, reason}]` of an alert delivery (H15.16): the channel id and the rejection's class, never its message.
+	notification: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'failed'],
 	vault: [...COMMON_DETAIL_FIELDS, 'operation', 'managed', 'conflict'],
 	ui: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'rowCount'],
 	support: [...COMMON_DETAIL_FIELDS, 'recordCount', 'fileCount', 'bytes'],

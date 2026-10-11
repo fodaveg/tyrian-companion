@@ -107,9 +107,10 @@ export function createTyrianSettingsPort(
 			return latest;
 		},
 		async save(data) {
-			latest = data;
+			// Z6-6: `latest` follows the data only once it is saved; a failed save leaves the previous snapshot.
 			if (!isSettingsObject(data)) {
 				await storage.settings.save(data);
+				latest = data;
 				return;
 			}
 			// The frozen shared copies, as they are NOW (another device may have synced a new one).
@@ -128,6 +129,7 @@ export function createTyrianSettingsPort(
 				// What this device saved is its own value for all six: nothing is adopted from `settings` after this.
 				storage.device.set(HEBRA_DEVICE_SETTINGS_ADOPTED_KEY, 1);
 				await storage.settings.save(shared);
+				latest = data;
 			} catch (error) {
 				for (const [key, value] of previous) {
 					try {

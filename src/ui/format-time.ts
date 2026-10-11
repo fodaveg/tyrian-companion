@@ -20,14 +20,17 @@ export interface RelativeDayLabels {
 
 /**
  * "{today} HH:MM" for the local calendar day `now` falls in, "{yesterday} HH:MM" for the one right
- * before it, and a locale-short date (no time) for anything further back. The boundary is the
+ * before it, a locale-short date (no time) for anything further back and a locale-short date WITH
+ * its time for anything in the future. The boundary is the
  * player's own calendar day, not a UTC one: it is their clock the copy is read against.
  */
 export function formatRelativeDay(value: string | number, locale: Locale, now: number, labels: RelativeDayLabels): string {
 	const dayDiff = calendarDayDifference(new Date(value).getTime(), now);
 	if (dayDiff === 0) return `${labels.today} ${formatClock(value, locale)}`;
 	if (dayDiff === 1) return `${labels.yesterday} ${formatClock(value, locale)}`;
-	return new Date(value).toLocaleDateString(locale, { dateStyle: 'short' });
+	const date = new Date(value).toLocaleDateString(locale, { dateStyle: 'short' });
+	// A future instant (tomorrow's scheduled capture) keeps its time: the date alone hid when it happens.
+	return dayDiff < 0 ? `${date} ${formatClock(value, locale)}` : date;
 }
 
 /** Whole local calendar days between the two instants, floored so "an hour into today" is `0`. */

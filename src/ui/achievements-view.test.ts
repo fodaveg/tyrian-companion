@@ -578,6 +578,19 @@ describe('AchievementsView: each followed achievement', () => {
 		// Not read: tracked after the last reading, so the objectives are unknown.
 		expect(states(4)).toEqual(['unknown', 'unknown']);
 	});
+
+	/** Z5-7: the count agrees in number, so one repetition is «1 vez», not «1 veces». */
+	it.each([[1, 'Repetible · hecho 1 vez'], [0, 'Repetible · hecho 0 veces'], [2, 'Repetible · hecho 2 veces']])(
+		'a repeatable achievement done %i time(s) reads %j', async (repeated, expected) => {
+			const h = harness({
+				tracked: [3], details: new Map<number, AchievementDetail>([[3, detail(3, { flags: ['Repeatable'], pointCap: 25 })]]),
+				readingIds: [3], entries: [{ id: 3, done: false, current: 2, max: 4, repeated, bits: [0] }],
+			});
+			h.view.mount();
+			await h.settle();
+			expect(h.items()[0]!.querySelector('.tyrian-achievements__state')?.textContent).toBe(expected);
+		},
+	);
 });
 
 describe('AchievementsView: the states of the section', () => {

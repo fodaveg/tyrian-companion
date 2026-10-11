@@ -57,4 +57,42 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		expect((harness as { sessionCatalog: unknown }).sessionCatalog).toBeNull();
 		expect((alerts as unknown as { alertIngameServer: unknown }).alertIngameServer).toBeNull();
 	});
+
+	/** Z6-5: a drain that rejects must not skip the disposals that do not depend on the bridge. */
+	it('still releases what does not depend on the bridge when the in-game server close rejects, and keeps the rest for a retry', async () => {
+		const alerts = Object.assign(new AlertRuntime({} as AlertRuntimePort), {
+			alertIngameServer: { close: vi.fn(async () => { throw new Error('Live source gap has not been durably stored.'); }) },
+		});
+		const flush = vi.fn(async () => undefined);
+		const independent = {
+			collectorHeartbeat: { stop: vi.fn() }, priceHistory: { dispose: vi.fn() },
+			assistedDetection: { dispose: vi.fn() }, halloween: { dispose: vi.fn() },
+		};
+		const dependent = {
+			liveEconomy: { dispose: vi.fn(async () => undefined) }, liveSessions: { dispose: vi.fn(async () => undefined) },
+			sessions: { dispose: vi.fn(async () => undefined) },
+		};
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
+			alerts, ...independent, ...dependent,
+			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
+			localDebugActions: null, localDebug: { flush },
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const shutdownRuntime = (TyrianCompanionCore.prototype as unknown as {
+			shutdownRuntime(this: typeof harness): Promise<void>;
+		}).shutdownRuntime;
+
+		// The rejection still reaches the caller (Hebra reports it, Obsidian holds it for a retry).
+		await expect(shutdownRuntime.call(harness)).rejects.toThrow('durably stored');
+		expect(independent.collectorHeartbeat.stop).toHaveBeenCalledOnce();
+		expect(independent.priceHistory.dispose).toHaveBeenCalledOnce();
+		expect(independent.assistedDetection.dispose).toHaveBeenCalledOnce();
+		expect(independent.halloween.dispose).toHaveBeenCalledOnce();
+		// The log is still drained when the unload failed.
+		expect(flush).toHaveBeenCalled();
+		// What the bridge's callbacks still use stays alive until the drain succeeds.
+		expect(dependent.liveEconomy.dispose).not.toHaveBeenCalled();
+		expect(dependent.liveSessions.dispose).not.toHaveBeenCalled();
+		expect(dependent.sessions.dispose).not.toHaveBeenCalled();
+	});
 });

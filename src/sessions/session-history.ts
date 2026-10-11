@@ -6,6 +6,7 @@ import { parseDurableSessionComparison, parseSessionSackObservation, type Durabl
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { INVENTORY_NOTE_KIND } from '../inventory/inventory-vault-sync';
+import { ACHIEVEMENTS_NOTE_KIND } from '../achievements/leyspring-note';
 import { COLLECTOR_STATUS_NOTE_KIND } from '../runtime/collector-status';
 import { WALLET_NOTE_KIND } from '../wallet/wallet-vault-sync';
 import { normalizeSessionOutputFolder } from './session-note-model';
@@ -143,6 +144,11 @@ export interface SessionHistoryScrubGate {
 	/** Backward-compatible source for callers that cannot expose a detailed recovery state. */
 	recoveryPending?: boolean;
 	detectorStatus: string;
+	/**
+	 * A `complete` live session whose note is saved and proven. Only this one may be scrubbed around, and only because the scrub
+	 * retires it first (`SessionHistoryRuntimeAuthority.retireSealedRuntime`): left in place, the next load would write its note back.
+	 */
+	sealedRetirable?: boolean;
 }
 
 interface SessionHistoryScrubLease {
@@ -157,9 +163,20 @@ export class SessionHistoryRuntimeAuthority {
 	private scrubOwner: symbol | null = null;
 	private runtimeMutations = 0;
 
-	constructor(private readonly readRuntime: () => SessionHistoryScrubGate) {}
+	/** `retireSealedRuntime` lets go of the sealed live session the gate may report; true when none is left. Without it that session blocks the scrub. */
+	constructor(
+		private readonly readRuntime: () => SessionHistoryScrubGate,
+		private readonly retireSealed?: () => Promise<boolean>,
+	) {}
 
 	readGate(): SessionHistoryScrubGate { return this.readRuntime(); }
+
+	/** True when the runtime holds a sealed live session that a scrub must retire before it rewrites any note. */
+	hasSealedRuntime(): boolean { return this.readRuntime().sealedRetirable === true; }
+
+	async retireSealedRuntime(): Promise<boolean> {
+		return this.retireSealed === undefined ? false : await this.retireSealed();
+	}
 
 	runtimeMutationAllowed(): boolean { return this.scrubOwner === null; }
 
@@ -194,7 +211,8 @@ export function canScrubSessionHistory(gate: SessionHistoryScrubGate): boolean {
 	const recoveryIdle = gate.recoveryStatus === undefined
 		? gate.recoveryPending === false
 		: gate.recoveryStatus === 'none';
-	return gate.sessionStatus === 'idle' && recoveryIdle && gate.detectorStatus === 'disarmed';
+	const sessionIdle = gate.sessionStatus === 'idle' || (gate.sessionStatus === 'complete' && gate.sealedRetirable === true);
+	return sessionIdle && recoveryIdle && gate.detectorStatus === 'disarmed';
 }
 
 const REF = /^[a-f0-9]{64}$/u;
@@ -638,6 +656,10 @@ export class SessionHistoryService {
 		const lease = authority.acquireScrub();
 		if (lease === null) return { status: 'blocked', ...progress, message: 'Session runtime, recovery, or detector is not idle.' };
 		try {
+			// Before any note is touched: a sealed live session still under the runtime key would write its note back on the next load.
+			if (authority.hasSealedRuntime() && !await authority.retireSealedRuntime()) {
+				return { status: 'blocked', ...progress, message: 'Session runtime, recovery, or detector is not idle.' };
+			}
 			for (const item of items) {
 				if (!lease.isLive()) return { status: 'blocked', ...progress, message: 'Session runtime, recovery, or detector is not idle.' };
 				const file = this.vault.file(item.path);
@@ -1049,22 +1071,27 @@ function compareSessions(a: DurableSessionHistoryRecord, b: DurableSessionHistor
  * note that declares one of these kinds but carries a session's identity keys is not exempt.
  */
 const OTHER_TYRIAN_NOTE_KINDS: ReadonlySet<string> = new Set([
-	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND,
+	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND, ACHIEVEMENTS_NOTE_KIND,
 ]);
 const SESSION_IDENTITY_KEYS: ReadonlySet<string> = new Set(['tc_session_ref', 'tc_account_ref']);
+/** The Leyspring achievements note legitimately carries `tc_account_ref`; no other exempt kind does. */
+const KINDS_WITH_ACCOUNT_REF: ReadonlySet<string> = new Set([ACHIEVEMENTS_NOTE_KIND]);
 
 function declaresOtherTyrianNoteKind(content: string): boolean {
 	if (!content.startsWith('---\n')) return false;
 	const end = content.indexOf('\n---\n', 4);
 	if (end < 0) return false;
 	const kinds: string[] = [];
+	const identityKeys: string[] = [];
 	for (const line of content.slice(4, end).split('\n')) {
 		const match = /^(tc_[A-Za-z0-9_-]*):(?:\s*(.*))?$/u.exec(line);
 		if (!match) continue;
-		if (SESSION_IDENTITY_KEYS.has(match[1]!)) return false;
+		if (SESSION_IDENTITY_KEYS.has(match[1]!)) identityKeys.push(match[1]!);
 		if (match[1] === 'tc_kind') kinds.push(unquotedScalar(match[2] ?? ''));
 	}
-	return kinds.length === 1 && OTHER_TYRIAN_NOTE_KINDS.has(kinds[0]!);
+	if (kinds.length !== 1 || !OTHER_TYRIAN_NOTE_KINDS.has(kinds[0]!)) return false;
+	const accountRefAllowed = KINDS_WITH_ACCOUNT_REF.has(kinds[0]!);
+	return identityKeys.every((key) => key === 'tc_account_ref' && accountRefAllowed);
 }
 function unquotedScalar(value: string): string {
 	const trimmed = value.trim();
