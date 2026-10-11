@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './runtime/price-history-runtime';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -12,7 +12,7 @@ afterEach(() => vi.restoreAllMocks());
  * request. And it is the row's own item: it never goes through `loadPriceHistorySeries`, which
  * would move the price panel's selection.
  */
-describe('TyrianCompanionCore.ensurePriceHistorySeed', () => {
+describe('PriceHistoryRuntime.ensurePriceHistorySeed', () => {
 	function harness(overrides: { priceHistoryEnabled?: boolean; runtimeReady?: boolean; seed?: boolean } = {}) {
 		const ensure = vi.fn(async () => undefined);
 		const loadSeries = vi.fn(async () => undefined);
@@ -24,7 +24,8 @@ describe('TyrianCompanionCore.ensurePriceHistorySeed', () => {
 			priceHistory: { loadSeries },
 			renderInventoryAdvisorViews: render,
 		};
-		const run = async (itemId: number): Promise<void> => await TyrianCompanionCore.prototype.ensurePriceHistorySeed.call(self as never, itemId);
+		const runtime = new PriceHistoryRuntime(self as unknown as PriceHistoryRuntimePort);
+		const run = async (itemId: number): Promise<void> => await runtime.ensurePriceHistorySeed(itemId);
 		return { run, ensure, loadSeries, render };
 	}
 

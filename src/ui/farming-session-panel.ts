@@ -8,6 +8,7 @@ import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import { FarmingGoalEditor, renderFarmingGoalProgress } from './farming-goal-panel';
 import { FarmingPreparationPanel } from './farming-preparation-panel';
 import { farmingCopy } from './farming-goal-copy';
+import { createOwnedRoot } from './owned-root';
 
 export interface FarmingSessionPanelActions extends Partial<LiveSessionDataActions>, Partial<LiveSessionComparisonActions>, Partial<FarmingDeclaredBuildActions> {
 	getLocale(): 'es' | 'en';
@@ -40,8 +41,8 @@ export class FarmingSessionPanel {
 	private preparationKey: string | null = null;
 
 	constructor(document: Document, private readonly actions: FarmingSessionPanelActions) {
-		// The root has no parent yet (the view places it), so only it comes from `document`.
-		this.element = document.createElement('section');
+		// The root has no parent yet (the view places it), so only it comes from `document` (`createOwnedRoot` keeps that owner).
+		this.element = createOwnedRoot(document, 'section');
 		this.element.className = 'tyrian-farming tyrian-farming-session';
 		this.figures = this.element.createDiv({ cls: 'tyrian-farming__metrics' });
 		this.progress = this.element.createDiv();

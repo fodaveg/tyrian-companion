@@ -4,6 +4,8 @@
  * render service as every other icon of the plugin (`https://render.guildwars2.com`, no new host).
  * Nothing is bundled: the browser fetches and caches them like the item icons.
  */
+import { createOwnedRoot } from './owned-root';
+
 export const COIN_ICON_URLS = {
 	gold: 'https://render.guildwars2.com/file/090A980A96D39FD36FBB004903644C6DBEFB1FFB/156904.png',
 	silver: 'https://render.guildwars2.com/file/E5A2197D78ECE4AE0349C8B3710D033D22DB0DA6/156907.png',
@@ -33,9 +35,9 @@ export class CoinFigure {
 	private readonly numbers: HTMLElement[] = [];
 
 	constructor(document: Document) {
-		// The root has no parent yet (the live panel places it), so only it comes from `document`;
+		// The root has no parent yet (the live panel places it), so only it comes from `document` (`createOwnedRoot` keeps that owner);
 		// the parts hang from it through Obsidian's helpers (polyfilled in Hebra, `host/dom-polyfill.ts`).
-		this.element = document.createElement('span');
+		this.element = createOwnedRoot(document, 'span');
 		this.element.className = 'tyrian-money';
 		this.element.setAttribute('role', 'img');
 		this.sign = this.element.createSpan({ cls: 'tyrian-money__sign' });

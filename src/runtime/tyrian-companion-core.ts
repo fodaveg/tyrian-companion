@@ -15,13 +15,12 @@
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
-import { farmingGoalForSession, projectBagPriceIngameState } from './farming-runtime-projection';
+import { farmingGoalForSession } from './farming-runtime-projection';
 import { observeFarmingSessionContext, type FarmingGroupContext, type FarmingSessionContext } from './farming-session-context';
 import { type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
-import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { LiveSourceConnections } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
@@ -76,15 +75,10 @@ import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
 import type { StorageDelta } from '../account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from '../assets/generic-assets';
 import { RETIRED_MANAGED_ASSETS } from '../assets/retired-assets';
-import { ManagedAssetsManager, type ManagedAssetsFailureCause, type ManagedAssetsResult } from '../assets/managed-assets';
+import { ManagedAssetsManager } from '../assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
-import {
-	decideManagedAssetsAutoUpdate,
-	planManagedAssets,
-	type ManagedAssetsAutoUpdateDecision,
-	type ManagedAssetsInspection,
-} from '../assets/managed-assets-model';
-import type { ManagedAssetsMessageCode, ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
+import type { ManagedAssetsInspection } from '../assets/managed-assets-model';
+import type { ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from '../assets/managed-assets-pointer';
 import { HostRequestTransport, HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
@@ -103,7 +97,6 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
-import { vaultFailureCause } from '../core/vault-failure-cause';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { resanitizeLocalDebugRecord } from '../core/local-debug-sanitizer';
 import {
@@ -112,8 +105,7 @@ import {
 } from '../core/local-debug-persistence';
 import { requestPersistentStorage } from '../core/persistent-storage';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
-import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
-import { halloweenObservationActive } from '../halloween/halloween-activation';
+import type { PriceHistoryRuntime as PriceHistoryService, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
 import { IndexedDbHalloweenStore } from '../halloween/halloween-store';
 import type { HalloweenRuntime, HalloweenRuntimeState } from '../halloween/halloween-runtime';
@@ -136,7 +128,7 @@ import {
 	vaultSyncActionOutcome,
 	vaultSyncFailureOutcome,
 } from './core-outcomes';
-import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult } from './core-actions';
+import { consulting, consumeRecorded, fireAndForgetLocal } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
 	liveRulesExpiredAtMsFromLoad,
@@ -146,6 +138,9 @@ import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
+import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './price-history-runtime';
+import { HalloweenObservationRuntime, halloweenPriceAlertSettingsFrom, type HalloweenObservationRuntimePort } from './halloween-observation-runtime';
+import { ManagedAssetsRuntime, canMoveManagedAssets, type ManagedAssetsRuntimePort } from './managed-assets-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
@@ -161,9 +156,7 @@ import {
 } from '../economy/price-seed-bulk-refresh';
 import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
-import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
-import { paintPriceHistoryNoteBlock } from '../ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
 import {
@@ -196,7 +189,6 @@ import {
 	mergeSettingsUpdate,
 	migrateSettings,
 	SETTINGS_SCHEMA_VERSION,
-	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	type InventoryVaultSyncLastRun,
@@ -526,7 +518,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	/** DU-13: the copy of the preferences in the host's settings; told of the changes that bypass the preferences store. */
 	private inventoryPreferencesBackup: InventoryPreferencesBackup | null = null;
-	private priceHistory: PriceHistoryRuntime | null = null;
+	private priceHistory: PriceHistoryService | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
 	/** Set once during `initializeRuntime`; `readCachedPriceSeed`'s own key, reused by `refreshSaleHeroTiming`. */
@@ -596,6 +588,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * the core keeps the mounted controllers, which its registration and unload also walk.
 	 */
 	private readonly liveView: LiveViewRuntime = new LiveViewRuntime(TyrianCompanionCore.liveViewRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the price history (its state and opt-in, the series and seeds the panels ask
+	 * for, the note block, the watch list's names, the bag's public price). It reads the core's
+	 * fields through `priceHistoryRuntimePort`; the core keeps the services and the shared catalog.
+	 */
+	private readonly priceHistoryFacade: PriceHistoryRuntime = new PriceHistoryRuntime(TyrianCompanionCore.priceHistoryRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the Halloween observation (its states, the storage delta reaching it, the
+	 * account switch). It reads and writes the core's fields through `halloweenObservationRuntimePort`;
+	 * the core keeps the two services and both account references.
+	 */
+	private readonly halloweenObservation: HalloweenObservationRuntime = new HalloweenObservationRuntime(TyrianCompanionCore.halloweenObservationRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the managed assets (the Settings row's actions, the lifecycle and journaled runs
+	 * behind them, the follow of a changed output folder and the automatic update after a sync and on
+	 * load). It reads the core's fields through `managedAssetsRuntimePort`; the core builds the manager,
+	 * the lifecycle and the pointer store, and owns the row's view.
+	 */
+	private readonly assetsRuntime: ManagedAssetsRuntime = new ManagedAssetsRuntime(TyrianCompanionCore.managedAssetsRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -640,8 +651,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
 	private managedAssetsView: ManagedAssetsView =
 		{ status: 'idle', message: 'not_inspected', plan: null };
-	/** H18.18: a held automatic Base update warns once per plugin load, not on every sync. */
-	private managedAssetsAutoUpdateWarned = false;
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
@@ -2363,141 +2372,50 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.sale.refreshSale(options);
 	}
 
-	getPriceHistoryState(): PriceHistoryRuntimeState {
-		return this.priceHistory?.getState() ?? disabledPriceHistoryState();
-	}
+	/** The price history's state (`PriceHistoryRuntime`). */
+	getPriceHistoryState(): PriceHistoryRuntimeState { return this.priceHistoryFacade.getPriceHistoryState(); }
 
-	getHalloweenState(): HalloweenRuntimeState {
-		return this.halloween?.getState() ?? disabledHalloweenState();
-	}
+	/** The Halloween notices as the views read them (`HalloweenObservationRuntime`). */
+	getHalloweenState(): HalloweenRuntimeState { return this.halloweenObservation.getHalloweenState(); }
 
-	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
-		return this.halloweenPriceAlert?.getState() ?? disabledHalloweenPriceAlertState();
-	}
+	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState { return this.halloweenObservation.getHalloweenPriceAlertState(); }
 
-	// `acknowledgeHalloweenNotice`/`acknowledgeHalloweenPriceNotice` are gone (Lote S, 2026-09-09):
-	// nobody marks an aviso reviewed anymore. `this.halloween`/`this.halloweenPriceAlert` keep their
-	// own `acknowledge()` capability and `acknowledgedAt` bookkeeping — that stays out of scope, see
-	// the final report — this host simply stops calling it.
-
-	private async observeHalloweenDelta(
+	private observeHalloweenDelta(
 		delta: StorageDelta,
 		source: 'assisted_poll' | 'session_final',
 		episodeId: string,
 		classification?: Parameters<HalloweenRuntime['observeDelta']>[0]['classification'],
 	): Promise<void> {
-		if (delta.status === 'invalid' || delta.accountId === null) return;
-		// The account hash is resolved before the seasonal gate, not after it: it scopes the
-		// durable alert queue too, and outside the festival window that queue is the only
-		// surface still writing.
-		const accountRef = await this.switchHalloweenAccount(delta.accountId);
-		if (accountRef !== this.halloweenAccountRef) return;
-		if (!this.halloweenObservationActive() || this.halloween === null) return;
-		await this.halloween.observeDelta({ delta, source, episodeId, classification });
+		return this.halloweenObservation.observeHalloweenDelta(delta, source, episodeId, classification);
 	}
 
-	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
-		const session = this.sessions.getState();
-		if (session.status !== 'active') return;
-		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
+	private observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> { return this.halloweenObservation.observeAcceptedHalloweenDelta(delta); }
+
+	private switchHalloweenAccount(accountId: string, parent?: ResolvedLocalDebugActionContext): Promise<string> {
+		return this.halloweenObservation.switchHalloweenAccount(accountId, parent);
 	}
 
-	private async switchHalloweenAccount(
-		accountId: string,
-		parent?: ResolvedLocalDebugActionContext,
-	): Promise<string> {
-		const accountRef = await sha256Text(accountId);
-		this.alertAccountRef = accountRef;
-		// An unchanged account has nothing to do here: it was already activated the first time
-		// this account was observed, and this used to call `activate` again on every single
-		// "Comprobar conexión", even when nothing changed. Toggling the setting, a secret
-		// change and the season opening reactivate through their own dedicated paths below.
-		if (accountRef === this.halloweenAccountRef) return accountRef;
-		this.halloweenAccountRef = accountRef;
-		await this.halloweenPriceAlert?.configure(
-			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, parent,
-		);
-		if (!this.halloweenObservationActive() || this.halloween === null) return accountRef;
-		this.halloween.disable(parent);
-		// Z21: `activate` drains the session-note backfill (it reads and parses every candidate note,
-		// seconds on a big vault), so awaiting it here held "Comprobar conexión" and what runs after it
-		// (`armAssistedDetection`, `reconcilePendingProposals`) behind the walk. It runs in the
-		// background instead. Loot does NOT skip the wait, on purpose: `HalloweenRuntime.observeDelta`
-		// awaits the pending activation and every backfill flight before counting anything, and
-		// per-episode flights stay serialised, so no loot is counted twice or lost while the walk goes
-		// on. `activate` reports store failures through the runtime state; only a disposed runtime
-		// rejects, which is not an error here.
-		void this.halloween.activate(parent).catch(() => undefined);
-		this.halloween.setOnline(this.host.environment.isOnline());
-		return accountRef;
+	enablePriceHistory(): Promise<void> { return this.priceHistoryFacade.enablePriceHistory(); }
+
+	/** Whether the advisor shows the price-history opt-in offer (`PriceHistoryRuntime`). */
+	isPriceHistoryOptInOffered(): boolean { return this.priceHistoryFacade.isPriceHistoryOptInOffered(); }
+
+	/** «Ahora no» on that offer (`PriceHistoryRuntime`). */
+	dismissPriceHistoryOptIn(): Promise<void> { return this.priceHistoryFacade.dismissPriceHistoryOptIn(); }
+
+	loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
+		return this.priceHistoryFacade.loadPriceHistorySeries(itemId, side, windowDays);
 	}
 
-	async enablePriceHistory(): Promise<void> {
-		await this.updateSettings({ priceHistoryEnabled: true });
-	}
+	/** The datawars2 seed of one item for an Inventory row's «Detalles» (`PriceHistoryRuntime`). */
+	ensurePriceHistorySeed(itemId: number): Promise<void> { return this.priceHistoryFacade.ensurePriceHistorySeed(itemId); }
 
-	/** Whether the advisor shows the price-history opt-in offer. Reads settings only; starts no I/O. */
-	isPriceHistoryOptInOffered(): boolean {
-		return priceHistoryOptInOffered(this.settings, this.host.environment.pluginVersion);
-	}
+	/** Last known datawars2 seed for one item; a stale read (`PriceHistoryRuntime`). */
+	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState { return this.priceHistoryFacade.getPriceHistorySeedState(itemId); }
 
-	/** «Ahora no» on that offer: records the installed version, so the next release offers it again. */
-	async dismissPriceHistoryOptIn(): Promise<void> {
-		await this.updateSettings({ priceHistoryNoticeDismissedVersion: this.host.environment.pluginVersion });
-	}
-
-	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
-		if (!this.runtimeReady || this.priceHistory === null) { this.notifyRuntimeStarting(); return; }
-		await this.priceHistory.loadSeries(itemId, side, windowDays);
-		// `ensure` never throws: a datawars2 failure is a state on the seed service, not an
-		// exception, so the local series above is never held hostage to a third party.
-		await this.priceHistoryPanelSeed?.ensure(itemId);
-		this.renderInventoryAdvisorViews();
-	}
-
-	/**
-	 * The datawars2 seed of one item for the chart inside an Inventory row's «Detalles». Unlike
-	 * `loadPriceHistorySeries` it never touches the price panel's selected item or its local series:
-	 * the seed service takes any item id (the watch list only bounds the LOCAL captures), and it
-	 * already carries the 24 h cache and the shared interactive download turn. With the history off
-	 * it does nothing at all, so opening a row cannot start a request the player has not consented to.
-	 */
-	async ensurePriceHistorySeed(itemId: number): Promise<void> {
-		if (!this.settings.priceHistoryEnabled || !this.runtimeReady || this.priceHistoryPanelSeed === null) return;
-		await this.priceHistoryPanelSeed.ensure(itemId);
-		this.renderInventoryAdvisorViews();
-	}
-
-	/** Last known datawars2 seed for one item; a stale read, it never starts a download itself. */
-	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState {
-		return this.priceHistoryPanelSeed?.getState(itemId)
-			?? { status: 'idle', itemId, days: [], failureReason: null, retrievedAt: null };
-	}
-
-	/**
-	 * H9.2 piloto: the `tyrian-price-history` code-block handler Obsidian invokes for every
-	 * rendered note that carries one, never at load. Shares the exact same 24h-cached seed
-	 * service as the settings panel (`priceHistoryPanelSeed`): a note and the panel showing
-	 * the same item inside that window never cost a second request.
-	 */
-	private async paintPriceHistoryNoteBlockView(
-		source: string,
-		el: HTMLElement,
-		ctx: TyrianCodeBlockContext,
-	): Promise<void> {
-		const frontmatterItemName = frontmatterTcItemName(ctx.frontmatter);
-		await paintPriceHistoryNoteBlock(el, source, {
-			translator: createTranslator(this.settings.language),
-			ready: () => this.runtimeReady && this.priceHistoryPanelSeed !== null,
-			getState: (itemId) => this.getPriceHistorySeedState(itemId),
-			ensure: async (itemId) => await this.priceHistoryPanelSeed?.ensure(itemId)
-				?? this.getPriceHistorySeedState(itemId),
-			itemName: () => frontmatterItemName,
-			// A note can render this block before `initializeRuntime` finishes (H18 bug, 28 sep):
-			// nothing else ever repaints a code block on its own, so without this the block was
-			// stuck on "loading" forever. Retried exactly once, the moment startup settles.
-			whenReady: () => this.whenRuntimeReady(),
-		});
+	/** The `tyrian-price-history` code-block handler (`PriceHistoryRuntime`). */
+	private paintPriceHistoryNoteBlockView(source: string, el: HTMLElement, ctx: TyrianCodeBlockContext): Promise<void> {
+		return this.priceHistoryFacade.paintPriceHistoryNoteBlockView(source, el, ctx);
 	}
 
 	/** Resolves once, the first time after this call that `runtimeReady` settles (ready or failed). */
@@ -2510,34 +2428,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const resolve of this.runtimeReadyWaiters.splice(0)) resolve();
 	}
 
-	/**
-	 * Public catalog name + icon for the price-history watch list.
-	 *
-	 * Reuses the same lazily-opened, IndexedDB-cached catalog service the session
-	 * loot panel uses: names and icons ride the one existing 7-day cache instead of
-	 * a bespoke one, and a second panel opening inside that window never repeats
-	 * the network request.
-	 */
-	async resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
-		if (itemIds.length === 0 || this.sessionCatalogFactory === null) return {};
-		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-			component: 'price_history', action: 'price_history_load_series', state: 'price_history_catalog',
-		});
-		try {
-			this.sessionCatalog ??= await this.sessionCatalogFactory();
-			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
-			const resolved: Record<number, { name: string; icon: string | null }> = {};
-			for (const [key, item] of Object.entries(items)) {
-				const itemId = Number(key);
-				if (!Number.isSafeInteger(itemId)) continue;
-				resolved[itemId] = { name: item.name, icon: safePublicRenderIconUrl(item.icon) };
-			}
-			span.success('resolved', { itemCount: itemIds.length });
-			return resolved;
-		} catch (error) {
-			span.failure(error, 'network_failure', 'price_history_catalog_unavailable');
-			return {};
-		}
+	/** Public catalog name + icon for the price-history watch list (`PriceHistoryRuntime`). */
+	resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
+		return this.priceHistoryFacade.resolvePriceHistoryItemCatalog(itemIds);
 	}
 
 	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {
@@ -2674,123 +2567,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.updateManagedAssetsAfterInventorySync();
 	}
 
-	/**
-	 * H18.18: the Bases follow a newer plugin on their own, but only behind the explicit inventory
-	 * sync that just rewrote the notes they read (never on load: PRODUCT.md principle 2 and 4).
-	 * Only an installed root that already is the output folder is touched, and only when the
-	 * manual preview's own conflict rule finds nothing the user edited
-	 * (`decideManagedAssetsAutoUpdate`); the write is the Settings "Aplicar" path, unchanged. A held
-	 * update keeps today's manual preview, ready in Settings, and warns once per plugin load.
-	 */
-	private async updateManagedAssetsAfterInventorySync(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		// A manual inventory sync also runs in consult, but the Bases stay the collector's to write.
-		if (consulting(this)) return;
-		const state = this.inventoryVaultSyncRun.current();
-		if (!this.runtimeReady || state.status !== 'idle' || state.lastRun?.status !== 'success') return;
-		const root = this.settings.managedAssetsRoot;
-		if (root === null || root !== this.settings.outputFolder
-			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
-		const perform = async () => {
-			let decision: ManagedAssetsAutoUpdateDecision;
-			let inspection: ManagedAssetsInspection;
-			try {
-				inspection = await this.managedAssets.inspect(root);
-				decision = decideManagedAssetsAutoUpdate(inspection);
-			} catch (error) {
-				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
-			}
-			const translator = createTranslator(this.settings.language);
-			if (decision.action === 'manual') {
-				this.managedAssetsView = { status: 'ready', message: 'preview_blocked', plan: planManagedAssets(inspection, 'upgrade') };
-				this.settingTab.refreshManagedAssetsRow();
-				if (!this.managedAssetsAutoUpdateWarned) {
-					this.managedAssetsAutoUpdateWarned = true;
-					this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_blocked');
-				}
-				return undefined;
-			}
-			if (decision.action === 'none') return undefined;
-			const applied = await this.applyManagedAssetsIfStillDue(false);
-			if (applied === null && this.managedAssetsView.status === 'ready') return undefined;
-			if (this.managedAssetsView.status !== 'ready') {
-				this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_updated');
-			} else if (applied !== null && !this.announceManagedAssetsFollowed(applied)) {
-				this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdated'), 'managed_assets_updated');
-			}
-			return undefined;
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'after_inventory_sync' }, perform)
-			?? perform());
-	}
+	/** The Bases follow a newer plugin after the one-click inventory sync (`ManagedAssetsRuntime`). */
+	private updateManagedAssetsAfterInventorySync(): Promise<void> { return this.assetsRuntime.updateManagedAssetsAfterInventorySync(); }
 
-	/**
-	 * David, 9 Oct 2026 (his choices «Sí, que las cree solo», «Actualizarla también» and «Borrarlos si no los editaste»): on
-	 * load the managed Bases follow the plugin exactly as they do after an inventory sync, with ONE rule
-	 * (`decideManagedAssetsAutoUpdate`): create the new ones, update those the user did not edit, and
-	 * retire those the bundle no longer ships (an unedited file is removed as the host's deleted-files setting says, an edited one stays
-	 * and stops being managed). A Base the user edited, a deleted one, a conflict or a newer manifest
-	 * holds everything back: nothing is written and, unlike the sync, nobody is warned (an edit made on
-	 * purpose would nag at every start). It additionally needs a `ready` manifest (an installation that
-	 * never applied assets gets nothing), the same root as the sync path (installed, equal to the output
-	 * folder, no legacy) and a collector. The «last sync succeeded» condition is the sync's and does not
-	 * apply. It runs after `runtimeReady`, off the boot path, through the Settings «Aplicar» path.
-	 */
-	private async updateManagedAssetsOnLoad(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host) || this.unloaded || !this.runtimeReady || consulting(this)) return;
-		const root = this.settings.managedAssetsRoot;
-		if (root === null || root !== this.settings.outputFolder
-			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
-		const perform = async () => {
-			// An unreadable manifest throws: `run` records the failure and the boot's fire-and-forget swallows it.
-			const inspection = await this.managedAssets.inspect(root);
-			if (this.unloaded || inspection.manifestStatus !== 'ready' || decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return undefined;
-			const applied = await this.applyManagedAssetsIfStillDue(true);
-			if (applied !== null && !this.unloaded && this.managedAssetsView.status === 'ready') this.announceManagedAssetsFollowed(applied);
-			return undefined;
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load' }, perform) ?? perform());
-	}
-
-	/**
-	 * Applies the managed assets only if the decision still holds on the inspection the apply itself acts on
-	 * (same flight, no gap for a sync or an edit in between), and not after the plugin unloaded. Returns that
-	 * inspection, or `null` when nothing was applied. `requireReady`: the load never acts without a `ready`
-	 * manifest; the sync may also recover a lost one, as `decideManagedAssetsAutoUpdate` allows.
-	 */
-	private async applyManagedAssetsIfStillDue(requireReady: boolean): Promise<ManagedAssetsInspection | null> {
-		const seen: { inspection: ManagedAssetsInspection | null } = { inspection: null };
-		await this.applyManagedAssets((inspection) => {
-			if (this.unloaded || (requireReady && inspection.manifestStatus !== 'ready')) return false;
-			if (decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return false;
-			seen.inspection = inspection;
-			return true;
-		// An automatic apply never creates a missing output folder: only the press of «Aplicar» does.
-		}, { createOutputFolder: false });
-		return seen.inspection;
-	}
-
-	/**
-	 * Says what the apply did, naming files: created, updated, removed (retired and not edited) and kept
-	 * without being managed (retired and edited). Returns false when there was nothing to name.
-	 */
-	private announceManagedAssetsFollowed(applied: ManagedAssetsInspection): boolean {
-		const translator = createTranslator(this.settings.language);
-		const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-		const named = (status: string): string[] => applied.assets.filter((entry) => entry.status === status).map((entry) => entry.asset.relativePath);
-		const report = this.managedAssets.retirementReport();
-		let said = false;
-		const say = (key: 'notices.managedAssetsAutoCreated' | 'notices.managedAssetsAutoLoadUpdated' | 'notices.managedAssetsAutoRetired' | 'notices.managedAssetsAutoReleased', names: string[]): void => {
-			if (names.length === 0) return;
-			said = true;
-			this.emitNotice(translateRuntime(translator, key, { names: names.join(', ') }), 'managed_assets_updated');
-		};
-		say('notices.managedAssetsAutoCreated', named('create'));
-		say('notices.managedAssetsAutoLoadUpdated', named('update'));
-		say('notices.managedAssetsAutoRetired', report.trashed.map(base));
-		say('notices.managedAssetsAutoReleased', report.kept.map(base));
-		return said;
-	}
+	/** On load the managed Bases follow the plugin, off the boot path (`ManagedAssetsRuntime`). */
+	private updateManagedAssetsOnLoad(): Promise<void> { return this.assetsRuntime.updateManagedAssetsOnLoad(); }
 
 	/** Discards a pending destructive plan without writing anything. */
 	cancelInventoryVaultSync(): void {
@@ -3101,6 +2882,46 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * fields, read as they stand: the controllers, the placement and the product actions are built
 	 * after the port.
 	 */
+	private static priceHistoryRuntimePort(core: TyrianCompanionCore): PriceHistoryRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get priceHistory() { return core.priceHistory; },
+			get priceHistoryPanelSeed() { return core.priceHistoryPanelSeed; },
+			get sessionCatalogFactory() { return core.sessionCatalogFactory; },
+			get sessionCatalog() { return core.sessionCatalog; },
+			set sessionCatalog(value) { core.sessionCatalog = value; },
+			get liveSessions() { return core.liveSessions; },
+			get liveEconomy() { return core.liveEconomy; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			whenRuntimeReady: () => core.whenRuntimeReady(),
+			renderInventoryAdvisorViews: () => { core.renderInventoryAdvisorViews(); },
+			updateSettings: (settings) => core.updateSettings(settings),
+		};
+	}
+
+	/**
+	 * What `HalloweenObservationRuntime` reads from this core and writes back to it (DE-01, step 3g).
+	 * Getters over the core's own fields, so the services built in `initializeRuntime` are read as they
+	 * stand; the two account references are setters too, which `unload`, the reset and the alert queue
+	 * also read.
+	 */
+	private static halloweenObservationRuntimePort(core: TyrianCompanionCore): HalloweenObservationRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get host() { return core.host; },
+			get sessions() { return core.sessions; },
+			get halloween() { return core.halloween; },
+			get halloweenPriceAlert() { return core.halloweenPriceAlert; },
+			get halloweenAccountRef() { return core.halloweenAccountRef; },
+			set halloweenAccountRef(value) { core.halloweenAccountRef = value; },
+			get alertAccountRef() { return core.alertAccountRef; },
+			set alertAccountRef(value) { core.alertAccountRef = value; },
+		};
+	}
+
 	private static liveViewRuntimePort(core: TyrianCompanionCore): LiveViewRuntimePort {
 		return {
 			get runtimeReady() { return core.runtimeReady; },
@@ -3110,6 +2931,32 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get productActions() { return core.productActions; },
 			get commands() { return core.commands; },
 			get liveSessionLoot() { return core.liveSessionLoot; },
+		};
+	}
+
+	/**
+	 * What `ManagedAssetsRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the
+	 * core's own fields, so the manager and the lifecycle `initializeRuntime` builds later and a setting
+	 * changed are read as they stand; the row's view is a setter too, as the core owns it.
+	 */
+	private static managedAssetsRuntimePort(core: TyrianCompanionCore): ManagedAssetsRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get unloaded() { return core.unloaded; },
+			get collectorMode() { return core.collectorMode; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get managedAssets() { return core.managedAssets; },
+			get managedAssetsLifecycle() { return core.managedAssetsLifecycle; },
+			get managedAssetsView() { return core.managedAssetsView; },
+			set managedAssetsView(value) { core.managedAssetsView = value; },
+			get settingTab() { return core.settingTab; },
+			get inventoryVaultSyncRun() { return core.inventoryVaultSyncRun; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			notifyConsultMode: () => { core.notifyConsultMode(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			updateSettings: (settings) => core.updateSettings(settings),
 		};
 	}
 
@@ -3415,12 +3262,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	getFarmingPreparationContext(): FarmingPreparationContext { return this.farming.getFarmingPreparationContext(); }
 	getFarmingIngameState(): FarmingIngameState { return this.farming.getFarmingIngameState(); }
 
-	/** Public gross price of the Halloween bag for `price2`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
-	getBagPriceIngameState(): PriceIngameState {
-		this.liveEconomy?.refreshBagQuote();
-		return projectBagPriceIngameState({ phase: this.liveSessions?.getView().phase ?? 'idle',
-			quote: this.liveEconomy?.rawQuote(HALLOWEEN_TOT_BAG_ITEM_ID) ?? null, now: Date.now() });
-	}
+	/** Public gross price of the Halloween bag for `price2` (`PriceHistoryRuntime`). */
+	getBagPriceIngameState(): PriceIngameState { return this.priceHistoryFacade.getBagPriceIngameState(); }
 
 	getLiveSessionLoot(): LiveSessionLootState { return this.liveView.getLiveSessionLoot(); }
 
@@ -3501,9 +3344,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** The Companion card's escape hatch for a blocked `operation_conflict`: the same journaled Move. */
-	async retryManagedAssetsReconciliation(): Promise<void> {
-		await this.reconcileManagedAssetsRoot();
-	}
+	retryManagedAssetsReconciliation(): Promise<void> { return this.assetsRuntime.retryManagedAssetsReconciliation(); }
 
 	getSessionSummarySaveState(): SessionSummarySaveState { return this.notes.getSessionSummarySaveState(); }
 
@@ -3536,7 +3377,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	retrySessionSummarySave(): Promise<void> { return this.notes.retrySessionSummarySave(); }
 
-	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
+	getManagedAssetsView() { return this.assetsRuntime.getManagedAssetsView(); }
 
 	getSessionHistoryView(): SessionHistoryView { return this.session.getSessionHistoryView(); }
 
@@ -3597,10 +3438,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** True while the Halloween observation surface is live: the pack's window, or the manual widening. */
-	private halloweenObservationActive(): boolean {
-		// New sessions are passive; the legacy authenticated monitor remains a local history source.
-		return false;
-	}
+	private halloweenObservationActive(): boolean { return this.halloweenObservation.halloweenObservationActive(); }
 
 	/** The single exit point for loot and price alerts (`AlertRuntime`). */
 	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> { return this.alerts.emitAlert(alert); }
@@ -3960,274 +3798,38 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * False when the host declared `capabilities.managedAssets: false` (a host with no Bases; Hebra declares
-	 * `true`): Settings shows no assets row and nothing here installs, moves, repairs, replaces or removes them.
-	 * An omitted capability means true, so Obsidian is unchanged.
+	 * Whether the host keeps managed assets, whether it can move them and whether a root is set, and the
+	 * Settings row's actions: preview, apply, repair, replace, list, move and remove (`ManagedAssetsRuntime`).
 	 */
-	managedAssetsSupported(): boolean {
-		return hostSupportsManagedAssets(this.host);
+	managedAssetsSupported(): boolean { return this.assetsRuntime.managedAssetsSupported(); }
+
+	managedAssetsCanMove(): boolean { return this.assetsRuntime.managedAssetsCanMove(); }
+
+	hasManagedAssetsRoot(): boolean { return this.assetsRuntime.hasManagedAssetsRoot(); }
+
+	previewManagedAssets(): Promise<void> { return this.assetsRuntime.previewManagedAssets(); }
+
+	applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean, options: ManagedAssetsWriteOptions = {}): Promise<void> {
+		return this.assetsRuntime.applyManagedAssets(guard, options);
 	}
 
-	/** False when the host cannot move assets between roots (Hebra): no Move button, no automatic follow. */
-	managedAssetsCanMove(): boolean {
-		return canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder);
+	repairManagedAssets(options: ManagedAssetsWriteOptions = {}): Promise<void> { return this.assetsRuntime.repairManagedAssets(options); }
+
+	replaceUnownedManagedAssets(confirmed: readonly string[], options: ManagedAssetsWriteOptions = {}): Promise<void> {
+		return this.assetsRuntime.replaceUnownedManagedAssets(confirmed, options);
 	}
 
-	hasManagedAssetsRoot(): boolean {		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
+	listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> { return this.assetsRuntime.listUnownedManagedAssets(); }
+
+	relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
+		return this.assetsRuntime.relocateManagedAssets(parent);
 	}
 
-	// Every press of the Assets row that does nothing (still starting, only consulting) says so in the row, with a
-	// message that tells what to do, besides the notice. Written inline: the tests drive these methods with a plain `this`.
-	async previewManagedAssets(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_root_retained', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
-		this.managedAssetsView = { status: 'working', message: 'inspecting', plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		// H15.19 (2026-09-10 incident): the catch below fixed the view but never registered
-		// anything, so a failed inspection (a corrupt manifest, a Vault read that threw) looked
-		// identical in the local debug log to a preview that never ran at all.
-		const perform = async () => {
-			try {
-				const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
-				const plan = await this.managedAssets.preview(root, kind);
-				// Files of the user's at a managed path are not touched by Apply: the preview says so and points to Replace.
-				const message = !plan.canApply ? 'preview_blocked'
-					: plan.steps.some((step) => step.status === 'occupied_unowned')
-						// Replace needs a managed root: a fresh install, with none, can only be told to move or rename the files.
-						? (this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null ? 'preview_unowned' : 'preview_unowned_no_root')
-						: 'preview_ready';
-				this.managedAssetsView = { status: 'ready', message, plan };
-				return undefined;
-			} catch (error) {
-				const cause = vaultFailureCause(error);
-				this.managedAssetsView = { status: 'error', message: cause === undefined ? 'inspect_failed' : managedAssetsFailureCode('unavailable', cause), plan: null };
-				return { phase: 'failure' as const, code: cause === undefined ? 'unknown_failure' as const : 'missing' as const, details: { ...unmappedErrorLogDetails(error), ...(cause === undefined ? {} : { code: cause }) } };
-			}
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_preview' }, perform) ?? perform());
-		this.settingTab.refreshManagedAssetsRow();
-	}
+	removeManagedAssets(): Promise<void> { return this.assetsRuntime.removeManagedAssets(); }
 
-	/**
-	 * `guard` is the caller's last word on the inspection the apply acts on (see `ManagedAssetsManager.apply`).
-	 * `options.createOutputFolder`: only the Settings press passes it (`createMissingOutputFolder`).
-	 */
-	async applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean, options: ManagedAssetsWriteOptions = {}): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		const outputFolder = this.settings.outputFolder;
-		const result = await this.runManagedAssetsLifecycle(async () => (
-			await createMissingOutputFolder(this.host, outputFolder, outputFolder, options)
-			?? await this.managedAssetsLifecycle.install(outputFolder, undefined, guard)
-		));
-		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
-	}
-
-	async repairManagedAssets(options: ManagedAssetsWriteOptions = {}): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		if (!this.settings.managedAssetsRoot) return;
-		const root = this.settings.managedAssetsRoot;
-		const outputFolder = this.settings.outputFolder;
-		await this.runManagedAssetOperation(async () => (
-			await createMissingOutputFolder(this.host, root, outputFolder, options) ?? await this.managedAssets.apply(root, 'repair')
-		));
-	}
-
-	/**
-	 * The explicit «Replace» of Settings (the user confirmed it): overwrites the Bases the plugin cannot prove
-	 * it wrote (edited by hand, or from a build nothing published) with the ones it ships. No automatic path
-	 * reaches it: the preview keeps listing those files as «Yours, left untouched» until this runs.
-	 */
-	async replaceUnownedManagedAssets(confirmed: readonly string[], options: ManagedAssetsWriteOptions = {}): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		if (!this.settings.managedAssetsRoot) return;
-		const root = this.settings.managedAssetsRoot;
-		const outputFolder = this.settings.outputFolder;
-		await this.runManagedAssetOperation(async () => (
-			await createMissingOutputFolder(this.host, root, outputFolder, options) ?? await this.managedAssets.replaceUnowned(root, confirmed)
-		));
-	}
-
-	/**
-	 * What «Replace» would overwrite right now (a fresh read, not the last preview): shown in its confirmation,
-	 * and the exact set `replaceUnownedManagedAssets` is then limited to. Empty when nothing can be listed; an unreadable manifest throws, as the Settings preview's own inspection would.
-	 */
-	async listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> {
-		if (!hostSupportsManagedAssets(this.host)) return [];
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return []; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return []; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return [];
-		}
-		// No root and no legacy one: nothing to list, silent as Repair is in that same case.
-		const root = this.settings.managedAssetsRoot;
-		if (!root) return [];
-		let found: Array<{ id: string; path: string }> = [];
-		const perform = async () => {
-			try {
-				found = await this.managedAssets.listUnowned(root);
-				this.managedAssetsView = found.length === 0
-					? { status: 'ready', message: 'no_unowned', plan: null }
-					: this.managedAssetsView;
-				return undefined;
-			} catch (error) {
-				found = [];
-				this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null };
-				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
-			}
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_replace_list' }, perform) ?? perform());
-		this.settingTab.refreshManagedAssetsRow();
-		return found;
-	}
-
-	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
-	 * pointer could not be confirmed to match the retained root first). */
-	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
-		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return null;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return null; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return null; }
-		const destination = this.settings.outputFolder;
-		const legacyRoot = this.settings.legacyManagedAssetsRoot;
-		if (!await this.ensureManagedAssetsAuthority(parent)) return null;
-		const result = await this.runManagedAssetsLifecycle(
-			() => this.managedAssetsLifecycle.move(destination, legacyRoot ?? undefined, parent),
-		);
-		if ('root' in result && (legacyRoot === null || result.status === 'relocated' && result.root === destination)) {
-			await this.updateSettings({ managedAssetsRoot: result.root });
-		}
-		return result;
-	}
-
-	async removeManagedAssets(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		const legacyRoot = this.settings.legacyManagedAssetsRoot;
-		if (!await this.ensureManagedAssetsAuthority()) return;
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
-		if ('root' in result && (legacyRoot === null || result.status === 'removed' && result.root === null)) {
-			await this.updateSettings({ managedAssetsRoot: result.root });
-		}
-	}
-
-	/**
-	 * The output-folder selector is the single source of truth for managed assets: Bases and
-	 * templates must never sit somewhere the user never chose. This heals both an explicit
-	 * folder change and a divergence discovered at startup (an install whose Bases root never
-	 * followed a later folder change, e.g. an upgrade from before H5.8) through the exact same
-	 * journaled Move lifecycle as the manual "Move" action, not a bespoke copy of it. Move only
-	 * deletes origin bytes after the destination install already succeeded and refuses to run
-	 * over a modified/unowned/conflicting root, so a blocked reconciliation always leaves both
-	 * roots exactly as they were: nothing is ever moved halfway or silently overwritten. A
-	 * completed or blocked attempt still surfaces through a Notice, because relocating files in
-	 * the user's Vault without them ever seeing it is worse than telling them after the fact;
-	 * the Settings row and its manual Move button remain the escape hatch when this is blocked.
-	 *
-	 * A retained legacy root is deliberately excluded: `managed-assets.test.ts` documents that
-	 * adopting one only ever happens through an explicit lifecycle Move, and this must not turn
-	 * that into something that fires on its own the next time Obsidian starts.
-	 */
-	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return;
-		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
-		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
-		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
-		const result = await this.relocateManagedAssets(parent);
-		const translator = createTranslator(this.settings.language);
-		if (result === null) {
-			this.emitNotice(
-				translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'),
-				'managed_assets_blocked',
-			);
-			return;
-		}
-		if (result.status === 'relocated') {
-			this.emitNotice(
-				translateRuntime(translator, 'notices.managedAssetsAutoRelocated', { root: this.settings.outputFolder }),
-				'managed_assets_relocated',
-			);
-		} else if (result.status !== 'unchanged') {
-			this.emitNotice(
-				translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'),
-				'managed_assets_blocked',
-			);
-		}
-	}
-
-	private async ensureManagedAssetsAuthority(parent?: ResolvedLocalDebugActionContext): Promise<boolean> {
-		if (this.settings.legacyManagedAssetsRoot !== null) return true;
-		const mirroredRoot = this.settings.managedAssetsRoot;
-		if (!mirroredRoot) return true;
-		const adopted = await this.runManagedAssetsLifecycle(
-			() => this.managedAssetsLifecycle.install(mirroredRoot, parent),
-		);
-		return 'root' in adopted && adopted.root === mirroredRoot;
-	}
-
-	private async runManagedAssetsLifecycle(operation: () => Promise<ManagedAssetsLifecycleResult>): Promise<ManagedAssetsLifecycleResult> {
-		this.managedAssetsView = { status: 'working', message: 'applying_lifecycle', plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		let result: ManagedAssetsLifecycleResult;
-		try { result = await operation(); }
-		catch { result = { status: 'unavailable', message: 'The durable managed-assets authority is unavailable.' }; }
-		this.managedAssetsView = 'root' in result
-			? { status: 'ready', message: 'lifecycle_ready', plan: null }
-			: { status: 'error', message: managedAssetsFailureCode(result.status, result.cause), plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		return result;
-	}
-
-	private async runManagedAssetOperation(operation: () => Promise<ManagedAssetsResult>): Promise<ManagedAssetsResult> {
-		this.managedAssetsView = { status: 'working', message: 'applying_journal', plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		let result!: ManagedAssetsResult;
-		// Repair and Replace used to leave nothing in the local log when they failed: the record carries the real code now.
-		const perform = async () => {
-			result = await operation();
-			if (!('message' in result)) return undefined;
-			return {
-				phase: 'failure' as const,
-				code: result.cause === undefined || result.cause === 'only_unowned_files' ? 'validation_failed' as const : 'missing' as const,
-				details: { status: result.status, message: result.message, ...result.details },
-			};
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply' }, perform) ?? perform());
-		if (result.status === 'applied' || result.status === 'unchanged' || result.status === 'detached') {
-			this.managedAssetsView = { status: 'ready', message: result.status === 'detached' ? 'ownership_detached' : 'assets_ready', plan: null };
-		} else if ('message' in result) {
-			this.managedAssetsView = { status: 'error', message: managedAssetsFailureCode(result.status, result.cause), plan: null };
-		}
-		this.settingTab.refreshManagedAssetsRow();
-		return result;
+	/** The output folder moved: the Bases follow it through the journaled Move (`ManagedAssetsRuntime`). */
+	private reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		return this.assetsRuntime.reconcileManagedAssetsRoot(parent);
 	}
 
 	confirmClearCompletedSession(): void {
@@ -4656,21 +4258,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 	}
 
-	/**
-	 * H14.3: `first_seen` and `rare_unpriced_or_bound` no longer alert (`ALWAYS_ALERT_REASONS`);
-	 * the note surfaces them as information instead, read from the Halloween notice this session
-	 * already produced (`episodeId` is `session:<sessionId>`, same key `observeHalloweenDelta`
-	 * writes under). Outside the festival, or without a matching notice, both stay empty.
-	 */
+	/** H14.3: the note's first-seen and rare-unpriced items (`HalloweenObservationRuntime`). */
 	private sessionHalloweenInfoItemIds(sessionId: string): { firstSeenItemIds: number[]; rareUnpricedOrBoundItemIds: number[] } {
-		const notice = this.halloween?.getState().notices.find((entry) => entry.episodeId === `session:${sessionId}`);
-		const firstSeenItemIds: number[] = [];
-		const rareUnpricedOrBoundItemIds: number[] = [];
-		for (const item of notice?.items ?? []) {
-			if (item.reasons.some((reason) => reason.code === 'first_seen')) firstSeenItemIds.push(item.itemId);
-			if (item.reasons.some((reason) => reason.code === 'rare_unpriced_or_bound')) rareUnpricedOrBoundItemIds.push(item.itemId);
-		}
-		return { firstSeenItemIds, rareUnpricedOrBoundItemIds };
+		return this.halloweenObservation.sessionHalloweenInfoItemIds(sessionId);
 	}
 
 	/** Only evidence measured from *this* runtime record may travel with it into the note. */
@@ -4780,21 +4370,6 @@ function sessionEconomyKey(runtime: SessionRuntimeRecord): string | null {
 		: null;
 }
 
-function disabledPriceHistoryState(): PriceHistoryRuntimeState {
-	return {
-		status: 'disabled', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
-		daily: [], lastSampleAtMs: null, nextCaptureAtMs: null, provisionalDayUtc: null,
-	};
-}
-
-function disabledHalloweenState(): HalloweenRuntimeState {
-	return { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null };
-}
-
-function disabledHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
-	return { status: 'disabled', projection: null, notices: [], unreadCount: 0 };
-}
-
 function connectionScopes(state: ConnectionState): string[] {
 	return state.status === 'connected' || state.status === 'warning' ? [...state.details.scopes] : [];
 }
@@ -4805,19 +4380,6 @@ function priceHistorySettingsFrom(settings: TyrianSettings): PriceHistorySetting
 		intervalMinutes: settings.priceHistoryIntervalMinutes,
 		rawRetentionDays: settings.priceHistoryRawRetentionDays,
 		dailyRetentionDays: settings.priceHistoryDailyRetentionDays,
-	};
-}
-
-/**
- * The price alert keeps its own opt-in, but its Halloween half now follows the
- * calendar: after H13.3 `halloweenEnabled` only widens the window, so reading it
- * directly would have left the price surface dark during the festival.
- */
-function halloweenPriceAlertSettingsFrom(settings: TyrianSettings, nowMs: number = Date.now()) {
-	return {
-		enabled: halloweenObservationActive(settings.halloweenEnabled, nowMs) && settings.halloweenPriceAlertEnabled,
-		minimumAboveP90Bps: settings.halloweenPriceAlertMinimumAboveP90Bps,
-		cooldownHours: settings.halloweenPriceAlertCooldownHours,
 	};
 }
 
@@ -4851,25 +4413,6 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 	};
 }
 
-function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable', cause?: ManagedAssetsFailureCause): ManagedAssetsMessageCode {
-	const byCause: Record<ManagedAssetsFailureCause, ManagedAssetsMessageCode> = {
-		bytes_not_synced: 'operation_bytes_not_synced', output_folder_missing: 'operation_output_folder_missing',
-		host_refused: 'operation_host_refused', only_unowned_files: 'operation_only_unowned',
-		output_folder_create_failed: 'operation_output_folder_create_failed',
-	};
-	if (cause !== undefined) return byCause[cause];
-	const codes: Record<typeof status, ManagedAssetsMessageCode> = {
-		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
-	};
-	return codes[status];
-}
-
-/** `ctx.frontmatter` is `any`; this is the one place that reads `tc_item_name` out of it safely. */
-function frontmatterTcItemName(frontmatter: unknown): string | null {
-	if (typeof frontmatter !== 'object' || frontmatter === null) return null;
-	const value = (frontmatter as Record<string, unknown>).tc_item_name;
-	return typeof value === 'string' ? value : null;
-}
 
 
 /** Retains valid sanitized records, including the internal IDs required to reconstruct one action. */
@@ -4953,49 +4496,6 @@ async function ensureAdapterDirectory(
 		current = current.length === 0 ? segment : `${current}/${segment}`;
 		if (!await adapter.exists(current)) await adapter.mkdir(current);
 	}
-}
-
-/**
- * David, 10 Oct 2026 (Assets row: «la carpeta de salida no existe en la biblioteca […] si no existe, se crea»):
- * before a write the Settings row asked for with `createOutputFolder: true` (the presses of Apply, Repair and
- * Replace) into the output folder, a host whose `createFolder` cannot create that folder (Hebra) creates it.
- * Never without that flag (a start, an automatic apply, Remove, Move), nor for a root outside the output folder.
- * Returns the failure the row shows when creating it failed (the host already reported why), null otherwise.
- * Tolerates an absent host, like `consulting`.
- */
-async function createMissingOutputFolder(
-	host: TyrianHost | undefined,
-	root: string,
-	outputFolder: string,
-	options: ManagedAssetsWriteOptions,
-): Promise<{ status: 'unavailable'; message: string; cause: 'output_folder_create_failed' } | null> {
-	if (options.createOutputFolder !== true || (root !== outputFolder && !root.startsWith(`${outputFolder}/`))) return null;
-	const vault = host?.vault;
-	if (vault?.createOutputFolder === undefined) return null;
-	if (await vault.createOutputFolder()) return null;
-	return { status: 'unavailable', message: 'The output folder is not in the library and could not be created.', cause: 'output_folder_create_failed' };
-}
-
-/**
- * Whether the managed assets can be moved off the root the settings name. A host that declared
- * `capabilities.managedAssetsMove: false` (Hebra: the vault IS the output folder) can only do it while that root is
- * still READABLE in the vault. There the vault is the output folder, so that is decided by paths alone: the root is
- * the output folder or lies inside it (the manifest may be lost and its Bases intact, which Move adopts). Once the
- * output folder moved away from it (a sibling, or a folder inside it) nothing of the old root can be read and
- * Apply installs afresh instead.
- */
-function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null, outputFolder: string): boolean {
-	if (host?.capabilities?.managedAssetsMove !== false) return true;
-	return root !== null && (root === outputFolder || root.startsWith(`${outputFolder}/`));
-}
-
-/**
- * Whether the host keeps managed assets (Bases): true unless it declared
- * `capabilities.managedAssets: false`. Tolerates an absent host, like `consulting` does for the
- * isolated `this` objects the tests drive.
- */
-function hostSupportsManagedAssets(host: TyrianHost | undefined): boolean {
-	return host?.capabilities?.managedAssets !== false;
 }
 
 /**

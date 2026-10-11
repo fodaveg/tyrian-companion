@@ -65,7 +65,9 @@ describe('H11-A architecture and UI contract', () => {
 		expect(readModuleSource('src/runtime/assemble-halloween.ts'))
 			.toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
 		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');
-		expect(main).toContain("`session:${session.sessionId}`");
+		// The accepted-poll episode key (`session:<sessionId>`) moved with the method to
+		// `HalloweenObservationRuntime` (DE-01, step 3g) and is pinned by its behaviour test,
+		// `src/runtime/halloween-observation-runtime.test.ts`, not by its text.
 		// The session-final episode key (`finishFinalizedSession`) is read from the call it makes when
 		// it runs: `src/main.test.ts`, 'passes the whole classification and stable delta to
 		// session_final only once finalization already succeeded' (DE-01).
