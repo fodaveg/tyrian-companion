@@ -70,6 +70,12 @@ interface LiveSessionLifecycleOptions {
 	 * `record` belongs to, which is not always the one this build starts sessions in: the note is written in it.
 	 */
 	onComplete?(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat): Promise<string | null>;
+	/**
+	 * Of `sessionIds`, the ones whose saved note the vault holds, each with the path of that note. It is the only proof that a
+	 * session is sealed when no queue names its journal (one sealed by 0.6.12 or earlier, before the queue existed). Rejects when
+	 * the vault cannot be read.
+	 */
+	sealedNotes?(sessionIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 /**
@@ -118,6 +124,10 @@ export class LiveSessionLifecycle {
 	private registryKnown = false;
 	/** A prune or a save of the queue failed: the beat stops asking (it would report the same failure every five seconds), and the next start asks again. */
 	private pruneHeld = false;
+	/** Raised once this host has looked for the journals no queue names (`adoptSealedOrphans`): it looks once per start of the host. */
+	private orphansSought = false;
+	/** The sessions of the journal `adoptSealedOrphans` has still to ask the vault about, in order; null until it has listed them. */
+	private orphansPending: string[] | null = null;
 	/**
 	 * The last sessions this host sealed, kept with their journal for one consumer: `updateAlert(…, receiptOnly, sessionId)`, the
 	 * delivery receipt of an alert that arrives after its session closed. It rewrites the stored journal entry and the note, so
@@ -468,8 +478,9 @@ export class LiveSessionLifecycle {
 	 * is the coordinator's rule for any acquisition): the record of a session another instance runs is never cleared from here,
 	 * and a `stale` answer from the store is a refusal, not a reason to force. The one record it clears without a reservation
 	 * is one the store says does not validate (`corrupt`), which nobody can hold. A record it could not read is read again first.
-	 * A record found on disk while memory has none is cleared WITHOUT trying its note (this host has not read its journal);
-	 * the panel does not offer that case.
+	 * A record found on disk while memory has none (a journal that does not match it leaves the session stuck) is cleared
+	 * WITHOUT trying its note (this host has not read its journal), and its journal is NOT queued for the prune, whatever
+	 * receipt the record carries: only `adoptSealedOrphans`, which reads the note in the vault, may queue it at a later start.
 	 * `cleared: false` carries the reason; the session is as it was, except that the stop attempted on the way may have closed it.
 	 */
 	async discard(): Promise<LiveSessionDiscard> {
@@ -526,6 +537,10 @@ export class LiveSessionLifecycle {
 			if (status !== 'cleared') return { cleared: false, note, reason: status === 'stale' ? 'record_stale' : 'storage_unavailable' };
 			const held = this.handle; this.handle = null;
 			if (held !== null) { try { await this.options.coordinator.release(held); } catch { /* the lease runs out by itself */ } }
+			// Only a record this host brought back and whose note it just saved or verified joins the queue. One read from the key
+			// while memory has none (its journal did not match it) is not: its receipt was never checked against the vault, and if
+			// the note is gone that journal is the last copy of the evidence. `adoptSealedOrphans` queues it at a later start, once
+			// it has read its note in the vault.
 			const receipt = this.record?.summaryReceipt ?? null;
 			if (this.record !== null && receipt !== null) { this.sealedForPrune.set(this.record.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 			this.resetAfterDiscard();
@@ -1021,6 +1036,7 @@ export class LiveSessionLifecycle {
 		if (this.pruneHeld) return;
 		let budget = LIVE_JOURNAL_PRUNE_BATCH;
 		const allowed = this.registryKnown && (this.record?.phase !== 'active' || this.handle !== null);
+		if (allowed && this.queueRead) await this.adoptSealedOrphans();
 		for (const sessionId of allowed ? [...this.sealedForPrune.keys()] : []) {
 			// Retained by this host: a late receipt may still rewrite its journal. It stays queued for the host that starts next.
 			if (this.completed.has(sessionId)) continue;
@@ -1031,6 +1047,38 @@ export class LiveSessionLifecycle {
 			if (pruned) { this.sealedForPrune.delete(sessionId); this.queueDirty = true; } else this.pruneHeld = true;
 		}
 		if (this.queueDirty) await this.saveSealedQueue();
+	}
+	/**
+	 * The journals no queue names and nobody holds (not the runtime key's session, not one this host retains): sessions sealed
+	 * before the prune queue existed (0.6.12 and earlier), whose record left the runtime key without joining any queue, so the
+	 * prune never reached them. The one whose saved note the vault holds is sealed and joins the queue with the path of that
+	 * note; one without (discarded without a note, or whose note was moved or renamed) stays, as before. Once per start of the
+	 * host, from the first pass that may prune, never at load.
+	 *
+	 * Each pass holds the lifecycle's queue, and a sample's commit waits behind it, so each pass does one bounded step: the first
+	 * lists the sessions of the journal (one key cursor), and each one after asks the vault about at most
+	 * `LIVE_JOURNAL_PRUNE_BATCH` of them, each ask under its own deadline. The list still to ask about stays in memory, and each
+	 * candidate is filtered again when its turn comes. A failure is reported once, ends the search for this run (nothing more is
+	 * queued on it) and is asked again at the next start.
+	 */
+	private async adoptSealedOrphans(): Promise<void> {
+		if (this.orphansSought || this.options.sealedNotes === undefined) return;
+		const orphan = (id: string): boolean => id !== this.record?.sessionId && !this.completed.has(id) && !this.sealedForPrune.has(id);
+		try {
+			if (this.orphansPending === null) {
+				this.orphansPending = (await this.options.persistence.listLiveJournalSessions?.() ?? []).filter(orphan);
+				if (this.orphansPending.length === 0) this.orphansSought = true;
+				return;
+			}
+			const batch = this.orphansPending.splice(0, LIVE_JOURNAL_PRUNE_BATCH).filter(orphan);
+			if (this.orphansPending.length === 0) this.orphansSought = true;
+			if (batch.length === 0) return;
+			const notes = await this.options.sealedNotes(batch);
+			for (const sessionId of batch) {
+				const path = notes.get(sessionId);
+				if (path !== undefined && orphan(sessionId)) { this.sealedForPrune.set(sessionId, path); this.queueDirty = true; }
+			}
+		} catch (error) { this.options.onError(error); this.orphansSought = true; this.orphansPending = []; }
 	}
 	/**
 	 * Saves the queue as it is now. A failure is reported once and swallowed: the queue stays dirty and the next start
@@ -1134,6 +1182,7 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		// A store without one of the optional steps answers as the lifecycle already read its absence.
 		readLiveJournalEntry: (sessionId, epoch, cursor) => deadline.bounded(async () => await options.persistence.readLiveJournalEntry?.(sessionId, epoch, cursor) ?? null, rejected),
 		pruneLiveJournal: (sessionId) => deadline.bounded(async () => await options.persistence.pruneLiveJournal?.(sessionId) === true, rejected),
+		listLiveJournalSessions: () => deadline.bounded(async () => await options.persistence.listLiveJournalSessions?.() ?? [], rejected),
 		loadPruneQueue: () => deadline.bounded(async () => await options.persistence.loadPruneQueue?.() ?? [], rejected),
 		savePruneQueue: (queue) => deadline.bounded(async () => await options.persistence.savePruneQueue?.(queue) === true, rejected),
 		loadSummaryState: () => deadline.bounded(async () => await options.persistence.loadSummaryState?.() ?? null, () => null),
@@ -1179,9 +1228,13 @@ function withStorageDeadline(options: LiveSessionLifecycleOptions): LiveSessionL
 		if ('error' in answer) throw answer.error;
 		return answer.path;
 	};
+	// The vault is waited for like storage: the pass that asks holds the lifecycle's queue, and a vault that never answers must not hold it for ever.
+	const sealedNotes: NonNullable<LiveSessionLifecycleOptions['sealedNotes']> = (sessionIds) =>
+		deadline.bounded(async () => await options.sealedNotes?.(sessionIds) ?? new Map<string, string>(), rejected);
 	return Object.create(options, {
 		persistence: { value: persistence }, coordinator: { value: coordinator },
 		onComplete: { get: () => options.onComplete === undefined ? undefined : onComplete },
+		sealedNotes: { get: () => options.sealedNotes === undefined ? undefined : sealedNotes },
 	}) as LiveSessionLifecycleOptions;
 }
 

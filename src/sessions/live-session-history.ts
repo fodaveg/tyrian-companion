@@ -6,6 +6,7 @@ import type { LivePriceBasis, LiveSessionViewV1, LiveTotalV1 } from './live-sess
 import { inspectLiveHistoryNote, type LiveHistoryNoteOutcome, type SessionHistoryFile, type SessionHistoryVault, type SessionNoteReads,
 	type SharedNoteRead } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { sha256Text } from './session-note-renderer';
 import { exportLiveSession, type LiveSessionExportFormat, type LiveSessionExportKind, type LiveSessionExportResult, type LiveSessionExportPayload } from './live-session-export';
 
 export interface LiveSessionHistoryEntry {
@@ -149,6 +150,26 @@ export class LiveSessionHistoryService {
 			return { status: 'ok',ignored,setAside: setAside.sort((a,b) => a.path.localeCompare(b.path)),sessions: sessions.sort((a,b) => b.startedAt.localeCompare(a.startedAt) || a.sessionRef.localeCompare(b.sessionRef)) };
 		} catch { return { status: 'unavailable' }; }
 	}
+}
+
+/**
+ * Of `sessionIds`, the ones whose saved live note the vault holds, by session id, with its path. A note is looked for under the
+ * name its writer gives it (`sessionNoteRelativePaths`: the first 16 characters of the session's reference, or all of it after a
+ * collision), and counts only when it reads as a valid live note of that same session. A note moved or renamed is not found:
+ * its session reads as one without a note, which only ever keeps a journal. Only the candidate notes are read, never the vault.
+ */
+export async function findSealedLiveNotes(vault: Pick<SessionHistoryVault, 'markdownFiles' | 'read'>, sessionIds: readonly string[]): Promise<Map<string, string>> {
+	const found = new Map<string, string>(); if (sessionIds.length === 0) return found;
+	const refs = new Map<string, string>(); for (const sessionId of sessionIds) refs.set(await sha256Text(sessionId), sessionId);
+	const names = new Map<string, string>(); for (const ref of refs.keys()) { names.set(` - ${ref.slice(0, 16)}.md`, ref); names.set(` - ${ref}.md`, ref); }
+	for (const file of vault.markdownFiles()) {
+		const cut = file.path.lastIndexOf(' - '); const ref = cut < 0 ? undefined : names.get(file.path.slice(cut));
+		const sessionId = ref === undefined ? undefined : refs.get(ref);
+		if (ref === undefined || sessionId === undefined || found.has(sessionId)) continue;
+		const { outcome } = await inspectLiveHistoryNote(await vault.read(file));
+		if (outcome.kind === 'live' && outcome.session.sessionRef === ref) found.set(sessionId, file.path);
+	}
+	return found;
 }
 
 /** Frozen history is never a live source; current time cannot renew its last capture. */
