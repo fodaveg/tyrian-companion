@@ -1099,7 +1099,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			serializeSeedDownload: priceSeedDownloads.runner('background'),
 			onStateChange: () => this.renderInventoryAdvisorViews(),
 			evaluatePriceAlert: async (port) => {
-				await this.halloweenPriceAlert?.evaluate({
+				await this.halloweenObservation.evaluatePriceAlert({
 					readDaily: async (itemId, fromDayUtc) => await port.readDaily(itemId, fromDayUtc),
 				}, port.nowMs, port.actionContext);
 			},

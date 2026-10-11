@@ -66,7 +66,13 @@ export interface PriceHistoryRuntimeOptions {
 	 * writes. Absent means collector, which is what every activation did before R1b.
 	 */
 	collector?: () => boolean;
+	/** Timer for the reopening after a passing store failure; tests inject a manual one. */
+	scheduleTimeout?: (callback: () => void, delayMs: number) => unknown;
+	cancelTimeout?: (handle: unknown) => void;
 }
+
+const STORE_RETRY_BASE_MS = 5_000;
+const STORE_RETRY_MAX_MS = 5 * 60_000;
 
 /** Opt-in runtime. Construction performs no IndexedDB, timer, listener, or network operation. */
 export class PriceHistoryRuntime {
@@ -80,6 +86,8 @@ export class PriceHistoryRuntime {
 	private generation = 0;
 	private seriesGeneration = 0;
 	private disposed = false;
+	private storeRetries = 0;
+	private storeRetryTimer: unknown = null;
 	private state: PriceHistoryRuntimeState = {
 		status: 'disabled', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
 		daily: [], lastSampleAtMs: null, nextCaptureAtMs: null, provisionalDayUtc: null,
@@ -303,6 +311,7 @@ export class PriceHistoryRuntime {
 		this.generation += 1;
 		this.seriesGeneration += 1;
 		this.activation = null;
+		this.clearStoreRetry();
 		this.scheduler.dispose();
 		this.store?.close();
 		this.store = null;
@@ -328,6 +337,7 @@ export class PriceHistoryRuntime {
 				status: collector ? 'collecting' : 'ready', watchItemIds: watch.map(({ itemId }) => itemId),
 				selectedItemId: watch[0]?.itemId ?? null,
 			});
+			this.storeRetries = 0;
 			if (collector) this.scheduler.start(priceHistoryIntervalMs(this.settings.intervalMinutes));
 		} catch (error) {
 			if (this.current(generation) && (opened === null || this.store === opened)) this.storeFailure(error);
@@ -362,6 +372,10 @@ export class PriceHistoryRuntime {
 		if (result.status === 'invalid_payload' || result.status === 'http_rejected' || result.status === 'store_unavailable') {
 			this.setState({ status: result.status });
 			span.failure(new Error(`price_history_${result.status}`), result.status === 'store_unavailable' ? 'storage_failure' : result.status === 'http_rejected' ? 'network_failure' : 'validation_failed', result.status);
+			// Z3-1/H1: a store failure goes through `storeFailure` like every other path, which closes the
+			// store and, when the cause can pass (unavailable/blocked), schedules a reopening with
+			// backoff. Reopening is what tells a passing glitch from a newer schema (`future_schema`).
+			if (result.status === 'store_unavailable') this.storeFailure(new PriceHistoryStoreError(result.failure));
 			return { kind: 'fatal' };
 		}
 		if (result.status === 'busy') { span.skip('skipped', 'collecting'); return { kind: 'success' }; }
@@ -414,6 +428,7 @@ export class PriceHistoryRuntime {
 	}
 
 	private disable(): void {
+		this.clearStoreRetry();
 		this.generation += 1;
 		this.seriesGeneration += 1;
 		this.activation = null;
@@ -436,6 +451,32 @@ export class PriceHistoryRuntime {
 		store?.close();
 		this.scheduler.stop();
 		this.setState({ status: failure === 'future_schema' ? 'store_future' : failure === 'corrupt' ? 'store_corrupt' : 'store_unavailable' });
+		if (failure === 'unavailable' || failure === 'blocked') this.scheduleStoreRetry(this.generation);
+	}
+
+	/**
+	 * Z3-1/H1/H2: a failure that can pass (a dropped transaction, a blocked open) must not park the
+	 * collector until the next settings save. The store is reopened with backoff; if the cause was a
+	 * newer schema the reopening says so (`future_schema`) and the retries stop. Quota and
+	 * corruption are not retried.
+	 */
+	private scheduleStoreRetry(generation: number): void {
+		this.clearStoreRetry();
+		const delay = Math.min(STORE_RETRY_MAX_MS, STORE_RETRY_BASE_MS * 2 ** Math.min(10, this.storeRetries));
+		this.storeRetries += 1;
+		const schedule = this.options.scheduleTimeout ?? ((callback, delayMs) => window.setTimeout(callback, delayMs));
+		this.storeRetryTimer = schedule(() => {
+			this.storeRetryTimer = null;
+			if (this.disposed || !this.settings.enabled || this.store !== null || this.activation !== null
+				|| generation !== this.generation) return;
+			void this.activateUnobserved(this.settings);
+		}, delay);
+	}
+
+	private clearStoreRetry(): void {
+		if (this.storeRetryTimer === null) return;
+		(this.options.cancelTimeout ?? ((handle) => window.clearTimeout(handle as number)))(this.storeRetryTimer);
+		this.storeRetryTimer = null;
 	}
 
 	private setState(update: Partial<PriceHistoryRuntimeState>): void {

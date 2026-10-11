@@ -7,6 +7,11 @@ export const PRICE_HISTORY_META_STORE = 'meta-v1';
 
 export const PRICE_HISTORY_SEED_ITEM_IDS = Object.freeze([36_038, 36_041, 105_402, 48_715, 73_474]);
 export const PRICE_HISTORY_MAX_WATCH_ITEMS = 400;
+/** Rows kept free for session-observed items, so a full derived slice never evicts them on arrival (Z3-4 review, H3). */
+export const PRICE_HISTORY_OBSERVED_RESERVE = 40;
+/** The budget of the capital-derived slice: the cap minus the fixed seeds minus the observed reserve. */
+export const PRICE_HISTORY_MAX_DERIVED_ITEMS =
+	PRICE_HISTORY_MAX_WATCH_ITEMS - PRICE_HISTORY_SEED_ITEM_IDS.length - PRICE_HISTORY_OBSERVED_RESERVE;
 export const PRICE_HISTORY_MAX_BATCH_SIZE = 200;
 
 export type PriceHistoryIntervalMinutes = 5 | 15 | 30 | 60;
@@ -114,6 +119,15 @@ export function normalizePriceHistoryItemIds(values: readonly number[], maximum 
 	return result.slice(0, maximum);
 }
 
+/**
+ * Like `normalizePriceHistoryItemIds` but KEEPS the caller's order (first occurrence wins), so a list
+ * already ranked by capital is trimmed by rank and not by item id.
+ */
+export function rankedPriceHistoryItemIds(values: readonly number[], maximum = PRICE_HISTORY_MAX_DERIVED_ITEMS): number[] {
+	if (!Number.isSafeInteger(maximum) || maximum <= 0) throw new RangeError('Price-history item maximum is invalid.');
+	return [...new Set(values.filter((value) => Number.isSafeInteger(value) && value > 0))].slice(0, maximum);
+}
+
 export function priceHistoryIntervalMs(minutes: PriceHistoryIntervalMinutes): number {
 	return minutes * 60_000;
 }
@@ -132,7 +146,7 @@ export function priceHistoryIntervalMs(minutes: PriceHistoryIntervalMinutes): nu
 export function selectDerivedWatchListItemIds(
 	positions: readonly { itemId: number; totalSellCopper: number | null }[],
 	capitalThresholdCopper: number,
-	maxItems = PRICE_HISTORY_MAX_WATCH_ITEMS,
+	maxItems = PRICE_HISTORY_MAX_DERIVED_ITEMS,
 ): number[] {
 	if (!Number.isSafeInteger(maxItems) || maxItems <= 0) throw new RangeError('Derived watch list maximum is invalid.');
 	const capitalByItem = new Map<number, number>();

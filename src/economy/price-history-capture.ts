@@ -9,7 +9,7 @@ import {
 	type PriceHistorySnapshotV1,
 	type PriceHistoryTuple,
 } from './price-history-model';
-import { PriceHistoryStoreError } from './price-history-store';
+import { PriceHistoryStoreError, type PriceHistoryStoreFailure } from './price-history-store';
 import type { TyrianPriceHistoryStore } from '../host/tyrian-host-storage';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
@@ -21,7 +21,8 @@ type PriceHistoryCaptureResult =
 	| { status: 'invalid_payload' }
 	/** The server refused the request with a status that retrying will not change (400, 401, 403, 418...). */
 	| { status: 'http_rejected'; httpStatus: number }
-	| { status: 'store_unavailable' };
+	/** `failure` keeps the storage cause so a recoverable one (unavailable/blocked) can be retried. */
+	| { status: 'store_unavailable'; failure: PriceHistoryStoreFailure };
 
 /** Sequential public-price capture. It records only unit bid/ask values, never listing quantities. */
 export class PriceHistoryCaptureService {
@@ -120,7 +121,9 @@ export class PriceHistoryCaptureService {
 				? { status: 'already_captured', snapshot: committed.snapshot }
 				: { status: snapshot.status, snapshot: committed.snapshot };
 		} catch (error) {
-			return { status: error instanceof PriceHistoryStoreError ? 'store_unavailable' : 'invalid_payload' };
+			return error instanceof PriceHistoryStoreError
+				? { status: 'store_unavailable', failure: error.failure }
+				: { status: 'invalid_payload' };
 		}
 	}
 }

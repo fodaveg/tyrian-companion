@@ -9,7 +9,8 @@ import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryRuntime } from './price-history-runtime';
 import { PRICE_HISTORY_DB_NAME, type PriceHistoryDailyV1, type PriceHistorySettings } from './price-history-model';
-import { IndexedDbPriceHistoryStore } from './price-history-store';
+import { IndexedDbPriceHistoryStore, PriceHistoryStoreError } from './price-history-store';
+import { ApiPollScheduler as RealApiPollScheduler } from '../sessions/api-poll-scheduler';
 
 const ENABLED: PriceHistorySettings = { enabled: true, intervalMinutes: 15, rawRetentionDays: 7, dailyRetentionDays: 180 };
 
@@ -369,6 +370,95 @@ function createRuntime(
 		},
 	});
 }
+
+describe('PriceHistoryRuntime store failures reopen the store with backoff when they can pass (Z3-1, H1, H2)', () => {
+	function rig() {
+		let now = 1_800_001;
+		const pollTimers: Array<() => void> = [];
+		const retryTimers: Array<() => void> = [];
+		const factory = new IDBFactory();
+		const requestDetailed = vi.fn(async (path: string) => response(path));
+		let scheduler!: RealApiPollScheduler;
+		const runtime = new PriceHistoryRuntime({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: factory }), vaultId: 'vault',
+			gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,
+			scheduleTimeout: (callback) => { retryTimers.push(callback); return retryTimers.length; }, cancelTimeout: () => undefined,
+			scheduler: (poll, onStateChange) => {
+				scheduler = new RealApiPollScheduler({
+					poll, onStateChange, wallNow: () => now, monotonicNow: () => now,
+					scheduleTimeout: (callback) => { pollTimers.push(callback); return pollTimers.length; }, cancelTimeout: () => undefined,
+				});
+				return scheduler;
+			},
+		});
+		const fireCapture = async (): Promise<void> => {
+			now += 900_000;
+			pollTimers.shift()!();
+			await vi.waitFor(() => expect(scheduler.getState().status).not.toBe('polling'));
+		};
+		return { runtime, factory, pollTimers, retryTimers, requestDetailed, fireCapture };
+	}
+
+	it.each(['unavailable', 'blocked'] as const)('reopens after one %s claim and the next capture succeeds', async (failure) => {
+		const { runtime, pollTimers, retryTimers, requestDetailed, fireCapture } = rig();
+		await runtime.activate(ENABLED);
+		const claim = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'claimSlot')
+			.mockRejectedValueOnce(new PriceHistoryStoreError(failure));
+		try {
+			await fireCapture();
+			expect(claim).toHaveBeenCalled();
+		} finally { claim.mockRestore(); }
+		expect(runtime.getState().status).toBe('store_unavailable');
+		expect(retryTimers).toHaveLength(1);
+		retryTimers.shift()!();
+		await vi.waitFor(() => expect(runtime.getState().status).toBe('collecting'));
+		expect(pollTimers).toHaveLength(1);
+		await fireCapture();
+		expect(requestDetailed).toHaveBeenCalled();
+		await vi.waitFor(() => expect(runtime.getState().lastSampleAtMs).not.toBeNull());
+		runtime.dispose();
+	});
+
+	it('does not retry corruption, which reopening cannot fix', async () => {
+		const { runtime, retryTimers, fireCapture } = rig();
+		await runtime.activate(ENABLED);
+		const claim = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'claimSlot')
+			.mockRejectedValueOnce(new PriceHistoryStoreError('corrupt'));
+		try { await fireCapture(); } finally { claim.mockRestore(); }
+		expect(runtime.getState().status).toBe('store_corrupt');
+		expect(retryTimers).toHaveLength(0);
+		runtime.dispose();
+	});
+
+	it('ends in store_future, with no more retries, when another window upgraded the schema', async () => {
+		const { runtime, factory, retryTimers, fireCapture } = rig();
+		await runtime.activate(ENABLED);
+		await new Promise<void>((resolve, reject) => {
+			const request = factory.open(PRICE_HISTORY_DB_NAME, 99);
+			request.onsuccess = () => { request.result.close(); resolve(); };
+			request.onerror = () => reject(request.error ?? new Error('upgrade failed'));
+		});
+		await fireCapture();
+		await vi.waitFor(() => expect(retryTimers).toHaveLength(1));
+		retryTimers.shift()!();
+		await vi.waitFor(() => expect(runtime.getState().status).toBe('store_future'));
+		expect(retryTimers).toHaveLength(0);
+		runtime.dispose();
+	});
+
+	it('also reopens after a passing failure outside the capture, in the watch-list write (H2)', async () => {
+		const { runtime, retryTimers } = rig();
+		await runtime.activate(ENABLED);
+		const apply = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'applyDerivedWatchList')
+			.mockRejectedValueOnce(new PriceHistoryStoreError('unavailable'));
+		try { await runtime.applyDerivedWatchList([900_001]); } finally { apply.mockRestore(); }
+		expect(runtime.getState().status).toBe('store_unavailable');
+		expect(retryTimers).toHaveLength(1);
+		retryTimers.shift()!();
+		await vi.waitFor(() => expect(runtime.getState().status).toBe('collecting'));
+		runtime.dispose();
+	});
+});
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;

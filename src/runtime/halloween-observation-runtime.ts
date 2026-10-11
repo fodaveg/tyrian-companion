@@ -25,6 +25,7 @@ import { halloweenObservationActive as halloweenSeasonActive } from '../hallowee
 import type {
 	HalloweenPriceAlertRuntime,
 	HalloweenPriceAlertRuntimeState,
+	HalloweenPriceHistoryPort,
 } from '../halloween/halloween-price-alert-runtime';
 import type { HalloweenRuntime as HalloweenService, HalloweenRuntimeState } from '../halloween/halloween-runtime';
 import type { ManualSessionStartService } from '../sessions/manual-session-start-service';
@@ -117,6 +118,26 @@ export class HalloweenObservationRuntime {
 		const session = this.sessions.getState();
 		if (session.status !== 'active') return;
 		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
+	}
+
+	/**
+	 * Z3-2: the alert's armed state follows the calendar, but `configure` only runs at boot, on a
+	 * settings change and on an account switch, so a session left open across 1 October (or 15
+	 * November) kept the state it was configured with. Every evaluation re-derives it first and
+	 * reconfigures only when it differs, so the common case costs one state read.
+	 */
+	async evaluatePriceAlert(
+		port: HalloweenPriceHistoryPort,
+		nowMs: number,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
+		const alert = this.halloweenPriceAlert;
+		if (alert === null) return;
+		const wanted = halloweenPriceAlertSettingsFrom(this.settings, nowMs);
+		if (wanted.enabled !== (alert.getState().status !== 'disabled')) {
+			await alert.configure(wanted, this.settings.priceHistoryEnabled, parent);
+		}
+		await alert.evaluate(port, nowMs, parent);
 	}
 
 	async switchHalloweenAccount(

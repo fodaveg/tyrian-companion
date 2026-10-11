@@ -28,7 +28,7 @@ import { runSerialTaskUnqueued } from '../core/serial-task-queue';
 import type { CatalogItem, CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import type { LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
-import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { PRICE_HISTORY_MAX_DERIVED_ITEMS, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { PriceSeedBulkRefreshService } from '../economy/price-seed-bulk-refresh';
 import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store';
 import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
@@ -429,6 +429,24 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 
 		expect(updateDerivedWatchList).toHaveBeenCalledWith([CHEAP_SEASONAL_ITEM]);
 		expect(refreshPriceSeeds).toHaveBeenCalledWith([CHEAP_SEASONAL_ITEM]);
+	});
+
+	/** Z3-4 review (H3): the derived budget trims the LOWEST CAPITAL, not the highest item ids. */
+	it('trims the watch list to the derived budget by capital rank, not by item id', async () => {
+		const updateDerivedWatchList = vi.fn(async (_itemIds: readonly number[]) => undefined);
+		const port = recommendationPort({ capitalThresholdCopper: () => 1, updateDerivedWatchList });
+		const ids = Array.from({ length: 400 }, (_, index) => index + 1);
+		// A higher item id holds more capital, so an id-sorted trim would keep exactly the wrong ones.
+		await analyse(ids.map((itemId) => bank(itemId, 1, 0)), {
+			port, refreshSeeds: true,
+			prices: Object.fromEntries(ids.map((itemId) => [itemId, { bid: 1_000 + itemId, ask: 1_100 + itemId }])),
+		});
+
+		const watch = updateDerivedWatchList.mock.calls[0]![0];
+		expect(watch).toHaveLength(PRICE_HISTORY_MAX_DERIVED_ITEMS);
+		expect(watch[0]).toBe(400);
+		expect(watch).toContain(400 - PRICE_HISTORY_MAX_DERIVED_ITEMS + 1);
+		expect(watch).not.toContain(400 - PRICE_HISTORY_MAX_DERIVED_ITEMS);
 	});
 
 	/**

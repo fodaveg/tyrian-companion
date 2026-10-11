@@ -4,7 +4,7 @@
 	"totals": {
 		"catch_clause": 619,
 		"promise_catch": 61,
-		"void_expression": 145,
+		"void_expression": 146,
 		"callback_registration": 253
 	},
 	"files": {
@@ -4376,9 +4376,9 @@
 				{
 					"id": "57d1c09be575630758bda0458b951cb1a802a8d8",
 					"kind": "callback_registration",
-					"line": 47,
+					"line": 48,
 					"column": 18,
-					"endLine": 48,
+					"endLine": 49,
 					"endColumn": 87,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4393,9 +4393,9 @@
 				{
 					"id": "b924022abf44d5adb3be779f8445cff2128e159f",
 					"kind": "catch_clause",
-					"line": 76,
+					"line": 77,
 					"column": 7,
-					"endLine": 96,
+					"endLine": 97,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4407,20 +4407,20 @@
 					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for a failed gateway request as a typed result instead of a throw: 429 records the rate limit (\"rate_limited\"), 404 marks the batch missing and continues, a transient error is \"transient_failure\", another HTTP status is \"http_rejected\", the rest \"invalid_payload\". The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				},
 				{
-					"id": "8fd1d21b5bc909ad4c90c836199eb04bffe2b21a",
+					"id": "56c382579496161a3cfe16d9f7a2687e1ed76a3a",
 					"kind": "catch_clause",
-					"line": 122,
+					"line": 123,
 					"column": 5,
-					"endLine": 124,
+					"endLine": 127,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "captureInternal",
-						"justification": "The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged."
+						"justification": "The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" carrying the storage cause for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged."
 					},
-					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
+					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" carrying the storage cause for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				}
 			]
 		},
@@ -4436,9 +4436,9 @@
 				{
 					"id": "01a7030a402178e1a69f1c0337bc61d5ce511238",
 					"kind": "catch_clause",
-					"line": 114,
+					"line": 122,
 					"column": 5,
-					"endLine": 117,
+					"endLine": 125,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4450,9 +4450,9 @@
 				{
 					"id": "b13b373573f8b5f4f8eac88b6d53e5c1472a94f2",
 					"kind": "callback_registration",
-					"line": 118,
+					"line": 126,
 					"column": 10,
-					"endLine": 121,
+					"endLine": 129,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "observed",
@@ -4465,9 +4465,9 @@
 				{
 					"id": "9325f5e16de596ec31a35e2971cf483e62259349",
 					"kind": "callback_registration",
-					"line": 136,
+					"line": 144,
 					"column": 22,
-					"endLine": 136,
+					"endLine": 144,
 					"endColumn": 134,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4482,9 +4482,9 @@
 				{
 					"id": "929f5391e170dbd3d882b009a12641d8306431e2",
 					"kind": "catch_clause",
-					"line": 148,
+					"line": 156,
 					"column": 5,
-					"endLine": 151,
+					"endLine": 159,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4496,9 +4496,9 @@
 				{
 					"id": "aa00b8e3cc03ae55be081ab39ae0e778a8eb949f",
 					"kind": "catch_clause",
-					"line": 181,
+					"line": 189,
 					"column": 5,
-					"endLine": 181,
+					"endLine": 189,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4512,9 +4512,9 @@
 				{
 					"id": "185a3ba10daf1ede7d06505203bb3e6e88482174",
 					"kind": "catch_clause",
-					"line": 205,
+					"line": 213,
 					"column": 5,
-					"endLine": 208,
+					"endLine": 216,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4526,9 +4526,9 @@
 				{
 					"id": "4763d950c6043d5049f78f7182d841b239694c49",
 					"kind": "catch_clause",
-					"line": 249,
+					"line": 257,
 					"column": 5,
-					"endLine": 252,
+					"endLine": 260,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4540,9 +4540,9 @@
 				{
 					"id": "a6fa716bc67ffc59190020db0172d1ecc5455b95",
 					"kind": "catch_clause",
-					"line": 294,
+					"line": 302,
 					"column": 5,
-					"endLine": 297,
+					"endLine": 305,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4554,9 +4554,9 @@
 				{
 					"id": "281ebbc3a0698061d0a5e23e941e1366947b1a8f",
 					"kind": "catch_clause",
-					"line": 332,
+					"line": 342,
 					"column": 5,
-					"endLine": 335,
+					"endLine": 345,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4570,9 +4570,9 @@
 				{
 					"id": "864575cbb58f3e71d520de288150392ac708eed0",
 					"kind": "catch_clause",
-					"line": 355,
+					"line": 365,
 					"column": 5,
-					"endLine": 358,
+					"endLine": 368,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4584,9 +4584,9 @@
 				{
 					"id": "75369101dfd7ed0023dbe7c807d9ea7b91bce144",
 					"kind": "catch_clause",
-					"line": 370,
+					"line": 384,
 					"column": 5,
-					"endLine": 374,
+					"endLine": 388,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4598,9 +4598,9 @@
 				{
 					"id": "a3856453fb2d46fa4d9007e1221a0a02e87ef6f0",
 					"kind": "catch_clause",
-					"line": 383,
+					"line": 397,
 					"column": 6,
-					"endLine": 386,
+					"endLine": 400,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -4610,11 +4610,27 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
+					"id": "cfe46f12b1a6483e1882881b0d28ff5562148966",
+					"kind": "void_expression",
+					"line": 472,
+					"column": 4,
+					"endLine": 472,
+					"endColumn": 47,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.activateUnobserved",
+						"scope": "scheduleStoreRetry",
+						"justification": "The \"scheduleStoreRetry\" owner deliberately detaches \"this.activateUnobserved\" so the backoff timer never waits for the reopening; it never rejects here, because the timer first checks that the runtime is not disposed, and a failed open is caught inside the activation and recorded as the runtime state (store_unavailable or store_future) with its own span."
+					},
+					"reason": "Allowlisted void_expression: The \"scheduleStoreRetry\" owner deliberately detaches \"this.activateUnobserved\" so the backoff timer never waits for the reopening; it never rejects here, because the timer first checks that the runtime is not disposed, and a failed open is caught inside the activation and recorded as the runtime state (store_unavailable or store_future) with its own span. Verified target: \"this.activateUnobserved\" in \"scheduleStoreRetry\"."
+				},
+				{
 					"id": "159504ad2f96304b41863f8d1e3c4366d8403b57",
 					"kind": "catch_clause",
-					"line": 447,
+					"line": 488,
 					"column": 55,
-					"endLine": 447,
+					"endLine": 488,
 					"endColumn": 107,
 					"classification": "allowlisted",
 					"evidence": {
