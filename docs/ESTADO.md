@@ -1,5 +1,65 @@
 # Estado
 
+## Candidato 0.6.46: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.46` sobre el canal 0.6.45 publicado
+(`88f1ff4b`, más la documentación del canal `4f5136c4`); añade los metadatos de versión (`manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: lo medido el 11 oct fue con la 0.6.45 en hosts desechables; nada de
+  la 0.6.46 se ha visto en un Obsidian ni en un Hebra reales. Ni el reintento del almacén (RT-17) ni el nivel 2 de
+  RT-09 se han probado en un Obsidian o un Hebra reales ni contra un registro real de Hebra.
+- HP-03 (urgente): en Hebra de escritorio sobre Linux la sección Sesión salía vacía desde la 0.6.43. Causa: `emptyFragment`
+  de `src/ui/owned-root.ts` usaba `createContextualFragment('')`, que la CSP de Hebra (`require-trusted-types-for
+  'script'`, aplicada por WebKitGTK 2.54) rechaza con `This assignment requires a TrustedHTML`. Ahora es
+  `new view.DocumentFragment()`. Test nuevo `src/trusted-types-sink-architecture.test.ts`. Medido el 11 oct en un Hebra
+  0.2.0-21 desechable de Linux: con el arreglo pinta «Sin sesión»; la 0.6.45 en la misma máquina deja la sección vacía
+  con `This assignment requires a TrustedHTML` en el registro
+  ([2026-10-11-hebra-desechable](evidencia/2026-10-11-hebra-desechable.md)). macOS y Windows, sin medir.
+- RT-17: en modo consulta, un almacén de sesiones mudo al arrancar dejaba «Error de sesión» hasta recargar (medido el 11
+  oct en un Obsidian desechable: sin recuperarse en casi 3 minutos con el bloqueo ya suelto,
+  [2026-10-11-obsidian-appimage](evidencia/2026-10-11-obsidian-appimage.md)). `src/runtime/session-store-retry.ts`
+  reintenta solo en consulta, a los 5 s doblando hasta 5 min; no reintenta `corrupt` ni sesiones atascadas y se cancela
+  al descargar. Probado en tests sobre el `HebraHost` real, no en Obsidian ni en Hebra reales.
+- Diario sin podar: `adoptSealedOrphans` (`src/sessions/live-session-lifecycle.ts`) poda los diarios de sesiones selladas
+  antes de la 0.6.13 que ninguna cola nombraba, solo si la nota del vault valida para esa sesión; consulta al vault de
+  2 en 2, cada consulta con su plazo. Descartar una sesión atascada con el registro fuera de memoria ya no encola su
+  diario. `docs/THREAT-MODEL.md` actualizado. Medido el 11 oct en Fedora: 9 sesiones de antes de la 0.6.13 en una copia de
+  la base de Obsidian. En la base real de Hebra de esa máquina había 10 sesiones con 18.763 entradas de diario sin podar
+  ([2026-10-11-almacenes-reales](evidencia/2026-10-11-almacenes-reales.md)); este candidato no se ha aplicado a esa base.
+- HP-15: (a) un icono remoto que no carga muestra el marcador `?` en cinco vistas (panel de sesión en vivo, que además pasa
+  a `referrerPolicy` `no-referrer`; venta; asesor de inventario; historial de precios; logros). (b) El secreto in-game se
+  copia al portapapeles antes de guardar los ajustes y, si no se guarda, se repone el token anterior y se vacía el
+  portapapeles. Medido en WebKitGTK: un icono de `render.guildwars2.com` carga, y `navigator.clipboard.writeText`
+  sin gesto da `NotAllowedError` y con gesto se acepta; macOS y Windows, sin medir.
+- HP-02: el candado de vida se queda en Linux y se corrige el comentario de `src/host/hebra/hebra-host.ts`. Medido con Hebra
+  0.2.0-21: los Web Locks no cruzan procesos, pero Hebra trae un `flock` de instancia (`instancia.lock`) que impide un
+  segundo proceso sobre la misma biblioteca, y tras un SIGKILL la Hebra reabierta tiene libre el candado de la muerta en
+  0,6 s. Riesgo residual: si el `flock` no se puede usar, o con Hebras de Linux anteriores a `4ffba0d5`, dos procesos no se
+  ven los candados. Windows y la toma del arriendo de sesión con clave, sin medir
+  ([2026-10-11-hebra-candado-linux](evidencia/2026-10-11-hebra-candado-linux.md)).
+- GR-18: borrado `src/main-render-coalescing.test.ts`, duplicado.
+- DE-01 olas 9 y 10: la sesión in-game pasa a `src/runtime/ingame-session-runtime.ts` (el secreto del puente se queda en el
+  núcleo) y la nota y la exportación de la sesión a `src/runtime/session-note-runtime.ts` y `src/runtime/session-facade.ts`.
+  `src/runtime/tyrian-companion-core.ts` baja de 3.940 a 3.596 líneas (medido con `wc -l`). Incluye el arreglo del
+  `TypeError` de la vista previa del borrado del historial, que ahora dice «arrancando» antes del arranque.
+- RT-09 nivel 2: `scripts/verify-hebra-install.mjs` (contrato v2) lee del `diagnostico.jsonl` de Hebra los eventos
+  `plugins.*`: `loaded`, `failed`, `version-mismatch` (los dos últimos fallan) o `no-data` (aviso: Hebra trae el registro
+  apagado; el interruptor llega con su rpm 0.2.0-22). La ruta por defecto solo existe en Linux. Sin probar contra un
+  registro real. [QA-HEBRA](QA-HEBRA.md) ya lo recoge.
+- Evidencias del 11 oct en `docs/evidencia/`. RT-03: `verify-beta-runtime` PASS antes y después de cerrar y reabrir en un
+  Obsidian AppImage desechable, con la 0.6.45. RT-15: tras `kill -9` y reabrir, `navigator.locks.query()` no deja ni
+  `tc-probe` ni el candado viejo. DU-14: el mayor registro de sesión mide 709 KiB en Obsidian y 2,8 MiB en Hebra; con esos
+  tamaños ninguna operación está previsiblemente por encima de 10 s (estimado por tamaños, no cronometrado). DU-15:
+  la base de sesión sin sufijo de Obsidian está adoptada y con su diario, y en Hebra no existe, así que DU-01 no está
+  activo en ninguno de los dos hosts de Fedora.
+- Z19 parte b no se implementa: arrancar con 1.426 notas de salida cuesta 868 ms con el índice guardado frente a 780 ms con 0
+  notas, y 1.841 ms sin índice (solo la primera vez; n = 3, tmpfs con caché caliente). Z23, cancelada.
+- Por decisión de David, DU-11: cada vault sigue con sus propios datos y no se comparten; queda documentado en
+  [BETA](BETA.md).
+- Pendiente: verla en hosts reales.
+
 ## Canal 0.6.45 publicado: estilos de Hebra con respaldo, tests del falso 1.4.0 y addon 0.8.7 (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.45` = `88f1ff4b` (atestación; candidato `31f526ad`,
@@ -252,7 +312,7 @@ Etiqueta `0.6.41` = `4c5a2047` (atestación; candidato `fa6e5f64`, árbol `648ab
   llegar a su instancia desde las 21:28 hasta que lo reactive); evidencia en
   [2026-10-10-obsidian-desechable](evidencia/2026-10-10-obsidian-desechable.md).
 - Pendiente: verla en un Obsidian y un Hebra reales, Z19 (b) (darse por activado sin recorrer toda la
-  carpeta), la parte de `manual-session-start-service.ts` de DE-07, y la reapertura de RT-03 y RT-15.
+  carpeta) [no se implementa, medido el 11 oct; ver la 0.6.46], la parte de `manual-session-start-service.ts` de DE-07, y la reapertura de RT-03 y RT-15.
 
 ## Canal 0.6.35 publicado: Logros que leen el progreso, iconos de recompensas y carpeta de salida que se crea (10 oct 2026)
 
@@ -616,7 +676,8 @@ de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle e
 - Lote 1, arranque con el almacenamiento mudo (tarea Z3: `39caa31`, `b202e6a`, `593bff9`, `c3d3d5b`, `5e9f966`,
   `d137e8f`). Si el motor de almacenamiento del navegador no contesta, el plugin arranca igualmente: peor caso medido
   hasta `runtimeReady`, 20 s (10 s del modo de colector y 10 s de la sesión guardada), con las sesiones en error, y se
-  recupera solo cuando el almacén vuelve. Cada apertura (`openIndexedDb`) y cada operación de los almacenes que pasan
+  recupera solo cuando el almacén vuelve [corrección de la 0.6.46: eso solo era cierto en modo colector; en modo consulta
+  no se recuperaba (medido el 11 oct) y desde la 0.6.46 también lo hace, con espera creciente de 5 s hasta 5 min]. Cada apertura (`openIndexedDb`) y cada operación de los almacenes que pasan
   por `withIndexedDbReopen` vencen a los 10 s (`STORAGE_ANSWER_TIMEOUT_MS`).
 - Límites del lote 1: una operación legítima de más de 10 s contesta fallo aunque la escritura termine después; tras un
   silencio, el almacén de la sesión rechaza durante 2 s aunque el motor haya vuelto; los almacenes secundarios
@@ -642,7 +703,9 @@ de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle e
   `complete`.
 - Dónde es peor que sin candados: dos procesos vivos sobre los mismos datos que no se ven los candados. Garantía de
   proceso único solo en macOS; en Hebra sobre Linux puede fallar (sin bus de sesión D-Bus, o una Hebra colgada al
-  salir); Windows, sin verificar. Con los dos procesos latiendo cada 5 s, 120 de 120 (igual que sin candados; sin la
+  salir); Windows, sin verificar. [Corregido con HP-02 en la 0.6.46: con Hebra 0.2.0-21 en
+  Linux un `flock` de instancia impide un segundo proceso sobre la misma biblioteca, con o sin bus D-Bus; solo falla si
+  ese `flock` no se puede usar o en Hebras anteriores a `4ffba0d5`. Windows sigue sin verificar.] Con los dos procesos latiendo cada 5 s, 120 de 120 (igual que sin candados; sin la
   regla de los 15 s, 40 de 120 y valla 18). Con un propietario que late cada 15 s o más, 14 de 120; con el propietario
   oculto (latido de 60 s) frente a otro a 5 s, 14 de 600, frente a 600 de 600 sin candados (las tres últimas cifras son
   de la revisión independiente, con su propio montaje). Hebra está activado por decisión del integrador, leyendo su
