@@ -1049,11 +1049,12 @@ export class ManualSessionStartService {
 	}
 
 	/**
-	 * A lease the coordinator grants after `dispose()` used to stay behind until its TTL ran out, so
-	 * no other window could take the session meanwhile (found reviewing lot Q). It is handed back at
-	 * once and the acquisition answers `disposed`, which every caller (start, recovery, startup
-	 * finalization, reclaim) already treats as a rejection with no side effects. The release is best
-	 * effort: the coordinator may already be closed, and `safeRelease` never throws.
+	 * A lease the coordinator grants after `dispose()` (found reviewing lot Q): the acquisition answers
+	 * `disposed`, which every caller (start, recovery, startup finalization, reclaim) already treats as a
+	 * rejection with no side effects, so nothing writes state or arms a timer with it. Handing it back is
+	 * best effort: `dispose()` closes the real coordinator without waiting for acquisitions in flight, and
+	 * a closed coordinator answers `release` without writing, so in production the lease is freed by the
+	 * coordinator's own silence rule (15 s), not by this call. `safeRelease` never throws.
 	 */
 	private async safeAcquire(sessionId: string): Promise<AcquireLeaseResult> {
 		let result: AcquireLeaseResult;
