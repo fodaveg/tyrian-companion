@@ -616,7 +616,7 @@ describe('output folder exclusion hint', () => {
 
 		const divs: Array<{ text: string }> = [];
 		const component = {
-			inputEl: { setAttr: () => undefined, removeAttribute: () => undefined },
+			inputEl: { setAttr: () => undefined, removeAttribute: () => undefined, addEventListener: () => undefined },
 			setPlaceholder: () => component,
 			setValue: () => component,
 			onChange: () => component,

@@ -473,7 +473,28 @@ export class LiveSessionLifecycle {
 	 * `cleared: false` carries the reason; the session is as it was, except that the stop attempted on the way may have closed it.
 	 */
 	async discard(): Promise<LiveSessionDiscard> {
-		return await this.enqueue(async (): Promise<LiveSessionDiscard> => {
+		return await this.enqueue(async (): Promise<LiveSessionDiscard> => await this.discardInQueue());
+	}
+	/**
+	 * Lets go of a SEALED session (finished, its note saved and proven) so the history scrub can erase its note for good: while the
+	 * record holds the runtime key, every load verifies the note again and writes it back if it is gone (Z2-3). The record leaves the
+	 * key and its journal joins the prune queue, exactly as when the next session starts. True when nothing is left under the key
+	 * (also when nothing ever was); false, with the session untouched, for one still running, one without its saved note or one whose
+	 * note this host has yet to verify (retiring that one would have to write the note first).
+	 */
+	async retireSealed(): Promise<boolean> {
+		return await this.enqueue(async () => {
+			if (this.record === null) return true;
+			if (!this.canRetireSealed()) return false;
+			return (await this.discardInQueue()).cleared;
+		});
+	}
+	/** Whether `retireSealed` would let go of the record now: the one rule both it and the history scrub gate read. */
+	canRetireSealed(): boolean {
+		return this.record?.phase === 'complete' && this.record.summaryReceipt !== null && !this.noteNeedsVerification;
+	}
+	private async discardInQueue(): Promise<LiveSessionDiscard> {
+		{
 			let target = this.record;
 			if (target === null) {
 				const loaded = await this.options.persistence.loadLive();
@@ -509,7 +530,7 @@ export class LiveSessionLifecycle {
 			if (this.record !== null && receipt !== null) { this.sealedForPrune.set(this.record.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 			this.resetAfterDiscard();
 			return { cleared: true, note };
-		});
+		}
 	}
 	/** This host's own reservation of `sessionId`, taken if nobody can be shown to keep it alive; otherwise why not. */
 	private async reserve(sessionId: string): Promise<'owned' | LiveStopFailure> {
@@ -588,8 +609,9 @@ export class LiveSessionLifecycle {
 	isCharacterListCapped(): boolean { return this.summaryState?.capped === true; }
 	/** The summary note of the session in `complete` was already written: nothing to do at load. */
 	isSummaryWritten(): boolean { return this.summaryState?.summaryWritten === true && this.summaryState.sessionId === this.record?.sessionId; }
-	async markSummaryWritten(): Promise<void> {
-		if (this.summaryState === null || this.summaryState.sessionId !== this.record?.sessionId) return;
+	/** Marks the summary of `sessionId`; nothing happens when the persisted state belongs to another session (a later one started while the summary was written). */
+	async markSummaryWritten(sessionId: string): Promise<void> {
+		if (this.summaryState === null || this.summaryState.sessionId !== sessionId || this.record?.sessionId !== sessionId) return;
 		this.summaryState = { ...this.summaryState, summaryWritten: true };
 		await this.options.persistence.saveSummaryState?.(this.summaryState);
 	}

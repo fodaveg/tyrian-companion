@@ -753,11 +753,13 @@ describe('StorageSnapshotService', () => {
 			{
 				status: 'partial',
 				reason: 'unavailable',
+				origin: 'roster',
 				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
 			},
 			{
 				status: 'partial',
 				reason: 'unavailable',
+				origin: 'roster',
 				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
 			},
 		]);

@@ -135,6 +135,27 @@ describe('tcp-port: TyrianTcpServerPort over api.tcp', () => {
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 
+	it('a close Hebra refused is tried again, and concurrent closes share one call (Z6-4)', async () => {
+		const { tcp, calls } = fakeTcp();
+		let refuse = true;
+		let release: () => void = () => undefined;
+		const closeSpy = vi.fn(async () => {
+			calls.push('close');
+			if (refuse) { refuse = false; throw new Error('tcp close refused'); }
+			await new Promise<void>((resolve) => { release = resolve; });
+		});
+		tcp.close = closeSpy;
+		const server = await createTcpServerPort(tcp).listen(47823, '127.0.0.1', () => undefined);
+		await expect(server.close()).rejects.toThrow('tcp close refused');
+		const first = server.close();
+		const second = server.close();
+		expect(closeSpy).toHaveBeenCalledTimes(2);
+		release();
+		await Promise.all([first, second]);
+		await server.close();
+		expect(closeSpy).toHaveBeenCalledTimes(2);
+	});
+
 	it('where there is no bridge (web, iPhone) it refuses with a clear reason and a code that is not retried', async () => {
 		await expect(unavailableTcpServerPort('desktop only').listen(47823, '127.0.0.1', () => undefined)).rejects.toMatchObject({
 			code: TCP_UNAVAILABLE_CODE,

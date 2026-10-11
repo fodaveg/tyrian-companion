@@ -29,9 +29,19 @@ export function liveSessionSetAsideNotice(locale: 'es' | 'en', setAside: readonl
 	return lines;
 }
 
-/** Fills `target` (a status region) with the notice, one paragraph per sentence; hides it when there is none. */
+/** What each status region shows now, so a tick that changes nothing leaves the region alone. */
+const PAINTED = new WeakMap<HTMLElement, string>();
+
+/**
+ * Fills `target` (a status region) with the notice, one paragraph per sentence; hides it when there is none.
+ * A region already showing exactly these sentences is not rebuilt: the panel repaints every second,
+ * and rebuilding a live region makes a screen reader read it again.
+ */
 export function paintLiveSessionSetAside(target: HTMLElement, locale: 'es' | 'en', setAside: readonly LiveSessionSetAside[]): void {
 	const lines = liveSessionSetAsideNotice(locale, setAside);
+	const signature = JSON.stringify(lines);
+	if (PAINTED.get(target) === signature) return;
+	PAINTED.set(target, signature);
 	target.hidden = lines.length === 0;
 	target.replaceChildren();
 	for (const line of lines) target.createEl('p', { text: line });

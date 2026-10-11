@@ -103,6 +103,19 @@ describe('LiveSessionEconomy bag quote for price2', () => {
 		expect(h.requests).toHaveLength(2);
 	});
 
+	/** Z5 (Codex NUEVO): the real transport throws its 429 after the retries instead of resolving with it. */
+	it('a thrown 429 registers the shared cooldown with its retryAfterMs instead of being reported as a failure', async () => {
+		const h = harness();
+		await h.refresh();
+		h.setAnswer(async () => { throw new HttpTransportError('http', 429, 400_000, 'rate limited'); });
+		h.advance(120_000);
+		await h.refresh();
+		expect(h.requests).toHaveLength(2);
+		h.advance(130_000); // past the 120 s spacing, still inside the 400 s the server asked for
+		await h.refresh();
+		expect(h.requests).toHaveLength(2);
+	});
+
 	it('a network failure keeps the previous quote, reports the error and retries only after another 120 s', async () => {
 		const h = harness();
 		await h.refresh();

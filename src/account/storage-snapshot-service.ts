@@ -41,6 +41,8 @@ interface VerifiedSnapshotContext {
 interface CaptureActivity {
 	previous: readonly CharacterActivity[] | null;
 	current: readonly CharacterActivity[] | null;
+	/** Z4-1: whether the roster read of the latest pass came back whole (200, not 206 or a failure). */
+	rosterComplete: boolean;
 }
 
 export type StorageSnapshotCaptureScope = 'complete' | 'inventory_advisor';
@@ -163,7 +165,7 @@ export class StorageSnapshotService {
 		}
 		if (existing) return existing.promise;
 		const startedAtMs = Date.now();
-		const activity: CaptureActivity = { previous: this.previousCharacterActivity.get(key) ?? null, current: null };
+		const activity: CaptureActivity = { previous: this.previousCharacterActivity.get(key) ?? null, current: null, rosterComplete: false };
 		const promise = this.captureInternal(operation, context, scope, activity, onProgress, onPassTelemetry).then((snapshot) => {
 			if (activity.current !== null && snapshot.coverage.sources.characters.status === 'complete') {
 				this.previousCharacterActivity.set(key, activity.current);
@@ -271,7 +273,9 @@ export class StorageSnapshotService {
 		// `/v2/account/materials` from one shared cached instant, so a matching `last-modified` on
 		// a second, single lightweight request already proves nothing else in the account moved
 		// either: no need to repeat the whole roster and every store just to confirm stability.
-		if (!hasAccountWideCoverageGap(first.coverage)) {
+		// Z4-1: a roster that answered 206 may be missing characters, so it never proves the account
+		// stable (the anchor only vouches for the stores it covers).
+		if (activity.rosterComplete && !hasAccountWideCoverageGap(first.coverage)) {
 			const anchorMatched = await this.tryAnchorSkip(operation, sharedInventoryLastModified.value);
 			if (anchorMatched) {
 				return finalizeStorageSnapshot({
@@ -413,12 +417,14 @@ export class StorageSnapshotService {
 			false,
 			true,
 		);
-		coverage.sources.characters = rosterResult.coverage;
+		coverage.sources.characters = rosterResult.coverage.status === 'partial'
+			? { ...rosterResult.coverage, origin: 'roster' } : rosterResult.coverage;
 		const characterActivity = rosterResult.value ?? [];
 		const roster = characterActivity.map((entry) => entry.character);
 		const lastPlayedCharacter = rosterResult.coverage.status === 'complete'
 			? chooseLastPlayedCharacter(characterActivity, activity.previous) : null;
 		activity.current = rosterResult.coverage.status === 'complete' ? characterActivity : null;
+		activity.rosterComplete = rosterResult.coverage.status === 'complete';
 		if (passTelemetry) passTelemetry.roster = { durationMs: this.now() - rosterStartedAt, characterCount: roster.length };
 
 		if (context.urls.length > 0) {
@@ -545,7 +551,8 @@ export class StorageSnapshotService {
 		const characterFailure = Object.values(coverage.characters).find(
 			(entry) => entry.status === 'partial',
 		);
-		if (characterFailure) {
+		// Z4-1: the mirror of a character's failure never replaces the roster read's own gap.
+		if (characterFailure && coverage.sources.characters.status === 'complete') {
 			coverage.sources.characters = { ...characterFailure };
 		}
 
@@ -728,12 +735,10 @@ function hasTransientCoverageFailure(coverage: SnapshotCoverage): boolean {
  * hole (any reason, including a persisted transient one that survived the one retry above) never
  * counts here: `hasTransientCoverageFailure` below still catches it on the old fallback path when
  * the anchor is unavailable, exactly as before this method existed. Only a gap in an
- * account-wide source, or the roster read itself coming back empty, disqualifies the fast path.
+ * account-wide source disqualifies the fast path (a partial roster read is refused by the caller,
+ * which knows the roster status of the pass).
  */
 function hasAccountWideCoverageGap(coverage: SnapshotCoverage): boolean {
-	const rosterFetchFailed = coverage.sources.characters.status === 'partial'
-		&& Object.keys(coverage.characters).length === 0;
-	if (rosterFetchFailed) return true;
 	return (['shared_inventory', 'bank', 'materials', 'wallet', 'commerce_delivery'] as const)
 		.some((source) => coverage.sources[source].status === 'partial');
 }

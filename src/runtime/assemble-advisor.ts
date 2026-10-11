@@ -220,7 +220,7 @@ function createInventoryAdvisorRuntime(
 			}
 		},
 		reclassify: (parent) => inventoryWorkflow.reclassify(parent),
-		invalidate: () => inventoryWorkflow.invalidate(),
+		invalidate: () => { inventoryEvidence?.invalidate(); inventoryWorkflow.invalidate(); },
 		dispose: () => { inventoryCatalogCache?.dispose(); inventoryCatalogCache = null; },
 	});
 }

@@ -145,9 +145,8 @@ describe('host port mapping', () => {
 		expect(response).toEqual({ status: 200, headers: { 'x-page-total': '3' }, body: { ok: true } });
 	});
 
-	/** Same outcome Obsidian's throwing `json` getter always produced for a body that is not JSON. */
-	it('turns a body that is not JSON into a network failure', async () => {
-		const port: TyrianHttpPort = { request: async () => ({ status: 502, headers: {}, text: '<html>Bad gateway</html>' }) };
+	it('turns a 2xx body that is not JSON into a network failure', async () => {
+		const port: TyrianHttpPort = { request: async () => ({ status: 200, headers: {}, text: '<html>Bad gateway</html>' }) };
 		const transport = new HostRequestTransport(port, { maxRetries: 2, ...inertTimer() });
 
 		const error = await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' })
@@ -156,6 +155,67 @@ describe('host port mapping', () => {
 		expect(error).toBeInstanceOf(HttpTransportError);
 		expect((error as HttpTransportError).kind).toBe('network');
 		expect((error as HttpTransportError).status).toBeNull();
+	});
+
+	/** Z5-4: a CDN's HTML 502 is a retryable status, not an unreadable answer. */
+	it('retries a 502 with an HTML body and succeeds on the next 200', async () => {
+		const answers = [
+			{ status: 502, headers: {}, text: '<html>Bad gateway</html>' },
+			{ status: 200, headers: {}, text: '{"ok":true}' },
+		];
+		const request = vi.fn(async () => answers.shift()!);
+		const transport = new HostRequestTransport({ request }, { maxRetries: 2, ...inertTimer(), sleep: async () => undefined });
+
+		const response = await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' });
+
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(response.status).toBe(200);
+	});
+
+	it('keeps the status of a 503 with an empty body once the retries run out', async () => {
+		const port: TyrianHttpPort = { request: async () => ({ status: 503, headers: {}, text: '' }) };
+		const transport = new HostRequestTransport(port, { maxRetries: 1, ...inertTimer(), sleep: async () => undefined });
+
+		const error = await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' })
+			.catch((thrown: unknown) => thrown);
+
+		expect((error as HttpTransportError).kind).toBe('http');
+		expect((error as HttpTransportError).status).toBe(503);
+	});
+
+	it('still classifies a JSON 403 refusal body', async () => {
+		const port: TyrianHttpPort = { request: async () => ({ status: 403, headers: {}, text: '{"text":"invalid key"}' }) };
+		const transport = new HostRequestTransport(port, { maxRetries: 0, ...inertTimer() });
+
+		const error = await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' })
+			.catch((thrown: unknown) => thrown);
+
+		expect((error as HttpTransportError).status).toBe(403);
+		expect((error as HttpTransportError).apiReason).toBe('invalid_key');
+	});
+
+	/** Z5-6: a server asking for an hour is reported, not waited for. */
+	it('fails with retryAfterMs instead of sleeping past the wait budget', async () => {
+		const sleep = vi.fn(async () => undefined);
+		const port: TyrianHttpPort = { request: async () => ({ status: 503, headers: { 'Retry-After': '3600' }, text: '{}' }) };
+		const transport = new HostRequestTransport(port, { maxRetries: 2, ...inertTimer(), sleep });
+
+		const error = await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' })
+			.catch((thrown: unknown) => thrown);
+
+		expect(sleep).not.toHaveBeenCalled();
+		expect((error as HttpTransportError).status).toBe(503);
+		expect((error as HttpTransportError).retryAfterMs).toBe(3_600_000);
+	});
+
+	it('still waits for a Retry-After inside the budget', async () => {
+		const sleep = vi.fn(async () => undefined);
+		const answers: TyrianHttpResponse[] = [{ status: 429, headers: { 'Retry-After': '5' }, text: '{}' }, { status: 200, headers: {}, text: '{}' }];
+		const transport = new HostRequestTransport({ request: async () => answers.shift()! }, { maxRetries: 2, ...inertTimer(), sleep });
+
+		await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' });
+
+		expect(sleep).toHaveBeenCalledWith(5_000);
 	});
 });
 

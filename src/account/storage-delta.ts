@@ -286,7 +286,13 @@ function validateCoverage(
 		if (coverage.sources[source].status === 'complete') continue;
 		// The capture mirrors a character 404 on the aggregate source; the per-character
 		// entries hold the evidence and the delta drops those characters instead.
-		if (allowUnobservedCharacters && source === 'characters' && unobserved(coverage.sources[source])) {
+		// Z4-1: that mirror is only legitimate when a roster character holds the failure it
+		// copies; a roster read that came back partial on its own may be missing characters.
+		if (
+			allowUnobservedCharacters && source === 'characters' && unobserved(coverage.sources[source])
+			&& coverage.sources[source].origin !== 'roster'
+			&& roster.some((character) => unobserved(coverage.characters[character]))
+		) {
 			continue;
 		}
 		reasons.push({ code: 'core_coverage_incomplete', snapshot: which, detail: source });

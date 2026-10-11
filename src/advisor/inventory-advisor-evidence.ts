@@ -9,7 +9,7 @@ import {
 } from '../account/storage-snapshot-model';
 import { parseAccountProfile, parseTokenInfo, type TokenInfo } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
-import { readAccountAchievements } from '../account/account-achievements';
+import { AUTH_RETRY_STATUSES, readAccountAchievements } from '../account/account-achievements';
 import { captureActiveTradingPostOrders } from '../account/trading-post-evidence';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
@@ -62,6 +62,8 @@ export interface InventoryAdvisorEvidenceClient {
 
 /** Explicit H4.14 capture only. Constructing this service performs no requests or persistence. */
 export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidenceCapture {
+	/** Z4-5: bumped by `invalidate`; a capture of an older generation reports nothing (progress, receipt). */
+	private generation = 0;
 	private readonly inFlight = new Map<string, Promise<InventoryAdvisorEvidenceCaptureResultV1>>();
 	constructor(
 		private readonly client: InventoryAdvisorEvidenceClient,
@@ -73,6 +75,13 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		private readonly rateLimit?: Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>,
 	) {}
 
+	/**
+	 * Z4-5: forgets the captures still running, so the next `capture` never joins one that was
+	 * started with a credential that has since been replaced. The old promise keeps running for
+	 * whoever already awaits it (the workflow's epoch rejects that consumer).
+	 */
+	invalidate(): void { this.generation += 1; this.inFlight.clear(); }
+
 	capture(
 		locale: CatalogLocale,
 		containerPriceItemIds: readonly number[] = [],
@@ -83,7 +92,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		if (ids === null) {
 			return this.finishCapture(
 				{ status: 'invalid', evidence: null, containerPrices: null },
-				null, { snapshotPasses: [], catalogMs: null, pricesMs: null, marketDepthMs: null },
+				null, { snapshotPasses: [], catalogMs: null, pricesMs: null, marketDepthMs: null, generation: this.generation },
 			);
 		}
 		const key = `${locale}:${ids.join(',')}`;
@@ -106,7 +115,8 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		// owns. It never writes a receipt, a setting, or any note or file anywhere.
 		let latestStorageProgress = ZERO_STORAGE_CAPTURE_PROGRESS;
 		let catalogAndPricesCompleted = 0;
-		const reportProgress = (): void => onProgress?.({
+		const generation = this.generation;
+		const reportProgress = (): void => this.generation !== generation ? undefined : onProgress?.({
 			...latestStorageProgress,
 			catalogAndPrices: { completed: catalogAndPricesCompleted, total: CATALOG_AND_PRICES_TOTAL },
 		});
@@ -118,7 +128,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		// H18.39: real per-phase timing for one refresh, read back into the local capture receipt
 		// (never a name, an id or a key). `timings` is filled in as each leg finishes and always
 		// reaches `finishCapture` below, even on an early return: partial timing beats none.
-		const timings: InventoryAdvisorCaptureTimingsBuilder = { snapshotPasses: [], catalogMs: null, pricesMs: null, marketDepthMs: null };
+		const timings: InventoryAdvisorCaptureTimingsBuilder = { snapshotPasses: [], catalogMs: null, pricesMs: null, marketDepthMs: null, generation };
 		try {
 			operation = this.client.beginOperation(actionContext);
 		} catch (error) {
@@ -222,6 +232,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		snapshot: StorageSnapshot | null,
 		timings: InventoryAdvisorCaptureTimingsBuilder,
 	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+		if (timings.generation !== this.generation) return result;
 		try {
 			await this.captureReceipt(captureReceiptFor(result, snapshot, this.now(), timings));
 		} catch {
@@ -242,6 +253,8 @@ interface InventoryAdvisorCaptureTimingsBuilder {
 	catalogMs: number | null;
 	pricesMs: number | null;
 	marketDepthMs: number | null;
+	/** The service generation the capture started in (Z4-5). */
+	generation: number;
 }
 
 function captureReceiptFor(
@@ -515,7 +528,7 @@ function hasUnexpectedPriceId(body: unknown, requested: ReadonlySet<number>): bo
 }
 function endpointEvidence(status: EndpointCoverage, capturedAt: string | null, reason: EndpointEvidence['reason']): EndpointEvidence { return { status, capturedAt, reason }; }
 async function requestBody(operation: GuildWars2Operation, path: string): Promise<unknown> {
-	const response = await operation.requestDetailed(path);
+	const response = await operation.requestDetailed(path, AUTH_RETRY_STATUSES);
 	if (response.status !== 200) throw new Error(`Unexpected status ${response.status}.`);
 	return response.body;
 }

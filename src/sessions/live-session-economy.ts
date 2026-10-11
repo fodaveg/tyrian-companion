@@ -1,4 +1,4 @@
-import { isPublicCatalogNotFound, type PublicCatalogGateway, type PublicCatalogResponse } from '../catalog/public-catalog-client';
+import { isPublicCatalogNotFound, isPublicCatalogRateLimited, type PublicCatalogGateway, type PublicCatalogResponse } from '../catalog/public-catalog-client';
 import type { CatalogCurrency, CatalogIdCoverage, CatalogItem } from '../catalog/public-catalog-model';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
@@ -148,7 +148,10 @@ export class LiveSessionEconomy {
 		if (this.disposed || this.options.lifecycle.getRuntime()?.phase !== 'active') return;
 		const id = HALLOWEEN_TOT_BAG_ITEM_ID; let response: PublicCatalogResponse;
 		try { response = await this.options.gateway.requestDetailed(`commerce/prices?ids=${String(id)}`,undefined,[id]); }
-		catch (error) { if (!isPublicCatalogNotFound(error)) throw error; response = {status:404,headers:{},body:[]}; }
+		catch (error) {
+			if (isPublicCatalogRateLimited(error)) { this.options.rateLimit.recordRateLimited(error.retryAfterMs); return; }
+			if (!isPublicCatalogNotFound(error)) throw error; response = {status:404,headers:{},body:[]};
+		}
 		if (response.status === 429) { this.options.rateLimit.recordRateLimited(null); return; }
 		if (![200,206,404].includes(response.status) || !Array.isArray(response.body) || this.disposed) return;
 		this.recordPrice(id,parsePublicTradingPostPriceBatch(response.body,new Set([id])).items.find((price) => price.itemId === id));
@@ -243,7 +246,10 @@ export class LiveSessionEconomy {
 				// The Trading Post answers 404 (thrown by the transport) when NONE of the ids is quoted and 206 when only some are:
 				// both mean "no price" for the unquoted ids, never "abort the entry", or their priced neighbours stay undecided until close.
 				try { response = await this.options.gateway.requestDetailed(`commerce/prices?ids=${batch.join(',')}`,undefined,batch); }
-				catch (error) { if (!isPublicCatalogNotFound(error)) throw error; response = {status:404,headers:{},body:[]}; }
+				catch (error) {
+					if (isPublicCatalogRateLimited(error)) { this.options.rateLimit.recordRateLimited(error.retryAfterMs); break; }
+					if (!isPublicCatalogNotFound(error)) throw error; response = {status:404,headers:{},body:[]};
+				}
 				if (response.status === 429) { this.options.rateLimit.recordRateLimited(null); break; }
 				if (![200,206,404].includes(response.status) || !Array.isArray(response.body)) continue;
 				const parsed = parsePublicTradingPostPriceBatch(response.body,new Set(batch));
@@ -281,7 +287,7 @@ export class LiveSessionEconomy {
 			if (claimed?.state !== 'dispatching' || claimed.alert === null || this.disposed) continue;
 			if (this.options.canEmit?.() === false) return;
 			const report = await this.options.emit(claimed);
-			await lifecycle.updateAlert(candidate.outboxId,(prior) => ({...prior,state:'processed',deliveryReport:report}),true);
+			await lifecycle.updateAlert(candidate.outboxId,(prior) => ({...prior,state:'processed',deliveryReport:report}),true,claimed.sessionId); // the session that raised the alert: another may be running by the time a slow channel answers
 		}
 		this.tried.clear(); // what enrich() just fetched may have filled the cache for ids a render missed
 		this.options.onChange();

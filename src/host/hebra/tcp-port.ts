@@ -120,6 +120,7 @@ export function createTcpServerPort(tcp: PluginTcp, report: (error: unknown, whe
 		async listen(port, _host, onConnection): Promise<TyrianTcpServer> {
 			const connections = new Map<number, BridgeConnection>();
 			let closed = false;
+			let closing: Promise<void> | null = null;
 			let bound: number;
 			try {
 				bound = await tcp.listen(port, (event) => {
@@ -140,12 +141,21 @@ export function createTcpServerPort(tcp: PluginTcp, report: (error: unknown, whe
 				// Hebra always binds 127.0.0.1 (it takes no address): the caller does not decide it.
 				address: '127.0.0.1',
 				port: bound,
-				async close() {
-					if (closed) return;
-					closed = true;
-					await tcp.close();
-					for (const connection of connections.values()) connection.shutdown();
-					connections.clear();
+				// Z6-4: `closed` is set only once Hebra confirmed the close, so a rejected one is tried again (the core keeps the
+				// handle for that, `AlertRuntime.closeAlertIngameServer`). Concurrent calls share the close in flight.
+				close() {
+					if (closed) return Promise.resolve();
+					closing ??= (async () => {
+						try {
+							await tcp.close();
+							closed = true;
+							for (const connection of connections.values()) connection.shutdown();
+							connections.clear();
+						} finally {
+							closing = null;
+						}
+					})();
+					return closing;
 				},
 			};
 		},

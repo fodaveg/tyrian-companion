@@ -108,6 +108,24 @@ describe('createHebraHost: managed assets path', () => {
 		expect(await loadedSettings(test)).toBeNull();
 	});
 
+	it('after a saved «Quitar» (managedAssetsRoot: null) the next read no longer brings the root back (Z6-3)', async () => {
+		const test = createTyrianTestApi();
+		test.library.addFolder('gw2', 'root', 'GW2');
+		test.library.addFolder('bases', 'gw2', 'Bases');
+		test.library.addFile('m', 'bases', 'Materials.base', 'views: []\n');
+		saveSettings(test, { outputFolder: 'GW2', managedAssetsRoot: 'GW2' });
+		const handle = await createHebraHost(deps(test));
+		const loaded = await handle.host.settings.load() as Record<string, unknown>;
+		expect(loaded.managedAssetsRoot).toBe('GW2');
+		// A save that does not clear it keeps the adoption.
+		await handle.host.settings.save({ ...loaded, language: 'es' });
+		expect((await handle.host.settings.load() as Record<string, unknown>).managedAssetsRoot).toBe('GW2');
+		// The core's Remove ends with this save; the next settings write merges over the next read.
+		await handle.host.settings.save({ ...loaded, managedAssetsRoot: null });
+		expect(JSON.parse(test.local.get(SETTINGS_KEY) ?? '')).toMatchObject({ managedAssetsRoot: null });
+		expect((await handle.host.settings.load() as Record<string, unknown>).managedAssetsRoot).toBeNull();
+	});
+
 	it('a live manifest without Bases does; a path already chosen is never touched', async () => {
 		const test = createTyrianTestApi();
 		test.library.addFolder('tc', 'root', 'Tyrian Companion');

@@ -51,6 +51,21 @@ describe('settings over api.storage.settings', () => {
 		expect(hebraSettingsKey('tyrian-companion', 'lib-1')).toBe('hebra.library-v1.module.tyrian-companion.settings:lib-1');
 	});
 
+	it('latest() keeps the last saved snapshot when a save fails, object or not (Z6-6)', async () => {
+		const storage = createHebraStorage(new Map(), 'tyrian-companion', 'lib-1');
+		const port = createTyrianSettingsPort(storage);
+		await port.save({ outputFolder: 'GW2' });
+		const saved = port.latest();
+		const refuse = vi.spyOn(storage.settings, 'save').mockRejectedValue(new Error('storage refused'));
+		await expect(port.save({ outputFolder: 'Unsaved' })).rejects.toThrow('storage refused');
+		expect(port.latest()).toBe(saved);
+		await expect(port.save('not-an-object')).rejects.toThrow('storage refused');
+		expect(port.latest()).toBe(saved);
+		refuse.mockRestore();
+		await port.save({ outputFolder: 'Later' });
+		expect(port.latest()).toEqual({ outputFolder: 'Later' });
+	});
+
 	it('a corrupt JSON loads null instead of throwing', async () => {
 		const local = new Map([[hebraSettingsKey('tyrian-companion', 'lib-1'), '{broken']]);
 		expect(await createTyrianSettingsPort(createHebraStorage(local, 'tyrian-companion', 'lib-1')).load()).toBeNull();

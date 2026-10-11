@@ -161,6 +161,12 @@ export interface RawHttpResponse {
 }
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+/**
+ * Longest wait the transport itself sits through for a server's `Retry-After`. A longer one is
+ * handed back as the failure, with `retryAfterMs` intact, for the caller's own rate-limit
+ * coordination, instead of leaving the operation hanging for as long as the server asked (Z5-6).
+ */
+const MAX_RETRY_AFTER_WAIT_MS = 60_000;
 /** Bounds how many `diagnosticItemIds` a single failure diagnostic ever records. */
 const MAX_DIAGNOSTIC_ITEM_IDS = 50;
 
@@ -212,7 +218,10 @@ export class ResilientHttpTransport implements HttpTransport {
 				const retryAfterMs = parseRetryAfter(response.headers, this.now());
 				const retryDelayMs =
 					retryAfterMs ?? (RETRYABLE_STATUSES.has(response.status) ? this.backoff(attempt) : null);
-				if (!RETRYABLE_STATUSES.has(response.status) || attempt === policy.maxRetries) {
+				if (
+					!RETRYABLE_STATUSES.has(response.status) || attempt === policy.maxRetries
+					|| (retryAfterMs ?? 0) > MAX_RETRY_AFTER_WAIT_MS
+				) {
 					throw new HttpTransportError(
 						'http',
 						response.status,
@@ -398,8 +407,9 @@ type HostTransportOptions = Omit<TransportOptions, 'request'> & {
  *
  * The port answers every status with its body as text and rejects only on a transport failure,
  * exactly like Obsidian's call with `throw: false`. The body is decoded here the way Obsidian's own
- * `json` getter decodes it (`JSON.parse` of the text, throwing on a body that is not JSON), so a
- * non-JSON answer is the same `network` failure it has always been.
+ * `json` getter decodes it (`JSON.parse` of the text, throwing on a 2xx body that is not JSON, which
+ * stays a `network` failure). A non-2xx body that is not JSON decodes to `null` instead, so its
+ * status still decides the retry and reaches the log (Z5-4).
  */
 export class HostRequestTransport extends ResilientHttpTransport {
 	constructor(http: TyrianHttpPort, { ignoreResponseBody = false, ...options }: HostTransportOptions = {}) {
@@ -414,13 +424,26 @@ export class HostRequestTransport extends ResilientHttpTransport {
 				});
 				if (ignoreResponseBody) return { status: response.status, headers: { ...response.headers }, json: null };
 				refuseOversizedBody(response.text, request.maxResponseBytes);
+				// Only a 2xx must carry JSON. A refusal or a gateway error (a CDN's HTML 502, an empty 504)
+				// keeps its status so the retry policy and the diagnostics see it; a valid JSON refusal body
+				// (a 401/403 reason) is still kept for `classifyApiRefusal`.
+				const ok = response.status >= 200 && response.status < 300;
 				return {
 					status: response.status,
 					headers: { ...response.headers },
-					json: JSON.parse(response.text) as unknown,
+					json: ok ? JSON.parse(response.text) as unknown : parseJsonOrNull(response.text),
 				};
 			},
 		});
+	}
+}
+
+/** Parses a body that is allowed not to be JSON: `null` when it is not. */
+function parseJsonOrNull(text: string): unknown {
+	try {
+		return JSON.parse(text) as unknown;
+	} catch {
+		return null;
 	}
 }
 

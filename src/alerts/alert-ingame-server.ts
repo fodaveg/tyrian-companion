@@ -175,6 +175,7 @@ export async function startAlertIngameServer(
 	timer: AlertIngameServerTimer,
 	bridge: AlertIngameBridgeOptions,
 	retryDelaysMs: readonly number[] = ALERT_INGAME_PORT_RETRY_DELAYS_MS,
+	abort?: AbortSignal,
 ): Promise<AlertIngameServerHandle> {
 	const runtime: BridgeRuntime = {
 		timer, bridge,
@@ -182,8 +183,14 @@ export async function startAlertIngameServer(
 		pending: new Set(), authenticated: new Set(), liveOwner: null, liveChannels: new Set(), closing: false,
 	};
 	const server = await listenWithRetry(
-		tcp, port, (connection) => { attachClient(connection, runtime); }, timer, retryDelaysMs,
+		tcp, port, (connection) => { attachClient(connection, runtime); }, timer, retryDelaysMs, abort,
 	);
+
+	// An abort that arrived while the bind was in flight: nobody wants this server any more.
+	if (abort?.aborted === true) {
+		await server.close();
+		throw startAbortedError();
+	}
 
 	// Fails closed: a host that silently bound somewhere other than loopback (a broken host, a
 	// future refactor that adds a host parameter) does not get to hand back a working server. This
@@ -217,6 +224,10 @@ export async function startAlertIngameServer(
 /**
  * Binds `port` on loopback, retrying on `EADDRINUSE` with the given backoff. Every attempt is a
  * fresh `listen` (the host disposes of the server that failed); every other error rejects at once.
+ *
+ * `abort` ends the wait between attempts at once (the pending timer is cancelled, the promise
+ * rejects with `ALERT_INGAME_START_ABORTED`) and closes a server whose `listen` resolves after it,
+ * so unloading the plugin never sits through the whole retry table nor leaves a late bind behind (Z5-2).
  */
 function listenWithRetry(
 	tcp: TyrianTcpServerPort,
@@ -224,23 +235,44 @@ function listenWithRetry(
 	onConnection: (connection: TyrianTcpConnection) => void,
 	timer: AlertIngameServerTimer,
 	retryDelaysMs: readonly number[],
+	abort?: AbortSignal,
 ): Promise<TyrianTcpServer> {
 	return new Promise((resolve, reject) => {
 		let attempt = 0;
+		let pendingRetry: unknown = null;
+		const onAbort = (): void => {
+			if (pendingRetry === null) return;
+			timer.cancel(pendingRetry);
+			pendingRetry = null;
+			reject(startAbortedError());
+		};
+		abort?.addEventListener('abort', onAbort, { once: true });
+		const settle = (): void => { abort?.removeEventListener('abort', onAbort); };
 		const onFailure = (error: TyrianTcpListenError): void => {
-			if (error.code === 'EADDRINUSE' && attempt < retryDelaysMs.length) {
+			if (abort?.aborted !== true && error.code === 'EADDRINUSE' && attempt < retryDelaysMs.length) {
 				const delayMs = retryDelaysMs[attempt];
 				attempt += 1;
-				timer.schedule(tryListen, delayMs ?? 0);
+				pendingRetry = timer.schedule(() => { pendingRetry = null; tryListen(); }, delayMs ?? 0);
 				return;
 			}
-			reject(error);
+			settle();
+			reject(abort?.aborted === true ? startAbortedError() : error);
 		};
 		const tryListen = (): void => {
-			tcp.listen(port, BIND_HOST, onConnection).then(resolve, onFailure);
+			tcp.listen(port, BIND_HOST, onConnection).then((server) => {
+				settle();
+				resolve(server);
+			}, onFailure);
 		};
 		tryListen();
 	});
+}
+
+/** `.code` of the rejection a start gets when it is aborted before it bound. */
+export const ALERT_INGAME_START_ABORTED = 'ALERT_INGAME_START_ABORTED';
+
+function startAbortedError(): Error {
+	return Object.assign(new Error('The in-game alert server start was aborted.'), { code: ALERT_INGAME_START_ABORTED });
 }
 
 function broadcastLine(clients: ReadonlySet<BridgeConnection>, line: string): void {
