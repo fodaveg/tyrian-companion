@@ -1,5 +1,27 @@
 # Estado
 
+## Candidato 0.6.47: la sesión se recupera al pasar a recolector con el almacén mudo (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.47` sobre el canal 0.6.46 publicado
+(`af91f444`, más la documentación del canal `1c219e1e`); añade los metadatos de versión (`manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- Sin verificar: nada de la 0.6.47 se ha visto en un Obsidian ni en un Hebra reales.
+- Caso vecino de A-1 (`src/sessions/live-session-lifecycle.ts`, `initializeRecord`): con la lectura del registro sin
+  contestar, el latido se arma también en consulta. Antes, si el dispositivo pasaba a recolector antes de que el
+  almacén contestara, el reintento de RT-17 se paraba (solo actúa en consulta) y nada volvía a leer la sesión hasta un
+  inicio. En consulta el latido sigue sin leer ni escribir con la sesión sin leer (sale por `enabled()`), y no compite
+  con RT-17: uno actúa en consulta y el otro en recolector, y los dos pasan por la cola del ciclo de vida. Tests: el
+  cambio de modo real en `src/main-deferred-runtime-startup.test.ts` y dos casos en `live-session-lifecycle.test.ts`.
+  Decisión: el servicio de sesiones manuales sigue releyéndose solo antes de un inicio (Z2-2), como en un recolector
+  que arranca con el almacén mudo.
+- `scripts/verify-hebra-install.mjs` (nivel 2): con el campo `window` que Hebra añade desde el rpm 0.2.0-23 a
+  `plugins.activated` y `plugins.load-failed`, juzga la última sesión `principal`; `editor`, `otra` y valores
+  desconocidos no eligen sesión. Sin el campo (rpm 0.2.0-22 o anterior), la heurística de la 0.6.46. Contrato de salida
+  sin cambios (v2). [QA-HEBRA](QA-HEBRA.md) lo recoge.
+- Pendiente: verla en hosts reales.
+
 ## Canal 0.6.46 publicado: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.46` = `af91f444` (atestación; candidato `3e8b6f35`,
