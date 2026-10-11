@@ -120,6 +120,8 @@ export class TyrianCompanionSettingTab {
 	/** Saves what the alert-threshold field holds, if it is a new valid value; null before the row renders. */
 	private commitThreshold: (() => void) | null = null;
 	private commitOutputFolder: (() => void) | null = null;
+	/** Lets go of the output-folder picker the row attached (in Hebra it listens to the library's folders). */
+	private disposeOutputFolderPicker: (() => void) | null = null;
 	private readonly saveStates = new Map<number, SettingSaveState>();
 	private readonly saveRevisions = new Map<number, number>();
 	private readonly settingsWrites = new SettingsWriteQueue();
@@ -164,6 +166,7 @@ export class TyrianCompanionSettingTab {
 
 	private renderSettings(): void {
 		if (this.containerEl === null) return;
+		this.releaseOutputFolderPicker();
 		const focus = captureSettingsFocus(this.containerEl);
 		// The block is rebuilt on every render, so what the person did to it is read off the DOM first.
 		const openBlock = this.containerEl.querySelector('details');
@@ -224,12 +227,18 @@ export class TyrianCompanionSettingTab {
 			.map(([, { name }]) => name);
 	}
 
+	private releaseOutputFolderPicker(): void {
+		this.disposeOutputFolderPicker?.();
+		this.disposeOutputFolderPicker = null;
+	}
+
 	/** Closes the tab (Obsidian's `hide`): stops the countdown and lets go of every row. */
 	unmount(): void {
 		this.commitThreshold?.();
 		this.commitThreshold = null;
 		this.commitOutputFolder?.();
 		this.commitOutputFolder = null;
+		this.releaseOutputFolderPicker();
 		this.clearCountdown();
 		this.connectionSetting = null;
 		this.connectionStatusEl = null;
@@ -461,7 +470,7 @@ export class TyrianCompanionSettingTab {
 							.onChange((value) => { typed = value; validate(); });
 						text.inputEl.addEventListener('change', commitOnEvent);
 						text.inputEl.addEventListener('blur', commitOnEvent);
-						this.host.ui.pickFolder(text.inputEl, async (path) => { typed = path; await commit(); });
+						this.disposeOutputFolderPicker = this.host.ui.pickFolder(text.inputEl, async (path) => { typed = path; await commit(); });
 					});
 				},
 			},
