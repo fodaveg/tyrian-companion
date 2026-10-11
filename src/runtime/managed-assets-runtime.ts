@@ -179,6 +179,8 @@ export class ManagedAssetsRuntime {
 	 * (same flight, no gap for a sync or an edit in between), and not after the plugin unloaded. Returns that
 	 * inspection, or `null` when nothing was applied. `requireReady`: the load never acts without a `ready`
 	 * manifest; the sync may also recover a lost one, as `decideManagedAssetsAutoUpdate` allows.
+	 *
+	 * @internal Public only so the tests reach it; the core has no delegate for it.
 	 */
 	async applyManagedAssetsIfStillDue(requireReady: boolean): Promise<ManagedAssetsInspection | null> {
 		const seen: { inspection: ManagedAssetsInspection | null } = { inspection: null };
@@ -195,6 +197,8 @@ export class ManagedAssetsRuntime {
 	/**
 	 * Says what the apply did, naming files: created, updated, removed (retired and not edited) and kept
 	 * without being managed (retired and edited). Returns false when there was nothing to name.
+	 *
+	 * @internal Public only so the tests reach it; the core has no delegate for it.
 	 */
 	announceManagedAssetsFollowed(applied: ManagedAssetsInspection): boolean {
 		const translator: Translator = createTranslator(this.settings.language);
@@ -418,6 +422,8 @@ export class ManagedAssetsRuntime {
 	 * A retained legacy root is deliberately excluded: `managed-assets.test.ts` documents that
 	 * adopting one only ever happens through an explicit lifecycle Move, and this must not turn
 	 * that into something that fires on its own the next time Obsidian starts.
+	 *
+	 * @internal Public for the core's private delegate and the tests; not an API of the views.
 	 */
 	async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
 		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return;
@@ -446,6 +452,7 @@ export class ManagedAssetsRuntime {
 		}
 	}
 
+	/** @internal Public only so the tests reach it; the core has no delegate for it. */
 	async ensureManagedAssetsAuthority(parent?: ResolvedLocalDebugActionContext): Promise<boolean> {
 		if (this.settings.legacyManagedAssetsRoot !== null) return true;
 		const mirroredRoot = this.settings.managedAssetsRoot;
@@ -456,6 +463,7 @@ export class ManagedAssetsRuntime {
 		return 'root' in adopted && adopted.root === mirroredRoot;
 	}
 
+	/** @internal Public only so the tests reach it; the core has no delegate for it. */
 	async runManagedAssetsLifecycle(operation: () => Promise<ManagedAssetsLifecycleResult>): Promise<ManagedAssetsLifecycleResult> {
 		this.managedAssetsView = { status: 'working', message: 'applying_lifecycle', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
@@ -469,6 +477,7 @@ export class ManagedAssetsRuntime {
 		return result;
 	}
 
+	/** @internal Public only so the tests reach it; the core has no delegate for it. */
 	async runManagedAssetOperation(operation: () => Promise<ManagedAssetsResult>): Promise<ManagedAssetsResult> {
 		this.managedAssetsView = { status: 'working', message: 'applying_journal', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
