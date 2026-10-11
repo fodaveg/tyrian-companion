@@ -81,6 +81,32 @@ describe('the core hands the price history and the Halloween observation to thei
 		expect(core.getPriceHistorySeedState!(7)).toBe(SENTINEL);
 	});
 
+	it('a price-history compaction evaluates the Halloween price alert through HalloweenObservationRuntime (Z3-2)', async () => {
+		harness = createRuntimeHarness();
+		// The harness' diagnostics port has no `fireAndForget`, which `initializeRuntime` reaches for.
+		const own = harness.core as unknown as { localDebugActions: object };
+		own.localDebugActions = {
+			...own.localDebugActions,
+			fireAndForget: (_context: unknown, action: () => Promise<unknown>) => { void action().catch(() => undefined); },
+		};
+		await harness.initializeRuntime();
+		const reached = vi.spyOn(HalloweenObservationRuntime.prototype, 'evaluatePriceAlert').mockResolvedValue(undefined);
+		const compaction = harness.core as unknown as {
+			priceHistory: { options: { afterCompaction(input: unknown): Promise<void> } };
+		};
+		const readDaily = vi.fn(async () => []);
+		const actionContext = { actionId: 'a', correlationId: 'c' };
+
+		await compaction.priceHistory.options.afterCompaction({ nowMs: 1_800_000, readDaily, actionContext });
+
+		expect(reached).toHaveBeenCalledOnce();
+		const [port, nowMs, context] = reached.mock.calls[0]!;
+		expect(nowMs).toBe(1_800_000);
+		expect(context).toBe(actionContext);
+		await port.readDaily(36_038, '2026-10-01');
+		expect(readDaily).toHaveBeenCalledWith(36_038, '2026-10-01');
+	});
+
 	it('the Halloween port writes the account references into the core\'s own fields', async () => {
 		harness = createRuntimeHarness();
 		const own = harness.core as unknown as { halloweenAccountRef: string | null; alertAccountRef: string | null };
