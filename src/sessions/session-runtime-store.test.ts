@@ -6,6 +6,7 @@ import * as canonicalSha256 from '../core/canonical-sha256';
 import { archiveLegacyRuntime, LEGACY_RUNTIME_ARCHIVE_PREFIX, prepareLegacyRuntimeArchive, prepareLegacyRuntimeExport } from './live-session-legacy-archive';
 
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
+import { COMPOSITION_CHANGES_LIMIT } from '../account/storage-delta-model';
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import {
@@ -507,6 +508,54 @@ describe('session runtime persistence', () => {
 		preH1832.review.classification.reasons = preH1832.review.classification.reasons.map((reason) =>
 			reason.code === 'item_losses_observed' ? { code: reason.code } : reason);
 		expect(isSessionRuntimeRecord(preH1832)).toBe(true);
+	});
+
+	describe('Z33: composition detail of a reordered bank', () => {
+		const piles = (shift: number) => Array.from({ length: 20 }, (_, i) =>
+			looseHolding(1000 + i, 2, { source: 'bank', slot: (i + shift) % 20 }));
+		/** What a record saved before the limit holds: one entry per changed stack, none cut. */
+		function legacyFullDelta() {
+			const baseline = storageDeltaSnapshot({ holdings: piles(0) });
+			const final = afterSnapshot({ holdings: piles(1) });
+			const bounded = compareStorageSnapshots(baseline, final);
+			const compositionChanges = piles(0).flatMap((_, i) => compareStorageSnapshots(
+				storageDeltaSnapshot({ holdings: piles(0).slice(i, i + 1) }),
+				afterSnapshot({ holdings: piles(1).slice(i, i + 1) }),
+			).compositionChanges);
+			return { baseline, final, bounded, legacy: { ...bounded, compositionChanges } };
+		}
+		const storedOf = (
+			baseline: StorageSnapshot,
+			final: StorageSnapshot,
+			delta: unknown,
+		) => ({
+			version: 3, state: provisionalState(baseline, final), baselineSnapshot: baseline, finalSnapshot: final,
+			delta, review: null, priceSnapshot: null, persistedAt: Date.parse(final.completedAt),
+		});
+
+		it('keeps only the first entries of a delta that moved every stack', () => {
+			const { bounded } = legacyFullDelta();
+			expect(bounded.compositionChanges).toHaveLength(COMPOSITION_CHANGES_LIMIT);
+		});
+
+		it('loads a record saved with the full detail and writes it back short', async () => {
+			const { baseline, final, legacy } = legacyFullDelta();
+			expect(legacy.compositionChanges).toHaveLength(20);
+			const stored = storedOf(baseline, final, legacy);
+			await expect(new MemorySessionRuntimeStore(stored).load()).resolves.toMatchObject({ status: 'loaded' });
+
+			const rewritten = createSessionRuntimeRecord(stored.state, baseline, final, legacy, stored.persistedAt);
+			expect(rewritten?.delta?.compositionChanges).toHaveLength(COMPOSITION_CHANGES_LIMIT);
+			expect(legacy.compositionChanges).toHaveLength(20);
+		});
+
+		it('still rejects a record whose kept detail was tampered with', async () => {
+			const { baseline, final, legacy } = legacyFullDelta();
+			const tampered = structuredClone(legacy);
+			tampered.compositionChanges.splice(0, 1, { ...tampered.compositionChanges[0]!, id: 999_999 });
+			const loaded = await new MemorySessionRuntimeStore(storedOf(baseline, final, tampered)).load();
+			expect(loaded.status).not.toBe('loaded');
+		});
 	});
 
 	it('keeps a valid runtime v3 record with a legacy v1 review loadable and ineligible to recommend', () => {

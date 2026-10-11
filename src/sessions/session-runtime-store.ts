@@ -6,7 +6,7 @@ import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
 import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey,
 	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, readLiveJournalEntry, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
-import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
+import { boundCompositionChanges, compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { indexedDbFailureCode, missingIndexedDbSchema, openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen, type IndexedDbSchemaGap, type IndexedDbStoreSchema, type OpenIndexedDbOptions } from '../core/indexed-db-open';
@@ -765,7 +765,7 @@ export function createSessionRuntimeRecord(
 		state: structuredClone(state),
 		baselineSnapshot: structuredClone(baselineSnapshot),
 		finalSnapshot: finalSnapshot === null ? null : structuredClone(finalSnapshot),
-		delta: delta === null ? null : structuredClone(delta),
+		delta: delta === null ? null : structuredClone(boundCompositionChanges(delta)),
 		review: review === null ? null : structuredClone(review),
 		priceSnapshot: priceSnapshot === null ? null : structuredClone(priceSnapshot),
 		persistedAt,
@@ -839,7 +839,10 @@ function checkSessionRuntimeRecordV3(
 	const calculated = compareStorageSnapshots(value.baselineSnapshot, value.finalSnapshot);
 	if (calculated.status === 'invalid'
 		|| !isRecord(value.delta)
-		|| JSON.stringify(calculated) !== JSON.stringify(value.delta)) return INVALID_RUNTIME_RECORD;
+		// A record saved before Z33 keeps every changed stack in `compositionChanges`; both sides are
+		// cut to the same bound so it still reads, and the next save writes the short form.
+		|| JSON.stringify(boundCompositionChanges(calculated))
+			!== JSON.stringify(boundCompositionChanges(value.delta as unknown as StorageDelta))) return INVALID_RUNTIME_RECORD;
 	let reviewVerified = true;
 	if (value.review !== null) {
 		if (!isSessionContaminationReviewShape(value.review)) return INVALID_RUNTIME_RECORD;

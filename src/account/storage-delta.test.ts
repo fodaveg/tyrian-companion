@@ -14,7 +14,8 @@ import {
 	withoutDelivery,
 } from './__fixtures__/storage-delta';
 import type { ItemHolding, StorageSnapshot } from './storage-snapshot-model';
-import { compareStorageSnapshots } from './storage-delta';
+import { boundCompositionChanges, compareStorageSnapshots } from './storage-delta';
+import { COMPOSITION_CHANGES_LIMIT } from './storage-delta-model';
 
 describe('compareStorageSnapshots net algebra', () => {
 	it('returns an empty comparable delta for identical ownership and composition', () => {
@@ -597,6 +598,54 @@ describe('determinism', () => {
 		expect(permuted.itemChanges).toEqual(canonical.itemChanges);
 		expect(permuted.currencyChanges).toEqual(canonical.currencyChanges);
 		expect(permuted.compositionChanges).toEqual(canonical.compositionChanges);
+	});
+});
+
+describe('Z33: bounded composition detail', () => {
+	const bank = (shift: number) => Array.from({ length: 1000 }, (_, i) =>
+		looseHolding(1000 + i, 3, { source: 'bank', slot: (i + shift) % 1000 }, { statsId: 7, statsAttributes: { Power: 40 } }));
+
+	it('keeps the first entries in canonical order and a small delta when a whole bank is reordered', () => {
+		const result = compareStorageSnapshots(
+			storageDeltaSnapshot({ holdings: bank(0) }),
+			afterSnapshot({ holdings: bank(1) }),
+		);
+
+		expect(result.status).toBe('comparable');
+		expect(result.itemChanges).toEqual([]);
+		expect(result.compositionChanges.map((change) => change.id)).toEqual(
+			Array.from({ length: COMPOSITION_CHANGES_LIMIT }, (_, i) => 1000 + i),
+		);
+		expect(JSON.stringify(result).length).toBeLessThan(50_000);
+	});
+
+	it('does not alias the snapshots through the kept parts', () => {
+		const before = storageDeltaSnapshot({ holdings: bank(0) });
+		const after = afterSnapshot({ holdings: bank(1) });
+		const result = compareStorageSnapshots(before, after);
+		const change = result.compositionChanges[0];
+		if (change === undefined) throw new Error('Expected a change.');
+		if (change.kind !== 'item' || change.before[0] === undefined) throw new Error('Expected an item change.');
+		(change.before[0].location as { slot: number }).slot = -1;
+		change.before[0].metadata.statsAttributes = { Power: -1 };
+
+		expect(before.holdings[0]?.location).toEqual({ source: 'bank', slot: 0 });
+		expect(before.holdings[0]?.metadata.statsAttributes).toEqual({ Power: 40 });
+	});
+
+	it('boundCompositionChanges cuts a full list, is idempotent and passes anything else through', () => {
+		const result = compareStorageSnapshots(
+			storageDeltaSnapshot({ holdings: bank(0) }),
+			afterSnapshot({ holdings: bank(1) }),
+		);
+		const first = result.compositionChanges[0];
+		if (first === undefined) throw new Error('Expected a change.');
+		const full = { ...result, compositionChanges: Array.from({ length: 30 }, () => first) };
+
+		expect(boundCompositionChanges(full).compositionChanges).toHaveLength(COMPOSITION_CHANGES_LIMIT);
+		expect(boundCompositionChanges(boundCompositionChanges(full))).toEqual(boundCompositionChanges(full));
+		expect(boundCompositionChanges(result)).toBe(result);
+		expect(boundCompositionChanges(null as never)).toBeNull();
 	});
 });
 
