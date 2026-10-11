@@ -210,11 +210,14 @@ Al terminar, si no necesitas el registro, desactívalo y usa **Limpiar registros
   [QA-MVP](QA-MVP.md). Las rutas exactas dependen del sistema y no las verifica este documento.
 - **Carga (RT-09 nivel 2).** El mismo comando añade un veredicto aparte, `carga=`, leyendo los eventos
   `plugins.activated` y `plugins.load-failed` (id `tyrian-companion`) que Hebra escribe en su
-  `diagnostico.jsonl`. Decide la ÚLTIMA línea de esas dos de la sesión más reciente (la de la última línea
-  del fichero): `loaded` (activada, con su versión), `failed` (con stage, code, incompatibility y errorName),
+  `diagnostico.jsonl` (y `diagnostico.1.jsonl`, el rotado, leído antes si existe; el vivo puede faltar tras
+  rotar). Cada ventana de Hebra abre su propia sesión, pero solo la principal carga plugins y registra un
+  evento `plugins.*` por plugin (los ajenos como `otro`): se juzga la sesión de la ÚLTIMA línea `plugins.*`
+  de cualquier plugin, y decide la última línea de carga de tyrian-companion de esa sesión; si no tiene
+  ninguna, `no-data`. Las líneas de otras ventanas no borran nada. Veredictos: `loaded` (activada, con su versión), `failed` (con stage, code, incompatibility y errorName),
   `version-mismatch` (activada otra versión que la instalada) y `no-data`. Salen con código 1 `failed` y
   `version-mismatch`; `no-data` es un aviso y sale 0. Solo lee el `session` de cada línea y los campos de las
-  líneas de tyrian-companion; salta las líneas mal formadas contándolas y lee como mucho los últimos 4 MiB.
+  líneas de tyrian-companion; salta las líneas mal formadas contándolas y lee como mucho los últimos 4 MiB de cada fichero.
   - **Límite: el registro de Hebra está APAGADO por defecto.** Sin líneas `plugins.*`, `no-data` significa
     «sin datos», no «no cargó»: hay que encender el registro de diagnóstico en los ajustes de Hebra (el rpm
     0.2.0-22 trae el interruptor), reiniciar Hebra y repetir el comando.
