@@ -3538,6 +3538,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.live.isLiveSessionStuck();
 	}
 
+	/** The closed live session's note failed to write and is retried by itself (`LiveSessionRuntime.isLiveNoteRetrying`). */
+	isLiveNoteRetrying(): boolean {
+		return this.live.isLiveNoteRetrying();
+	}
+
 	/** The output folder is missing and only a press of «Aplicar» creates it (`IngameSessionRuntime.isOutputFolderMissing`). */
 	isOutputFolderMissing(): boolean {
 		return this.ingame.isOutputFolderMissing();

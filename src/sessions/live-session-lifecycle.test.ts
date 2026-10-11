@@ -1132,6 +1132,15 @@ describe('passive live session lifecycle', () => {
 			expect(f.service.getStopFailure()).toBeNull();
 			await f.service.dispose();
 		});
+		it('a note that fails to write is retrying (the heartbeat writes it), not lost, until it is saved (F4)', async () => {
+			const f = await running(); f.onComplete.mockResolvedValueOnce(null as unknown as string);
+			expect(f.service.isRetryingNote()).toBe(false);
+			await expect(f.service.stop(AT + 2000)).resolves.toBe(false);
+			expect(f.service.isStuck()).toBe(true); expect(f.service.isRetryingNote()).toBe(true);
+			await f.tick();
+			expect(f.service.isRetryingNote()).toBe(false);
+			await f.service.dispose();
+		});
 		it('a stop that failed once on a session that goes on is healthy again at its next accepted write', async () => {
 			const f = await running(); vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'stale' });
 			await expect(f.service.stop(AT + 2000)).resolves.toBe(false);

@@ -14,6 +14,8 @@ export interface LiveSessionControlSource {
 	getCollectorMode?(): CollectorMode;
 	/** The live session cannot finish by itself (the core's own rule); the shared discard then belongs to it. */
 	isLiveSessionStuck?(): boolean;
+	/** The live session is closed and the lifecycle writes its note again by itself (`LiveSessionLifecycle.isRetryingNote`). */
+	isLiveNoteRetrying?(): boolean;
 	/** The output folder is not in the library and only a press of «Aplicar» creates it: no session can start. */
 	isOutputFolderMissing?(): boolean;
 	getSessionState(): SessionState;
@@ -62,6 +64,7 @@ export function liveSessionControl(
 			const discard = controller?.describe('discard-saved-session');
 			const blocked = oldSessionBlocksStart(view(), source.getSessionState(), source.getSessionRecoveryState());
 			const liveStuck = source.isLiveSessionStuck?.() === true;
+			const noteRetrying = liveStuck && source.isLiveNoteRetrying?.() === true;
 			return {
 				gameConnected: source.getIngamePresence?.().status === 'present',
 				consult: source.getCollectorMode?.() === 'consult',
@@ -70,7 +73,8 @@ export function liveSessionControl(
 				busy: start?.state === 'running' ? 'start' : finish?.state === 'running' ? 'stop' : null,
 				oldSession: blocked ? { canDiscard: discard?.available === true && !liveStuck } : null,
 				...(source.isOutputFolderMissing?.() === true ? { outputFolderMissing: true } : {}),
-				stuckSession: liveStuck ? discard?.available === true : !blocked && view().phase !== 'idle' && discard?.available === true,
+				...(noteRetrying ? { noteRetrying: true } : {}),
+				stuckSession: noteRetrying ? false : liveStuck ? discard?.available === true : !blocked && view().phase !== 'idle' && discard?.available === true,
 			};
 		},
 		startLiveSession: () => run('start-farming-session'),
