@@ -12,9 +12,13 @@ import type { SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { PILOT_METRICS_VERSION, PILOT_PLATFORMS, type PilotJournalSnapshotV1, type PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import {
 	SessionHistoryRuntimeAuthority,
+	SessionHistoryService,
 	type SessionHistoryScrubPreview,
 	type SessionHistoryScrubResult,
+	type SessionHistoryVault,
 } from '../sessions/session-history';
+import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
+import { MemorySessionRuntimeStore } from '../sessions/session-runtime-store';
 
 /**
  * DE-01, step 3a: `SessionRuntime` on its own, over ports checked with `satisfies SessionRuntimePort`.
@@ -296,6 +300,42 @@ describe('the session history scrub and export through SessionRuntime', () => {
 		await runtime.previewSessionHistoryScrubAfterRecovery();
 
 		expect(order).toEqual(['initialize', 'preview']);
+	});
+
+	it('a live session store nobody has read keeps the scrub shut, though the manual service reads idle (A-2)', async () => {
+		// The live load does not answer (RT-17) while the manual service did: under the key there may be a sealed or a running session.
+		const store = new MemorySessionRuntimeStore(); let down = true; const load = store.loadLive.bind(store);
+		store.loadLive = async () => down ? { status: 'error', code: 'unavailable' } as const : await load();
+		const liveSessions = new LiveSessionLifecycle({
+			coordinator: { instanceId: 'host', acquire: unused('acquire'), renew: unused('renew'), assertOwned: unused('assertOwned'),
+				release: unused('release'), dispose: () => undefined },
+			persistence: store, enabled: () => true, now: () => Date.parse('2026-10-11T12:00:00.000Z'), sessionId: unused('sessionId'),
+			setInterval: () => 1, clearInterval: () => undefined, onStateChange: () => undefined, onError: () => undefined,
+		});
+		await liveSessions.initialize();
+		const vault: SessionHistoryVault = {
+			markdownFiles: () => [], exists: () => false, file: () => null, read: unused('vault.read'), process: unused('vault.process'),
+			createFolder: unused('vault.createFolder'), create: unused('vault.create'),
+		};
+		const history = new SessionHistoryService(vault);
+		// As the core wires it: the authority reads the gate of the runtime it is handed to.
+		const authority: SessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => runtime.sessionHistoryScrubGate());
+		const runtime: SessionRuntime = new SessionRuntime(port({
+			liveSessions, sessionHistory: history, sessionHistoryRuntimeAuthority: authority,
+			sessions: { ...port().sessions, getState: () => ({ status: 'idle' }) as ReturnType<SessionRuntimePort['sessions']['getState']>,
+				getRecoveryState: () => ({ status: 'none' }) },
+			assistedDetection: { getState: () => ({ status: 'disarmed' }) as ReturnType<SessionRuntimePort['assistedDetection']['getState']> },
+		}));
+
+		expect(liveSessions.getRuntime()).toBeNull();
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toMatchObject({ status: 'blocked' });
+		expect(runtime.sessionHistoryScrubGate()).toMatchObject({ sessionStatus: 'error', sealedRetirable: false });
+
+		// Once the store answers that nothing is saved, the gate opens again.
+		down = false; await liveSessions.initialize();
+		expect(runtime.sessionHistoryScrubGate()).toMatchObject({ sessionStatus: 'idle' });
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toMatchObject({ status: 'ready', sessions: 0 });
+		await liveSessions.dispose();
 	});
 
 	it('refuses the scrub on a consult device and says so once, without reaching the history', async () => {
