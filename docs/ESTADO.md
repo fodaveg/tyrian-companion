@@ -1,5 +1,25 @@
 # Estado
 
+## Candidato 0.6.50: cada sesión anterior enlaza a su nota resumen (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `fix/0650-enlace-resumen` sobre el canal 0.6.49
+publicado (`fdc095c8`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
+`package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Pedido por David el 10 oct. El enlace de `a7114d2a` (0.6.4x) se puso en la tabla del historial antiguo
+  (`src/ui/session-history-panel.ts`), que la pestaña Sesión ya no pinta; el bloque que se ve es «Sesiones anteriores»
+  de `src/ui/live-session-panel.ts`, y no tenía enlace.
+- `01e4e602`: `SessionRuntime.listLiveSessionHistory` (`src/runtime/session-facade.ts`) calcula la ruta de la nota
+  resumen de cada sesión con `liveSessionSummaryRelativePath` y la carpeta de salida normalizada, la misma que usa el
+  escritor, y la pone en `LiveSessionHistoryEntry.summaryPath` solo si `host.vault.file` la encuentra. El panel pinta la
+  fecha y las horas como botón (`tyrian-live-session__summary-link`, `aria-label` en/es) que llama a
+  `openSessionHistoryNote`, el mismo camino del historial antiguo, con su aviso de nota borrada. Censo de listeners
+  declarado en `scripts/action-observability-baseline.json`.
+- Sin verificar: no se ha visto en un Obsidian ni en un Hebra reales. En Hebra, la apertura por ruta se resuelve a id en
+  `hebra-host.ts` (leído en el código, no probado). El aviso de nota borrada reutiliza el texto del historial antiguo,
+  que dice «Actualiza el historial»; en este panel se recarga cerrando y abriendo el bloque.
+- Pendiente: gate, publicación y verlo en hosts reales.
+
 ## Canal 0.6.49 publicado: arreglos de la QA de año normal (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.49` = `d29b4a6c` (atestación; candidato `2a0fc368`,

@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.50 - Cada sesión anterior enlaza a su nota resumen
+
+Se actualiza desde la 0.6.49 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesiones anteriores. En el bloque plegado «Sesiones anteriores» de la pestaña Sesión, la fecha y las horas de cada
+  sesión abren su nota resumen. Vale también para las sesiones guardadas antes de esta versión. Si la nota no está en
+  la carpeta de salida, la fila sale sin enlace; si se borra después de listarla, el panel lo avisa en vez de abrir una
+  nota vacía.
+
 ## Release beta 0.6.49 - Arreglos de la QA de año normal: asesor, legendarias, cierre de sesión y caducidades
 
 Se actualiza desde la 0.6.48 publicada. Los fallos salen de la QA de año normal del 11 oct (pruebas 1 a 10 sin el
