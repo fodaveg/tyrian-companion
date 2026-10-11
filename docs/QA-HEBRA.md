@@ -212,8 +212,11 @@ Al terminar, si no necesitas el registro, desactívalo y usa **Limpiar registros
   `plugins.activated` y `plugins.load-failed` (id `tyrian-companion`) que Hebra escribe en su
   `diagnostico.jsonl` (y `diagnostico.1.jsonl`, el rotado, leído antes si existe; el vivo puede faltar tras
   rotar). Cada ventana de Hebra abre su propia sesión, pero solo la principal carga plugins y registra un
-  evento `plugins.*` por plugin (los ajenos como `otro`): se juzga la sesión de la ÚLTIMA línea `plugins.*`
-  de cualquier plugin, y decide la última línea de carga de tyrian-companion de esa sesión; si no tiene
+  evento `plugins.*` por plugin (los ajenos como `otro`). Desde el rpm 0.2.0-23 esas líneas llevan
+  `window` (`principal`, `editor` u `otra`): si alguna lo trae, se juzga la sesión de la ÚLTIMA línea
+  `plugins.*` con `window: principal` (las de `editor`, `otra` o un valor desconocido no eligen sesión; sin
+  ninguna principal, `no-data`). Con el rpm 22 o anteriores, que no escriben `window`, se juzga la sesión de
+  la ÚLTIMA línea `plugins.*` de cualquier plugin. En ambos casos decide la última línea de carga de tyrian-companion de esa sesión; si no tiene
   ninguna, `no-data`. Las líneas de otras ventanas no borran nada. Veredictos: `loaded` (activada, con su versión), `failed` (con stage, code, incompatibility y errorName),
   `version-mismatch` (activada otra versión que la instalada) y `no-data`. Salen con código 1 `failed` y
   `version-mismatch`; `no-data` es un aviso y sale 0. Solo lee el `session` de cada línea y los campos de las

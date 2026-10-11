@@ -89,11 +89,16 @@ export function defaultHebraDiagnosticsFile(platform = process.platform, home = 
  * not), and it records a `plugins.*` event for EVERY plugin it loads (third-party ones as `id: 'otro'`). So the
  * judged session is the one of the LAST `plugins.*` event of any plugin = the latest main-window start. Lines of
  * other sessions (an editor window writing at the end, say) neither choose the session nor erase its events.
+ * Hebra rpm 0.2.0-23 and later stamp those events with `window` (`principal` | `editor` | `otra`). When ANY
+ * `plugins.*` line carries it, only the last one with `window === 'principal'` chooses the session (`editor`,
+ * `otra` and unknown values do not). Without any `window` (rpm 22 and earlier) the heuristic above applies.
  */
 export function judgeHebraLoad(text, installedVersion) {
 	let malformed = 0;
 	let anyEvent = false;
 	let pluginsSession = null;
+	let principalSession = null;
+	let anyWindow = false;
 	/** session -> last tyrian-companion load event of that session. */
 	const lastBySession = new Map();
 	for (const line of text.split('\n')) {
@@ -106,10 +111,15 @@ export function judgeHebraLoad(text, installedVersion) {
 		anyEvent = true;
 		if (typeof entry.event !== 'string' || !entry.event.startsWith('plugins.') || typeof entry.session !== 'string') continue;
 		pluginsSession = entry.session;
+		if (typeof entry.window === 'string') {
+			anyWindow = true;
+			if (entry.window === 'principal') principalSession = entry.session;
+		}
 		if (LOAD_EVENTS.includes(entry.event) && entry.id === PLUGIN_ID) lastBySession.set(entry.session, entry);
 	}
 	if (pluginsSession === null) return Object.freeze({ status: 'no-data', reason: anyEvent ? 'no-plugin-events' : 'no-events', malformed });
-	const last = lastBySession.get(pluginsSession) ?? null;
+	if (anyWindow && principalSession === null) return Object.freeze({ status: 'no-data', reason: 'no-principal-window-plugin-event', malformed });
+	const last = lastBySession.get(anyWindow ? principalSession : pluginsSession) ?? null;
 	if (last === null) return Object.freeze({ status: 'no-data', reason: 'no-tyrian-event-in-latest-plugin-session', malformed });
 	if (last.event === 'plugins.load-failed') {
 		return Object.freeze({
