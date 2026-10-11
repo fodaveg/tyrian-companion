@@ -121,6 +121,31 @@ describe('IndexedDbPriceHistoryStore', () => {
 			store.close();
 		});
 
+		it('keeps the derived items a sync asks for when the list is saturated with newer observed rows (Z3-4)', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-derived-saturated'));
+			await store.applyDerivedWatchList('vault', [900_001], 1_000);
+			await store.observeItems('vault', Array.from({ length: 394 }, (_, index) => 10_000 + index), 2_000);
+			expect(await ids(store)).toContain(900_001);
+			await store.applyDerivedWatchList('vault', [900_001, 900_002], 3_000);
+			const watch = await ids(store);
+			expect(watch).toHaveLength(400);
+			expect(watch).toContain(900_001);
+			expect(watch).toContain(900_002);
+			store.close();
+		});
+
+		it('does not let new observations evict a derived item from a saturated list (Z3-4)', async () => {
+			const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('reasons-observe-vs-derived'));
+			await store.applyDerivedWatchList('vault', [900_001], 1_000);
+			await store.observeItems('vault', Array.from({ length: 394 }, (_, index) => 10_000 + index), 2_000);
+			await store.observeItems('vault', Array.from({ length: 50 }, (_, index) => 20_000 + index), 3_000);
+			const watch = await ids(store);
+			expect(watch).toHaveLength(400);
+			expect(watch).toContain(900_001);
+			expect(watch).toContain(20_000);
+			store.close();
+		});
+
 		const rows = async (store: IndexedDbPriceHistoryStore): Promise<unknown[]> => await store.readWatchList('vault');
 
 		it('leaves every row byte-identical when the same derived set is applied again', async () => {

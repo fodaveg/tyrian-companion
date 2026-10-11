@@ -32,6 +32,22 @@ const COMPACTION_DIRTY_PREFIX = 'compaction:v1:dirty:';
 
 export type PriceHistoryStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
 
+/**
+ * The watch rows that survive the 400 cap, shared by `observeItems` and `applyDerivedWatchList` so
+ * neither can evict what the other just protected (Z3-4): fixed seeds first, then the rows an
+ * inventory-capital sync asks for (`derived`), then the rest by recency. Before, a derived row kept
+ * its old `lastObservedAtMs` and lost to every newer observed row, so a saturated list dropped the
+ * high-capital item the same sync had just requested.
+ */
+function retainWatchItems(entries: readonly PriceHistoryWatchItemV1[]): PriceHistoryWatchItemV1[] {
+	return [...entries].sort((left, right) =>
+		Number(right.seed) - Number(left.seed)
+		|| Number(right.derived) - Number(left.derived)
+		|| right.lastObservedAtMs - left.lastObservedAtMs
+		|| left.itemId - right.itemId,
+	).slice(0, PRICE_HISTORY_MAX_WATCH_ITEMS);
+}
+
 export class PriceHistoryStoreError extends Error {
 	constructor(readonly failure: PriceHistoryStoreFailure) {
 		super(`Price-history storage is ${failure}.`);
@@ -166,11 +182,7 @@ export class IndexedDbPriceHistoryStore {
 							lastObservedAtMs: nowMs,
 						});
 					}
-					const ordered = [...byId.values()].sort((left, right) =>
-						Number(right.seed) - Number(left.seed)
-						|| right.lastObservedAtMs - left.lastObservedAtMs
-						|| left.itemId - right.itemId,
-					).slice(0, PRICE_HISTORY_MAX_WATCH_ITEMS);
+					const ordered = retainWatchItems([...byId.values()]);
 					const retained = new Set(ordered.map(({ itemId }) => itemId));
 					for (const entry of existing) if (!retained.has(entry.itemId)) store.delete([vaultId, entry.itemId]);
 					for (const entry of ordered) store.put(entry);
@@ -214,11 +226,7 @@ export class IndexedDbPriceHistoryStore {
 							lastObservedAtMs: current?.lastObservedAtMs ?? nowMs,
 						});
 					}
-					const ordered = [...byId.values()].sort((left, right) =>
-						Number(right.seed) - Number(left.seed)
-						|| right.lastObservedAtMs - left.lastObservedAtMs
-						|| left.itemId - right.itemId,
-					).slice(0, PRICE_HISTORY_MAX_WATCH_ITEMS);
+					const ordered = retainWatchItems([...byId.values()]);
 					const retained = new Set(ordered.map(({ itemId }) => itemId));
 					for (const entry of existing) if (!retained.has(entry.itemId)) store.delete([vaultId, entry.itemId]);
 					for (const entry of ordered) store.put(entry);
