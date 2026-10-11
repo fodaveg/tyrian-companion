@@ -55,6 +55,8 @@ export function validateBratRelease({ manifest, release }) {
 /**
  * Judges the bytes of a release that has been DOWNLOADED into `directory` (`gh release download`),
  * which the metadata alone cannot see (HP-11):
+ * - the downloaded `manifest.json` (what BRAT reads) is readable, has the expected `id` and its `version` is
+ *   the release tag; the `.zip.sha256` declares the sha256 of the downloaded ZIP and its name;
  * - `hebra.json` is readable and declares the version of `manifest.json`;
  * - the sha256 it declares for `hebra-main.mjs` and `hebra-styles.css` is the sha256 of the files
  *   actually published, which is what Hebra checks before installing;
@@ -63,6 +65,20 @@ export function validateBratRelease({ manifest, release }) {
  */
 export function validateDownloadedHebraAssets({ manifest, release, directory }) {
 	const findings = [];
+	// BRAT reads the version from the PUBLISHED `manifest.json`, not from the local one this run compares against.
+	const published = readDownloadedJson(resolve(directory, 'manifest.json'));
+	if (!isRecord(published)) {
+		findings.push('published-manifest-unreadable');
+	} else if (published.id !== manifest.id || published.version !== (isRecord(release) ? release.tagName : undefined)) {
+		findings.push('published-manifest-mismatch');
+	}
+	// `<zip>.sha256` is `<sha256 of the zip>  <zip name>` (`release-package.mjs`).
+	const zipName = `${manifest.id}-${manifest.version}.zip`;
+	const zipHash = sha256OfFile(resolve(directory, zipName));
+	const declaredChecksum = readDownloadedText(resolve(directory, `${zipName}.sha256`))?.match(/^([0-9a-f]{64}) {2}(.+?)\n?$/u);
+	if (zipHash === null || declaredChecksum === null || declaredChecksum === undefined || declaredChecksum[1] !== zipHash || declaredChecksum[2] !== zipName) {
+		findings.push('zip-checksum-mismatch');
+	}
 	const hebra = readDownloadedJson(resolve(directory, 'hebra.json'));
 	if (!isRecord(hebra)) {
 		findings.push('hebra-manifest-unreadable');
@@ -87,6 +103,14 @@ export function validateDownloadedHebraAssets({ manifest, release, directory }) 
 		}
 	}
 	return findings;
+}
+
+function readDownloadedText(path) {
+	try {
+		return readFileSync(path, 'utf8');
+	} catch {
+		return null;
+	}
 }
 
 function readDownloadedJson(path) {
@@ -181,7 +205,7 @@ export function runCli({ argv = process.argv.slice(2), root = process.cwd() } = 
 			return 1;
 		}
 		process.stdout.write(
-			`BRAT release contract: PASS (version=${manifest.version}; assets=${expectedBratReleaseAssets(manifest).length})\n`,
+			`BRAT release contract: PASS (version=${manifest.version}; assets=${expectedBratReleaseAssets(manifest).length}; downloaded-bytes=${assetsDirectory === null ? 'not-checked' : 'checked'})\n`,
 		);
 		return 0;
 	} catch (error) {

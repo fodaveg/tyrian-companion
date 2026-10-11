@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
@@ -34,8 +34,9 @@ const MAX_REGISTRY_BYTES = 1024 * 1024;
 const HEBRA_APP_ID = 'net.fodaveg.hebra';
 const DIAGNOSTICS_FILE_NAME = 'diagnostico.jsonl';
 /**
- * The diagnostics log is append-only and can grow: only its last 4 MiB are read (the most recent session is
- * at the end). A cut at the start drops the partial first line, which is not counted as malformed.
+ * The diagnostics log is append-only and can grow: only the last 4 MiB of EACH file (rotated and live) are read.
+ * Hebra rotates at 4 MiB, so a file is at most that size plus one batch and the cap rarely cuts; when it does,
+ * the partial first line is dropped, not counted as malformed.
  */
 export const MAX_DIAGNOSTICS_BYTES = 4 * 1024 * 1024;
 const LOAD_EVENTS = Object.freeze(['plugins.activated', 'plugins.load-failed']);
@@ -79,16 +80,22 @@ export function defaultHebraDiagnosticsFile(platform = process.platform, home = 
 
 /**
  * Level 2 verdict from the text of the log. `installedVersion` is the version in Hebra's registry.
- *  - `loaded`: the last tyrian-companion load event of the latest session is `plugins.activated` of that version.
+ *  - `loaded`: the last tyrian-companion load event of the judged session is `plugins.activated` of that version.
  *  - `version-mismatch`: it is `plugins.activated`, but of another version than the installed one.
  *  - `failed`: it is `plugins.load-failed` (stage, code, incompatibility and errorName are reported).
- *  - `no-data`: no file, empty, or the latest session has no tyrian-companion load event. NOT a failure.
- * The latest session is the `session` of the last well-formed line of the file, whatever its event.
+ *  - `no-data`: no file, empty, no `plugins.*` event at all, or the judged session has no tyrian-companion
+ *    event. NOT a failure.
+ * Every Hebra webview opens its own log session, but only the main window loads plugins (the editor windows do
+ * not), and it records a `plugins.*` event for EVERY plugin it loads (third-party ones as `id: 'otro'`). So the
+ * judged session is the one of the LAST `plugins.*` event of any plugin = the latest main-window start. Lines of
+ * other sessions (an editor window writing at the end, say) neither choose the session nor erase its events.
  */
 export function judgeHebraLoad(text, installedVersion) {
 	let malformed = 0;
-	let session = null;
-	let last = null;
+	let anyEvent = false;
+	let pluginsSession = null;
+	/** session -> last tyrian-companion load event of that session. */
+	const lastBySession = new Map();
 	for (const line of text.split('\n')) {
 		if (line.trim().length === 0) continue;
 		const entry = parseLine(line);
@@ -96,13 +103,14 @@ export function judgeHebraLoad(text, installedVersion) {
 			malformed += 1;
 			continue;
 		}
-		if (typeof entry.session === 'string') {
-			if (entry.session !== session) last = null;
-			session = entry.session;
-		}
-		if (LOAD_EVENTS.includes(entry.event) && entry.id === PLUGIN_ID && entry.session === session) last = entry;
+		anyEvent = true;
+		if (typeof entry.event !== 'string' || !entry.event.startsWith('plugins.') || typeof entry.session !== 'string') continue;
+		pluginsSession = entry.session;
+		if (LOAD_EVENTS.includes(entry.event) && entry.id === PLUGIN_ID) lastBySession.set(entry.session, entry);
 	}
-	if (last === null) return Object.freeze({ status: 'no-data', reason: session === null ? 'no-events' : 'no-plugin-events', malformed });
+	if (pluginsSession === null) return Object.freeze({ status: 'no-data', reason: anyEvent ? 'no-plugin-events' : 'no-events', malformed });
+	const last = lastBySession.get(pluginsSession) ?? null;
+	if (last === null) return Object.freeze({ status: 'no-data', reason: 'no-tyrian-event-in-latest-plugin-session', malformed });
 	if (last.event === 'plugins.load-failed') {
 		return Object.freeze({
 			status: 'failed', malformed,
@@ -114,32 +122,62 @@ export function judgeHebraLoad(text, installedVersion) {
 	return Object.freeze({ status: version === installedVersion ? 'loaded' : 'version-mismatch', version, installed: installedVersion, malformed });
 }
 
-/** Reads (the tail of) the diagnostics log and judges it. It never throws: an unusable file is `no-data`. */
+/** Hebra rotates the full log to `<name>.1<ext>` (`diagnostics.rs`: `diagnostico.1.jsonl`); its `read()` is rotated + live. */
+export function rotatedDiagnosticsFile(diagnosticsFile) {
+	const extension = extname(diagnosticsFile);
+	return resolve(dirname(diagnosticsFile), `${basename(diagnosticsFile, extension)}.1${extension}`);
+}
+
+/**
+ * The last `maxBytes` of one file as text (the partial first line of a cut is dropped, not counted as malformed).
+ * `null` when it does not exist; throws when it is not a readable regular file.
+ */
+function readTail(path, maxBytes) {
+	if (!existsSync(path)) return null;
+	if (!lstatSync(path).isFile()) throw new Error('not-a-file');
+	const fd = openSync(path, 'r');
+	try {
+		const size = fstatSync(fd).size;
+		const length = Math.min(size, maxBytes);
+		const buffer = Buffer.alloc(length);
+		let read = 0;
+		while (read < length) {
+			const chunk = readSync(fd, buffer, read, length - read, size - length + read);
+			if (chunk === 0) break;
+			read += chunk;
+		}
+		const text = buffer.subarray(0, read).toString('utf8');
+		if (size <= length) return text;
+		const newline = text.indexOf('\n');
+		return newline === -1 ? '' : text.slice(newline + 1);
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/**
+ * Reads the rotated log (if any) and then the live one, in that order, and judges them as one stream. Each file
+ * gets its own `maxBytes` tail, so a big live file never pushes out the rotated one. The live file may be absent
+ * right after a rotation. It never throws: an unusable file is `no-data`.
+ */
 export function readHebraLoad({ diagnosticsFile, installedVersion, maxBytes = MAX_DIAGNOSTICS_BYTES }) {
 	if (typeof diagnosticsFile !== 'string' || diagnosticsFile.length === 0) return Object.freeze({ status: 'no-data', reason: 'path-unknown', malformed: 0 });
-	if (!existsSync(diagnosticsFile)) return Object.freeze({ status: 'no-data', reason: 'file-missing', malformed: 0 });
-	let text;
+	let rotated;
+	let live;
 	try {
-		if (!lstatSync(diagnosticsFile).isFile()) throw new Error('not-a-file');
-		const fd = openSync(diagnosticsFile, 'r');
+		live = readTail(diagnosticsFile, maxBytes);
 		try {
-			const size = fstatSync(fd).size;
-			const length = Math.min(size, maxBytes);
-			const buffer = Buffer.alloc(length);
-			let read = 0;
-			while (read < length) {
-				const chunk = readSync(fd, buffer, read, length - read, size - length + read);
-				if (chunk === 0) break;
-				read += chunk;
-			}
-			text = buffer.subarray(0, read).toString('utf8');
-			if (size > length) text = text.slice(text.indexOf('\n') + 1);
-		} finally {
-			closeSync(fd);
+			rotated = readTail(rotatedDiagnosticsFile(diagnosticsFile), maxBytes);
+		} catch {
+			// An unusable rotated file only loses older evidence; the live one still decides.
+			rotated = null;
 		}
 	} catch {
 		return Object.freeze({ status: 'no-data', reason: 'unreadable', malformed: 0 });
 	}
+	if (live === null && rotated === null) return Object.freeze({ status: 'no-data', reason: 'file-missing', malformed: 0 });
+	const rotatedText = rotated === null || rotated.length === 0 || rotated.endsWith('\n') ? (rotated ?? '') : `${rotated}\n`;
+	const text = `${rotatedText}${live ?? ''}`;
 	if (text.trim().length === 0) return Object.freeze({ status: 'no-data', reason: 'empty', malformed: 0 });
 	return judgeHebraLoad(text, installedVersion);
 }

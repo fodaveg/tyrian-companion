@@ -178,16 +178,34 @@ function testLoadVerdicts() {
 	// The last event of the session decides: it activated after failing once.
 	assert(judgeHebraLoad(jsonl(failedEvent('s1'), activated('s1')), '0.6.35').status === 'loaded', 'an older failure beat a later activation');
 
-	// An old session that activated, and a newer one with no tyrian-companion event at all: no data, not "loaded".
-	const stale = judgeHebraLoad(jsonl(activated('old'), { t: 3, seq: 1, session: 'new', event: 'sync.started' }), '0.6.35');
-	assert(stale.status === 'no-data' && stale.reason === 'no-plugin-events', `an activation of an old session counted for the new one: ${stale.status}`);
+	// Only non-plugin events: no data. A newer session without ANY `plugins.*` event (another window) does not
+	// take the verdict from the last session that did load plugins.
+	const stale = judgeHebraLoad(jsonl({ t: 3, seq: 1, session: 'new', event: 'app.visibility' }), '0.6.35');
+	assert(stale.status === 'no-data' && stale.reason === 'no-plugin-events', `a log with no plugins event was ${stale.status}`);
 	assert(!loadVerdictFailsInstall(stale), 'no-data failed the install');
 	assert(describeHebraLoad(stale).includes('apagado'), 'no-data does not say the log may be off');
+	assert(judgeHebraLoad(jsonl(activated('old'), { t: 3, seq: 1, session: 'new', event: 'app.visibility' }), '0.6.35').status === 'loaded', 'a later non-plugin session erased the main-window verdict');
+	// The latest main start recorded plugins, but not tyrian-companion (another plugin only): the old result is NOT reused.
+	const reused = judgeHebraLoad(jsonl(activated('old'), { t: 3, seq: 1, session: 'new', event: 'plugins.activated', id: 'otro', version: '1.0.0' }), '0.6.35');
+	assert(reused.status === 'no-data' && reused.reason === 'no-tyrian-event-in-latest-plugin-session', `an old start was reused for a newer one without tyrian: ${reused.status}`);
+
+	// D-1: lines of other webviews (session B) interleaved between the failure and the end of A must not erase it.
+	const visibility = (session, t) => ({ t, seq: t, session, event: 'app.visibility', state: 'hidden' });
+	const interleaved = judgeHebraLoad(jsonl(failedEvent('A'), visibility('B', 5), visibility('A', 6)), '0.6.35');
+	assert(interleaved.status === 'failed', `A:failed, B:other, A:other was ${interleaved.status}`);
+	assert(judgeHebraLoad(jsonl(activated('A'), visibility('B', 5), visibility('A', 6)), '0.6.35').status === 'loaded', 'A:activated, B:other, A:other lost the activation');
+	// An editor window that writes last (its own session, no plugins) leaves the verdict alone.
+	assert(judgeHebraLoad(jsonl(failedEvent('A'), visibility('E', 9)), '0.6.35').status === 'failed', 'an editor line at the end erased the failure');
+	// Other plugins' events (`id: otro`) choose the session but are never attributed to tyrian-companion.
+	const withOther = judgeHebraLoad(jsonl(failedEvent('A'), { t: 4, seq: 4, session: 'A', event: 'plugins.activated', id: 'otro', version: '1.0.0' }), '0.6.35');
+	assert(withOther.status === 'failed', `a later event of another plugin in the same session was ${withOther.status}`);
 
 	// A failure of an old session does not poison a new session that activated.
 	assert(judgeHebraLoad(jsonl(failedEvent('old'), activated('new')), '0.6.35').status === 'loaded', 'an old failure beat the new session');
 	// Another plugin's events are not Tyrian's.
 	assert(judgeHebraLoad(jsonl(failedEvent('s1', { id: 'other' })), '0.6.35').status === 'no-data', 'another plugin failure was attributed to tyrian-companion');
+	// An older main start that failed does not poison the newest one that activated, even with a window between.
+	assert(judgeHebraLoad(jsonl(failedEvent('old'), { t: 3, seq: 3, session: 'E', event: 'app.visibility' }, activated('new')), '0.6.35').status === 'loaded', 'an old failure beat the new start');
 
 	const mismatch = judgeHebraLoad(jsonl(activated('s1', '0.6.34')), '0.6.35');
 	assert(mismatch.status === 'version-mismatch' && mismatch.version === '0.6.34' && mismatch.installed === '0.6.35', `an activation of another version was ${mismatch.status}`);
@@ -219,6 +237,30 @@ function testLoadFileReading() {
 	const padding = jsonl(...Array.from({ length: 200 }, (_, index) => ({ t: index, session: 'old', event: 'noise', filler: 'x'.repeat(50) })));
 	const big = read('big.jsonl', padding + jsonl(activated('new')), 600);
 	assert(big.status === 'loaded' && big.malformed === 0, `a log over the cap was ${big.status} with ${String(big.malformed)} malformed`);
+	// D-1, rotation: Hebra moves the full log to `diagnostico.1.jsonl`; the failure can sit there while the live one
+	// is empty, absent, or holds only a window's lines.
+	const rotationDir = join(testRoot, 'rotation');
+	mkdirSync(rotationDir, { recursive: true });
+	const rotatedRead = ({ rotated, live }, maxBytes) => {
+		const livePath = join(rotationDir, 'diagnostico.jsonl');
+		const rotatedPath = join(rotationDir, 'diagnostico.1.jsonl');
+		rmSync(livePath, { force: true });
+		rmSync(rotatedPath, { force: true });
+		if (rotated !== null) writeFileSync(rotatedPath, rotated);
+		if (live !== null) writeFileSync(livePath, live);
+		return readHebraLoad({ diagnosticsFile: livePath, installedVersion: '0.6.35', ...(maxBytes === undefined ? {} : { maxBytes }) });
+	};
+	const windowLine = { t: 9, seq: 9, session: 'E', event: 'app.visibility', state: 'visible' };
+	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: null }).status === 'failed', 'a failure in the rotated log with no live log was lost');
+	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: '' }).status === 'failed', 'a failure in the rotated log with an empty live log was lost');
+	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: jsonl(windowLine) }).status === 'failed', 'a window line in the live log erased the rotated failure');
+	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: jsonl(activated('B')) }).status === 'loaded', 'the live log did not outrank the rotated one');
+	assert(rotatedRead({ rotated: jsonl(activated('A')), live: jsonl(failedEvent('A', { t: 5 })) }).status === 'failed', 'the live log of the same session did not outrank the rotated one');
+	assert(rotatedRead({ rotated: null, live: null }).reason === 'file-missing', 'neither log present was not file-missing');
+	assert(rotatedRead({ rotated: '', live: '' }).reason === 'empty', 'two empty logs were not empty');
+	// The per-file cap keeps the tail of EACH file: a big live log does not push the rotated failure out.
+	const noise = jsonl(...Array.from({ length: 200 }, (_, index) => ({ t: index, session: 'E', event: 'noise', filler: 'x'.repeat(50) })));
+	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: noise }, 600).status === 'failed', 'the cap of the live log excluded the rotated failure');
 	assert(defaultHebraDiagnosticsFile('linux', '/h', undefined) === resolve('/h', '.local', 'share', 'net.fodaveg.hebra', 'diagnostico.jsonl'), 'Linux diagnostics default is not next to plugins/');
 	assert(defaultHebraDiagnosticsFile('darwin', '/h') === null && defaultHebraDiagnosticsFile('win32', '/h') === null, 'a diagnostics path was guessed outside Linux');
 	assert(parseHebraInstallArguments(['--plugins-dir', '/x/plugins'], { platform: 'linux', home: '/h' }).diagnosticsFile === null, 'a custom plugins directory inherited the default log');
@@ -239,6 +281,8 @@ function testCommandLineExitCodes() {
 		['failed', jsonl(failedEvent('s1')), 1, 'carga=failed'],
 		['mismatch', jsonl(activated('s1', '0.6.1')), 1, 'carga=version-mismatch'],
 		['no-data', jsonl({ session: 's1', event: 'x' }), 0, 'carga=no-data'],
+		// D-1: A:failed, B:other, A:other must still exit 1.
+		['failed-interleaved', jsonl(failedEvent('A'), { t: 5, seq: 5, session: 'B', event: 'app.visibility', state: 'hidden' }, { t: 6, seq: 6, session: 'A', event: 'app.visibility', state: 'visible' }), 1, 'carga=failed'],
 	];
 	for (const [name, content, status, text] of cases) {
 		const result = run(content);
