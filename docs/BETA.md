@@ -30,6 +30,9 @@ acciones manuales de inventario/cartera y la comprobación explícita de conexi�
 con la [guía de permisos](API-KEY.md); catálogo y precios públicos no la requieren. No usar una
 sincronización API como sustituto de una fuente live ausente.
 
+**Varios vaults.** Cada vault de Obsidian tiene sus propios datos de Tyrian Companion: sesiones, historial y ajustes.
+No se comparten entre vaults. Si abres otro vault, empieza desde cero.
+
 ### Release 0.5.0: alcance y QA pendientes
 
 La captura propia se rige por [SPEC-live-loot](SPEC-live-loot.md). La release incluye lector/
