@@ -2016,6 +2016,9 @@ describe('a lease granted after dispose is handed back at once (lot R)', () => {
 			await disposal;
 
 			expect(leases.release).toHaveBeenCalledWith(late);
+			const lateRelease = vi.mocked(leases.release).mock.calls.findIndex(([lease]) => lease === late);
+			expect(vi.mocked(leases.release).mock.invocationCallOrder[lateRelease])
+				.toBeLessThan(vi.mocked(leases.dispose).mock.invocationCallOrder[0]!);
 			expectRejected(result);
 			expect(save).not.toHaveBeenCalled();
 			expect(clear).not.toHaveBeenCalled();
@@ -2071,6 +2074,34 @@ describe('a lease written while dispose waits is released in the store before di
 		const other = open('instance-second');
 		await expect(other.acquire('session-1')).resolves.toMatchObject({ status: 'acquired' });
 		other.dispose();
+	});
+
+	it('asks the coordinator for nothing once dispose began, and a second dispose waits for the first', async () => {
+		let grant!: () => void;
+		const granted = new Promise<void>((resolve) => { grant = resolve; });
+		const acquire = vi.fn(async () => {
+			await granted;
+			return { status: 'acquired' as const, handle };
+		});
+		const leases = coordinator({ acquire });
+		const service = new ManualSessionStartService(leases, {
+			capture: vi.fn(async () => structuredClone(captured)),
+		}, serviceOptions());
+		const started = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce());
+
+		const first = service.dispose();
+		const second = service.dispose();
+		expect(second).toBe(first);
+		const lateAcquire = (service as unknown as { safeAcquire(id: string): Promise<unknown> }).safeAcquire('session-2');
+		await expect(lateAcquire).resolves.toEqual({ status: 'error', code: 'disposed' });
+		expect(acquire).toHaveBeenCalledOnce();
+		expect(leases.dispose).not.toHaveBeenCalled();
+
+		grant();
+		await started;
+		await first;
+		expect(leases.dispose).toHaveBeenCalledOnce();
 	});
 
 	it('does not hang dispose on an acquisition that never answers: it closes the coordinator after the bound', async () => {

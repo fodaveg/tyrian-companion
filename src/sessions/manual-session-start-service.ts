@@ -120,6 +120,7 @@ export class ManualSessionStartService {
 	/** Proof that the completed session's summary reached the vault (H18.8); see `markCompletedSummarySaved`. */
 	private summaryReceipt: SessionSummaryReceipt | null = null;
 	private disposed = false;
+	private disposeFlight: Promise<void> | null = null;
 	/** The acquisitions `safeAcquire` has asked the coordinator for and that have not answered yet; `dispose()` waits for them. */
 	private readonly acquiresInFlight = new Set<Promise<unknown>>();
 	private readonly automaticAccountCapture: boolean;
@@ -644,8 +645,13 @@ export class ManualSessionStartService {
 		return true;
 	}
 
-	async dispose(): Promise<void> {
-		if (this.disposed) return;
+	/** The one closing: a second `dispose()` waits for it instead of returning while the coordinator is still open. */
+	dispose(): Promise<void> {
+		this.disposeFlight ??= this.disposeOnce();
+		return this.disposeFlight;
+	}
+
+	private async disposeOnce(): Promise<void> {
 		this.disposed = true;
 		this.stopHeartbeat();
 		this.stopSettlement();
@@ -1077,8 +1083,10 @@ export class ManualSessionStartService {
 	 * rejection with no side effects, so nothing writes state or arms a timer with it. The lease is handed
 	 * back in the store before `dispose()` closes the coordinator: `dispose()` waits for the acquisitions
 	 * in flight (see `settleAcquiresInFlight`, bounded by `DISPOSE_ACQUIRE_WAIT_MS`), because a closed
-	 * coordinator answers `release` without writing. Only an acquisition that outlasts that bound is left
-	 * to the coordinator's own silence rule (15 s). `safeRelease` never throws.
+	 * coordinator answers `release` without writing. Acquisitions already in flight may still write to
+	 * IndexedDB while the plugin closes (even take the lease of a silent owner) and are handed back before the close; none starts
+	 * after `dispose()` began. Left to the coordinator's silence rule (15 s) are: an acquisition that outlasts the bound, the
+	 * one `performLegacyMigration` asks of the coordinator directly, and those of `LiveSessionLifecycle`. `safeRelease` never throws.
 	 */
 	private safeAcquire(sessionId: string): Promise<AcquireLeaseResult> {
 		const flight = this.acquireAndReturnIfLate(sessionId);
@@ -1087,6 +1095,9 @@ export class ManualSessionStartService {
 	}
 
 	private async acquireAndReturnIfLate(sessionId: string): Promise<AcquireLeaseResult> {
+		// Once `dispose()` began nothing new is asked of the coordinator: a lease it wrote now could find the coordinator closed
+		// when it is handed back (the second acquisition after an `already_owned` for another session, for one).
+		if (this.disposed) return { status: 'error', code: 'disposed' };
 		let result: AcquireLeaseResult;
 		try { result = await this.coordinator.acquire(sessionId); } catch { return { status: 'error', code: 'unavailable' }; }
 		if (this.disposed && (result.status === 'acquired' || result.status === 'already_owned')) {
