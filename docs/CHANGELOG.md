@@ -1,5 +1,13 @@
 # Changelog
 
+## Release beta 0.6.41 - Una sesión concedida después de cerrar ya no hace nada
+
+Se actualiza desde la 0.6.40 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión. Si la reserva de una sesión llega cuando el plugin ya se está cerrando (al arrancar, recuperar, finalizar al
+  abrir o retomar), se rechaza: no se guarda nada ni se arma ningún temporizador con ella, y se intenta devolverla.
+
 ## Release beta 0.6.40 - Orden interno: nota de sesión y servicio de inicio partidos
 
 Se actualiza desde la 0.6.39 publicada. No cambia nada visible. Nada de esto se ha visto todavía en un Obsidian ni en

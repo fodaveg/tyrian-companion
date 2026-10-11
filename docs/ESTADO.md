@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.6.41: una reserva concedida después de cerrar se rechaza (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.41` sobre el canal 0.6.40 publicado
+(`4ab9ddd0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.41 se ha visto en un Obsidian ni en un Hebra reales.
+- Contenido: `safeAcquire` (`src/sessions/manual-session-start-service.ts`) rechaza con `disposed` un lease que llega
+  después de `dispose()` e intenta devolverlo; 8 tests (arranque, recuperación, finalización al arrancar y reclamación,
+  con `acquired` y `already_owned`) comprueban que no se guarda nada ni queda un temporizador.
+- Límite medido leyendo el código: `dispose()` cierra el coordinador real sin esperar las adquisiciones en vuelo y un
+  coordinador cerrado no escribe `release`; ese lease lo libera la regla de silencio del coordinador (15 s), no esta
+  llamada. Para liberarlo en el acto habría que esperar las adquisiciones antes de cerrar el coordinador (cambio de
+  diseño del cierre, sin hacer).
+- Pendiente: verla en hosts reales.
+
 ## Canal 0.6.40 publicado: nota de sesión y transiciones del servicio de inicio fuera de sus clases (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.40` = `3ac3dbdd` (atestación; candidato `2f1410a4`,
