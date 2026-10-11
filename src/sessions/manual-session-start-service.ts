@@ -44,7 +44,6 @@ import {
 	type SessionStartInput,
 } from './session-start-capture';
 import {
-	API_SETTLEMENT_TICK_MS,
 	captureSettlement,
 	settlementWait,
 	settlementWindowMs,
@@ -54,7 +53,6 @@ import {
 import {
 	isAbandonableStopFailure,
 	SESSION_AUTO_RETRY_DELAYS_MS,
-	SESSION_DISPATCH_GUARD_MS,
 	SESSION_EVIDENCE_SAVE_INTERVAL_MS,
 	type ManualSessionStartResult,
 	type ManualSessionStartServiceOptions,
@@ -73,6 +71,7 @@ import {
 } from './manual-session-start-model';
 import { failure, ManualSessionStartError, SessionTransitionRejectedError } from './manual-session-start-failure';
 import { lastSavedEvidenceAt, snapshotReference, stopFailureFloor, uncoveredStretches } from './manual-session-evidence';
+import { ManualSessionWatch } from './manual-session-watch';
 
 // DE-07: the vocabulary moved to `manual-session-start-model.ts`; its consumers keep importing it from here.
 export {
@@ -95,7 +94,6 @@ export class ManualSessionStartService {
 	private currentHandle: ActiveSessionLeaseHandle | null = null;
 	private heartbeatHandle: unknown = null;
 	private heartbeatFlight: Promise<void> | null = null;
-	private settlementHandle: unknown = null;
 	private authorityFailure: SessionStartFailure | null = null;
 	private startFlight: Promise<ManualSessionStartResult> | null = null;
 	private stopFlight: Promise<ManualSessionStopResult> | null = null;
@@ -123,9 +121,9 @@ export class ManualSessionStartService {
 	private abandonFlight: Promise<SessionAbandonResult> | null = null;
 	/** Last evidence saved before the failure the latest reclaim recovered from; see `lastSavedEvidenceAt`. */
 	private reclaimedEvidenceAt: number | null = null;
-	/** Earliest instant the lifecycle watch may retry on its own; null when nothing waits for it. */
-	private autoRetryAt: number | null = null;
-	private autoRetryAttempts = 0;
+	/** Earliest instant the lifecycle watch may retry on its own; kept by `ManualSessionWatch`. */
+	private get autoRetryAt(): number | null { return this.watch.autoRetryAt; }
+	private set autoRetryAt(at: number | null) { this.watch.autoRetryAt = at; }
 	/** Proof that the completed session's summary reached the vault (H18.8); see `markCompletedSummarySaved`. */
 	private summaryReceipt: SessionSummaryReceipt | null = null;
 	private disposed = false;
@@ -144,6 +142,8 @@ export class ManualSessionStartService {
 	/** The wait the final capture needs: the slowest endpoint it reads (H18.11). */
 	private readonly settlementWindowMs: number;
 	private readonly observedPlayIntervals: () => readonly ObservedPlayInterval[];
+	/** The settlement wait and the automatic retries (H18.7), over this service's own state. */
+	private readonly watch: ManualSessionWatch;
 	/** Last instant the active record was re-saved as evidence (H18.11); 0 before the first. */
 	private lastEvidenceSavedAt = 0;
 
@@ -166,6 +166,27 @@ export class ManualSessionStartService {
 		this.onAutoRecovered = options.onAutoRecovered ?? (() => undefined);
 		this.settlementWindowMs = settlementWindowMs(options.settlementWindowByEndpointMs);
 		this.observedPlayIntervals = options.observedPlayIntervals ?? (() => []);
+		this.watch = new ManualSessionWatch({
+			disposed: () => this.disposed,
+			state: () => this.state,
+			stopFlight: () => this.stopFlight,
+			reviewFlight: () => this.reviewFlight,
+			reclaimFlight: () => this.reclaimFlight,
+			recoveryFlight: () => this.recoveryFlight,
+			recoveryRecord: () => this.recoveryRecord,
+			recoveryState: () => this.recoveryState,
+			diagnostics: () => this.diagnostics,
+			scheduleInterval: (callback, milliseconds) => this.scheduleInterval(callback, milliseconds),
+			cancelInterval: (handle) => { this.cancelInterval(handle); },
+			safeNowOr: (fallback) => this.safeNowOr(fallback),
+			getSettlementWait: () => this.getSettlementWait(),
+			onSettlementDue: () => { this.onSettlementDue(); },
+			onAutoRecovered: () => { this.onAutoRecovered(); },
+			reclaimableError: () => this.reclaimableError(),
+			reclaim: () => this.reclaim(),
+			runRecovery: (action, mode) => this.runRecovery(action, mode),
+			continueRecoveredSession: (deferred) => { this.continueRecoveredSession(deferred); },
+		});
 	}
 
 	getState(): SessionState {
@@ -1394,125 +1415,15 @@ export class ManualSessionStartService {
 		}
 	}
 
-	/**
-	 * Watches the grace window while the session is `stopping`. It re-reads the clock on every tick
-	 * instead of counting ticks, so a suspended machine or a reopened vault resolves the wait with
-	 * the real elapsed time rather than with how often this callback happened to run.
-	 */
-	private armSettlement(): void {
-		this.armWatch();
-		this.checkSettlement();
-	}
+	private armSettlement(): void { this.watch.armSettlement(); }
 
-	/** Starts the one lifecycle tick (settlement wait and automatic retries) without checking now. */
-	private armWatch(): void {
-		if (this.settlementHandle === null && !this.disposed) {
-			this.settlementHandle = this.scheduleInterval(() => this.checkSettlement(), API_SETTLEMENT_TICK_MS);
-		}
-	}
+	private armWatch(): void { this.watch.armWatch(); }
 
-	private stopSettlement(): void {
-		if (this.settlementHandle !== null) {
-			this.cancelInterval(this.settlementHandle);
-			this.settlementHandle = null;
-		}
-	}
+	private stopSettlement(): void { this.watch.stopSettlement(); }
 
-	/**
-	 * The lifecycle tick. Besides the settlement wait it now finishes, on its own and with backoff
-	 * (H18.7), whatever a failure interrupted: a final capture (`stopping`), a finalize or its save
-	 * (`provisional`), a lost authority (`error`) or a saved session another window held at startup
-	 * (`idle` with a recovery record). The interval stops once there is nothing left to watch.
-	 */
-	private checkSettlement(): void {
-		if (this.disposed) {
-			this.stopSettlement();
-			return;
-		}
-		if (this.state.status === 'stopping') {
-			this.checkSettlementDue();
-			return;
-		}
-		if (this.autoRetryAt === null) {
-			this.stopSettlement();
-			return;
-		}
-		if (this.safeNowOr(0) < this.autoRetryAt) return;
-		if (this.state.status === 'provisional') {
-			if (this.stopFlight || this.reviewFlight) return;
-			this.autoRetryAt = this.safeNowOr(0) + SESSION_DISPATCH_GUARD_MS;
-			this.onSettlementDue();
-		} else if (this.reclaimableError() !== null) {
-			if (this.stopFlight || this.reclaimFlight) return;
-			this.autoRetryAt = null;
-			void this.runAutoRetry('reclaim');
-		} else if (
-			this.state.status === 'idle' && this.recoveryRecord !== null
-			&& (this.recoveryState.status === 'available' || this.recoveryState.status === 'busy')
-		) {
-			if (this.recoveryFlight) return;
-			this.autoRetryAt = null;
-			void this.runAutoRetry('recover');
-		} else {
-			this.clearAutoRetry();
-			this.stopSettlement();
-		}
-	}
+	private scheduleAutoRetry(at?: number): void { this.watch.scheduleAutoRetry(at); }
 
-	private checkSettlementDue(): void {
-		const wait = this.getSettlementWait();
-		if (wait === null || wait.status === 'waiting') return;
-		// A stop already in flight owns the decision; the next tick sees whatever it left behind.
-		if (this.stopFlight) return;
-		const now = this.safeNowOr(0);
-		if (this.autoRetryAt !== null && now < this.autoRetryAt) return;
-		// One dispatch per attempt. A failed capture schedules the next one with backoff
-		// (`afterStopAttempt`); the guard only covers a host that never got to call `stop()`.
-		this.autoRetryAt = now + SESSION_DISPATCH_GUARD_MS;
-		this.onSettlementDue();
-	}
-
-	private scheduleAutoRetry(at?: number): void {
-		if (this.disposed) return;
-		const delays = SESSION_AUTO_RETRY_DELAYS_MS;
-		const delay = delays[Math.min(this.autoRetryAttempts, delays.length - 1)] ?? 0;
-		this.autoRetryAttempts += 1;
-		this.autoRetryAt = at ?? this.safeNowOr(Date.now()) + delay;
-		this.armWatch();
-	}
-
-	private clearAutoRetry(): void {
-		this.autoRetryAt = null;
-		this.autoRetryAttempts = 0;
-	}
-
-	/**
-	 * The watch's only detached call. A throw here (an invalid local clock, a store that throws
-	 * instead of answering) is logged and turned into the next scheduled attempt, never lost.
-	 */
-	private async runAutoRetry(kind: 'reclaim' | 'recover'): Promise<void> {
-		try {
-			if (kind === 'recover') {
-				await this.runRecovery('recover', 'watch');
-				return;
-			}
-			const failed = await this.reclaim();
-			if (this.disposed) return;
-			if (failed !== null) {
-				if (this.reclaimableError() !== null) this.scheduleAutoRetry();
-				return;
-			}
-			this.onAutoRecovered();
-			this.continueRecoveredSession(false);
-		} catch (error) {
-			this.diagnostics?.event({
-				component: 'session', action: kind === 'recover' ? 'session_recover' : 'session_heartbeat',
-				level: 'error', phase: 'failure', code: 'unknown_failure', state: 'auto_retry',
-				details: unmappedErrorLogDetails(error),
-			});
-			this.scheduleAutoRetry();
-		}
-	}
+	private clearAutoRetry(): void { this.watch.clearAutoRetry(); }
 
 	/** The phase an `error` can be taken back into, or null when there is nothing to take back. */
 	private reclaimableError(): Exclude<SessionInProgressState, { status: 'starting' }> | null {

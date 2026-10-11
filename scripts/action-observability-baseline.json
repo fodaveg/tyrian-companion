@@ -12342,9 +12342,9 @@
 				{
 					"id": "ea83f70e7f572ea899e26ca6453cf1fc91e4d538",
 					"kind": "catch_clause",
-					"line": 249,
+					"line": 270,
 					"column": 61,
-					"endLine": 249,
+					"endLine": 270,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12358,9 +12358,9 @@
 				{
 					"id": "5652a96c5b1d1d031a9d99672e92877abc5b7ca3",
 					"kind": "void_expression",
-					"line": 295,
+					"line": 316,
 					"column": 27,
-					"endLine": 295,
+					"endLine": 316,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12374,9 +12374,9 @@
 				{
 					"id": "ece7f301135473e1747af10a53bac87e604c67b8",
 					"kind": "callback_registration",
-					"line": 318,
+					"line": 339,
 					"column": 18,
-					"endLine": 320,
+					"endLine": 341,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12391,9 +12391,9 @@
 				{
 					"id": "11d0928664608b8f20f5b2e108bfc213effd5529",
 					"kind": "callback_registration",
-					"line": 338,
+					"line": 359,
 					"column": 18,
-					"endLine": 340,
+					"endLine": 361,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12408,9 +12408,9 @@
 				{
 					"id": "c215646a3b0e1b7f87d8b3a6498a6969539e0ece",
 					"kind": "catch_clause",
-					"line": 378,
+					"line": 399,
 					"column": 5,
-					"endLine": 380,
+					"endLine": 401,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12424,9 +12424,9 @@
 				{
 					"id": "4b288698335298af4f43c393bea4783172383775",
 					"kind": "callback_registration",
-					"line": 391,
+					"line": 412,
 					"column": 18,
-					"endLine": 393,
+					"endLine": 414,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12441,9 +12441,9 @@
 				{
 					"id": "cc7bd25234879018f8fb89045ee882df9ab46914",
 					"kind": "callback_registration",
-					"line": 437,
+					"line": 458,
 					"column": 18,
-					"endLine": 439,
+					"endLine": 460,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12458,9 +12458,9 @@
 				{
 					"id": "c9c6564b96cb7cd0a60db8f01c32045bf79dddeb",
 					"kind": "callback_registration",
-					"line": 477,
+					"line": 498,
 					"column": 18,
-					"endLine": 479,
+					"endLine": 500,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12475,9 +12475,9 @@
 				{
 					"id": "5c64f4e01bb401e8baa1bf031334c033893bc99a",
 					"kind": "catch_clause",
-					"line": 553,
+					"line": 574,
 					"column": 52,
-					"endLine": 553,
+					"endLine": 574,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12491,9 +12491,9 @@
 				{
 					"id": "06ea0a798d7dc463ffabfe02c269c0ae87e843b9",
 					"kind": "catch_clause",
-					"line": 565,
+					"line": 586,
 					"column": 4,
-					"endLine": 576,
+					"endLine": 597,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12507,9 +12507,9 @@
 				{
 					"id": "ed98ff87dacffeb1e44809b46b2f45acf8007ada",
 					"kind": "callback_registration",
-					"line": 715,
+					"line": 736,
 					"column": 18,
-					"endLine": 717,
+					"endLine": 738,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12524,9 +12524,9 @@
 				{
 					"id": "ccd6a889042fa85fa4b9a4870259410419cbcec4",
 					"kind": "catch_clause",
-					"line": 939,
+					"line": 960,
 					"column": 5,
-					"endLine": 942,
+					"endLine": 963,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12540,9 +12540,9 @@
 				{
 					"id": "fb7e7f4691f05d0462e736da2b7a7504a545fcde",
 					"kind": "catch_clause",
-					"line": 990,
+					"line": 1011,
 					"column": 5,
-					"endLine": 994,
+					"endLine": 1015,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12556,9 +12556,9 @@
 				{
 					"id": "c3ed97e76d43be26bfb009db898d98fd333b3b94",
 					"kind": "catch_clause",
-					"line": 1092,
+					"line": 1113,
 					"column": 6,
-					"endLine": 1104,
+					"endLine": 1125,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -12570,9 +12570,9 @@
 				{
 					"id": "1ecfc5f2c0a8de798a59ad30337a338aeca5965d",
 					"kind": "catch_clause",
-					"line": 1133,
+					"line": 1154,
 					"column": 5,
-					"endLine": 1151,
+					"endLine": 1172,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12586,9 +12586,9 @@
 				{
 					"id": "d9b07796f4adb8f5cde284ff618cd10964f333a7",
 					"kind": "catch_clause",
-					"line": 1148,
+					"line": 1169,
 					"column": 7,
-					"endLine": 1148,
+					"endLine": 1169,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12602,9 +12602,9 @@
 				{
 					"id": "2f7a91f51e101efba27e637e8a30d2843a9e5842",
 					"kind": "catch_clause",
-					"line": 1249,
+					"line": 1270,
 					"column": 5,
-					"endLine": 1251,
+					"endLine": 1272,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12618,9 +12618,9 @@
 				{
 					"id": "3a3ac2b6bd2ce08c85ee241602d72f093aa592a0",
 					"kind": "void_expression",
-					"line": 1323,
+					"line": 1344,
 					"column": 56,
-					"endLine": 1323,
+					"endLine": 1344,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12634,9 +12634,9 @@
 				{
 					"id": "ae210ccd786489f094001462c575dc9599be828c",
 					"kind": "callback_registration",
-					"line": 1328,
+					"line": 1349,
 					"column": 18,
-					"endLine": 1330,
+					"endLine": 1351,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12651,9 +12651,9 @@
 				{
 					"id": "2f4c0d725054717cd7c6fd6c0f25b98a3a6ef92b",
 					"kind": "void_expression",
-					"line": 1345,
+					"line": 1366,
 					"column": 5,
-					"endLine": 1345,
+					"endLine": 1366,
 					"endColumn": 35,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12667,9 +12667,9 @@
 				{
 					"id": "be241d8353516e762b8c7f7ef86841165c12ef24",
 					"kind": "catch_clause",
-					"line": 1356,
+					"line": 1377,
 					"column": 5,
-					"endLine": 1360,
+					"endLine": 1381,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12683,9 +12683,9 @@
 				{
 					"id": "e813f9a75d1ea7c82817777c76c228f4b6fedca8",
 					"kind": "void_expression",
-					"line": 1383,
+					"line": 1404,
 					"column": 4,
-					"endLine": 1383,
+					"endLine": 1404,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12699,9 +12699,9 @@
 				{
 					"id": "be8ef9e94e36dd77b03b5ebe973e77f58c8f648a",
 					"kind": "promise_catch",
-					"line": 1383,
+					"line": 1404,
 					"column": 9,
-					"endLine": 1383,
+					"endLine": 1404,
 					"endColumn": 58,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -12716,9 +12716,9 @@
 				{
 					"id": "70a537878b3202797185e681ca881c3772dff1d0",
 					"kind": "catch_clause",
-					"line": 1387,
+					"line": 1408,
 					"column": 5,
-					"endLine": 1387,
+					"endLine": 1408,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12730,57 +12730,11 @@
 					"reason": "Allowlisted catch_clause: The \"failFromAuthority\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"failFromAuthority\"."
 				},
 				{
-					"id": "78f9239f90f88fba32a29b81c28defa35fc2049d",
-					"kind": "void_expression",
-					"line": 1448,
-					"column": 4,
-					"endLine": 1448,
-					"endColumn": 37,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.runAutoRetry",
-						"scope": "checkSettlement",
-						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
-					},
-					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
-				},
-				{
-					"id": "8399a5db85d063a8137735acffba8231ca6fc607",
-					"kind": "void_expression",
-					"line": 1455,
-					"column": 4,
-					"endLine": 1455,
-					"endColumn": 37,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.runAutoRetry",
-						"scope": "checkSettlement",
-						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
-					},
-					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
-				},
-				{
-					"id": "e0a297fa5960cf4908a3d4c2fd7927fcf200a644",
-					"kind": "catch_clause",
-					"line": 1507,
-					"column": 5,
-					"endLine": 1514,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.diagnostics.event"
-					},
-					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
-				},
-				{
 					"id": "a74b8a10cc69291ef1cc618abd071674d703c6c7",
 					"kind": "callback_registration",
-					"line": 1526,
+					"line": 1437,
 					"column": 18,
-					"endLine": 1528,
+					"endLine": 1439,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12795,9 +12749,9 @@
 				{
 					"id": "7201fea7f3d33010a6cfd569eb5fef4c468191b1",
 					"kind": "catch_clause",
-					"line": 1749,
+					"line": 1660,
 					"column": 5,
-					"endLine": 1755,
+					"endLine": 1666,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -12809,9 +12763,9 @@
 				{
 					"id": "823819fb29f080f24b88993f2c9faabc0b02df60",
 					"kind": "catch_clause",
-					"line": 1783,
+					"line": 1694,
 					"column": 5,
-					"endLine": 1783,
+					"endLine": 1694,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12825,9 +12779,9 @@
 				{
 					"id": "4875e885d3e9147fb0429f1113fbf326799594cc",
 					"kind": "catch_clause",
-					"line": 1792,
+					"line": 1703,
 					"column": 5,
-					"endLine": 1792,
+					"endLine": 1703,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12841,9 +12795,9 @@
 				{
 					"id": "f7d959371b5c71afafb84bdbea0ee390f819089c",
 					"kind": "catch_clause",
-					"line": 1840,
+					"line": 1751,
 					"column": 34,
-					"endLine": 1840,
+					"endLine": 1751,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12857,9 +12811,9 @@
 				{
 					"id": "a35bb57cf78b7d9cbc1bc79554ca9de0848b62ba",
 					"kind": "catch_clause",
-					"line": 1844,
+					"line": 1755,
 					"column": 50,
-					"endLine": 1846,
+					"endLine": 1757,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12873,9 +12827,9 @@
 				{
 					"id": "88bcc48dd42e18c052403d5cc21911384100e5aa",
 					"kind": "catch_clause",
-					"line": 1857,
+					"line": 1768,
 					"column": 61,
-					"endLine": 1857,
+					"endLine": 1768,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12889,9 +12843,9 @@
 				{
 					"id": "44717ecdead23eb3317c04301854643e6ecd0ae6",
 					"kind": "catch_clause",
-					"line": 1928,
+					"line": 1839,
 					"column": 62,
-					"endLine": 1928,
+					"endLine": 1839,
 					"endColumn": 120,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12905,9 +12859,9 @@
 				{
 					"id": "c254da1e12c35c1b99a40fd8d17f34a890bea42d",
 					"kind": "catch_clause",
-					"line": 1932,
+					"line": 1843,
 					"column": 58,
-					"endLine": 1932,
+					"endLine": 1843,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12917,6 +12871,58 @@
 						"justification": "The \"safeRelease\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"safeRelease\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"safeRelease\"."
+				}
+			]
+		},
+		"src/sessions/manual-session-watch.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "31d0c9f59528a9b3e1e56cf3cb4e2411094c36c5",
+					"kind": "void_expression",
+					"line": 130,
+					"column": 4,
+					"endLine": 130,
+					"endColumn": 37,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.runAutoRetry",
+						"scope": "checkSettlement",
+						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
+					},
+					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
+				},
+				{
+					"id": "5a62e9b66205835477bc0a12dcccb45a9fd35dab",
+					"kind": "void_expression",
+					"line": 137,
+					"column": 4,
+					"endLine": 137,
+					"endColumn": 37,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.runAutoRetry",
+						"scope": "checkSettlement",
+						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
+					},
+					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
+				},
+				{
+					"id": "4b38b898b10a66a7473d93c7f595d57d57d59b96",
+					"kind": "catch_clause",
+					"line": 189,
+					"column": 5,
+					"endLine": 196,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.diagnostics.event"
+					},
+					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
 				}
 			]
 		},

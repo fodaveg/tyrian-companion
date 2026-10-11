@@ -151,6 +151,20 @@ describe('automatic recovery (H18.7, prueba 4)', () => {
 		expect(reopened.onAutoRecovered).toHaveBeenCalledOnce();
 	});
 
+	it('schedules the takeover for a second after the other window\'s lease runs out, not after the usual backoff', async () => {
+		const factory = new IDBFactory();
+		const closed = openWindow(factory, 'window-closed');
+		await start(closed.service);
+
+		clock = Date.parse('2026-08-13T08:01:00.000Z');
+		const reopened = openWindow(factory, 'window-reopened');
+		await reopened.service.initialize();
+		const recovery = reopened.service.getRecoveryState();
+		if (recovery.status !== 'busy') throw new Error(`expected a busy recovery, got ${recovery.status}`);
+		expect(recovery.ownerExpiresAt).toBe(START + LEASE_TTL_MS);
+		expect(reopened.service.getAutoRetryAt()).toBe(recovery.ownerExpiresAt + 1_000);
+	});
+
 	it('retries a final capture that failed while the network was down', async () => {
 		let online = false;
 		const window = openWindow(new IDBFactory(), 'window-a', {
