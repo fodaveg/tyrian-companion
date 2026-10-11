@@ -15,6 +15,7 @@ import { prepareLegacyRuntimeArchive } from './live-session-legacy-archive';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import {
+	DISPOSE_ACQUIRE_WAIT_MS,
 	ManualSessionStartService,
 	type ManualSessionStopResult,
 	type SessionLeaseCoordinator,
@@ -96,6 +97,8 @@ function serviceOptions(
 		sessionId: () => 'session-1',
 		setInterval: vi.fn(() => 17),
 		clearInterval: vi.fn(),
+		setTimeout: (callback, milliseconds) => globalThis.setTimeout(callback, milliseconds),
+		clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
 		runtimeStore: new MemorySessionRuntimeStore(),
 		...extra,
 	};
@@ -1857,9 +1860,10 @@ describe('dispose while an automatic reclaim is in flight (DE-07)', () => {
 		}));
 		const started = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce());
-		await service.dispose();
+		const disposal = service.dispose();
 		grant();
 		await started;
+		await disposal;
 
 		expect([...intervals.values()]).toEqual([]);
 	});
@@ -2003,12 +2007,13 @@ describe('a lease granted after dispose is handed back at once (lot R)', () => {
 			const acquiresBefore = acquire.mock.calls.length;
 			const flight = act();
 			await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(acquiresBefore + 1));
-			await service.dispose();
+			const disposal = service.dispose();
 			const retryAtDisposal = service.getAutoRetryAt();
 			const save = vi.spyOn(store, 'save');
 			const clear = vi.spyOn(store, 'clear');
 			grant();
 			const result = await flight;
+			await disposal;
 
 			expect(leases.release).toHaveBeenCalledWith(late);
 			expectRejected(result);
@@ -2018,6 +2023,79 @@ describe('a lease granted after dispose is handed back at once (lot R)', () => {
 			expect(service.getAutoRetryAt()).toBe(retryAtDisposal);
 		},
 	);
+});
+
+/**
+ * Lot S: `dispose()` closed the coordinator without waiting for an acquisition already granted by
+ * its store, so the late lease was handed back to a closed coordinator, which answers `release` without
+ * writing: the lease stayed in the store until the 15 s silence rule. Here the real coordinator and a
+ * second window over one fake IndexedDB; the answer is held after the lease is written.
+ */
+describe('a lease written while dispose waits is released in the store before dispose resolves (lot S)', () => {
+	beforeEach(() => { clock = Date.parse('2026-08-13T07:59:59.500Z'); });
+
+	it('leaves the store free for another window the moment dispose resolves', async () => {
+		const factory = new IDBFactory();
+		const open = (instanceId: string) => new ActiveSessionLeaseCoordinator({
+			indexedDb: factory, databaseName: 'lot-s-late-lease', clock: () => clock, instanceId,
+			leaseTtlMs: 300_000, sleep: async () => undefined,
+		});
+		const real = open('instance-first');
+		let grant!: () => void;
+		const granted = new Promise<void>((resolve) => { grant = resolve; });
+		let written = false;
+		const held: SessionLeaseCoordinator = {
+			get instanceId() { return real.instanceId; },
+			acquire: async (sessionId, leaseTtlMs) => {
+				const result = await real.acquire(sessionId, leaseTtlMs);
+				written = result.status === 'acquired';
+				await granted;
+				return result;
+			},
+			renew: (lease, ttl) => real.renew(lease, ttl),
+			assertOwned: (lease) => real.assertOwned(lease),
+			release: (lease) => real.release(lease),
+			dispose: () => { real.dispose(); },
+		};
+		const service = new ManualSessionStartService(held, {
+			capture: vi.fn(async () => structuredClone(captured)),
+		}, serviceOptions());
+		const started = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await vi.waitFor(() => expect(written).toBe(true));
+
+		const disposal = service.dispose();
+		grant();
+		await expect(started).resolves.toMatchObject({ status: 'failed' });
+		await disposal;
+
+		const other = open('instance-second');
+		await expect(other.acquire('session-1')).resolves.toMatchObject({ status: 'acquired' });
+		other.dispose();
+	});
+
+	it('does not hang dispose on an acquisition that never answers: it closes the coordinator after the bound', async () => {
+		vi.useFakeTimers();
+		try {
+			const leases = coordinator({ acquire: vi.fn(() => new Promise<never>(() => undefined)) });
+			const service = new ManualSessionStartService(leases, {
+				capture: vi.fn(async () => structuredClone(captured)),
+			}, serviceOptions());
+			void service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+			await vi.waitFor(() => expect(leases.acquire).toHaveBeenCalledOnce());
+
+			let resolved = false;
+			const disposal = service.dispose().then(() => { resolved = true; });
+			await vi.advanceTimersByTimeAsync(DISPOSE_ACQUIRE_WAIT_MS - 1);
+			expect(resolved).toBe(false);
+			expect(leases.dispose).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(1);
+			await disposal;
+			expect(resolved).toBe(true);
+			expect(leases.dispose).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
 /**

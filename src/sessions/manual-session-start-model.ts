@@ -176,6 +176,9 @@ export interface ManualSessionStartServiceOptions {
 	sessionId?: () => string;
 	setInterval?: (callback: () => void, milliseconds: number) => unknown;
 	clearInterval?: (handle: unknown) => void;
+	/** Bounds the wait `dispose()` gives the acquisitions in flight (lot S); the window's timers when absent. */
+	setTimeout?: (callback: () => void, milliseconds: number) => unknown;
+	clearTimeout?: (handle: unknown) => void;
 	onStateChange?: () => void;
 	/**
 	 * Called once the grace window elapses so the host can run the same stop pipeline it runs for
