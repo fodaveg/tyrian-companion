@@ -3090,7 +3090,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			const notice = leyspringRunNotice(translator, await service.run(this.configuredNotesRoot(), this.settings.language));
 			this.emitNotice(notice.text, 'achievements_sync');
 			return notice.failure === null ? undefined : {
-				phase: 'failure' as const, code: 'storage_failure' as const, details: { errorName: notice.failure.errorName },
+				phase: 'failure' as const, code: 'storage_failure' as const, details: { reason: notice.failure.errorName },
 			};
 		};
 		await (this.localDebugActions?.run({ component: 'vault', action: 'vault_write', state: 'achievements_sync' }, perform) ?? perform());

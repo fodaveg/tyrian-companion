@@ -241,6 +241,31 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		expect(run).toHaveBeenCalledWith('Tyrian Companion', 'en');
 	});
 
+	// B-1: the sanitizer drops every `*name*` key, so the class of the storage rejection travels as `details.reason`.
+	it('keeps the class of a Leyspring achievements storage failure in the exported local log', async () => {
+		vi.stubGlobal('window', {
+			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+		});
+		const { host, registered, records } = neutralHost();
+		const runtime = createTyrianRuntime(host);
+		await runtime.start();
+		registered.ready[0]!();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({ action: 'plugin_load', state: 'runtime_initialize', phase: 'success' }));
+		}, { timeout: 10_000 });
+		(runtime as unknown as Record<string, unknown>).leyspringAchievements = {
+			run: async () => ({ status: 'storage_failure' as const, errorName: 'NotAllowedError' }),
+		};
+		registered.commands.find((candidate) => candidate.id === UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID)!.callback?.();
+		await vi.waitFor(() => {
+			expect(records()).toContainEqual(expect.objectContaining({
+				component: 'vault', state: 'achievements_sync', phase: 'failure',
+				details: { reason: 'NotAllowedError' },
+			}));
+		}, { timeout: 10_000 });
+		await runtime.stop();
+	});
+
 	it('boots the runtime when the host is ready, opens the ribbon menu through the host, and drains the log on stop', async () => {
 		vi.stubGlobal('window', {
 			setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),

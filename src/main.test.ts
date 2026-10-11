@@ -2264,7 +2264,7 @@ describe('completed session note delivery', () => {
 			(input) => input.component === 'session' && input.action === 'session_finish' && input.phase === 'failure',
 		);
 		expect(failure).toMatchObject({
-			code: 'storage_failure', details: { status: 'unavailable', errorName: 'EACCES' },
+			code: 'storage_failure', details: { status: 'unavailable', reason: 'EACCES' },
 		});
 	});
 });
