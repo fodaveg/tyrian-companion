@@ -5,11 +5,13 @@ import type { CatalogLocale } from '../catalog/public-catalog-model';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersFromPrefixes } from '../core/vault-folders';
 import { normalizeVaultRelativePath } from '../core/vault-path';
+import { ACHIEVEMENTS_NOTE_KIND } from '../sessions/session-history';
 import type { LeyspringCapture } from './leyspring-capture';
 import { LEYSPRING_MASTERY_ACHIEVEMENT_ID, LEYSPRING_TRACKED_ACHIEVEMENTS } from './leyspring-set';
 
 export const ACHIEVEMENTS_NOTE_SCHEMA_VERSION = 1 as const;
-export const ACHIEVEMENTS_NOTE_KIND = 'gw2_achievements' as const;
+/** Defined with the session history, which has to recognise this note and sits in a lower layer. */
+export { ACHIEVEMENTS_NOTE_KIND };
 export const ACHIEVEMENTS_NOTE_MARKER = 'tyrian_companion_achievements' as const;
 const LEYSPRING_SET = 'leyspring_hollows' as const;
 
