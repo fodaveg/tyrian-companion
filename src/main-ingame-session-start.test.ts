@@ -181,6 +181,14 @@ describe('real passive Nexus composition', () => {
 		expect(f.access.liveSessions.getRuntime()).toBeNull();
 		expect(f.h.core.getLiveSessionView().phase).toBe('idle');
 	});
+	it('previews the history scrub as blocked, not ready, when the finished session note is still unverified (Z2-3)', async () => {
+		const f = await runtime(); await presence(f); await f.port.open(f.source); await f.port.commit(f.sample(0, 0));
+		(f.h.core as unknown as { settingTab: object }).settingTab = { refreshSessionHistoryRow: vi.fn() };
+		await f.h.core.stopManualSession();
+		expect(f.access.liveSessions.getRuntime()?.summaryReceipt).not.toBeNull();
+		(f.access.liveSessions as unknown as { noteNeedsVerification: boolean }).noteNeedsVerification = true;
+		await expect(f.h.core.previewSessionHistoryScrub()).resolves.toMatchObject({ status: 'blocked' });
+	});
 	it('keeps a corrupt manual record blocking the start (Z2-2)', async () => {
 		const load = vi.spyOn(IndexedDbSessionRuntimeStore.prototype, 'load').mockResolvedValueOnce({ status: 'error', code: 'corrupt' });
 		const f = await runtime(); load.mockResolvedValue({ status: 'error', code: 'corrupt' });

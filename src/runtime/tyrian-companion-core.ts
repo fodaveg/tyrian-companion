@@ -2874,7 +2874,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const live = this.liveSessions?.getRuntime() ?? null;
 		return {
 			sessionStatus: live?.phase ?? this.sessions.getState().status,
-			sealedRetirable: live?.phase === 'complete' && live.summaryReceipt !== null,
+			sealedRetirable: this.liveSessions?.canRetireSealed() ?? false,
 			recoveryStatus: this.sessions.getRecoveryState().status,
 			detectorStatus: this.assistedDetection.getState().status,
 		};

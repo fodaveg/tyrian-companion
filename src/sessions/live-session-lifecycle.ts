@@ -485,9 +485,13 @@ export class LiveSessionLifecycle {
 	async retireSealed(): Promise<boolean> {
 		return await this.enqueue(async () => {
 			if (this.record === null) return true;
-			if (this.record.phase !== 'complete' || this.record.summaryReceipt === null || this.noteNeedsVerification) return false;
+			if (!this.canRetireSealed()) return false;
 			return (await this.discardInQueue()).cleared;
 		});
+	}
+	/** Whether `retireSealed` would let go of the record now: the one rule both it and the history scrub gate read. */
+	canRetireSealed(): boolean {
+		return this.record?.phase === 'complete' && this.record.summaryReceipt !== null && !this.noteNeedsVerification;
 	}
 	private async discardInQueue(): Promise<LiveSessionDiscard> {
 		{
