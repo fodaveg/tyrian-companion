@@ -167,7 +167,7 @@ import type {
 import type { InventoryPreferencesBackup } from '../advisor/inventory-preferences-backup';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
-import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from '../economy/legendary-materials';
+import { LEGENDARY_MATERIALS_TABLE, activeLegendaryMaterialsTable, legendaryMaterialsEntryFor } from '../economy/legendary-materials';
 import {
 	ALERT_INGAME_SECRET_ID,
 	collectorModeSeed,
@@ -1202,7 +1202,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			lowStorageSpaceThresholdFreeSlots: () => this.settings.lowStorageSpaceThresholdFreeSlots,
 			// Rule (a), M4: the settings' target list, empty by default.
 			legendaryTargetItemIds: () => this.settings.legendaryTargetItemIds,
-			legendaryMaterialsTable: () => LEGENDARY_MATERIALS_TABLE,
+			legendaryMaterialsTable: () => activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, Date.now()),
+			legendaryMaterialsTableExpiredAt: () => activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, Date.now()) === null
+				? LEGENDARY_MATERIALS_TABLE.validUntil : null,
 			// GET /v2/account/legendaryarmory, called only from an explicit advisor analysis while a
 			// target is chosen (decision 1's own scoping): never from the settings panel or plugin
 			// load. A rejected or malformed response becomes null, which the analysis treats as

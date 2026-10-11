@@ -83,6 +83,7 @@ export function buildInventoryAdvisorPresentation(
 			? objects.decisions : null;
 		// H18.15: same snapshot guard as the decisions; another capture's space is never shown.
 		const storageSpace = decisionByRef === null ? null : objects?.storageSpace ?? null;
+		const legendaryTableExpiredAt = decisionByRef === null ? undefined : objects?.legendaryTableExpiredAt;
 		const valuationByDecision = decisionByRef === null ? undefined : objects?.valuationByDecision;
 		const result = source.result;
 		if (result.status === 'invalid' || result.report === null) {
@@ -177,6 +178,7 @@ export function buildInventoryAdvisorPresentation(
 				? { status: 'review_only', proofs: structuredClone(source.result.proofs) }
 				: { status: 'unavailable' },
 			...(storageSpace === null ? {} : { storageSpace: storageSpaceWithoutIndex(storageSpace) }),
+			...(legendaryTableExpiredAt === undefined ? {} : { legendaryTableExpiredAt }),
 		};
 	} catch (error) {
 		return invalidInventoryAdvisorPresentation(

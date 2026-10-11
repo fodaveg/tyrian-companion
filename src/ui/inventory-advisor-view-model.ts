@@ -57,6 +57,8 @@ export interface InventoryAdvisorViewModel {
 	optionalSources?: InventoryAdvisorPresentation['optionalSources'] | null;
 	/** H18.15: free slots, low-space state and material capacity of the analysis shown; null without one. */
 	storageSpace?: InventoryAdvisorPresentation['storageSpace'];
+	/** F5: the legendary materials table's expiry, shown as a notice while it applies. */
+	legendaryTableExpiredAt?: string;
 	groups: InventoryAdvisorViewModelGroup[];
 	/**
 	 * Bumped only when the underlying content actually changes (a fresh capture, an
@@ -91,6 +93,7 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 		...(presentation.storageSpace === undefined ? {} : {
 			storageSpace: presentation.storageSpace === null ? null : structuredClone(presentation.storageSpace),
 		}),
+		...(presentation.legendaryTableExpiredAt === undefined ? {} : { legendaryTableExpiredAt: presentation.legendaryTableExpiredAt }),
 		groups: presentation.groups.map((group) => ({
 			key: group.group,
 			rows: group.rows.map((row) => ({

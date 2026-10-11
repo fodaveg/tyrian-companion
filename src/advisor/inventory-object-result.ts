@@ -92,6 +92,9 @@ export interface InventoryObjectResultsV1 {
 	decisions: Record<string, InventoryObjectDecisionV1>;
 	positions: Record<string, InventoryObjectPositionResultV1>;
 	uncertainItemIds: number[];
+	/** F5: set (to the table's `validUntil`) only while a legendary target is chosen and the shipped
+	 * materials table is past it, so the view can say why those reservations are uncertain. */
+	legendaryTableExpiredAt?: string;
 	/** Exact instant-sale totals from the same position cores as the Base, independent of the recommendation.
   * Null when a keep decision splits a position, any covered position lacks depth, or quantities differ.
   * A non-keep decision over a split position has no entry: the presentation values its own units.

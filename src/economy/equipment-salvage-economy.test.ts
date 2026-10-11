@@ -109,6 +109,29 @@ describe('equipment salvage economy', () => {
 		});
 	});
 
+	/* F6 (H18.29 QA, 2027-02-25T00:00Z): the policy's own expiry must only make EQUIPMENT review.
+	 * A material is known to be out of scope whatever the policy's date says. */
+	it.each([
+		['a crafting material', { type: 'CraftingMaterial', rarity: 'Basic', level: 0 }],
+		['a trophy', { type: 'Trophy', rarity: 'Fine', level: 0 }],
+		['a relic', { type: 'Relic', rarity: 'Exotic', level: 60 }],
+	] as const)('keeps %s out of salvage after the policy expires', (_label, shape) => {
+		const input = fixture();
+		Object.assign(input.item, shape);
+		input.asOf = input.policy.validUntil;
+		expect(evaluateEquipmentSalvageEconomy(input)).toEqual({ status: 'not_applicable', reason: 'known_non_equipment' });
+		input.asOf = '2027-05-31T12:00:00.000Z';
+		expect(evaluateEquipmentSalvageEconomy(input)).toEqual({ status: 'not_applicable', reason: 'known_non_equipment' });
+	});
+
+	it('still sends a Rare or Exotic equipment piece to review once the policy expires', () => {
+		const input = fixture();
+		input.asOf = input.policy.validUntil;
+		expect(evaluateEquipmentSalvageEconomy(input)).toMatchObject({ status: 'review', reason: 'policy_invalid_or_stale' });
+		const fine = fixture(); fine.item.rarity = 'Fine'; fine.asOf = fine.policy.validUntil;
+		expect(evaluateEquipmentSalvageEconomy(fine)).toEqual({ status: 'not_applicable', reason: 'rarity_out_of_scope' });
+	});
+
 	it.each([
 		['a one-microcopper Master cost', (policy: EquipmentSalvageEconomyInputV1['policy']) => {
 			policy.kits[0]!.costPerUseMicroCopper = 1;

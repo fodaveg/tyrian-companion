@@ -88,6 +88,15 @@ describe('Inventory Advisor view', () => {
 			.toHaveLength(1);
 	});
 
+	it('F5: says the legendary materials table expired, in both languages, only when the model carries it', () => {
+		const expired = { ...readyModel(), legendaryTableExpiredAt: '2026-12-10T00:00:00.000Z' };
+		expect(text(render(expired, 'es').elements()))
+			.toContain('La tabla de materiales de legendarias caducó el 2026-12-10: las reservas de esos materiales salen como inciertas.');
+		expect(text(render(expired, 'en').elements()))
+			.toContain('The legendary materials table expired on 2026-12-10: the reservations of those materials show as uncertain.');
+		expect(text(render(readyModel(), 'es').elements())).not.toContain('tabla de materiales de legendarias');
+	});
+
 	it('names the addon character whose bags determine pressure while bank capacity stays separate', () => {
 		const mount = render({ ...readyModel(), storageSpace: {
 			bags: { free: 0, total: 20 }, bank: { free: 100, total: 120 }, sharedInventory: null,
