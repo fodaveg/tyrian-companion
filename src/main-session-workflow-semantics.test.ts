@@ -33,6 +33,7 @@ function liveOver(harness: object): {
 	startManualSession(input: unknown, intent?: unknown): Promise<void>;
 	performStopManualSession(intent?: unknown): Promise<void>;
 	finishFinalizedSession(sessionId: string, delta: unknown, reviewed: unknown): Promise<boolean>;
+	invalidateAndDisarmAssistedDetection(reason: unknown): void;
 } {
 	const portOf = (TyrianCompanionCore as unknown as {
 		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
@@ -43,25 +44,26 @@ function liveOver(harness: object): {
 /** A start or a stop, with the pending queue, the journal and the backend each recording what it is asked. */
 function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' = 'succeeds') {
 	const order: string[] = [];
-	const acquirePendingIntent = vi.fn(async () => {
+	// The queue's claim (the runtime's own `acquirePendingIntent` reconciles, claims and renews).
+	const claim = vi.fn(async () => {
 		order.push('claim');
-		return { proposal: { phase, proposalId: phase === 'start' ? 'proposal-1' : 'proposal-2', proposal: { proposalId: 'detected' } }, operationId: 'operation-1', stopRenewal: vi.fn() };
+		return { status: 'claimed' as const, proposal: { phase, proposalId: phase === 'start' ? 'proposal-1' : 'proposal-2', proposal: { proposalId: 'detected' } } };
 	});
+	const reconcile = vi.fn(async () => ({ status: 'ready' as const, pendingCount: 1, next: null }));
 	const accept = vi.fn(async () => { order.push('accept'); return true; });
 	const queueRead = vi.fn(() => { throw new Error('The manual workflow read the pending queue.'); });
 	const pilotMetrics = { sessionStarted: vi.fn(async () => true), proposalDecided: vi.fn(async () => true), sessionCompleted: vi.fn(async () => true) };
 	const disarm = vi.fn();
-	const invalidateAndDisarmAssistedDetection = vi.fn();
 	const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 		settings: { ...DEFAULT_SETTINGS, preferredCharacter: 'Astra Uno' },
 		farmingGroupContext: null,
 		sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true, acquireRuntimeMutation: () => ({ release: vi.fn() }) },
 		requireRuntimeMutationLease: () => ({ release: vi.fn() }),
-		acquirePendingIntent,
-		pendingProposals: { accept, getState: queueRead },
+		connection: { getState: () => ({ status: 'idle' }) },
+		pendingProposals: { accept, getState: queueRead, claim, reconcile },
+		pendingClaimRenewals: { start: () => vi.fn() },
 		getPendingProposalState: queueRead,
 		assistedDetection: { getState: () => ({ status: 'armed' }), dismissProposal: vi.fn(), disarm },
-		invalidateAndDisarmAssistedDetection,
 		ensureCompletedSummarySaved: vi.fn(async () => true),
 		persistFarmingSessionContext: vi.fn(),
 		// The live observation a start begins, and the summary a stop's finalization writes.
@@ -74,6 +76,9 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 		priceHistory: null,
 		pilotMetrics,
 		sessions: {
+			// What the claim's reconcile reads of the session.
+			getState: () => ({ status: 'idle' }),
+			getRecoveryState: () => ({ status: 'none' }),
 			getBaselineSnapshot: () => null,
 			finalizeStoppedSession: vi.fn(async () => ({
 				status: 'finalized' as const, state: { status: 'complete' as const, sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' },
@@ -95,10 +100,14 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 		updateSettings: vi.fn(async () => ({ status: 'saved' })),
 		renderViews: vi.fn(), localDebugActions: null,
 	});
+	const live = liveOver(harness);
+	const invalidateAndDisarmAssistedDetection = vi.spyOn(live, 'invalidateAndDisarmAssistedDetection');
 	const run = (intent?: unknown) => phase === 'start'
-		? liveOver(harness).startManualSession(INPUT, intent)
-		: liveOver(harness).performStopManualSession(intent);
-	return { run, order, acquirePendingIntent, accept, queueRead, pilotMetrics, disarm, invalidateAndDisarmAssistedDetection };
+		? live.startManualSession(INPUT, intent)
+		: live.performStopManualSession(intent);
+	/** The operation id the claim was made with, which the accept must carry. */
+	const operationId = (): unknown => (claim.mock.calls[0] as unknown[] | undefined)?.[1];
+	return { run, order, claim, operationId, accept, queueRead, pilotMetrics, disarm, invalidateAndDisarmAssistedDetection };
 }
 
 describe('manual workflows and the pending confirmation queue (H5.3)', () => {
@@ -108,7 +117,7 @@ describe('manual workflows and the pending confirmation queue (H5.3)', () => {
 		await harness.run();
 
 		expect(harness.order).toEqual(['backend']);
-		expect(harness.acquirePendingIntent).not.toHaveBeenCalled();
+		expect(harness.claim).not.toHaveBeenCalled();
 		expect(harness.accept).not.toHaveBeenCalled();
 		expect(harness.queueRead).not.toHaveBeenCalled();
 	});
@@ -120,8 +129,8 @@ describe('manual workflows and the pending confirmation queue (H5.3)', () => {
 		await harness.run(intent);
 
 		expect(harness.order).toEqual(['claim', 'backend', 'accept']);
-		expect(harness.acquirePendingIntent).toHaveBeenCalledWith(intent);
-		expect(harness.accept).toHaveBeenCalledWith(intent, 'operation-1', 'session-1', ...(phase === 'stop' ? ['succeeded'] : []));
+		expect(harness.claim).toHaveBeenCalledWith(intent, expect.any(String));
+		expect(harness.accept).toHaveBeenCalledWith(intent, harness.operationId(), 'session-1', ...(phase === 'stop' ? ['succeeded'] : []));
 		expect(harness.queueRead).not.toHaveBeenCalled();
 	});
 });

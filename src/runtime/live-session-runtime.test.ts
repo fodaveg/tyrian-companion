@@ -28,7 +28,7 @@ function unused(name: string): () => never {
 /** A ready collector with an idle session, no recovery and every service stubbed out. */
 function port(overrides: Partial<LiveSessionRuntimePort> = {}): LiveSessionRuntimePort {
 	return {
-		settings: { language: 'en', outputFolder: 'Tyrian Companion', farmingGoal: DEFAULT_SETTINGS.farmingGoal, preferredCharacter: 'Astra Uno' },
+		settings: { language: 'en', outputFolder: 'Tyrian Companion', farmingGoal: DEFAULT_SETTINGS.farmingGoal, preferredCharacter: 'Astra Uno', pollingIntervalMinutes: DEFAULT_SETTINGS.pollingIntervalMinutes },
 		runtimeReady: true,
 		collectorMode: 'collector',
 		localDebugActions: null,
@@ -65,15 +65,34 @@ function port(overrides: Partial<LiveSessionRuntimePort> = {}): LiveSessionRunti
 			sessionStarted: unused('pilotMetrics.sessionStarted'),
 			sessionCompleted: unused('pilotMetrics.sessionCompleted'),
 			proposalDecided: unused('pilotMetrics.proposalDecided'),
+			proposalPresented: unused('pilotMetrics.proposalPresented'),
+			proposalExcluded: unused('pilotMetrics.proposalExcluded'),
 		},
+		connection: { getState: unused('connection.getState') },
 		assistedDetection: {
 			getState: unused('assistedDetection.getState'),
+			arm: unused('assistedDetection.arm'),
 			disarm: unused('assistedDetection.disarm'),
 			dismissProposal: unused('assistedDetection.dismissProposal'),
 			armFromSnapshot: unused('assistedDetection.armFromSnapshot'),
 		},
-		detectionQuality: { recordAccepted: unused('detectionQuality.recordAccepted') },
-		pendingProposals: { accept: unused('pendingProposals.accept') },
+		detectionQuality: {
+			getState: unused('detectionQuality.getState'),
+			getSessionSummary: unused('detectionQuality.getSessionSummary'),
+			getStats: unused('detectionQuality.getStats'),
+			recordAccepted: unused('detectionQuality.recordAccepted'),
+			recordDismissed: unused('detectionQuality.recordDismissed'),
+		},
+		pendingProposals: {
+			getState: unused('pendingProposals.getState'),
+			acknowledge: unused('pendingProposals.acknowledge'),
+			reconcile: unused('pendingProposals.reconcile'),
+			claim: unused('pendingProposals.claim'),
+			renew: unused('pendingProposals.renew'),
+			dismiss: unused('pendingProposals.dismiss'),
+			accept: unused('pendingProposals.accept'),
+		},
+		pendingClaimRenewals: { start: unused('pendingClaimRenewals.start') },
 		priceHistory: null,
 		farmingGroupContext: null,
 		sessionSummarySaveState: 'unknown',
@@ -83,13 +102,13 @@ function port(overrides: Partial<LiveSessionRuntimePort> = {}): LiveSessionRunti
 		notifyConsultMode: unused('notifyConsultMode'),
 		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		requireRuntimeMutationLease: () => ({ release: () => undefined }),
+		runRuntimeMutation: (operation) => { operation(); return true; },
 		renderViews: () => undefined,
 		emitNotice: unused('emitNotice'),
-		armAssistedDetection: unused('armAssistedDetection'),
+		activateView: unused('activateView'),
 		pilotRecoveryIdentity: () => null,
 		ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
 		sessionNoteInput: unused('sessionNoteInput'),
-		acquirePendingIntent: unused('acquirePendingIntent'),
 		ensureCompletedSummarySaved: unused('ensureCompletedSummarySaved'),
 		persistFarmingSessionContext: unused('persistFarmingSessionContext'),
 		updateSettings: unused('updateSettings'),
@@ -233,7 +252,8 @@ describe('the ways out of a session reset the summary through the port', () => {
 		// Only the note writer reads the abandoned state, and it is a stub here.
 		const abandoned = { status: 'abandoned', state: { sessionId: 'session-b' } } as unknown as AbandonResult;
 		const base = port();
-		const armAssistedDetection = vi.fn(async () => undefined);
+		// The detector armed again for the next session, on a connected account.
+		const arm = vi.fn(async () => ({ status: 'armed' }) as Awaited<ReturnType<LiveSessionRuntimePort['assistedDetection']['arm']>>);
 		const writeAbandoned = vi.fn(async () => ({ status: 'written' as const, path: 'Tyrian Companion/abandoned.md' }));
 		// The previous session's loot summary; only its identity matters here.
 		const previousLoot = { items: [] } as unknown as StoredSessionLootSummary;
@@ -241,7 +261,8 @@ describe('the ways out of a session reset the summary through the port', () => {
 			sessionSummarySaveState: 'saved', savedSessionNotePath: 'Tyrian Companion/old.md', storedSessionLootSummary: previousLoot,
 			sessions: { ...base.sessions, abandon: vi.fn(async () => abandoned) },
 			sessionNotes: { ...base.sessionNotes, writeAbandoned },
-			armAssistedDetection,
+			connection: { getState: () => ({ status: 'connected' }) as ReturnType<LiveSessionRuntimePort['connection']['getState']> },
+			assistedDetection: { ...base.assistedDetection, arm },
 		});
 
 		await new LiveSessionRuntime(live).performAbandonSession();
@@ -250,7 +271,7 @@ describe('the ways out of a session reset the summary through the port', () => {
 		expect(writeAbandoned).toHaveBeenCalledWith(expect.objectContaining({ locale: 'en', outputFolder: 'Tyrian Companion' }));
 		expect({ state: live.sessionSummarySaveState, path: live.savedSessionNotePath, loot: live.storedSessionLootSummary })
 			.toEqual({ state: 'unknown', path: 'Tyrian Companion/abandoned.md', loot: null });
-		expect(armAssistedDetection).toHaveBeenCalledOnce();
+		expect(arm).toHaveBeenCalledExactlyOnceWith(DEFAULT_SETTINGS.pollingIntervalMinutes * 60_000, undefined);
 	});
 
 	it('a session the service took back on its own gets its loot poll back only when the poll no longer follows it', () => {

@@ -163,12 +163,7 @@ import {
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
-import {
-	LiveSessionRuntime,
-	type LiveSessionRuntimePort,
-	type PendingIntentClaim,
-	type SessionSummarySaveState,
-} from './live-session-runtime';
+import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -239,7 +234,7 @@ import type {
 } from '../sessions/pilot-metrics-model';
 import type { PilotMetricsRecorder, PilotMetricsState } from '../sessions/pilot-metrics-recorder';
 import type { PendingProposalService, ProposalQueueState } from '../sessions/pending-proposal-service';
-import { proposalIntent, sameProposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
+import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { PendingProposalRenewalRegistry } from '../sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import { LootPresentationCache } from '../sessions/loot-presentation-cache';
@@ -827,7 +822,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_poll', state: 'wake' },
-					async () => { await this.reconcilePendingProposals(); this.renderViews(); });
+					async () => { await this.live.reconcilePendingProposals(); this.renderViews(); });
 			}
 			this.priceHistory?.notifyWake();
 		});
@@ -1373,7 +1368,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
 				if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
-					() => this.reconcilePendingProposals());
+					() => this.live.reconcilePendingProposals());
 			},
 			// The grace window ends outside any click: the same stop pipeline has to run then,
 			// or the note, the valuation and the detection bookkeeping would never happen.
@@ -1469,7 +1464,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_proposal', state: 'queue_initialize' },
-			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
+			async () => { await this.pendingProposals.initialize(); await this.live.reconcilePendingProposals(); });
 		this.assistedDetection = sessionServices.assistedDetection;
 		this.assistedDetection.setOnline(this.host.environment.isOnline());
 		// `initialize()` above already classified and finalized, on its own, any `provisional` record
@@ -1931,7 +1926,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (collector) this.syncAlertIngameServer();
 		else await this.closeAlertIngameServer();
 		if (collector) for (const entry of this.liveSessions?.getUnsettledPriceEntries() ?? []) this.liveEconomy?.observe(entry);
-		if (!collector) this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
+		if (!collector) this.runRuntimeMutation(() => this.live.invalidateAndDisarmAssistedDetection('mode_off'));
 		if (this.priceHistory !== null && this.settings.priceHistoryEnabled) {
 			const settings = priceHistorySettingsFrom(this.settings);
 			await this.priceHistory.configure({ ...settings, enabled: false }, context);
@@ -1994,7 +1989,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.closeAlertIngameServer();
 		bridgeDrained = true;
 		await this.liveEconomy?.dispose();
-		const pilotProposalClosure = this.excludeLiveAssistedProposal();
+		const pilotProposalClosure = this.live.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
 		this.productActions?.dispose();
 		this.inventoryAdvisor?.dispose();
@@ -2099,7 +2094,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 		if (collector) fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_proposal', state: 'connection_reconcile' },
-			() => this.reconcilePendingProposals());
+			() => this.live.reconcilePendingProposals());
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		return {
@@ -3052,19 +3047,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getAssistedDetectionState(): AssistedDetectionState {
-		return this.runtimeReady ? this.assistedDetection.getState() : structuredClone(IDLE_ASSISTED_DETECTION_STATE);
+		return this.live.getAssistedDetectionState();
 	}
 
 	getDetectionQualityState(): DetectionQualityRecorderState {
-		return this.runtimeReady ? this.detectionQuality.getState() : { status: 'loading' };
+		return this.live.getDetectionQualityState();
 	}
 
-	getSessionDetectionQuality(sessionId: string) {
-		return this.runtimeReady ? this.detectionQuality.getSessionSummary(sessionId) : null;
+	getSessionDetectionQuality(sessionId: string): ReturnType<LiveSessionRuntime['getSessionDetectionQuality']> {
+		return this.live.getSessionDetectionQuality(sessionId);
 	}
 
-	getDetectionQualityStats() {
-		return this.runtimeReady ? this.detectionQuality.getStats() : null;
+	getDetectionQualityStats(): ReturnType<LiveSessionRuntime['getDetectionQualityStats']> {
+		return this.live.getDetectionQualityStats();
 	}
 
 	/**
@@ -3119,9 +3114,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get sessionCommands() { return core.sessionCommands; },
 			get sessionDispatch() { return core.sessionDispatch; },
 			get pilotMetrics() { return core.pilotMetrics; },
+			get connection() { return core.connection; },
 			get assistedDetection() { return core.assistedDetection; },
 			get detectionQuality() { return core.detectionQuality; },
 			get pendingProposals() { return core.pendingProposals; },
+			get pendingClaimRenewals() { return core.pendingClaimRenewals; },
 			get priceHistory() { return core.priceHistory; },
 			get farmingGroupContext() { return core.farmingGroupContext; },
 			get sessionSummarySaveState() { return core.sessionSummarySaveState; },
@@ -3135,13 +3132,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			notifyConsultMode: () => { core.notifyConsultMode(); },
 			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			requireRuntimeMutationLease: () => core.requireRuntimeMutationLease(),
+			runRuntimeMutation: (operation) => core.runRuntimeMutation(operation),
 			renderViews: () => { core.renderViews(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
-			armAssistedDetection: () => core.armAssistedDetection(),
+			activateView: () => core.activateView(),
 			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
 			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
 			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
-			acquirePendingIntent: (intent) => core.acquirePendingIntent(intent),
 			ensureCompletedSummarySaved: () => core.ensureCompletedSummarySaved(),
 			persistFarmingSessionContext: (context) => { core.persistFarmingSessionContext(context); },
 			updateSettings: (settings) => core.updateSettings(settings),
@@ -3191,86 +3188,23 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getPendingProposalState(): ProposalQueueState {
-		return this.runtimeReady ? this.pendingProposals.getState() : { status: 'loading', pendingCount: 0, next: null };
+		return this.live.getPendingProposalState();
 	}
 
-	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
-		return await this.reviewPendingProposalOutcome(intent) === 'completed';
+	reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
+		return this.live.reviewPendingProposal(intent);
 	}
 
 	recordPendingProposalPresented(intent: PendingProposalIntent): void {
-		if (!this.runtimeReady) return;
-		const state = this.pendingProposals.getState();
-		const proposal = state.status === 'ready' && state.next && sameProposalIntent(state.next, intent) ? state.next : null;
-		if (!proposal) return;
-		void this.pilotMetrics.proposalPresented({
-			proposalId: proposal.proposalId, phase: proposal.phase, mode: 'assisted',
-			presentedAt: new Date().toISOString(),
-			window: proposal.phase === 'start' ? proposal.proposal.possibleStart : proposal.proposal.possibleStop,
-			pollingIntervalMs: proposal.pollingIntervalMs, evidenceQuality: proposal.proposal.evidenceQuality,
-		});
+		this.live.recordPendingProposalPresented(intent);
 	}
 
-	private async reviewPendingProposalOutcome(intent: PendingProposalIntent): Promise<ProductActionOutcome> {
-		const perform = async (): Promise<ProductActionOutcome> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
-		try {
-			if (!await this.pendingProposals.acknowledge(intent)) {
-				this.emitNotice(
-					translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'),
-					'proposal_unavailable',
-				);
-				return 'unavailable';
-			}
-			await this.activateView();
-			this.renderViews();
-			return 'completed';
-		} catch (error) {
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'),
-				'proposal_review_failed',
-			);
-			// `perform()` never rejects here (the outer `run()` would then log the failure itself);
-			// this is the only place left that still learns the review actually failed (H15.14).
-			this.localDebugActions?.event({
-				component: 'detection', action: 'detection_proposal', state: 'review',
-				level: 'error', phase: 'failure', code: 'unknown_failure',
-				details: unmappedErrorLogDetails(error),
-			});
-			return 'failed';
-		}
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'detection', action: 'detection_proposal', state: 'review' }, perform,
-		) ?? perform());
-	}
-
-	async dismissPendingProposal(
+	dismissPendingProposal(
 		intent: PendingProposalIntent,
 		cause: DetectionCorrectionCause,
 		humanBoundaryAt: string | null = null,
 	): Promise<void> {
-		const perform = async (): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const claim = await this.acquirePendingIntent(intent);
-		try {
-			const sessionId = claim.proposal.phase === 'stop' ? claim.proposal.binding.sessionId : null;
-			const recorded = await this.detectionQuality.recordDismissed(claim.proposal.phase, sessionId, cause, claim.proposal.proposal);
-			if (!await this.pendingProposals.dismiss(intent, claim.operationId, sessionId, cause, recorded)) {
-				throw new Error('Proposal dismissal failed.');
-			}
-			void this.pilotMetrics?.proposalDecided({
-				proposalId: claim.proposal.proposalId,
-				decision: 'dismissed', workflow: null, cause, humanBoundaryAt,
-			});
-		} finally {
-			claim.stopRenewal();
-			this.renderViews();
-		}
-		};
-		await (this.localDebugActions?.run(
-			{ component: 'detection', action: 'detection_proposal', state: 'dismiss' }, perform,
-		) ?? perform());
+		return this.live.dismissPendingProposal(intent, cause, humanBoundaryAt);
 	}
 
 	openPendingSessionStart(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): void {
@@ -3297,134 +3231,27 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.startModal.open();
 	}
 
-	async stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (intent.phase !== 'stop') return;
-		await this.live.performStopManualSession(intent, humanBoundaryAt);
+	stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
+		return this.live.stopPendingSession(intent, humanBoundaryAt);
 	}
 
-	async armAssistedDetection(): Promise<ProductActionOutcome> {
-		if (this.liveSessions !== null) return 'unavailable';
-		if (refusedInConsult(this)) return 'unavailable';
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ProductActionOutcome> => {
-			if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
-			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-			if (runtimeLease === null) return 'unavailable';
-			try {
-				const connected = this.connection.getState().status;
-				const session = this.sessions.getState();
-				const recovery = this.sessions.getRecoveryState();
-				// `complete` arms too (H18.9): a finished session waits for the next one like `idle`,
-				// and the detector must look for it without anyone checking the connection by hand.
-				if (
-					(connected !== 'connected' && connected !== 'warning') ||
-					(session.status !== 'idle' && session.status !== 'active' && session.status !== 'complete') ||
-					(session.status === 'idle' && recovery.status !== 'none')
-				) return 'unavailable';
-				this.renderViews();
-				const state = await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000, context);
-				this.renderViews();
-				// H15.12: `detectionActionOutcome` returns a plain `'failed'` string, which `run()`
-				// only recognizes as a failure when it has the closed `{phase|code|state|details}`
-				// shape; a bare string always writes `info success ok`, so a stopped detector left
-				// zero warn+ lines behind it.
-				if (state.status === 'error') {
-					this.localDebugActions?.event({
-						component: 'detection', action: 'detection_arm', level: 'error', phase: 'failure',
-						code: state.code ?? 'unknown_failure', message: state.message,
-					});
-				}
-				return detectionActionOutcome(state, 'arm');
-			} finally { runtimeLease.release(); }
-		};
-		return await (this.localDebugActions?.run({ component: 'detection', action: 'detection_arm' }, perform) ?? perform());
+	armAssistedDetection(): Promise<ProductActionOutcome> {
+		return this.live.armAssistedDetection();
 	}
 
 	disarmAssistedDetection(): void {
-		const perform = (): void => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		this.runRuntimeMutation(() => {
-			this.invalidateAndDisarmAssistedDetection('user');
-			this.renderViews();
-		});
-		};
-		if (this.localDebugActions) this.localDebugActions.runSync(
-			{ component: 'detection', action: 'detection_disarm' }, perform,
-		);
-		else perform();
-	}
-
-	/** Starts the optional terminal write before invalidating product state, but never waits for it. */
-	private invalidateAndDisarmAssistedDetection(reason: 'user' | 'mode_off' | 'connection_changed'): void {
-		void this.excludeLiveAssistedProposal();
-		this.assistedDetection.disarm(reason);
-	}
-
-	private excludeLiveAssistedProposal(): Promise<boolean> | null {
-		const detection = this.assistedDetection?.getState();
-		if ((detection?.status !== 'start_proposed' && detection?.status !== 'stop_proposed') || !this.pilotMetrics) {
-			return null;
-		}
-		try {
-			return this.pilotMetrics.proposalExcluded(detection.proposal.proposalId, 'invalidated').catch(() => false);
-		} catch {
-			return Promise.resolve(false);
-		}
+		this.live.disarmAssistedDetection();
 	}
 
 	recordAssistedProposalPresented(): void {
-		if (!this.runtimeReady) return;
-		const detection = this.assistedDetection.getState();
-		if (detection.status !== 'start_proposed' && detection.status !== 'stop_proposed') return;
-		void this.pilotMetrics.proposalPresented({
-			proposalId: detection.proposal.proposalId,
-			phase: detection.status === 'start_proposed' ? 'start' : 'stop',
-			mode: 'assisted',
-			presentedAt: new Date().toISOString(),
-			window: detection.status === 'start_proposed'
-				? detection.proposal.possibleStart : detection.proposal.possibleStop,
-			pollingIntervalMs: detection.pollingIntervalMs,
-			evidenceQuality: detection.proposal.evidenceQuality,
-		});
+		this.live.recordAssistedProposalPresented();
 	}
 
-	async dismissAssistedProposal(
+	dismissAssistedProposal(
 		cause: DetectionCorrectionCause,
 		humanBoundaryAt: string | null = null,
 	): Promise<void> {
-		const perform = async (): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-		if (runtimeLease === null) return;
-		try {
-		const detection = this.assistedDetection.getState();
-		const session = this.sessions.getState();
-		let proposalId: string | null = null;
-		if (detection.status === 'start_proposed') {
-			proposalId = detection.proposal.proposalId;
-			fireAndForgetLocal(this.localDebugActions,
-				{ component: 'detection', action: 'detection_proposal', state: 'dismiss_start' },
-				async () => { await this.detectionQuality.recordDismissed('start', null, cause, detection.proposal); this.renderViews(); });
-		} else if (detection.status === 'stop_proposed') {
-			proposalId = detection.proposal.proposalId;
-			const observed = session.status === 'error' ? session.failedState : session;
-			const sessionId = observed.status === 'active' ? observed.sessionId : null;
-			if (sessionId) {
-				fireAndForgetLocal(this.localDebugActions,
-					{ component: 'detection', action: 'detection_proposal', state: 'dismiss_stop' },
-					async () => { await this.detectionQuality.recordDismissed('stop', sessionId, cause, detection.proposal); this.renderViews(); });
-			}
-		}
-		this.assistedDetection.dismissProposal();
-		if (proposalId) void this.pilotMetrics?.proposalDecided({
-			proposalId, decision: 'dismissed', workflow: null, cause, humanBoundaryAt,
-		});
-		this.renderViews();
-		} finally { runtimeLease.release(); }
-		};
-		await (this.localDebugActions?.run(
-			{ component: 'detection', action: 'detection_proposal', state: 'dismiss' }, perform,
-		) ?? perform());
+		return this.live.dismissAssistedProposal(cause, humanBoundaryAt);
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
@@ -5180,7 +5007,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Before any repaint below: the views read it on their next render.
 			this.apiKeyRevision += 1;
 			this.invalidateInventoryAdvisor();
-			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('connection_changed'));
+			this.runRuntimeMutation(() => this.live.invalidateAndDisarmAssistedDetection('connection_changed'));
 			this.connection.reset();
 			this.halloweenAccountRef = null;
 			this.halloween?.disable(context);
@@ -5361,44 +5188,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.renderInventoryAdvisorViews();
 	}
 
-	private async reconcilePendingProposals(): Promise<void> {
-		if (!this.pendingProposals) return;
-		const connection = this.connection.getState();
-		const accountId = connection.status === 'connected' || connection.status === 'warning'
-			? connection.details.account.id : null;
-		const state = this.sessions.getState();
-		const observed = state.status === 'error' ? state.failedState : state;
-		await this.pendingProposals.reconcile({
-			accountId,
-			recoveryPending: this.sessions.getRecoveryState().status !== 'none',
-			// A finished session waits for the next one exactly like `idle` (H18.8/H18.9): a start
-			// proposal found meanwhile stays valid, and accepting it releases the finished session.
-			session: observed.status === 'active'
-				? { status: 'active', sessionId: observed.sessionId, baselineSnapshotId: observed.baseline.snapshotId }
-				: { status: observed.status === 'complete' ? 'idle' : observed.status },
-		});
-	}
-
 	private refreshBackgroundIndicators(): void {
 		this.refreshSessionRibbon();
 		refreshBackgroundStatus(this.mountedViews.companion.current());
-	}
-
-	private async acquirePendingIntent(intent: PendingProposalIntent): Promise<PendingIntentClaim> {
-		await this.reconcilePendingProposals();
-		const operationId = crypto.randomUUID();
-		const claimed = await this.pendingProposals.claim(intent, operationId);
-		if (claimed.status !== 'claimed' && claimed.status !== 'already_claimed') throw new Error('Proposal claim failed.');
-		const stopRenewal = this.pendingClaimRenewals.start(() => {
-			fireAndForgetLocal(this.localDebugActions,
-				{ component: 'detection', action: 'detection_proposal', state: 'renew_claim' },
-				() => this.pendingProposals.renew(intent, operationId));
-		}, 60_000);
-		return {
-			proposal: claimed.proposal,
-			operationId,
-			stopRenewal,
-		};
 	}
 
 	private setupSessionCommands(): void {
@@ -5490,7 +5282,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (id === 'review-pending-farming-proposal') {
 			const next = this.getPendingProposalState().next;
 			if (next === null) return 'unavailable';
-			return await this.reviewPendingProposalOutcome(proposalIntent(next));
+			return await this.live.reviewPendingProposalOutcome(proposalIntent(next));
 		}
 		if (id === 'arm-assisted-detection') return await this.armAssistedDetection();
 		if (id === 'disarm-assisted-detection') this.disarmAssistedDetection();
@@ -5857,7 +5649,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 }
 
-/** Identical to `AssistedDetectionService`'s own freshly-constructed, never-armed state. */
 /** `liveRulesExpiredAtMsFromLoad` from a bare instant, for callers that have not already loaded the bundle themselves. */
 function liveRulesExpiredAtMs(nowMs: number): number | null {
 	return liveRulesExpiredAtMsFromLoad(inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString()));
@@ -5865,16 +5656,6 @@ function liveRulesExpiredAtMs(nowMs: number): number | null {
 
 /** H18.26: per-vault local storage key of the link between the in-game presence and its session. */
 const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
-
-const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
-	status: 'disarmed',
-	reason: 'initial',
-	scheduler: {
-		status: 'idle', intervalMs: null, nextRunAt: null,
-		lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
-	},
-	lastSnapshotAt: null,
-};
 
 /**
  * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session

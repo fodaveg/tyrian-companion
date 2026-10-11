@@ -32,6 +32,7 @@ import { HalloweenRuntime } from './halloween/halloween-runtime';
 import type { PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { loadCollectorMode } from './runtime/collector-instance';
 import { COLLECTOR_HEARTBEAT_INTERVAL_MS, parseCollectorStatusNote } from './runtime/collector-status';
+import { LiveSessionRuntime } from './runtime/live-session-runtime';
 import { AssistedDetectionService } from './sessions/assisted-detection-service';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
@@ -377,7 +378,6 @@ interface ConsultConnectionActions {
 	getConnectionState(): { status: string };
 	runInventoryVaultSync(): Promise<void>;
 	getInventoryVaultSyncRunState(): { status: string; lastRun: { status: string; error: string | null } | null };
-	reconcilePendingProposals(): Promise<void>;
 }
 
 /**
@@ -424,7 +424,8 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 			apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true, halloweenEnabled: true,
 		}, { mode: 'consult' });
 		const arm = vi.spyOn(world.plugin, 'armAssistedDetection');
-		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+		// The reconcile is the core's live session runtime's (DE-01, step 3d).
+		const reconcile = vi.spyOn(LiveSessionRuntime.prototype, 'reconcilePendingProposals');
 		await world.plugin.initializeRuntime();
 		// The boot reconciles the proposal queue once it is open (in either mode): only what comes
 		// after is the check's.
@@ -453,7 +454,7 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		// reconciles too, and under load could land after `settle`) never runs; the key comes after.
 		const world = collectorModePlugin({ apiKeySecret: '' }, { mode: 'collector' });
 		const arm = vi.spyOn(world.plugin, 'armAssistedDetection').mockResolvedValue('unavailable');
-		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+		const reconcile = vi.spyOn(LiveSessionRuntime.prototype, 'reconcilePendingProposals');
 		await world.plugin.initializeRuntime();
 		await bootReconciled(reconcile);
 		expect(arm).not.toHaveBeenCalled();
