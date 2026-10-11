@@ -3538,6 +3538,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.live.isLiveSessionStuck();
 	}
 
+	/** The output folder is missing and only a press of «Aplicar» creates it (`IngameSessionRuntime.isOutputFolderMissing`). */
+	isOutputFolderMissing(): boolean {
+		return this.ingame.isOutputFolderMissing();
+	}
+
 	/** Whether the card may offer "Abandon session" (`LiveSessionRuntime`). */
 	canAbandonSession(): boolean {
 		return this.live.canAbandonSession();

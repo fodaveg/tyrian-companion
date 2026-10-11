@@ -88,6 +88,14 @@ describe('Session tab: header and the one button', () => {
 		expect(controls(old.panel)).toContain('button:Discard old session');
 	});
 
+	it('says what is missing when the output folder does not exist yet, instead of «Game connected»', () => {
+		const missing = harness(idleView(), control({ canStart: false, outputFolderMissing: true }), 'en');
+		expect(missing.panel.element.textContent).toContain('Apply');
+		expect(missing.panel.element.textContent).not.toContain('Start a session to see');
+		expect(harness(idleView(), control({ canStart: true }), 'en').panel.element.textContent).toContain('Start a session to see');
+		expect(harness(idleView(), control({ outputFolderMissing: true }), 'es').panel.element.textContent).toContain('Aplicar');
+	});
+
 	it('wires every state to its action and reads like the mockup', async () => {
 		const idle = harness(idleView(), control({ canStart: true }), 'es');
 		expect(idle.panel.element.textContent).toContain('Sin sesión');

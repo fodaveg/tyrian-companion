@@ -40,10 +40,13 @@ const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
  * this runtime, and a setting changed or the device turned to consult is read as it stands.
  */
 export interface IngameSessionRuntimePort {
-	readonly settings: Pick<TyrianSettings, 'alertIngameEnabled'>;
+	readonly settings: Pick<TyrianSettings, 'alertIngameEnabled' | 'outputFolder'>;
 	readonly runtimeReady: boolean;
 	readonly collectorMode: CollectorMode | undefined;
-	readonly host: { readonly localStorage?: Pick<NonNullable<TyrianHost['localStorage']>, 'load' | 'save'> };
+	readonly host: {
+		readonly localStorage?: Pick<NonNullable<TyrianHost['localStorage']>, 'load' | 'save'>;
+		readonly vault?: Pick<TyrianHost['vault'], 'exists' | 'createOutputFolder'>;
+	};
 	readonly localDebugActions: Pick<LocalDebugActionRunner, 'run' | 'event'> | null;
 	readonly sessionHistoryRuntimeAuthority: Pick<SessionHistoryRuntimeAuthority, 'runtimeMutationAllowed'>;
 	/** Built in `initializeRuntime`; read only once `runtimeReady` says so. */
@@ -112,7 +115,7 @@ export class IngameSessionRuntime {
 		const live = this.liveSessions?.getRuntime();
 		if (live) return {
 			status: live.phase, sessionId: live.sessionId,
-			canStart: this.runtimeReady && live.phase === 'complete' && live.summaryReceipt !== null
+			canStart: this.runtimeReady && live.phase === 'complete' && live.summaryReceipt !== null && !this.isOutputFolderMissing()
 				&& this.port.sessionHistoryRuntimeAuthority.runtimeMutationAllowed(),
 		};
 		const state = this.sessions.getState();
@@ -122,9 +125,20 @@ export class IngameSessionRuntime {
 		return {
 			status: state.status,
 			sessionId,
-			canStart: this.runtimeReady && released && this.manualRecoveryAllowsStart()
+			canStart: this.runtimeReady && released && this.manualRecoveryAllowsStart() && !this.isOutputFolderMissing()
 				&& this.port.sessionHistoryRuntimeAuthority.runtimeMutationAllowed(),
 		};
+	}
+
+	/**
+	 * A host whose vault IS the output folder (Hebra) does not create it on a write: only a press of «Aplicar» does
+	 * (docs/ARCHITECTURE.md, «Carpeta de salida ausente en Hebra»). A session opened before that cannot write its note and
+	 * the heartbeat then repeats the failure every 5 s, so no start is accepted while it is missing. A host that creates the
+	 * folder on write has no `createOutputFolder` and is never blocked by this.
+	 */
+	isOutputFolderMissing(): boolean {
+		const vault = this.host.vault;
+		return vault?.createOutputFolder !== undefined && !vault.exists(this.settings.outputFolder);
 	}
 
 	/**

@@ -65,6 +65,12 @@ describe('the one button reaches the product actions that already exist', () => 
 		expect(liveSessionControl(away.value, view).getLiveSessionControl()).toMatchObject({ gameConnected: false, consult: true, oldSession: null });
 	});
 
+	it('passes on that the output folder is missing, and says nothing when it is not', () => {
+		const missing = source({ isOutputFolderMissing: () => true });
+		expect(liveSessionControl(missing.value, view).getLiveSessionControl()).toMatchObject({ outputFolderMissing: true });
+		expect(liveSessionControl(source().value, view).getLiveSessionControl()).not.toHaveProperty('outputFolderMissing');
+	});
+
 	it('offers the discard of a stuck live session only when a live session exists and the shared action allows it', () => {
 		const { value } = source({ describe: (id) => id === 'discard-saved-session' ? descriptor(id, { available: true }) : descriptor(id) });
 		expect(liveSessionControl(value, () => ({ phase: 'error' }) as never).getLiveSessionControl()).toMatchObject({ stuckSession: true, oldSession: null });

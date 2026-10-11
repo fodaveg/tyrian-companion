@@ -14,6 +14,8 @@ export interface LiveSessionControlSource {
 	getCollectorMode?(): CollectorMode;
 	/** The live session cannot finish by itself (the core's own rule); the shared discard then belongs to it. */
 	isLiveSessionStuck?(): boolean;
+	/** The output folder is not in the library and only a press of «Aplicar» creates it: no session can start. */
+	isOutputFolderMissing?(): boolean;
 	getSessionState(): SessionState;
 	getSessionRecoveryState(): SessionRecoveryState;
 }
@@ -67,6 +69,7 @@ export function liveSessionControl(
 				canStop: finish?.available === true,
 				busy: start?.state === 'running' ? 'start' : finish?.state === 'running' ? 'stop' : null,
 				oldSession: blocked ? { canDiscard: discard?.available === true && !liveStuck } : null,
+				...(source.isOutputFolderMissing?.() === true ? { outputFolderMissing: true } : {}),
 				stuckSession: liveStuck ? discard?.available === true : !blocked && view().phase !== 'idle' && discard?.available === true,
 			};
 		},
