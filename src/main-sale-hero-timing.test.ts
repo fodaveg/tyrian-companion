@@ -10,7 +10,7 @@ import {
 	saleSourceRowFromAdvisorRow,
 	saleBagSlotsUsed,
 } from './runtime/tyrian-companion-core';
-import { InventoryRuntime, type InventoryRuntimePort } from './runtime/inventory-runtime';
+import { inventoryOver } from './test/inventory-over';
 import type { FestivalCalendarCandidateV1 } from './economy/seasonal-window';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
 import { buildSaleViewModel } from './ui/sale-view-model';
@@ -132,7 +132,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			inventoryAdvisor: { open(): InventoryAdvisorViewModel };
 		}): InventoryAdvisorViewModel {
 			// DE-01 step 3g: the view model is `InventoryRuntime`'s; the harness stands in for the port.
-			return new InventoryRuntime(harness as unknown as InventoryRuntimePort).getInventoryAdvisorViewModel();
+			return inventoryOver(harness).getInventoryAdvisorViewModel();
 		}
 
 		/**

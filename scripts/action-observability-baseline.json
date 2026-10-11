@@ -19660,6 +19660,11 @@
 					"reason": "Allowlisted catch_clause: The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line. Verified recovery: \"intentional_noop\" in \"safeLocalDebugSupportJsonl\"."
 				}
 			]
+		},
+		"src/test/inventory-over.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		}
 	}
 }
