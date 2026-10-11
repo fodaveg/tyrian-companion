@@ -635,6 +635,28 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		await Promise.all([old, fresh]);
 	});
 
+	it('ignores the progress and the receipt of a capture started before invalidate (Z4-5)', async () => {
+		const snapshot = snapshotFixture([10]);
+		let release: () => void = () => undefined;
+		const held = new Promise<void>((resolve) => { release = resolve; });
+		const receipts: unknown[] = [];
+		const progress: unknown[] = [];
+		const snapshots = { captureInventoryWithOperation: async (_op: unknown, onProgress?: (p: never) => void) => {
+			await held;
+			onProgress?.({ roster: { completed: 1, total: 1 }, accountStores: { completed: 1, total: 1 }, characters: { completed: 0, total: 0 } } as never);
+			return snapshot;
+		} };
+		const service = new InventoryAdvisorEvidenceService(clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			snapshots as never, { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+			(receipt) => { receipts.push(receipt); });
+		const old = service.capture('es', [], (p) => { progress.push(p); });
+		service.invalidate();
+		release();
+		await old;
+		expect(progress).toEqual([]);
+		expect(receipts).toEqual([]);
+	});
+
 	it('retries a passing 401/403 on its authenticated reads instead of dropping the capture (Z4-4)', async () => {
 		const snapshot = snapshotFixture([10]);
 		const base = clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }).beginOperation();
