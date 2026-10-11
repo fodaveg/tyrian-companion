@@ -364,7 +364,7 @@ describe('sale view render', () => {
 			expect(find(toolbar, 'p').some((p) => p.attributes.get('role') === 'status')).toBe(true);
 			expect(buttons[0]!.attributes.get('type')).toBe('button');
 			expect(buttons[0]!.attributes.get('aria-busy')).toBe(String(refreshing));
-			expect(buttons[0]!.disabled).toBe(refreshing);
+			expect(buttons[0]!.attributes.get('aria-disabled')).toBe(String(refreshing));
 			expect(find(byClass(find(container, 'div'), 'tyrian-sale__foot')[0]!, 'button')).toHaveLength(0);
 		}
 	});

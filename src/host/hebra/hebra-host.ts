@@ -428,6 +428,11 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		},
 		async save(data) {
 			await storedSettings.save(data);
+			// Z6-3: a save that carries `managedAssetsRoot: null` is the user's «Quitar» (the adopted path is never null in what the
+			// core merges over `load()`). From then on the adoption decided at the start no longer applies, or the next unrelated
+			// settings write would bring the root back and the assets would be re-adopted.
+			if (typeof data === 'object' && data !== null && !Array.isArray(data)
+				&& (data as Record<string, unknown>).managedAssetsRoot === null) adoptManagedAssetsRoot = false;
 			latestFolder = outputFolderFromSettings(data);
 			if (!stale()) {
 				disarmRestart();
