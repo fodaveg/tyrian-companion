@@ -63,5 +63,5 @@ describe('the plugin feeds no string to a Trusted Types sink (Hebra desktop CSP)
 			return sinksIn(facts.names, facts.propertyCallChains).map((sink) => `${path}: ${sink}`);
 		});
 		expect(offenders).toEqual([]);
-	});
+	}, 60_000); // parses every src/ module: 4.4 s alone, 7.4 s in the 0.6.46 gate beside the rest of the suite, past the 5 s default
 });
