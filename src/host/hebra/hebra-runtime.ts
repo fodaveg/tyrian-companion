@@ -122,7 +122,9 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 	return () => {
 		handle.dispose();
 		removeMobileClass();
+		// The flush runs even when the stop rejects: a keychain write the core started must land first.
 		return runtime.stop()
+			.catch((error: unknown) => report(error, 'stop'))
 			.then(() => handle.flush())
 			.catch((error: unknown) => report(error, 'stop'))
 			// After the stop and the flush, which still use both databases.
