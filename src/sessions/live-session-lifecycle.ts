@@ -126,6 +126,8 @@ export class LiveSessionLifecycle {
 	private pruneHeld = false;
 	/** Raised once this host has looked for the journals no queue names (`adoptSealedOrphans`): it looks once per start of the host. */
 	private orphansSought = false;
+	/** The sessions of the journal `adoptSealedOrphans` has still to ask the vault about, in order; null until it has listed them. */
+	private orphansPending: string[] | null = null;
 	/**
 	 * The last sessions this host sealed, kept with their journal for one consumer: `updateAlert(…, receiptOnly, sessionId)`, the
 	 * delivery receipt of an alert that arrives after its session closed. It rewrites the stored journal entry and the note, so
@@ -476,8 +478,9 @@ export class LiveSessionLifecycle {
 	 * is the coordinator's rule for any acquisition): the record of a session another instance runs is never cleared from here,
 	 * and a `stale` answer from the store is a refusal, not a reason to force. The one record it clears without a reservation
 	 * is one the store says does not validate (`corrupt`), which nobody can hold. A record it could not read is read again first.
-	 * A record found on disk while memory has none is cleared WITHOUT trying its note (this host has not read its journal);
-	 * the panel does not offer that case.
+	 * A record found on disk while memory has none (a journal that does not match it leaves the session stuck) is cleared
+	 * WITHOUT trying its note (this host has not read its journal), and its journal is NOT queued for the prune, whatever
+	 * receipt the record carries: only `adoptSealedOrphans`, which reads the note in the vault, may queue it at a later start.
 	 * `cleared: false` carries the reason; the session is as it was, except that the stop attempted on the way may have closed it.
 	 */
 	async discard(): Promise<LiveSessionDiscard> {
@@ -534,10 +537,12 @@ export class LiveSessionLifecycle {
 			if (status !== 'cleared') return { cleared: false, note, reason: status === 'stale' ? 'record_stale' : 'storage_unavailable' };
 			const held = this.handle; this.handle = null;
 			if (held !== null) { try { await this.options.coordinator.release(held); } catch { /* the lease runs out by itself */ } }
-			// The record cleared is the one in memory or, when none could be brought back (a journal that did not match it), the one
-			// read from the key: sealed either way when it carries its receipt, and its journal is queued like any other.
-			const cleared = this.record ?? target; const receipt = cleared.summaryReceipt ?? null;
-			if (receipt !== null) { this.sealedForPrune.set(cleared.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
+			// Only a record this host brought back and whose note it just saved or verified joins the queue. One read from the key
+			// while memory has none (its journal did not match it) is not: its receipt was never checked against the vault, and if
+			// the note is gone that journal is the last copy of the evidence. `adoptSealedOrphans` queues it at a later start, once
+			// it has read its note in the vault.
+			const receipt = this.record?.summaryReceipt ?? null;
+			if (this.record !== null && receipt !== null) { this.sealedForPrune.set(this.record.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 			this.resetAfterDiscard();
 			return { cleared: true, note };
 		}
@@ -1048,21 +1053,32 @@ export class LiveSessionLifecycle {
 	 * before the prune queue existed (0.6.12 and earlier), whose record left the runtime key without joining any queue, so the
 	 * prune never reached them. The one whose saved note the vault holds is sealed and joins the queue with the path of that
 	 * note; one without (discarded without a note, or whose note was moved or renamed) stays, as before. Once per start of the
-	 * host, from the first pass that may prune, never at load; a failure is reported and asked again at the next start.
+	 * host, from the first pass that may prune, never at load.
+	 *
+	 * Each pass holds the lifecycle's queue, and a sample's commit waits behind it, so each pass does one bounded step: the first
+	 * lists the sessions of the journal (one key cursor), and each one after asks the vault about at most
+	 * `LIVE_JOURNAL_PRUNE_BATCH` of them, each ask under its own deadline. The list still to ask about stays in memory, and each
+	 * candidate is filtered again when its turn comes. A failure is reported once, ends the search for this run (nothing more is
+	 * queued on it) and is asked again at the next start.
 	 */
 	private async adoptSealedOrphans(): Promise<void> {
 		if (this.orphansSought || this.options.sealedNotes === undefined) return;
-		this.orphansSought = true;
+		const orphan = (id: string): boolean => id !== this.record?.sessionId && !this.completed.has(id) && !this.sealedForPrune.has(id);
 		try {
-			const stored = await this.options.persistence.listLiveJournalSessions?.() ?? [];
-			const orphans = stored.filter((id) => id !== this.record?.sessionId && !this.completed.has(id) && !this.sealedForPrune.has(id));
-			if (orphans.length === 0) return;
-			const notes = await this.options.sealedNotes(orphans);
-			for (const sessionId of orphans) {
-				const path = notes.get(sessionId);
-				if (path !== undefined) { this.sealedForPrune.set(sessionId, path); this.queueDirty = true; }
+			if (this.orphansPending === null) {
+				this.orphansPending = (await this.options.persistence.listLiveJournalSessions?.() ?? []).filter(orphan);
+				if (this.orphansPending.length === 0) this.orphansSought = true;
+				return;
 			}
-		} catch (error) { this.options.onError(error); }
+			const batch = this.orphansPending.splice(0, LIVE_JOURNAL_PRUNE_BATCH).filter(orphan);
+			if (this.orphansPending.length === 0) this.orphansSought = true;
+			if (batch.length === 0) return;
+			const notes = await this.options.sealedNotes(batch);
+			for (const sessionId of batch) {
+				const path = notes.get(sessionId);
+				if (path !== undefined && orphan(sessionId)) { this.sealedForPrune.set(sessionId, path); this.queueDirty = true; }
+			}
+		} catch (error) { this.options.onError(error); this.orphansSought = true; this.orphansPending = []; }
 	}
 	/**
 	 * Saves the queue as it is now. A failure is reported once and swallowed: the queue stays dirty and the next start

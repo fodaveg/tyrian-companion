@@ -21,6 +21,7 @@ import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
 import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
 import { prepareLiveSessionPayload, prepareLiveSessionSnapshot } from './live-session-note-model';
 import { renderLiveSessionSummary } from './live-session-summary-note';
+import { sha256Text } from './session-note-renderer';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
@@ -587,15 +588,15 @@ describe('passive live session lifecycle', () => {
 			expect(await lengths(), 'the two old ones go; the two this host sealed are retained').toEqual([0,0,2]); expect(await queued()).toEqual([ids[2],'session-4']);
 			await next.service.dispose();
 		});
-		it('a sealed session discarded while its record could not be brought back still joins the queue', async () => {
-			const { f, ids, first, host, lengths, queued } = await earlierHost(0, true); await first.dispose();
+		it('a session discarded while its record could not be brought back is not queued on the word of its record: its journal stays', async () => {
+			const { f, first, host, lengths, queued } = await earlierHost(0, true); await first.dispose();
 			vi.spyOn(f.store,'readLiveJournal').mockResolvedValueOnce([]);
 			const next = host(); await next.service.initialize();
 			expect(next.service.getRuntime(), 'the journal does not match: the record is not kept in memory').toBeNull();
 			await expect(next.service.discard()).resolves.toMatchObject({ cleared: true });
-			expect(await queued(), 'its note is saved (the record says so): its journal is sealed like any other').toEqual([ids[0]]);
-			await expect(next.service.start('Test')).resolves.not.toBeNull(); await next.beat();
-			expect(await lengths(), 'and it is pruned instead of staying for ever').toEqual([0]); await next.service.dispose();
+			expect(await queued(), 'the receipt of a record nobody verified against the vault proves nothing').toEqual([]);
+			await expect(next.service.start('Test')).resolves.not.toBeNull(); await next.beat(); await next.beat();
+			expect(await lengths(), 'if its note is gone, that journal is the last copy of the evidence').toEqual([2]); await next.service.dispose();
 		});
 		it('a host that does not own the live session prunes nothing until the lease is its own', async () => {
 			const { f, first, firstBeat, host, lengths } = await earlierHost(2); let busy = true;
@@ -625,10 +626,64 @@ describe('passive live session lifecycle', () => {
 				const sealedNotes = vi.fn(async (sessionIds: readonly string[]) => await findSealedLiveNotes(files, sessionIds));
 				const next = host({ sealedNotes }); await next.service.initialize();
 				expect(sealedNotes, 'the load asks nothing').not.toHaveBeenCalled();
-				await next.beat(); await next.beat();
+				for (let beats = 0; beats < 4; beats += 1) await next.beat();
 				expect(await lengths(), 'the one whose note was renamed keeps its journal, and so does the live one').toEqual([0,2,0,2]);
-				expect(sealedNotes.mock.calls, 'asked once, and only about the journals nobody holds or queued').toEqual([[ids.slice(0,3)]]);
+				expect(sealedNotes.mock.calls, 'asked once about each journal nobody holds or queued, a batch at a time').toEqual([[ids.slice(0,2)],[ids.slice(2,3)]]);
 				expect(await queued()).toEqual([]); await next.service.dispose();
+			});
+			it('a pass asks the vault about one batch at most: the first lists, each one after asks about two', async () => {
+				const { ids, first, host, files } = await sealedBeforeTheQueue(); await first.dispose();
+				const sealedNotes = vi.fn(async (sessionIds: readonly string[]) => await findSealedLiveNotes(files, sessionIds));
+				const next = host({ sealedNotes }); await next.service.initialize();
+				await next.beat(); expect(sealedNotes, 'the pass that lists the journal asks the vault nothing').not.toHaveBeenCalled();
+				await next.beat(); expect(sealedNotes.mock.calls, 'one batch').toEqual([[ids.slice(0,2)]]);
+				await next.beat(); expect(sealedNotes.mock.calls).toEqual([[ids.slice(0,2)],[ids.slice(2,3)]]);
+				await next.beat(); expect(sealedNotes).toHaveBeenCalledTimes(2); await next.service.dispose();
+			});
+			it('a note under the name its writer gives after a collision (the whole reference) is found as well', async () => {
+				const { ids, first, files, vault } = await sealedBeforeTheQueue(); await first.dispose();
+				const short = [...vault.keys()][0]!; const ref = await sha256Text(ids[0]!);
+				const whole = short.replace(` - ${ref.slice(0,16)}.md`, ` - ${ref}.md`); expect(whole).not.toBe(short);
+				vault.set(whole, vault.get(short)!); vault.delete(short);
+				expect(await findSealedLiveNotes(files, ids.slice(0,1))).toEqual(new Map([[ids[0]!, whole]]));
+			});
+			it('a closed session that still holds the runtime key is never pruned, valid note or not', async () => {
+				const vault = new Map<string, string>();
+				const { f, ids, first, host, lengths, queued } = await earlierHost(1, true, { onComplete: async (record, journal, format) => {
+					const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'es', outputFolder: 'Tyrian' });
+					if (rendered.status !== 'ok') throw new Error('The note did not render.');
+					vault.set(rendered.note.preferredPath, rendered.note.content); return rendered.note.preferredPath;
+				} });
+				await first.dispose(); await f.store.savePruneQueue([]); expect(vault.size).toBe(2);
+				const files = { markdownFiles: () => [...vault.keys()].map((path) => ({ path })), read: async (file: { path: string }) => vault.get(file.path) ?? '' };
+				const sealedNotes = vi.fn(async (sessionIds: readonly string[]) => await findSealedLiveNotes(files, sessionIds));
+				const next = host({ sealedNotes }); await next.service.initialize();
+				for (let beats = 0; beats < 4; beats += 1) await next.beat();
+				expect(next.service.getRuntime()).toMatchObject({ sessionId: ids[1], phase: 'complete' });
+				expect(sealedNotes.mock.calls, 'never asked about the session of the key').toEqual([[[ids[0]]]]);
+				expect(await lengths(), 'the earlier one goes on its note; the one of the key stays, though its note is valid too').toEqual([0,2]);
+				expect(await queued()).toEqual([]); await next.service.dispose();
+			});
+			it('a journal that cannot be listed is reported once and queues nothing', async () => {
+				const { f, first, host, lengths, queued } = await sealedBeforeTheQueue(); await first.dispose();
+				vi.spyOn(f.store,'listLiveJournalSessions').mockRejectedValue(new Error('listing'));
+				const sealedNotes = vi.fn(async () => new Map<string, string>());
+				const next = host({ sealedNotes }); await next.service.initialize();
+				for (let beats = 0; beats < 4; beats += 1) await next.beat();
+				expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'listing')).toHaveLength(1);
+				expect(sealedNotes).not.toHaveBeenCalled(); expect(await queued()).toEqual([]); expect(await lengths()).toEqual([2,2,2,2]);
+				await next.service.dispose();
+			});
+			it('a vault that does not answer within the deadline is reported once and queues nothing', async () => {
+				const { f, first, host, lengths, queued } = await sealedBeforeTheQueue(); await first.dispose();
+				const silent = vi.fn(() => new Promise<Map<string, string>>(() => {}));
+				const next = host({ sealedNotes: silent, storageTimeoutMs: 20,
+					setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (handle) => { globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>); } });
+				await next.service.initialize();
+				for (let beats = 0; beats < 4; beats += 1) await next.beat();
+				expect(silent).toHaveBeenCalledTimes(1);
+				expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).name === 'TimeoutError')).toHaveLength(1);
+				expect(await queued()).toEqual([]); expect(await lengths()).toEqual([2,2,2,2]); await next.service.dispose();
 			});
 			it('a note under the name of a session that reads as another session does not seal it', async () => {
 				const { ids, first, files, vault } = await sealedBeforeTheQueue(); await first.dispose();
@@ -645,12 +700,12 @@ describe('passive live session lifecycle', () => {
 				const { f, first, host, lengths, files } = await sealedBeforeTheQueue(); await first.dispose();
 				const failing = vi.fn(async () => { throw new Error('vault'); });
 				const next = host({ sealedNotes: failing }); await next.service.initialize();
-				for (let beats = 0; beats < 3; beats += 1) await next.beat();
+				for (let beats = 0; beats < 4; beats += 1) await next.beat();
 				expect(failing).toHaveBeenCalledTimes(1); expect(await lengths()).toEqual([2,2,2,2]);
 				expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'vault')).toHaveLength(1);
 				await next.service.dispose();
 				const later = host({ sealedNotes: async (sessionIds) => await findSealedLiveNotes(files, sessionIds) }); await later.service.initialize();
-				await later.beat(); await later.beat();
+				for (let beats = 0; beats < 4; beats += 1) await later.beat();
 				expect(await lengths()).toEqual([0,0,0,2]); await later.service.dispose();
 			});
 		});
