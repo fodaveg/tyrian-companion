@@ -123,13 +123,15 @@ function renderStatusLine(model: SaleViewModel, translator: Translator, ui: Icon
 		status.append(createSpan({ text: translator.t('sale.view.status.validUntil', { time: formatClock(staleAtMs, translator.locale) }) }));
 	}
 	if (model.festivalStartMs !== null) {
-		const daysUntil = Math.round((model.festivalStartMs - model.nowMs) / DAY_MS);
+		// Rounded up: any part of a day still ahead counts as a day to wait (round() said "running"
+		// from noon of the eve). The table only knows when each edition STARTS, so once it has
+		// started the line says that, not "in progress" (Z7-3).
+		const daysUntil = Math.ceil((model.festivalStartMs - model.nowMs) / DAY_MS);
+		const date = formatDayShort(priceHistoryDayUtc(model.festivalStartMs), translator.locale);
 		status.append(createSpan({
 			text: daysUntil > 0
-				? translator.t('sale.view.status.festivalCountdown', {
-					date: formatDayShort(priceHistoryDayUtc(model.festivalStartMs), translator.locale), days: daysUntil,
-				})
-				: translator.t('sale.view.status.festivalActive'),
+				? translator.t(daysUntil === 1 ? 'sale.view.status.festivalCountdown.one' : 'sale.view.status.festivalCountdown.many', { date, days: daysUntil })
+				: translator.t('sale.view.status.festivalStarted', { date }),
 		}));
 	}
 	return status;
@@ -272,14 +274,14 @@ function calendarDaysDetail(entry: SaleCalendarRowViewModel, todayUtc: string, t
 	const openSpan = entry.spans.find((span) => span.openToday);
 	if (openSpan !== undefined) {
 		const days = Math.max(0, Math.round((Date.parse(`${openSpan.toDay}T00:00:00.000Z`) - Date.parse(`${todayUtc}T00:00:00.000Z`)) / DAY_MS));
-		return ` · ${translator.t('sale.calendar.opensToday', { days })}`;
+		return ` · ${translator.t(days === 1 ? 'sale.calendar.opensToday.one' : 'sale.calendar.opensToday.many', { days })}`;
 	}
 	const upcoming = entry.spans
 		.filter((span) => span.fromDay > todayUtc)
 		.sort((left, right) => left.fromDay.localeCompare(right.fromDay))[0];
 	if (upcoming === undefined) return '';
 	const days = Math.max(0, Math.round((Date.parse(`${upcoming.fromDay}T00:00:00.000Z`) - Date.parse(`${todayUtc}T00:00:00.000Z`)) / DAY_MS));
-	return ` · ${translator.t('sale.calendar.opensIn', { days })}`;
+	return ` · ${translator.t(days === 1 ? 'sale.calendar.opensIn.one' : 'sale.calendar.opensIn.many', { days })}`;
 }
 
 const GROUP_LABEL_KEY: Record<keyof SaleGroupsViewModel, TranslationKey> = {
