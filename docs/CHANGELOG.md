@@ -1,5 +1,31 @@
 # Changelog
 
+## Release beta 0.6.46 - La sección Sesión vuelve en Hebra de Linux y el almacén mudo se recupera en consulta
+
+Se actualiza desde la 0.6.45 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales de un
+usuario; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Hebra de escritorio en Linux. La sección Sesión salía vacía desde la 0.6.43: la política de seguridad de Hebra
+  (Trusted Types, que aplica WebKitGTK) rechazaba el fragmento vacío con el que el plugin creaba la raíz del panel.
+  Ahora se crea sin pasar por ese punto y un test de arquitectura prohíbe volver a hacerlo. Medido el 11 oct en un
+  Hebra 0.2.0-21 de Linux desechable: con el arreglo pinta «Sin sesión»; la 0.6.45 en la misma máquina la dejaba vacía.
+- Sesión. En un equipo en modo consulta, si el almacén de sesiones no contestaba al arrancar, el panel se quedaba en
+  «Error de sesión» hasta recargar el plugin. Ahora se vuelve a leer solo, a los 5 s y con espera creciente hasta 5
+  min, sin reintentar un almacén corrupto ni una sesión atascada, y se para al cerrar el plugin.
+- Diario. Se podan los diarios de sesiones selladas antes de la 0.6.13 que ninguna cola nombraba, y solo si la nota
+  del vault corresponde a esa sesión. Descartar una sesión atascada cuando su registro no está en memoria ya no deja
+  su diario sin podar.
+- Iconos. Si un icono remoto no carga, el panel de la sesión en vivo, Venta, el asesor de inventario, el historial de
+  precios y Logros muestran el marcador «?». El panel de la sesión en vivo ya no envía el referente al pedir iconos.
+- Token del juego. «Copiar token» lo copia al portapapeles antes de guardar los ajustes; si no se guardan, se repone
+  el token anterior y se vacía el portapapeles.
+- Hebra, candado de vida. Se queda activo en Linux: Hebra 0.2.0-21 no deja dos procesos sobre la misma biblioteca, y
+  tras matar al proceso que lo tiene, el siguiente lo toma en menos de un segundo.
+- Interno: la sesión del juego y la nota y exportación de la sesión salen del núcleo a piezas propias (el núcleo baja
+  de 3.940 a 3.596 líneas), la vista previa del borrado del historial dice «arrancando» antes del arranque en vez de
+  fallar, se quita un test duplicado, y `hebra:verify-install` lee ahora los eventos `plugins.*` del registro de
+  diagnóstico de Hebra para decir si cargó (`loaded`, `failed`, `version-mismatch`; `no-data` es un aviso, no un fallo).
+
 ## Release beta 0.6.45 - Estilos de Hebra con respaldo y addon que vuelve tras un cierre cancelado
 
 Se actualiza desde la 0.6.44 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
