@@ -1048,8 +1048,21 @@ export class ManualSessionStartService {
 		return this.currentHandle;
 	}
 
+	/**
+	 * A lease the coordinator grants after `dispose()` used to stay behind until its TTL ran out, so
+	 * no other window could take the session meanwhile (found reviewing lot Q). It is handed back at
+	 * once and the acquisition answers `disposed`, which every caller (start, recovery, startup
+	 * finalization, reclaim) already treats as a rejection with no side effects. The release is best
+	 * effort: the coordinator may already be closed, and `safeRelease` never throws.
+	 */
 	private async safeAcquire(sessionId: string): Promise<AcquireLeaseResult> {
-		try { return await this.coordinator.acquire(sessionId); } catch { return { status: 'error', code: 'unavailable' }; }
+		let result: AcquireLeaseResult;
+		try { result = await this.coordinator.acquire(sessionId); } catch { return { status: 'error', code: 'unavailable' }; }
+		if (this.disposed && (result.status === 'acquired' || result.status === 'already_owned')) {
+			await this.safeRelease(result.handle);
+			return { status: 'error', code: 'disposed' };
+		}
+		return result;
 	}
 
 	/**

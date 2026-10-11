@@ -1866,6 +1866,161 @@ describe('dispose while an automatic reclaim is in flight (DE-07)', () => {
 });
 
 /**
+ * A coordinator that answers an acquisition only after the service was disposed of used to leave
+ * that lease behind until its TTL ran out (lot R). The four paths that acquire one share
+ * `safeAcquire`; each case holds the acquisition, disposes of the service, then grants it.
+ */
+describe('a lease granted after dispose is handed back at once (lot R)', () => {
+	beforeEach(() => { clock = Date.parse('2026-08-13T07:59:59.500Z'); });
+
+	const input = { characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 };
+	const late: ActiveSessionLeaseHandle = { ...handle, instanceId: 'instance-late', fence: 7 };
+	const unavailable = { code: 'coordination_unavailable', message: 'Session coordination is unavailable.' };
+
+	type LateStatus = 'acquired' | 'already_owned';
+	interface Arranged {
+		service: ManualSessionStartService;
+		act: () => Promise<unknown>;
+		expectRejected: (result: unknown) => void;
+	}
+	interface Harness {
+		leases: SessionLeaseCoordinator;
+		options: ManualSessionStartServiceOptions;
+		tick: (periodMs: number) => void;
+	}
+
+	/** Leaves a session in the shared store through an earlier window that has since closed. */
+	async function savedBy(
+		runtimeStore: SessionRuntimeStore,
+		until: (service: ManualSessionStartService) => Promise<unknown>,
+	): Promise<void> {
+		const first = new ManualSessionStartService(coordinator(), {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		}, serviceOptions({ runtimeStore }));
+		await first.start(input);
+		await until(first);
+		await first.dispose();
+	}
+
+	const paths: ReadonlyArray<readonly [string, (harness: Harness, store: SessionRuntimeStore) => Promise<Arranged>]> = [
+		['start', async ({ leases, options }) => {
+			const service = new ManualSessionStartService(leases, {
+				capture: vi.fn(async () => structuredClone(captured)),
+			}, options);
+			return {
+				service,
+				act: () => service.start(input),
+				expectRejected: (result) => {
+					expect(result).toEqual({ status: 'failed', failure: unavailable });
+					expect(service.getState()).toEqual({ version: 1, status: 'idle' });
+				},
+			};
+		}],
+		['recovery', async ({ leases, options }, store) => {
+			await savedBy(store, async () => undefined);
+			const service = new ManualSessionStartService(leases, { capture: vi.fn(async () => structuredClone(captured)) }, options);
+			return {
+				service,
+				act: () => service.initialize(),
+				expectRejected: () => {
+					expect(service.getRecoveryState()).toMatchObject({
+						status: 'available',
+						state: { status: 'active' },
+						message: 'Session coordination is unavailable, so the saved session was left untouched.',
+					});
+					expect(service.getState()).toEqual({ version: 1, status: 'idle' });
+				},
+			};
+		}],
+		['startup finalization', async ({ leases, options }, store) => {
+			await savedBy(store, async (first) => {
+				await stopAfterSettlement(first);
+				expect(first.getState().status).toBe('provisional');
+			});
+			const service = new ManualSessionStartService(leases, {
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			}, options);
+			return {
+				service,
+				act: () => service.initialize(),
+				expectRejected: () => {
+					expect(service.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'provisional' } });
+					expect(service.getRecoveryState()).not.toHaveProperty('message');
+					expect(service.getState()).toEqual({ version: 1, status: 'idle' });
+				},
+			};
+		}],
+		['reclaim', async ({ leases, options, tick }) => {
+			const service = new ManualSessionStartService(leases, {
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			}, options);
+			await expect(service.start(input)).resolves.toMatchObject({ status: 'started' });
+			tick(10_000);
+			await vi.waitFor(() => expect(service.getState()).toMatchObject({ status: 'error', code: 'lease_lost' }));
+			return {
+				service,
+				act: () => service.stop(),
+				expectRejected: (result) => {
+					expect(result).toEqual({ status: 'failed', failure: unavailable });
+					expect(service.getState()).toMatchObject({ status: 'error', code: 'lease_lost' });
+				},
+			};
+		}],
+	];
+
+	it.each(paths.flatMap(([name, arrange]) => (['acquired', 'already_owned'] as const).map((status) => [name, status, arrange] as const)))(
+		'%s: a lease answered %s after dispose is released and the path is rejected without effects',
+		async (_name, status: LateStatus, arrange) => {
+			const intervals = new Map<number, { callback: () => void; periodMs: number }>();
+			let nextHandle = 1;
+			let held: Promise<void> | null = null;
+			let grant: () => void = () => undefined;
+			const acquire = vi.fn(async () => {
+				if (!held) return { status: 'acquired' as const, handle };
+				await held;
+				return { status, handle: late };
+			});
+			const leases = coordinator({ acquire, renew: vi.fn(async () => ({ status: 'lost' as const })) });
+			const store = new MemorySessionRuntimeStore();
+			const options = serviceOptions({
+				runtimeStore: store,
+				setInterval: vi.fn((callback: () => void, periodMs: number) => {
+					const id = nextHandle++;
+					intervals.set(id, { callback, periodMs });
+					return id;
+				}),
+				clearInterval: vi.fn((id: unknown) => { intervals.delete(id as number); }),
+			});
+			const tick = (periodMs: number): void => {
+				for (const entry of [...intervals.values()].filter((candidate) => candidate.periodMs === periodMs)) entry.callback();
+			};
+			const { service, act, expectRejected } = await arrange({ leases, options, tick }, store);
+
+			held = new Promise((resolve) => { grant = resolve; });
+			const acquiresBefore = acquire.mock.calls.length;
+			const flight = act();
+			await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(acquiresBefore + 1));
+			await service.dispose();
+			const retryAtDisposal = service.getAutoRetryAt();
+			const save = vi.spyOn(store, 'save');
+			const clear = vi.spyOn(store, 'clear');
+			grant();
+			const result = await flight;
+
+			expect(leases.release).toHaveBeenCalledWith(late);
+			expectRejected(result);
+			expect(save).not.toHaveBeenCalled();
+			expect(clear).not.toHaveBeenCalled();
+			expect([...intervals.values()]).toEqual([]);
+			expect(service.getAutoRetryAt()).toBe(retryAtDisposal);
+		},
+	);
+});
+
+/**
  * The start, stop, recovery and reclaim live in `ManualSessionTransitions` and read and write the
  * service's own fields through a port of functions. Each case pins one of those reads or writes
  * from the outside, so a port that copied a field at construction, or a setter that dropped its
