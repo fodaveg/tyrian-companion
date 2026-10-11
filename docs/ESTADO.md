@@ -32,7 +32,18 @@
 - Hebra de David en Fedora (rpm 0.2.0-25, registro de diagnóstico con `window`), 11 oct: `node
   scripts/verify-hebra-install.mjs` da PASS (`version=0.6.47; previous=0.6.46; release-bytes=match; carga=loaded
   (activada 0.6.47)`), juzgando la última sesión `principal`. Es instalación y carga en Hebra, no QA de sesión.
-- Pendiente: Obsidian/BRAT y la QA de sesión en hosts reales.
+- Candado de vida en Windows (HP-14, RT-14, DU-12; medido en Windows 11 el 11 oct, sin tocar lo de David): al revés que
+  en Linux y macOS, los Web Locks de WebView2 SÍ cruzan procesos que abren la misma carpeta de datos con las mismas
+  opciones, porque comparten el proceso `msedgewebview2.exe` (MEDIDO, 6 de 6). Hebra de Windows tiene candado de
+  instancia: el mutex `net.fodaveg.hebra-sim` de `tauri-plugin-single-instance` 2.4.2 (LEÍDO). Tras `taskkill /F` del
+  dueño, el otro recibe el candado 4-21 ms después de morir su renderer; con `taskkill /F /T` muere el navegador
+  compartido y el otro se queda sin WebView
+  ([2026-10-11-hebra-candado-windows](evidencia/2026-10-11-hebra-candado-windows.md)).
+- BRAT en Obsidian real (Windows 11, Obsidian 1.13.7, BRAT 2.2.0, perfil y bóveda desechables), 11 oct: `latest`
+  resuelve a 0.6.47, se instala y se activa; `main.js` y `styles.css` iguales al digest publicado, 0 errores de consola
+  y `verify-beta-runtime` PASS antes y después de reabrir. Sin medir: la actualización por BRAT desde una versión
+  anterior ([2026-10-11-obsidian-brat-windows](evidencia/2026-10-11-obsidian-brat-windows.md)).
+- Pendiente: actualización por BRAT desde una versión anterior y la QA de sesión en hosts reales.
 
 ## Canal 0.6.46 publicado: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
 
