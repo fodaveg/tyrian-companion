@@ -10,6 +10,8 @@ import { inspectDurableSessionNote } from './session-history';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 import type { AbandonedSessionState } from './session';
 import { renderCollectorStatusNote } from '../runtime/collector-status';
+import { LeyspringNoteWriter, type AchievementsVaultFile, type AchievementsVaultPort } from '../achievements/leyspring-note';
+import { LEYSPRING_MASTERY_ACHIEVEMENT_ID } from '../achievements/leyspring-set';
 import { WalletVaultSyncService, type WalletVaultPort } from '../wallet/wallet-vault-sync';
 import {
 	SESSION_HISTORY_CSV_FILE,
@@ -712,6 +714,40 @@ describe('durable session history', () => {
 		relabelled.contents.set('Notes/relabelled.md', (await note()).replace('tc_kind: "gw2_farming_session"', 'tc_kind: gw2_inventory_position'));
 		expect(relabelled.contents.get('Notes/relabelled.md')).toContain('tc_kind: gw2_inventory_position');
 		await expect(new SessionHistoryService(relabelled).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+	});
+
+	it('does not read the Leyspring achievements note as a corrupt session, but still rejects a session identity under that kind (Z2-1)', async () => {
+		const files = new Map<string, string>();
+		const achievementsVault: AchievementsVaultPort = {
+			file: (path): AchievementsVaultFile | null => files.has(path) ? { path } : null,
+			read: async (file) => files.get(file.path) ?? '',
+			createFolder: async () => undefined,
+			create: async (path, content) => { files.set(path, content); return { path }; },
+			process: async (file, update) => { const next = update(files.get(file.path)!); files.set(file.path, next); return next; },
+		};
+		const written = await new LeyspringNoteWriter(achievementsVault, '.obsidian').write('Tyrian Companion', {
+			capturedAt: '2026-10-10T08:40:12.000Z', locale: 'es', accountName: 'Tester.1234', accountRef: 'a'.repeat(24),
+			progress: new Map(), names: new Map([[LEYSPRING_MASTERY_ACHIEVEMENT_ID, 'Mastery']]), thresholds: new Map(),
+		} as never);
+		expect(written.status).toBe('created');
+		const [achievementsPath, achievementsContent] = [...files.entries()][0]!;
+		expect(achievementsContent).toContain('tc_account_ref');
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		vault.contents.set(achievementsPath, achievementsContent);
+		const history = new SessionHistoryService(vault);
+		await expect(history.scan()).resolves.toMatchObject({ status: 'ok', ignored: 1 });
+		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'written', sessions: 1 });
+		await expect(history.previewScrub(idleAuthority())).resolves.toMatchObject({ status: 'ready', sessions: 1 });
+		const withSessionRef = new MemoryVault();
+		withSessionRef.contents.set('Notes/ach.md', achievementsContent.replace('tc_account_ref:', `tc_session_ref: ${'b'.repeat(64)}\ntc_account_ref:`));
+		await expect(new SessionHistoryService(withSessionRef).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const relabelled = new MemoryVault();
+		relabelled.contents.set('Notes/relabelled.md', (await note()).replace('tc_kind: "gw2_farming_session"', 'tc_kind: gw2_achievements'));
+		await expect(new SessionHistoryService(relabelled).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const accountRefOnOtherKind = new MemoryVault();
+		accountRefOnOtherKind.contents.set('Notes/inv.md', inventoryNote().replace('tc_kind:', `tc_account_ref: ${'b'.repeat(64)}\ntc_kind:`));
+		await expect(new SessionHistoryService(accountRefOnOtherKind).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 	});
 
 	it('recognizes existing folders without attempting to read them as export files', async () => {

@@ -6,6 +6,7 @@ import { parseDurableSessionComparison, parseSessionSackObservation, type Durabl
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { INVENTORY_NOTE_KIND } from '../inventory/inventory-vault-sync';
+import { ACHIEVEMENTS_NOTE_KIND } from '../achievements/leyspring-note';
 import { COLLECTOR_STATUS_NOTE_KIND } from '../runtime/collector-status';
 import { WALLET_NOTE_KIND } from '../wallet/wallet-vault-sync';
 import { normalizeSessionOutputFolder } from './session-note-model';
@@ -1049,22 +1050,27 @@ function compareSessions(a: DurableSessionHistoryRecord, b: DurableSessionHistor
  * note that declares one of these kinds but carries a session's identity keys is not exempt.
  */
 const OTHER_TYRIAN_NOTE_KINDS: ReadonlySet<string> = new Set([
-	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND,
+	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND, ACHIEVEMENTS_NOTE_KIND,
 ]);
 const SESSION_IDENTITY_KEYS: ReadonlySet<string> = new Set(['tc_session_ref', 'tc_account_ref']);
+/** The Leyspring achievements note legitimately carries `tc_account_ref`; no other exempt kind does. */
+const KINDS_WITH_ACCOUNT_REF: ReadonlySet<string> = new Set([ACHIEVEMENTS_NOTE_KIND]);
 
 function declaresOtherTyrianNoteKind(content: string): boolean {
 	if (!content.startsWith('---\n')) return false;
 	const end = content.indexOf('\n---\n', 4);
 	if (end < 0) return false;
 	const kinds: string[] = [];
+	const identityKeys: string[] = [];
 	for (const line of content.slice(4, end).split('\n')) {
 		const match = /^(tc_[A-Za-z0-9_-]*):(?:\s*(.*))?$/u.exec(line);
 		if (!match) continue;
-		if (SESSION_IDENTITY_KEYS.has(match[1]!)) return false;
+		if (SESSION_IDENTITY_KEYS.has(match[1]!)) identityKeys.push(match[1]!);
 		if (match[1] === 'tc_kind') kinds.push(unquotedScalar(match[2] ?? ''));
 	}
-	return kinds.length === 1 && OTHER_TYRIAN_NOTE_KINDS.has(kinds[0]!);
+	if (kinds.length !== 1 || !OTHER_TYRIAN_NOTE_KINDS.has(kinds[0]!)) return false;
+	const accountRefAllowed = KINDS_WITH_ACCOUNT_REF.has(kinds[0]!);
+	return identityKeys.every((key) => key === 'tc_account_ref' && accountRefAllowed);
 }
 function unquotedScalar(value: string): string {
 	const trimmed = value.trim();
