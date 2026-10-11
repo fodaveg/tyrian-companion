@@ -633,7 +633,7 @@ describe('assisted proposal invalidation metrics', () => {
 });
 
 // DE-01, step 3a: 'persisted pilot recovery classification' moved with `classifyPilotRecovery` to
-// `src/runtime/session-facade.test.ts`, over the core's own `ensurePilotRecoveryPresented`.
+// `src/runtime/session-facade.test.ts`, over `PilotRecoveryRuntime.ensurePilotRecoveryPresented`.
 
 describe('manual session start command', () => {
 	it('resolves Cancel or Esc from the real start modal without calling its backend or mutating runtime', async () => {

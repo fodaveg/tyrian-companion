@@ -22,7 +22,8 @@
  * - building the services (`sessions`, `liveSessions`, `liveSessionLoot`, `sessionNotes`, the
  *   in-game session marker, the detector, the detection quality, the pending queue and its renewal
  *   registry, the connection) and the history's runtime authority the leases come from;
- * - the recovery's own pilot hooks (`pilotRecoveryIdentity`, `ensurePilotRecoveryPresented`);
+ * - the recovery's pilot hooks (`pilotRecoveryIdentity`, `ensurePilotRecoveryPresented`), which are
+ *   its `PilotRecoveryRuntime`'s (DE-01, group F);
  * - the summary's state (`sessionSummarySaveState`, `storedSessionLootSummary`,
  *   `savedSessionNotePath`) and the farming state a start captures (`farmingGroupContext`,
  *   `farmingReminders`), which the lifecycle writes and the core's note, summary and farming code
@@ -83,6 +84,7 @@ import type { SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { consulting, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
 import { detectionActionOutcome } from './core-outcomes';
 import type { FarmingGroupContext, FarmingSessionContext } from './farming-session-context';
+import type { PilotRecoveryRuntime } from './pilot-recovery-runtime';
 
 /** What a finished session's summary is known to be; the core's own field, reset by every way out. */
 export type SessionSummarySaveState = 'unknown' | 'saving' | 'saved' | 'failed';
@@ -142,6 +144,8 @@ export interface LiveSessionRuntimePort {
 		PilotMetricsRecorder,
 		'recoveryFinished' | 'sessionStarted' | 'sessionCompleted' | 'proposalDecided' | 'proposalPresented' | 'proposalExcluded'
 	>;
+	/** The core's `PilotRecoveryRuntime`: the recovery on screen as `sessionId:fence`, and its presentation to the journal. */
+	readonly pilotRecovery: Pick<PilotRecoveryRuntime, 'pilotRecoveryIdentity' | 'ensurePilotRecoveryPresented'>;
 	/** The account's connection, built in `onload` after this port: arming and the reconcile read it. */
 	readonly connection: Pick<ConnectionService, 'getState'>;
 	readonly assistedDetection: Pick<AssistedDetectionService, 'getState' | 'arm' | 'disarm' | 'dismissProposal' | 'armFromSnapshot'>;
@@ -174,10 +178,6 @@ export interface LiveSessionRuntimePort {
 	emitNotice(message: string, source: LiveSessionNoticeSource): void;
 	/** Opens the Companion view (a reviewed pending proposal shows it). */
 	activateView(): Promise<void>;
-	/** The recovery on screen as `sessionId:fence`, or null when there is none. */
-	pilotRecoveryIdentity(): string | null;
-	/** Records the recovery as presented and reads its saved kind back (the core's). */
-	ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
 	/** The note's input for a finished session's record (the core's). */
 	sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput;
 	/** True once a finished session's summary is proven saved, writing it first when needed (`SessionNoteRuntime`'s, through the core). */
@@ -243,14 +243,14 @@ export class LiveSessionRuntime {
 	private runRuntimeMutation(operation: () => void): boolean { return this.port.runRuntimeMutation(operation); }
 	private renderViews(): void { this.port.renderViews(); }
 	private emitNotice(message: string, source: LiveSessionNoticeSource): void { this.port.emitNotice(message, source); }
-	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecoveryIdentity(); }
+	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecovery.pilotRecoveryIdentity(); }
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput { return this.port.sessionNoteInput(runtime); }
 	private persistFarmingSessionContext(context: FarmingSessionContext): void { this.port.persistFarmingSessionContext(context); }
 	private getIngamePresence(): IngamePresenceSnapshot { return this.port.getIngamePresence(); }
 	// These hand back the core's own promise, so an await on them takes the ticks it took there.
 	private activateView(): Promise<void> { return this.port.activateView(); }
 	private ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
-		return this.port.ensurePilotRecoveryPresented(recoveryId);
+		return this.port.pilotRecovery.ensurePilotRecoveryPresented(recoveryId);
 	}
 	private ensureCompletedSummarySaved(): Promise<boolean> { return this.port.ensureCompletedSummarySaved(); }
 	private updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> { return this.port.updateSettings(settings); }

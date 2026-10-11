@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { PilotRecoveryRuntime } from './pilot-recovery-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
-import { TyrianCompanionCore } from './tyrian-companion-core';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import type { LocalDebugLogger } from '../core/local-debug-logger';
@@ -80,16 +80,18 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 			recoveryClassified: unused('pilotMetrics.recoveryClassified'),
 		},
 		pilotMetricsExporter: { preview: unused('pilotMetricsExporter.preview'), export: unused('pilotMetricsExporter.export') },
-		measuredPilotRecoveries: new Set<string>(),
-		pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
+		pilotRecovery: {
+			measuredPilotRecoveries: new Set<string>(),
+			pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
+			pilotRecoveryIdentity: () => null,
+			ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
+		},
 		liveSessions: null,
 		liveHistory: null,
 		notifyConsultMode: unused('notifyConsultMode'),
 		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		emitNotice: unused('emitNotice'),
 		renderViews: () => undefined,
-		pilotRecoveryIdentity: () => null,
-		ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
 		updateSettings: unused('updateSettings'),
 		...overrides,
 	} satisfies SessionRuntimePort;
@@ -113,33 +115,26 @@ describe('persisted pilot recovery classification', () => {
 	it('hydrates a reloaded classification and rejects an alternative without touching the journal', async () => {
 		const recoveryClassified = vi.fn(async () => false);
 		const recoveryId = 'session-a:7';
-		// The reload's hydration is the core's own `ensurePilotRecoveryPresented` (it stays with the
-		// recovery it measures); the classification it guards is `SessionRuntime`'s.
-		const core = {
+		// The reload's hydration is `PilotRecoveryRuntime.ensurePilotRecoveryPresented` (it stays with
+		// the recovery it measures); the classification it guards is `SessionRuntime`'s.
+		const pilotRecovery = new PilotRecoveryRuntime({
+			sessions: { getRecoveryState: unused('sessions.getRecoveryState') },
 			pilotMetrics: {
 				recoveryPresented: vi.fn(async () => true),
 				recoveryKind: vi.fn(async () => 'forced_restart' as const),
 			},
-			measuredPilotRecoveries: new Set<string>(),
-			pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensurePilotRecoveryPresented(this: typeof core, id: string): Promise<boolean>;
-		}).ensurePilotRecoveryPresented;
+		});
+		vi.spyOn(pilotRecovery, 'pilotRecoveryIdentity').mockReturnValue(recoveryId);
 		const runtime = new SessionRuntime(port({
 			pilotMetrics: { ...port().pilotMetrics, recoveryClassified },
-			measuredPilotRecoveries: core.measuredPilotRecoveries,
-			pilotRecoveryKinds: core.pilotRecoveryKinds,
-			pilotRecoveryIdentity: () => recoveryId,
-			ensurePilotRecoveryPresented: async (id) => await ensure.call(core, id),
+			pilotRecovery,
 		}));
 
-		await expect(ensure.call(core, recoveryId)).resolves.toBe(true);
-		expect(core.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
+		await expect(pilotRecovery.ensurePilotRecoveryPresented(recoveryId)).resolves.toBe(true);
+		expect(pilotRecovery.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
 		await expect(runtime.classifyPilotRecovery('organic')).resolves.toBe(false);
 		expect(recoveryClassified).not.toHaveBeenCalled();
-		expect(core.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
+		expect(pilotRecovery.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
 	});
 });
 
