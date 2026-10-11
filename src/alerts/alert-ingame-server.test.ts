@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	ALERT_INGAME_MAX_MESSAGE_BYTES,
+	ALERT_INGAME_START_ABORTED,
 	startAlertIngameServer,
 	type AlertIngameBridgeOptions,
 	type AlertIngameServerHandle,
@@ -561,6 +562,42 @@ describe('H13.9/H13.15 in-game alert server binding', () => {
 			await expect(startAlertIngameServer(createNodeTcpServerPort({ createServer }), occupiedPort, fastTimer, bridgeOptions(), [1]))
 				.rejects.toMatchObject({ code: 'EADDRINUSE' });
 		} finally { await new Promise<void>((resolve) => occupant.close(() => resolve())); }
+	});
+
+	/** Z5-2: closing the plugin ends the wait between bind attempts instead of sitting through all of them. */
+	it('aborts the wait between bind attempts at once and cancels the pending retry', async () => {
+		const occupant = createServer(() => undefined);
+		const occupiedPort = await listenOnFreePort(occupant);
+		try {
+			const parked: { retry: (() => void) | null; cancelled: unknown[] } = { retry: null, cancelled: [] };
+			const timer: AlertIngameServerTimer = {
+				schedule: (callback) => { parked.retry = callback; return 'retry-handle'; },
+				cancel: (handle) => { parked.cancelled.push(handle); parked.retry = null; },
+			};
+			const abort = new AbortController();
+			const flight = startAlertIngameServer(createNodeTcpServerPort({ createServer }), occupiedPort, timer, bridgeOptions(), [60_000, 60_000], abort.signal);
+			await waitFor(() => parked.retry !== null);
+
+			abort.abort();
+
+			await expect(flight).rejects.toMatchObject({ code: ALERT_INGAME_START_ABORTED });
+			expect(parked.cancelled).toEqual(['retry-handle']);
+		} finally { await new Promise<void>((resolve) => occupant.close(() => resolve())); }
+	});
+
+	it('closes a server whose bind finished after the abort instead of handing it back', async () => {
+		const closed: string[] = [];
+		const abort = new AbortController();
+		const tcp = {
+			listen: async () => {
+				abort.abort();
+				return { port: 1, address: '127.0.0.1', close: async () => { closed.push('closed'); } };
+			},
+		} as unknown as Parameters<typeof startAlertIngameServer>[0];
+
+		await expect(startAlertIngameServer(tcp, 1, REAL_TIMER, bridgeOptions(), [1], abort.signal))
+			.rejects.toMatchObject({ code: ALERT_INGAME_START_ABORTED });
+		expect(closed).toEqual(['closed']);
 	});
 
 	/**

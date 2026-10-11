@@ -167,6 +167,8 @@ export class AlertRuntime {
 	private alertIngameServer: AlertIngameServerHandle | null = null;
 	private alertIngameServerPort: number | null = null;
 	private alertIngameServerFlight: Promise<AlertIngameServerHandle | null> | null = null;
+	/** Cancels the bind retries of `alertIngameServerFlight`; closing the bridge must not wait them out (Z5-2). */
+	private alertIngameStartAbort: AbortController | null = null;
 	private alertIngameCloseFlight: Promise<void> | null = null;
 	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
 	private alertIngameServerErrorCode: string | null = null;
@@ -431,6 +433,8 @@ export class AlertRuntime {
 		}
 		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) return null;
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
+		const startAbort = new AbortController();
+		this.alertIngameStartAbort = startAbort;
 		const flight = startAlertIngameServer(
 			this.host.tcpServer,
 			port,
@@ -449,6 +453,8 @@ export class AlertRuntime {
 				onFarmingError: (error) => { this.port.recordIngameSessionFailure(error); },
 				live: this.liveIngamePort(),
 			},
+			undefined,
+			startAbort.signal,
 		)
 			.then(async (server) => {
 				if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) {
@@ -464,6 +470,8 @@ export class AlertRuntime {
 				return server;
 			})
 			.catch((error: unknown) => {
+				// A start that was cancelled because the bridge is closing is not a failure to report.
+				if (startAbort.signal.aborted) return null;
 				// H15.17 (2026-09-10 incident): this used to discard the rejection entirely, so a
 				// port already in use or denied by the OS looked identical to the addon simply not
 				// being enabled: no log line, and the settings row kept showing the toggle as fine.
@@ -477,7 +485,10 @@ export class AlertRuntime {
 				this.settingTab.refreshAlertIngameServerRow();
 				return null;
 			})
-			.finally(() => { this.alertIngameServerFlight = null; });
+			.finally(() => {
+				this.alertIngameServerFlight = null;
+				if (this.alertIngameStartAbort === startAbort) this.alertIngameStartAbort = null;
+			});
 		this.alertIngameServerFlight = flight;
 		const server = await flight;
 		// HP-05: after the bind's own retries, a port held by another app (usually the other host).
@@ -527,6 +538,7 @@ export class AlertRuntime {
 	async closeAlertIngameServer(): Promise<void> {
 		if (this.alertIngameCloseFlight !== null) return await this.alertIngameCloseFlight;
 		const flight = (async () => {
+			this.alertIngameStartAbort?.abort();
 			await this.alertIngameServerFlight;
 			const server = this.alertIngameServer;
 			if (server === null) return;
