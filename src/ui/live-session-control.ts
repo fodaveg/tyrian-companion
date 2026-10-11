@@ -1,6 +1,7 @@
 import type { CollectorMode } from '../core/settings';
 import type { IngamePresenceSnapshot } from '../alerts/alert-ingame-presence';
 import type { LiveSessionViewV1 } from '../sessions/live-session-model';
+import { recoveryAllowsLiveStart } from '../sessions/manual-session-start-model';
 import type { SessionRecoveryState } from '../sessions/manual-session-start-service';
 import type { SessionState } from '../sessions/session';
 import type { ProductActionController } from './product-action-controller';
@@ -13,6 +14,8 @@ export interface LiveSessionControlSource {
 	getCollectorMode?(): CollectorMode;
 	/** The live session cannot finish by itself (the core's own rule); the shared discard then belongs to it. */
 	isLiveSessionStuck?(): boolean;
+	/** The output folder is not in the library and only a press of «Aplicar» creates it: no session can start. */
+	isOutputFolderMissing?(): boolean;
 	getSessionState(): SessionState;
 	getSessionRecoveryState(): SessionRecoveryState;
 }
@@ -30,7 +33,7 @@ export function oldSessionBlocksStart(
 	recovery: SessionRecoveryState,
 ): boolean {
 	if (live.phase !== 'idle') return false;
-	if (recovery.status !== 'none' && recovery.status !== 'available') return true;
+	if (!recoveryAllowsLiveStart(recovery)) return true;
 	return ['active', 'starting', 'stopping', 'provisional', 'error'].includes(session.status);
 }
 
@@ -66,6 +69,7 @@ export function liveSessionControl(
 				canStop: finish?.available === true,
 				busy: start?.state === 'running' ? 'start' : finish?.state === 'running' ? 'stop' : null,
 				oldSession: blocked ? { canDiscard: discard?.available === true && !liveStuck } : null,
+				...(source.isOutputFolderMissing?.() === true ? { outputFolderMissing: true } : {}),
 				stuckSession: liveStuck ? discard?.available === true : !blocked && view().phase !== 'idle' && discard?.available === true,
 			};
 		},

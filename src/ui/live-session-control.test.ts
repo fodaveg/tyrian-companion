@@ -18,7 +18,10 @@ describe('which old session blocks a new live one', () => {
 		['an abandoned legacy session', status('abandoned'), recovery('none'), false],
 		['a recovery whose owner is still alive', idle, recovery('busy'), true],
 		['a recovery being worked on', idle, recovery('working'), true],
-		['an unreadable recovery', idle, recovery('error'), true],
+		['a corrupt recovery', idle, { status: 'error', code: 'corrupt' } as unknown as SessionRecoveryState, true],
+		// 0.6.47 (RT-17): a store that did not answer says nothing about what is saved; the runtime lets the start through
+		// and the start asks again, so the panel must not claim an old session blocks it.
+		['a recovery whose store did not answer', idle, { status: 'error', code: 'unavailable' } as unknown as SessionRecoveryState, false],
 		['a legacy session still active', status('active'), recovery('none'), true],
 		['a legacy session stopping', status('stopping'), recovery('none'), true],
 		['a legacy session in error', status('error'), recovery('none'), true],
@@ -60,6 +63,12 @@ describe('the one button reaches the product actions that already exist', () => 
 			gameConnected: true, consult: false, canStart: true, canStop: false, busy: 'stop', oldSession: { canDiscard: true }, stuckSession: false });
 		const away = source({ getIngamePresence: () => ({ status: 'lost' }) as never, getCollectorMode: () => 'consult' });
 		expect(liveSessionControl(away.value, view).getLiveSessionControl()).toMatchObject({ gameConnected: false, consult: true, oldSession: null });
+	});
+
+	it('passes on that the output folder is missing, and says nothing when it is not', () => {
+		const missing = source({ isOutputFolderMissing: () => true });
+		expect(liveSessionControl(missing.value, view).getLiveSessionControl()).toMatchObject({ outputFolderMissing: true });
+		expect(liveSessionControl(source().value, view).getLiveSessionControl()).not.toHaveProperty('outputFolderMissing');
 	});
 
 	it('offers the discard of a stuck live session only when a live session exists and the shared action allows it', () => {

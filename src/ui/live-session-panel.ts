@@ -39,6 +39,8 @@ export interface LiveSessionControlState {
 	oldSession: { canDiscard: boolean } | null;
 	/** The live session cannot finish by itself and the player may drop it (after a confirmation the host asks). */
 	stuckSession?: boolean;
+	/** The output folder is not in the library yet: no session starts until «Aplicar» in Settings creates it. */
+	outputFolderMissing?: boolean;
 }
 
 export interface LiveSessionPanelActions extends Pick<LiveSessionDataActions, 'getLocale' | 'getLiveSessionView' | 'getLiveSessionEntity' | 'listLiveSessionHistory' | 'getLiveSessionSetAside'> {
@@ -566,6 +568,7 @@ export class LiveSessionPanel {
 		let hint = '';
 		if (control.consult) hint = this.copy('hintConsult');
 		else if (startMode && !control.gameConnected) hint = this.copy('hintGameOff');
+		else if (startMode && control.outputFolderMissing === true) hint = this.copy('hintOutputFolder');
 		else if (startMode && !oldBlocks && view.sessionId === null && this.failure === null) hint = this.copy('hintReady');
 		this.setText(this.hint, hint);
 		this.hint.hidden = hint === '';

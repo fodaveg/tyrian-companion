@@ -89,6 +89,16 @@ export type SessionRecoveryState =
 	 */
 	| { status: 'error'; code: 'corrupt' | 'unavailable'; message: string };
 
+/**
+ * Whether the saved-session recovery lets a live session start: nothing is pending or it can be taken as it is. A store that
+ * did not answer (`unavailable`) says nothing about what is saved; `startIngameSession` asks it again before it goes on
+ * (Z2-2). A corrupt record keeps blocking. The runtime and the panel both read this: one rule, so the panel never claims
+ * a block the start does not apply.
+ */
+export function recoveryAllowsLiveStart(recovery: SessionRecoveryState): boolean {
+	return recovery.status === 'none' || recovery.status === 'available' || (recovery.status === 'error' && recovery.code === 'unavailable');
+}
+
 export type SessionRecoveryResult =
 	| { status: 'recovered'; state: SessionState }
 	| { status: 'discarded' }

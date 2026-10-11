@@ -85,6 +85,47 @@ describe('the session the marker sees', () => {
 	});
 });
 
+// 0.6.47 on a new Hebra library: a session opened with no output folder could not write its note and then looped
+// (two errors every 5 s, `source_conflict` on each `live_open`). Only a press of «Aplicar» creates the folder
+// (docs/ARCHITECTURE.md, «Carpeta de salida ausente en Hebra»), so no start is accepted until it is there.
+describe('a start with no output folder', () => {
+	const vault = (folderExists: boolean, canCreate = true) => ({
+		exists: (path: string) => folderExists && path === 'Tyrian Companion',
+		...(canCreate ? { createOutputFolder: async () => true } : {}),
+	});
+	const runtimeWith = (folderExists: boolean, canCreate = true) => new IngameSessionRuntime(port({
+		settings: { alertIngameEnabled: true, outputFolder: 'Tyrian Companion' }, host: { vault: vault(folderExists, canCreate) },
+	}));
+
+	it('is not accepted on a host that needs the press to create it, and the panel can ask why', () => {
+		const runtime = runtimeWith(false);
+		expect(runtime.isOutputFolderMissing()).toBe(true);
+		expect(runtime.ingameSessionView().canStart).toBe(false);
+	});
+
+	it('is accepted once the folder is there', () => {
+		const runtime = runtimeWith(true);
+		expect(runtime.isOutputFolderMissing()).toBe(false);
+		expect(runtime.ingameSessionView().canStart).toBe(true);
+	});
+
+	it('is accepted on a host that creates the folder by itself on write (no `createOutputFolder`)', () => {
+		const runtime = runtimeWith(false, false);
+		expect(runtime.isOutputFolderMissing()).toBe(false);
+		expect(runtime.ingameSessionView().canStart).toBe(true);
+	});
+
+	it('refuses startIngameSession without touching the sessions', async () => {
+		const start = vi.fn(async () => 'session-x');
+		const runtime = new IngameSessionRuntime(port({
+			settings: { alertIngameEnabled: true, outputFolder: 'Tyrian Companion' }, host: { vault: vault(false) },
+			liveSessions: { getRuntime: () => null, start, stop: vi.fn(), presence: vi.fn() },
+		}));
+		await expect(runtime.startIngameSession('Astra Uno')).resolves.toBeNull();
+		expect(start).not.toHaveBeenCalled();
+	});
+});
+
 describe('the link in the host\'s local storage', () => {
 	it('a save the storage refuses is recorded by error class only, and a host without the storage keeps nothing', () => {
 		const save = vi.fn(() => { throw new RangeError('quota exceeded for tyrian-companion:ingame-session-link'); });
