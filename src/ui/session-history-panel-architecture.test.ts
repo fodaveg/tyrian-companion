@@ -30,9 +30,15 @@ describe('H9.7 durable session history boundary', () => {
 		expect(calleeChains(companion)).toContain('mountSessionHistoryPanel');
 		expect(classMethodCallChains(companion, 'TyrianCompanionView', 'onOpen')
 			.some((chain) => chain.endsWith('loadSessionHistory'))).toBe(false);
+		// DE-01, step 3f: the only scan of the history lives in `SessionRuntime.loadSessionHistory`; the
+		// core hands the view's call over and adds none. Its answers are run in `session-facade.test.ts`.
+		const facade = readModuleSource('src/runtime/session-facade.ts');
 		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'loadSessionHistory'))
+			.toContain('this.session.loadSessionHistory');
+		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(0);
+		expect(classMethodCallChains(facade, 'SessionRuntime', 'loadSessionHistory'))
 			.toContain('this.sessionHistory.scan');
-		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
+		expect(calleeChains(facade).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
 		// DE-01, step 3e: the one lookup of a finished session's note across the vault (`readSession`)
 		// lives in `SessionNoteRuntime`, and nothing else may add another, there or in the core. What
 		// each summary path asks of the history is run in `src/main-session-summary-lookup.test.ts`.
