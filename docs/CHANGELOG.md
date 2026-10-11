@@ -1,5 +1,17 @@
 # Changelog
 
+## Release beta 0.6.48 - El panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta
+
+Se actualiza desde la 0.6.47 publicada. Los dos fallos se encontraron el 11 oct midiendo la 0.6.47 en un Hebra de Linux
+desechable; los arreglos no se han visto todavía en un Obsidian ni en un Hebra reales. [ESTADO](ESTADO.md) separa lo
+medido de lo pendiente.
+
+- Sesión. Tras recuperar el almacén de sesiones al pasar a recolector, el panel decía «Una sesión antigua impide abrir
+  otra» aunque iniciar sí estaba permitido. Ahora el panel y el arranque usan la misma regla.
+- Hebra, carpeta de salida. En una biblioteca donde aún no se ha pulsado «Aplicar», una sesión en vivo se abría, no
+  podía escribir su nota, registraba dos errores cada 5 s y bloqueaba la siguiente. Ahora no se abre ninguna sesión
+  mientras falte la carpeta y el panel dice que hay que pulsar «Aplicar» en Ajustes. En Obsidian no cambia nada.
+
 ## Release beta 0.6.47 - La sesión se recupera al pasar a recolector con el almacén mudo
 
 Se actualiza desde la 0.6.46 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales de un

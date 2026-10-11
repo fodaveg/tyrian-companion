@@ -1,5 +1,24 @@
 # Estado
 
+## Candidato 0.6.48: el panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.48` sobre el canal 0.6.47 publicado
+(`026a4d5d`, más su documentación y evidencias hasta `5007acae`); añade los metadatos de versión (`manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- Sin verificar: nada de la 0.6.48 se ha visto en un Obsidian ni en un Hebra reales. Los dos fallos salen de la medición
+  de la 0.6.47 en un Hebra desechable ([2026-10-11-hebra-0647](evidencia/2026-10-11-hebra-0647.md)).
+- `6bc09b24`: `recoveryAllowsLiveStart` (`src/sessions/manual-session-start-model.ts`) es la única regla de si la
+  recuperación de la sesión guardada deja iniciar; la usan `IngameSessionRuntime` y `oldSessionBlocksStart`
+  (`src/ui/live-session-control.ts`). Antes la UI trataba el almacén mudo (`error`/`unavailable`) como bloqueo y el
+  arranque no. Test rojo antes y verde después en `src/ui/live-session-control.test.ts`.
+- `7634cfae`: `IngameSessionRuntime.isOutputFolderMissing` (host con `createOutputFolder` y la carpeta de salida
+  ausente) deja `canStart` en falso; el panel muestra `hintOutputFolder`. Cuatro tests del runtime rojos antes y verdes
+  después. Una sesión ya activa cuya carpeta desaparezca después no se cubre. Contrato: decisión «Carpeta de salida
+  ausente en Hebra» de [ARCHITECTURE](ARCHITECTURE.md), que sigue sin crear la carpeta fuera de «Aplicar».
+- Pendiente: gate, publicación y verlo en hosts reales.
+
 ## Canal 0.6.47 publicado: la sesión se recupera al pasar a recolector con el almacén mudo (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.47` = `026a4d5d` (atestación; candidato `ee367a21`,
