@@ -454,11 +454,16 @@ export class SessionRuntime {
 		} finally { this.settingTab.refreshSessionHistoryRow(); }
 	}
 
-	/** What the history's runtime authority reads before a scrub: the session, its recovery and the detector as they stand. */
+	/**
+	 * What the history's runtime authority reads before a scrub: the session, its recovery and the detector as they stand.
+	 * A live session in `error` with no record in memory is a store this host could not read (A-2): it may hold a sealed or a
+	 * running session, so it stands as `error` instead of falling through to the manual service, which may read idle.
+	 */
 	sessionHistoryScrubGate(): SessionHistoryScrubGate {
 		const live = this.liveSessions?.getRuntime() ?? null;
+		const liveUnread = live === null && this.liveSessions?.getView(0, 1).phase === 'error';
 		return {
-			sessionStatus: live?.phase ?? this.sessions.getState().status,
+			sessionStatus: live?.phase ?? (liveUnread ? 'error' : this.sessions.getState().status),
 			sealedRetirable: this.liveSessions?.canRetireSealed() ?? false,
 			recoveryStatus: this.sessions.getRecoveryState().status,
 			detectorStatus: this.assistedDetection.getState().status,
