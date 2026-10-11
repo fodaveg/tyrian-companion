@@ -4,8 +4,7 @@ import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type 
 import type { ViewPlacement } from './view-placement';
 
 /**
- * DE-01, step 3f: `LiveViewRuntime` on its own, over a port checked with `satisfies`. The coalescing
- * of the repaint is also exercised through the real core in `src/main-render-coalescing.test.ts`.
+ * DE-01, step 3f: `LiveViewRuntime` on its own, over a port checked with `satisfies`.
  */
 
 interface Spies {

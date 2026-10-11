@@ -2949,8 +2949,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * instead (`shown`), the one other place it may appear. The refusal is logged by error class
 	 * only, never with the error's message, and the call still resolves: the settings button and the
 	 * palette command share this path, so both get the same fallback. When the selection of a
-	 * generated or recovered token cannot be saved, it rejects before the clipboard or the modal:
-	 * both callers then show their existing failure copy.
+	 * generated or recovered token cannot be saved, it rejects without the modal: both callers then
+	 * show their existing failure copy.
+	 *
+	 * HP-15: the clipboard write starts before the selection is saved, because WebKit only accepts it
+	 * while the click's activation lasts and the save's `await` may spend it. If that save fails, the
+	 * clipboard is overwritten with an empty string (best effort, since the activation is gone by
+	 * then) so the token the bridge would reject does not stay there.
 	 */
 	async copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome> {
 		return await this.deliverAlertIngameSecret(false);
@@ -2971,27 +2976,43 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	private async deliverAlertIngameSecret(replace: boolean): Promise<AlertIngameSecretCopyOutcome> {
-		const deliver = async (secret: string, outcome: 'copied' | 'generated'): Promise<AlertIngameSecretCopyOutcome> => {
+		// HP-15: WebKit (Hebra on Linux, macOS and iOS) only lets `writeText` through while the
+		// click's transient activation lasts, and any `await` before it may spend it. So the write
+		// starts here, in the click's own task (an async function runs synchronously up to its first
+		// `await`), and settles to whether it landed. A refusal is logged by error class only.
+		const startCopy = async (text: string): Promise<boolean> => {
 			try {
-				await this.host.clipboard.writeText(secret);
-				return outcome;
+				await this.host.clipboard.writeText(text);
+				return true;
 			} catch (error) {
 				this.localDebugActions?.event({
 					component: 'notification', action: 'command_execute', state: 'ingame_secret_copy',
 					level: 'warn', phase: 'failure', code: 'unavailable',
 					details: { reason: unmappedErrorLogDetails(error).reason },
 				});
-				const translator = createTranslator(this.settings.language);
-				new AlertIngameSecretModal(this.host.ui, secret, {
-					title: translator.t('settings.alerts.ingame.secret.name'),
-					hint: translator.t('settings.alerts.ingame.secret.manualCopy'),
-				}).open();
-				return 'shown';
+				return false;
 			}
+		};
+		// Only a token that is selected reaches the fallback modal: a refused copy shows it there.
+		const deliver = async (secret: string, outcome: 'copied' | 'generated', copying: Promise<boolean>): Promise<AlertIngameSecretCopyOutcome> => {
+			if (await copying) return outcome;
+			const translator = createTranslator(this.settings.language);
+			new AlertIngameSecretModal(this.host.ui, secret, {
+				title: translator.t('settings.alerts.ingame.secret.name'),
+				hint: translator.t('settings.alerts.ingame.secret.manualCopy'),
+			}).open();
+			return 'shown';
+		};
+		// The selection was not saved, so the copied token is not the one the bridge accepts: put a
+		// replaced token back and overwrite the clipboard. WebKit may refuse that second write (the
+		// activation is gone by now); the caller's failure copy still says nothing was copied.
+		const withdraw = async (previous: string | null, copying: Promise<boolean>): Promise<void> => {
+			if (previous !== null) this.host.secrets.set(ALERT_INGAME_SECRET_ID, previous);
+			if (await copying) await startCopy('');
 		};
 		const run = async (): Promise<AlertIngameSecretCopyOutcome> => {
 			const current = this.readAlertIngameSecret();
-			if (!replace && isUsableIngameBridgeSecret(current)) return await deliver(current, 'copied');
+			if (!replace && isUsableIngameBridgeSecret(current)) return await deliver(current, 'copied', startCopy(current));
 			const stored = !replace && this.host.secrets.list().includes(ALERT_INGAME_SECRET_ID)
 				? this.host.secrets.get(ALERT_INGAME_SECRET_ID) : null;
 			const secret = isUsableIngameBridgeSecret(stored)
@@ -3001,6 +3022,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			const previous = replace && this.host.secrets.list().includes(ALERT_INGAME_SECRET_ID)
 				? this.host.secrets.get(ALERT_INGAME_SECRET_ID) : null;
 			if (secret !== stored) this.host.secrets.set(ALERT_INGAME_SECRET_ID, secret);
+			// Copied before the selection is saved (HP-15), and read only after it.
+			const copying = startCopy(secret);
 			// Unsaved (`blocked` while the runtime starts) means the entry is not selected and the
 			// bridge would reject this token: fail instead of handing it out. A first token stays in
 			// SecretStorage, so the next attempt reuses it rather than minting another.
@@ -3008,14 +3031,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			try {
 				selection = await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
 			} catch (error) {
-				if (previous !== null) this.host.secrets.set(ALERT_INGAME_SECRET_ID, previous);
+				await withdraw(previous, copying);
 				throw error;
 			}
 			if (selection.status !== 'saved') {
-				if (previous !== null) this.host.secrets.set(ALERT_INGAME_SECRET_ID, previous);
+				await withdraw(previous, copying);
 				throw new Error('The in-game bridge token selection was not saved.');
 			}
-			return await deliver(secret, 'generated');
+			return await deliver(secret, 'generated', copying);
 		};
 		return await (this.localDebugActions?.run(
 			{ component: 'notification', action: 'command_execute', state: 'ingame_secret_copy' }, run,

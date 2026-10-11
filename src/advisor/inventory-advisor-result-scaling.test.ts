@@ -1,10 +1,28 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { sha256InventoryRulePack, validDecisionAgainstInput, validDecisionAgainstValidatedInput } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+
+/**
+ * Work meter: the size of everything handed to `jsonRoundTrip`, the walk over a whole value that the
+ * input contract runs. Re-validating the whole input per decision hands it the input once per
+ * decision, so the total grows with decisions x input size. No clock is involved, so a loaded
+ * machine cannot fail it.
+ */
+const walked = vi.hoisted(() => ({ chars: 0 }));
+vi.mock('../core/json-round-trip', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../core/json-round-trip')>();
+	return {
+		...original,
+		jsonRoundTrip: (value: unknown): boolean => {
+			walked.chars += JSON.stringify(value)?.length ?? 0;
+			return original.jsonRoundTrip(value);
+		},
+	};
+});
 
 /**
  * Regression for the 29 sep 2026 freeze: on David's real account (1230 lines, 1632 decisions) the
@@ -14,21 +32,34 @@ import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
  * `validDecisionAgainstInput`: O(decisions × input size). The result contract now validates the
  * input once and checks each decision against the already-validated input.
  *
- * The threshold is deliberately loose (the same fixture cost 10-20 s before the fix on this
- * machine, and well under a second after it), so it separates the complexity classes rather than
- * timing a machine.
+ * It does not time anything (a wall-clock budget fails on a loaded machine without the code getting
+ * worse): it measures what the input contract walks while classifying and verifying 100 and then 200
+ * lines. Linear work doubles; the quadratic version (10-20 s on the 600-line fixture before the fix)
+ * multiplies it by about 4.
  */
 describe('inventory advisor result validation scales with the account', () => {
-	it('validates one large classification in bounded time', () => {
+	it('validates one large classification', () => {
 		const engineInput = largeMarketFixture(600);
-		const startedAt = performance.now();
 		const result = classifyInventoryAdvisor(engineInput);
-		const elapsedMs = performance.now() - startedAt;
 		expect(result.status).toBe('ready');
 		expect(result.report?.lines.length).toBe(600);
 		expect(result.envelope?.decisions.filter((decision) => decision.action === 'sell').length).toBe(600);
 		expect(isInventoryAdvisorResultForInput(result, engineInput.input, engineInput.knowledgePack)).toBe(true);
-		expect(elapsedMs).toBeLessThan(4_000);
+	});
+
+	it('does work that grows linearly with the lines, not with lines times input size', () => {
+		const measure = (count: number): number => {
+			const engineInput = largeMarketFixture(count);
+			walked.chars = 0;
+			const result = classifyInventoryAdvisor(engineInput);
+			expect(isInventoryAdvisorResultForInput(result, engineInput.input, engineInput.knowledgePack)).toBe(true);
+			return walked.chars;
+		};
+		const small = measure(100);
+		const large = measure(200);
+		expect(small).toBeGreaterThan(0);
+		// Linear is 2; quadratic is 4. 3 leaves room for the constant part without hiding the square.
+		expect(large / small).toBeLessThan(3);
 	});
 
 	it('keeps the public per-decision check equal to the validated-input one', () => {

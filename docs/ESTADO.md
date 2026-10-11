@@ -1,8 +1,34 @@
 # Estado
 
-## Candidato 0.6.44: arreglos del audit de bugs del 11 oct (11 oct 2026)
+## Canal 0.6.45 publicado: estilos de Hebra con respaldo, tests del falso 1.4.0 y addon 0.8.7 (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.44` sobre el canal 0.6.43 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.45` = `88f1ff4b` (atestación; candidato `31f526ad`,
+árbol `334a6c09`). Gate local verde (check 9/9 con 7454 tests, guardrails 25/25, BRAT PASS); CI 38121926786 y Release
+38122498326 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.45` sobre el canal 0.6.44 publicado
+(`3020a593`, más la documentación del canal `73db2993`); añade los metadatos de versión (`manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.45 se ha visto en un Obsidian ni en un Hebra reales,
+  y el cierre cancelado del addon 0.8.7 no se ha visto en un juego real.
+- HP-10: `src/host/hebra/tyrian-host.css` da valor de respaldo a las siete variables de Hebra que usaba sin él
+  (`--motion-fade-standard`, `--motion-ease-standard`, `--motion-duration-standard`, `--hit-touch-dense`,
+  `--on-danger`, `--radius-pill`, `--warning-soft`), con los valores de `hebra/src/app.css`; `docs/HEBRA-CSS-VARIABLES.md`
+  las recoge.
+- HP-16: `src/host/hebra/hebra-host-ui.test.ts` cubre el rechazo de ids repetidos de comando, bloque de código y
+  elemento de estado del falso de `hebra-plugin-api` 1.4.0.
+- GR-11: `src/advisor/inventory-advisor-result-scaling.test.ts` ya no mide con reloj de pared: cuenta el trabajo de
+  `jsonRoundTrip` con 100 y 200 líneas y exige una razón menor que 3; con la versión cuadrática sale 3,836 (rojo).
+- Addon de Nexus 0.8.7 (AF10, repo `tyrian-companion-nexus`, publicado aparte con etiqueta `0.8.7` = `267e3f4`): un
+  WM_CLOSE sin WM_DESTROY y con el tick de Mumble Link moviéndose 5 s después se toma como cierre cancelado y el
+  addon vuelve a conectar. 415 tests, 257 importaciones (las mismas que la 0.8.6) y una exportación.
+
+## Canal 0.6.44 publicado: arreglos del audit de bugs del 11 oct (11 oct 2026)
+
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.44` = `3020a593` (atestación; candidato `352182d9`,
+árbol `613daf29`). Gate local verde (check 9/9 con 7451 tests, guardrails 25/25, BRAT PASS); CI 38120578013 y Release
+38121235170 en verde; `release:brat-verify` PASS con 8 assets, release normal. Addon de Nexus 0.8.7 publicado aparte
+(etiqueta `0.8.7` = `267e3f4`, AF10). Rama `integracion/0.6.44` sobre el canal 0.6.43 publicado
 (`bbc1ddae`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 

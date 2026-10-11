@@ -5,7 +5,7 @@
 		"catch_clause": 619,
 		"promise_catch": 61,
 		"void_expression": 145,
-		"callback_registration": 252
+		"callback_registration": 257
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -10000,9 +10000,9 @@
 				{
 					"id": "483ff675cc19c1d3654a9ad25e93e0cb5a23cda2",
 					"kind": "callback_registration",
-					"line": 487,
+					"line": 490,
 					"column": 18,
-					"endLine": 491,
+					"endLine": 494,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10017,9 +10017,9 @@
 				{
 					"id": "0e0e21d3664b5c025c35a8aac9c61d5c864a9e94",
 					"kind": "promise_catch",
-					"line": 487,
+					"line": 490,
 					"column": 18,
-					"endLine": 496,
+					"endLine": 499,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10034,9 +10034,9 @@
 				{
 					"id": "ea755acba0cb7d892da98e98a2082873f5a179ae",
 					"kind": "callback_registration",
-					"line": 487,
+					"line": 490,
 					"column": 18,
-					"endLine": 500,
+					"endLine": 503,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10051,9 +10051,9 @@
 				{
 					"id": "254ed92e0b04ee2b9deccc5b7a97d045d96b4edb",
 					"kind": "callback_registration",
-					"line": 532,
+					"line": 535,
 					"column": 18,
-					"endLine": 536,
+					"endLine": 539,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10068,9 +10068,9 @@
 				{
 					"id": "1c9e9f7942d97b2f4f562fe299333c4c42229e1f",
 					"kind": "promise_catch",
-					"line": 532,
+					"line": 535,
 					"column": 18,
-					"endLine": 544,
+					"endLine": 547,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10085,9 +10085,9 @@
 				{
 					"id": "df6af941d19a62ca62fd63564e53b6d7eee46721",
 					"kind": "callback_registration",
-					"line": 532,
+					"line": 535,
 					"column": 18,
-					"endLine": 548,
+					"endLine": 551,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10108,9 +10108,9 @@
 				{
 					"id": "9a04ee82e89d51b956e3f2bd6cb751fbfb0a3236",
 					"kind": "catch_clause",
-					"line": 306,
+					"line": 315,
 					"column": 3,
-					"endLine": 306,
+					"endLine": 315,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10124,9 +10124,9 @@
 				{
 					"id": "09b68f795f462d5ad7cf8051e8db247c5e26d31b",
 					"kind": "catch_clause",
-					"line": 336,
+					"line": 345,
 					"column": 5,
-					"endLine": 343,
+					"endLine": 352,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10138,9 +10138,9 @@
 				{
 					"id": "d7b089acfd20d81344d3694195f34ef6ac3d4d3e",
 					"kind": "catch_clause",
-					"line": 497,
+					"line": 506,
 					"column": 5,
-					"endLine": 500,
+					"endLine": 509,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10457,11 +10457,11 @@
 					"reason": "Allowlisted catch_clause: The \"toggleTrackedAchievement\" owner answers refused with a \"fallback_return\" when the settings save threw; that failure was already recorded by updateSettings under settings_save, and the section says it in its live region. Verified recovery: \"fallback_return\" in \"toggleTrackedAchievement\"."
 				},
 				{
-					"id": "d8fcad351b0e3fabc77a7144ea5146c2e4c808a7",
+					"id": "0fbf65c82bf814c2fa9dbf942f9a2220f2a8bcf5",
 					"kind": "catch_clause",
-					"line": 2977,
+					"line": 2987,
 					"column": 6,
-					"endLine": 2989,
+					"endLine": 2994,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -10471,27 +10471,27 @@
 					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "9481a982452a2b01ac678cef2ebacfe400c2cc02",
+					"id": "d2c8ea96af56c33d263788aa085d0c32ccae2a8e",
 					"kind": "catch_clause",
-					"line": 3009,
+					"line": 3033,
 					"column": 6,
-					"endLine": 3012,
+					"endLine": 3036,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "run",
-						"justification": "The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first puts the previous value of the token entry back, so a failed replacement does not lose the working token, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run."
+						"justification": "The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first withdraws the token (HP-15), putting the previous value of the token entry back so a failed replacement does not lose the working token and overwriting a clipboard copy that already landed, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run."
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first puts the previous value of the token entry back, so a failed replacement does not lose the working token, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run. Verified recovery: \"rethrow\" in \"run\"."
+					"reason": "Allowlisted catch_clause: The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first withdraws the token (HP-15), putting the previous value of the token entry back so a failed replacement does not lose the working token and overwriting a clipboard copy that already landed, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run. Verified recovery: \"rethrow\" in \"run\"."
 				},
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 3036,
+					"line": 3060,
 					"column": 22,
-					"endLine": 3036,
+					"endLine": 3060,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10505,9 +10505,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 3036,
+					"line": 3060,
 					"column": 27,
-					"endLine": 3036,
+					"endLine": 3060,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10522,9 +10522,9 @@
 				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 3315,
+					"line": 3339,
 					"column": 6,
-					"endLine": 3317,
+					"endLine": 3341,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10538,9 +10538,9 @@
 				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 3543,
+					"line": 3567,
 					"column": 17,
-					"endLine": 3543,
+					"endLine": 3567,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10555,9 +10555,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 3543,
+					"line": 3567,
 					"column": 17,
-					"endLine": 3543,
+					"endLine": 3567,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10572,9 +10572,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 3544,
+					"line": 3568,
 					"column": 20,
-					"endLine": 3544,
+					"endLine": 3568,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10589,9 +10589,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 3544,
+					"line": 3568,
 					"column": 20,
-					"endLine": 3544,
+					"endLine": 3568,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -15282,6 +15282,23 @@
 					"reason": "Allowlisted void_expression: The \"loadTracked\" owner deliberately detaches \"this.loadNames\": it never rejects (the public name lists answer closed results and a failed page only leaves the ids on screen) and repaints the followed list itself; nothing is left unobserved. Verified target: \"this.loadNames\" in \"loadTracked\"."
 				},
 				{
+					"id": "db8251f25fdf65684f04ef554886fe4b4174e1fd",
+					"kind": "callback_registration",
+					"line": 493,
+					"column": 3,
+					"endLine": 493,
+					"endColumn": 91,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "applyIcon",
+						"justification": "In \"applyIcon\", the \"addEventListener\" callback removes a followed-achievement icon that failed to load, so the slot stays empty like a missing icon; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"applyIcon\", the \"addEventListener\" callback removes a followed-achievement icon that failed to load, so the slot stays empty like a missing icon; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"applyIcon\"."
+				},
+				{
 					"id": "757e2a0cf8e7851fdab354bd7141ead8e2c48c9d",
 					"kind": "catch_clause",
 					"line": 514,
@@ -17632,6 +17649,23 @@
 					"reason": "Allowlisted callback_registration: The \"keepControl\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"keepControl\"."
 				},
 				{
+					"id": "3d6fd72bf8cd0c4e96b80d913cfe7810b22a865c",
+					"kind": "callback_registration",
+					"line": 1518,
+					"column": 3,
+					"endLine": 1518,
+					"endColumn": 88,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "appendItemIdentity",
+						"justification": "In \"appendItemIdentity\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"appendItemIdentity\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"appendItemIdentity\"."
+				},
+				{
 					"id": "5ba5e329d1d55dd055320079a7cd2e88112c25d2",
 					"kind": "catch_clause",
 					"line": 1587,
@@ -18296,6 +18330,23 @@
 					"reason": "Allowlisted catch_clause: a pointer that is no longer active cannot be captured (NotFoundError); the cursor keeps following it without capture; \"onPlotPointer\" owns it as \"intentional_noop\" Verified recovery: \"intentional_noop\" in \"onPlotPointer\"."
 				},
 				{
+					"id": "ae19921f1c15f44d7daa4ad598cd65a350beff32",
+					"kind": "callback_registration",
+					"line": 953,
+					"column": 6,
+					"endLine": 953,
+					"endColumn": 87,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "icon",
+						"justification": "In \"icon\", the \"addEventListener\" callback swaps an item icon that failed to load for the \"?\" marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"icon\", the \"addEventListener\" callback swaps an item icon that failed to load for the \"?\" marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"icon\"."
+				},
+				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
 					"line": 956,
@@ -18433,6 +18484,23 @@
 						"justification": "The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics."
 					},
 					"reason": "Allowlisted void_expression: The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onEnable\" in \"renderPriceHistoryPanel\"."
+				},
+				{
+					"id": "37a8aaf14343ba3e5003d9b1aa61dcd4e623950a",
+					"kind": "callback_registration",
+					"line": 187,
+					"column": 4,
+					"endLine": 190,
+					"endColumn": 6,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderPriceHistoryPanel",
+						"justification": "In \"renderPriceHistoryPanel\", the \"addEventListener\" callback removes the selected item's icon when it failed to load, as for an unresolved id; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"renderPriceHistoryPanel\", the \"addEventListener\" callback removes the selected item's icon when it failed to load, as for an unresolved id; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"renderPriceHistoryPanel\"."
 				},
 				{
 					"id": "05b3c54e1f3dac0ae068136b92a9bf438cd13922",
@@ -18785,6 +18853,23 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
+				{
+					"id": "2ca4dd2709ab50bfa73cd25c37975a8a6238a93d",
+					"kind": "callback_registration",
+					"line": 425,
+					"column": 3,
+					"endLine": 425,
+					"endColumn": 80,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderIcon",
+						"justification": "In \"renderIcon\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"renderIcon\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"renderIcon\"."
+				},
 				{
 					"id": "fc9306caaa918ec531833e1981dd478ddd0664a4",
 					"kind": "callback_registration",
