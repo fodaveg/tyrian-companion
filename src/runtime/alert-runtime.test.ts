@@ -25,7 +25,7 @@ const ALERT: AlertV1 = {
 /** The real logger and writer, so what the sanitizer drops is what a player's export would lack. */
 function realLogger() {
 	const writer = new LocalDebugJsonlWriter({
-		storage: new MemoryStorage(), directory: '.obsidian/plugins/tyrian-companion/logs',
+		storage: new MemoryStorage(), directory: 'tyrian-test/logs',
 		schedule: () => { throw new Error('no timer'); }, cancel: () => undefined,
 	});
 	return new LocalDebugLogger({ enabled: true, pluginVersion: '0.6.43', writer, minimumLevel: 'debug' });
@@ -38,7 +38,7 @@ async function failureRecord(logger: LocalDebugLogger) {
 
 /** Z5-1: which channel failed has to survive the sanitizer, not only reach `logger.record`. */
 describe('AlertRuntime delivery failure diagnostics', () => {
-	const failed = [{ id: 'ingame', reason: 'Error' }];
+	const failed = [{ id: 'ingame' as const, reason: 'Error' }];
 	const report: AlertDeliveryReport = { delivered: ['toast'], failed, rejected: false };
 
 	it('dispatchAlert writes the failed channel into the exported record', async () => {

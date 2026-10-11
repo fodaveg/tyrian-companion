@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 615,
+		"catch_clause": 616,
 		"promise_catch": 61,
 		"void_expression": 144,
-		"callback_registration": 252
+		"callback_registration": 253
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -1900,11 +1900,28 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "5587ad8e9a5b2933fa6134dcf3fb662b21465854",
+					"kind": "callback_registration",
+					"line": 262,
+					"column": 4,
+					"endLine": 265,
+					"endColumn": 17,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "tryListen",
+						"justification": "The \"tryListen\" \"then\" boundary settles the bind promise with the server or hands the failure to the retry/abort handler, which rejects to the caller that reports it; a server bound after an abort is closed by its caller."
+					},
+					"reason": "Allowlisted callback_registration: The \"tryListen\" \"then\" boundary settles the bind promise with the server or hands the failure to the retry/abort handler, which rejects to the caller that reports it; a server bound after an abort is closed by its caller. Verified registration: \"then\" in \"tryListen\"."
+				},
+				{
 					"id": "ca9c7692b816ad7dd7fa1cb93af354e5fc3c122c",
 					"kind": "catch_clause",
-					"line": 550,
+					"line": 582,
 					"column": 4,
-					"endLine": 552,
+					"endLine": 584,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1918,9 +1935,9 @@
 				{
 					"id": "d7e5fd8b01f25dd2c9fffe731c91f69c40ea6434",
 					"kind": "catch_clause",
-					"line": 575,
+					"line": 607,
 					"column": 4,
-					"endLine": 577,
+					"endLine": 609,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3100,9 +3117,9 @@
 				{
 					"id": "e04f3caaed112cb8e6ba0938d20419cc95123b03",
 					"kind": "catch_clause",
-					"line": 239,
+					"line": 248,
 					"column": 5,
-					"endLine": 262,
+					"endLine": 271,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -3114,9 +3131,9 @@
 				{
 					"id": "0c3dc8f1e80d509cda86aa93093fd3266e9e9c50",
 					"kind": "catch_clause",
-					"line": 285,
+					"line": 294,
 					"column": 5,
-					"endLine": 287,
+					"endLine": 296,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3130,9 +3147,9 @@
 				{
 					"id": "af55548b1fbe19f7ddcfc1bfe96fb46b86fa2637",
 					"kind": "catch_clause",
-					"line": 298,
+					"line": 307,
 					"column": 5,
-					"endLine": 300,
+					"endLine": 309,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3146,9 +3163,9 @@
 				{
 					"id": "ff2e5da92fb758742f652df24d48de547fe0b220",
 					"kind": "catch_clause",
-					"line": 328,
+					"line": 337,
 					"column": 5,
-					"endLine": 330,
+					"endLine": 339,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3162,9 +3179,9 @@
 				{
 					"id": "8989d701f5e8e9dd3942df8c214037a9d80912db",
 					"kind": "catch_clause",
-					"line": 351,
+					"line": 360,
 					"column": 5,
-					"endLine": 360,
+					"endLine": 369,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3174,6 +3191,22 @@
 						"justification": "The \"perform\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"perform\"."
+				},
+				{
+					"id": "c5effaba04dd96216bf5d8198caddca2d5ff2884",
+					"kind": "catch_clause",
+					"line": 445,
+					"column": 4,
+					"endLine": 447,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "parseJsonOrNull",
+						"justification": "The \"parseJsonOrNull\" \"fallback_return\" boundary turns the body of a non-2xx answer that is not JSON into null so its status still decides the retry and reaches the transport diagnostics; a 2xx body that is not JSON still fails as a network error."
+					},
+					"reason": "Allowlisted catch_clause: The \"parseJsonOrNull\" \"fallback_return\" boundary turns the body of a non-2xx answer that is not JSON into null so its status still decides the retry and reaches the transport diagnostics; a 2xx body that is not JSON still fails as a network error. Verified recovery: \"fallback_return\" in \"parseJsonOrNull\"."
 				}
 			]
 		},
@@ -11224,27 +11257,27 @@
 					"reason": "Allowlisted callback_registration: The \"refreshBagQuote\" \"finally\" boundary only clears the in-flight guard of the bag-quote read once it settles, so the next refresh may start; it reports nothing and acknowledges no measurement. Verified registration: \"finally\" in \"refreshBagQuote\"."
 				},
 				{
-					"id": "31f0207e3cc1696392baee696c31c33b22067941",
+					"id": "24291414c5202d3035464401844b23468d7b76f4",
 					"kind": "catch_clause",
 					"line": 151,
 					"column": 3,
-					"endLine": 151,
-					"endColumn": 114,
+					"endLine": 154,
+					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "fetchBagQuote",
-						"justification": "The \"fetchBagQuote\" \"rethrow\" boundary turns only the Trading Post 404 for the bag id into an empty price answer; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer."
+						"justification": "The \"fetchBagQuote\" \"rethrow\" boundary registers the shared rate-limit cooldown for a thrown 429 and turns only the Trading Post 404 for ids it does not quote into an empty price answer; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer."
 					},
-					"reason": "Allowlisted catch_clause: The \"fetchBagQuote\" \"rethrow\" boundary turns only the Trading Post 404 for the bag id into an empty price answer; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer. Verified recovery: \"rethrow\" in \"fetchBagQuote\"."
+					"reason": "Allowlisted catch_clause: The \"fetchBagQuote\" \"rethrow\" boundary registers the shared rate-limit cooldown for a thrown 429 and turns only the Trading Post 404 for ids it does not quote into an empty price answer; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer. Verified recovery: \"rethrow\" in \"fetchBagQuote\"."
 				},
 				{
 					"id": "45540b035538247e4cc76dbc9b51d1eb68435de0",
 					"kind": "callback_registration",
-					"line": 172,
+					"line": 175,
 					"column": 17,
-					"endLine": 172,
+					"endLine": 175,
 					"endColumn": 71,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11259,9 +11292,9 @@
 				{
 					"id": "e864f8564a714574d9e79c070e64e7d181e2471c",
 					"kind": "promise_catch",
-					"line": 172,
+					"line": 175,
 					"column": 17,
-					"endLine": 172,
+					"endLine": 175,
 					"endColumn": 131,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11276,9 +11309,9 @@
 				{
 					"id": "a0a1d6efc36cbc99db32b204cd615bb6eaa07893",
 					"kind": "catch_clause",
-					"line": 211,
+					"line": 214,
 					"column": 5,
-					"endLine": 211,
+					"endLine": 214,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11290,20 +11323,20 @@
 					"reason": "Allowlisted catch_clause: In \"enrichCurrencies\", \"local_recovery\": a failed public currency lookup is sent to the supplied diagnostic observer (onError); the coin keeps its fallback name, the entry's item enrichment, prices and alerts continue, and no measurement is acknowledged by this recovery. Verified recovery: \"local_recovery\" in \"enrichCurrencies\"."
 				},
 				{
-					"id": "be9aef04f0ed3e11926f3cbc3a3e09c0bd96abfd",
+					"id": "29ba669d4e944d4b8e61ae2f7bb3e8a133fdd651",
 					"kind": "catch_clause",
-					"line": 246,
+					"line": 249,
 					"column": 5,
-					"endLine": 246,
-					"endColumn": 116,
+					"endLine": 252,
+					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "enrich",
-						"justification": "The \"enrich\" \"rethrow\" boundary turns only the Trading Post 404 for ids it does not quote into an empty price answer so each id is decided as no_price; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer."
+						"justification": "The \"enrich\" \"rethrow\" boundary registers the shared rate-limit cooldown for a thrown 429 and turns only the Trading Post 404 for ids it does not quote into an empty price answer; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer."
 					},
-					"reason": "Allowlisted catch_clause: The \"enrich\" \"rethrow\" boundary turns only the Trading Post 404 for ids it does not quote into an empty price answer so each id is decided as no_price; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer. Verified recovery: \"rethrow\" in \"enrich\"."
+					"reason": "Allowlisted catch_clause: The \"enrich\" \"rethrow\" boundary registers the shared rate-limit cooldown for a thrown 429 and turns only the Trading Post 404 for ids it does not quote into an empty price answer; every other failure is rethrown to the serial flight, which forwards it to the local diagnostic observer. Verified recovery: \"rethrow\" in \"enrich\"."
 				}
 			]
 		},
@@ -19454,11 +19487,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "b1ecec0f1d8b28981c6d6f5e16437336f5d26cee",
+					"id": "b5c9fa57b219ff52873e09771ef34a0113a06feb",
 					"kind": "callback_registration",
-					"line": 434,
+					"line": 446,
 					"column": 18,
-					"endLine": 465,
+					"endLine": 479,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -19466,16 +19499,16 @@
 						"type": "reviewed_registered_callback",
 						"registration": "then",
 						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
+						"justification": "The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
 					},
-					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
+					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
 				},
 				{
-					"id": "537439dc9bc31faa16fe884641d57094f8e93c81",
+					"id": "75c694088885e9d0eed46de68d698ff6c242e2a5",
 					"kind": "promise_catch",
-					"line": 434,
+					"line": 446,
 					"column": 18,
-					"endLine": 479,
+					"endLine": 495,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "observed",
@@ -19486,28 +19519,28 @@
 					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
 				},
 				{
-					"id": "ee6a481a29f1cd3c41d2217bd0672dbbe468fc5c",
+					"id": "7cf8b69e63a1d827614c596b98b09b231d495a1c",
 					"kind": "callback_registration",
-					"line": 434,
+					"line": 446,
 					"column": 18,
-					"endLine": 480,
-					"endColumn": 60,
+					"endLine": 499,
+					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "finally",
 						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
+						"justification": "The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
 					},
-					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"finally\" in \"ensureAlertIngameServer\"."
+					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"finally\" in \"ensureAlertIngameServer\"."
 				},
 				{
 					"id": "9f18056334cfe7d6a3ea25f653a0d2c03df39637",
 					"kind": "catch_clause",
-					"line": 635,
+					"line": 655,
 					"column": 5,
-					"endLine": 637,
+					"endLine": 657,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -19519,9 +19552,9 @@
 				{
 					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
 					"kind": "void_expression",
-					"line": 644,
+					"line": 664,
 					"column": 22,
-					"endLine": 644,
+					"endLine": 664,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -19535,9 +19568,9 @@
 				{
 					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
 					"kind": "callback_registration",
-					"line": 663,
+					"line": 683,
 					"column": 18,
-					"endLine": 666,
+					"endLine": 686,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -19552,9 +19585,9 @@
 				{
 					"id": "378194b415575bb405c10210312836c46456263c",
 					"kind": "callback_registration",
-					"line": 663,
+					"line": 683,
 					"column": 18,
-					"endLine": 666,
+					"endLine": 686,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",

@@ -210,7 +210,7 @@ describe('host port mapping', () => {
 
 	it('still waits for a Retry-After inside the budget', async () => {
 		const sleep = vi.fn(async () => undefined);
-		const answers = [{ status: 429, headers: { 'Retry-After': '5' }, text: '{}' }, { status: 200, headers: {}, text: '{}' }];
+		const answers: TyrianHttpResponse[] = [{ status: 429, headers: { 'Retry-After': '5' }, text: '{}' }, { status: 200, headers: {}, text: '{}' }];
 		const transport = new HostRequestTransport({ request: async () => answers.shift()! }, { maxRetries: 2, ...inertTimer(), sleep });
 
 		await transport.send({ url: 'https://api.guildwars2.com/v2/account', method: 'GET' });
