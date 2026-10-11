@@ -14,7 +14,7 @@ import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harnes
 /**
  * DE-01, step 3a: the core's side of `SessionRuntime`, over the real core and its real
  * `initializeRuntime`. The runtime's own behaviour is tested on its own
- * (`src/runtime/session-facade.test.ts`); this file proves that each of the core's 33 facade methods (`FACADE`)
+ * (`src/runtime/session-facade.test.ts`); this file proves that each of the core's 34 facade methods (`FACADE`)
  * reaches it, and that the port reads the core as it stands rather than as it was when the runtime
  * was built (with the core, before the boot builds the services, before the settings panel exists
  * and before the device can turn to consult).
@@ -43,6 +43,7 @@ const FACADE: Readonly<Record<FacadeMethod, readonly [call: (core: TyrianCompani
 	classifyPilotRecovery: [async (core) => await core.classifyPilotRecovery('organic'), ['organic']],
 	openSessionHistoryNote: [(core) => { core.openSessionHistoryNote('Sessions/gone.md'); }, ['Sessions/gone.md']],
 	getSessionHistoryView: [(core) => core.getSessionHistoryView(), []],
+	loadSessionHistory: [async (core) => await core.loadSessionHistory('rebuild'), ['rebuild']],
 	exportSessionHistory: [async (core) => { await core.exportSessionHistory(); }, []],
 	previewSessionHistoryScrub: [async (core) => await core.previewSessionHistoryScrub(), []],
 	cancelSessionHistoryScrubPreview: [(core) => { core.cancelSessionHistoryScrubPreview('scrub-token'); }, ['scrub-token']],

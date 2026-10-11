@@ -64,6 +64,7 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 			previewScrub: unused('sessionHistory.previewScrub'),
 			revokeScrub: unused('sessionHistory.revokeScrub'),
 			scrub: unused('sessionHistory.scrub'),
+			scan: unused('sessionHistory.scan'),
 		},
 		sessionHistoryRuntimeAuthority: new SessionHistoryRuntimeAuthority(() => ({
 			sessionStatus: 'idle', recoveryStatus: 'none', detectorStatus: 'disarmed',
@@ -93,6 +94,20 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		...overrides,
 	} satisfies SessionRuntimePort;
 }
+
+describe('the history scan', () => {
+	it('answers unavailable before the boot built the history, and asks the history for the source it was given after', async () => {
+		const scan = vi.fn(async () => ({ status: 'ready' }) as never);
+		const sessionHistory = { ...port().sessionHistory, scan };
+
+		await expect(new SessionRuntime(port({ runtimeReady: false, sessionHistory })).loadSessionHistory()).resolves.toEqual({ status: 'unavailable' });
+		expect(scan).not.toHaveBeenCalled();
+
+		await new SessionRuntime(port({ sessionHistory })).loadSessionHistory('rebuild');
+		await new SessionRuntime(port({ sessionHistory })).loadSessionHistory();
+		expect(scan.mock.calls).toEqual([['rebuild'], ['index']]);
+	});
+});
 
 describe('persisted pilot recovery classification', () => {
 	it('hydrates a reloaded classification and rejects an alternative without touching the journal', async () => {
