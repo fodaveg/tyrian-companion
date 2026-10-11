@@ -35,6 +35,7 @@ try {
 	testGhIsNamedTheRepository();
 	testArgumentsAndPlatformDefaults();
 	testLoadVerdicts();
+	testLoadVerdictsByWindow();
 	testLoadFileReading();
 	testCommandLineExitCodes();
 } finally {
@@ -220,6 +221,31 @@ function testLoadVerdicts() {
 	assert(hostile.errorName === '?' && !JSON.stringify(hostile).includes('TOKEN-123'), 'a free-form or foreign field leaked into the verdict');
 }
 
+/** Hebra rpm 0.2.0-23: `plugins.*` events carry `window`; the principal window's session is the one judged. */
+function testLoadVerdictsByWindow() {
+	const w = (window, session, event) => ({ ...event, session, window });
+	const other = (session, window, t) => ({ t, seq: t, session, event: 'plugins.activated', id: 'otro', version: '1.0.0', ...(window === undefined ? {} : { window }) });
+	// Principal failed; an editor window logged a later plugins.* line (its own session, with tyrian activated).
+	const editorLast = judgeHebraLoad(jsonl(w('principal', 'P', failedEvent('P')), w('editor', 'E', activated('E'))), '0.6.35');
+	assert(editorLast.status === 'failed', `an editor plugins.* line at the end beat the principal failure: ${editorLast.status}`);
+	// Same with `otra`, and with an unknown value: neither chooses the session.
+	assert(judgeHebraLoad(jsonl(w('principal', 'P', failedEvent('P')), w('otra', 'O', activated('O'))), '0.6.35').status === 'failed', 'an `otra` line chose the session');
+	assert(judgeHebraLoad(jsonl(w('principal', 'P', failedEvent('P')), w('rara', 'R', activated('R'))), '0.6.35').status === 'failed', 'an unknown window value chose the session');
+	// Only non-principal windows with plugins.* lines: nothing to judge.
+	assert(judgeHebraLoad(jsonl(w('editor', 'E', activated('E'))), '0.6.35').reason === 'no-principal-window-plugin-event', 'an editor-only log was judged');
+	// The latest principal session wins over an older one.
+	assert(judgeHebraLoad(jsonl(w('principal', 'P1', failedEvent('P1')), w('principal', 'P2', activated('P2'))), '0.6.35').status === 'loaded', 'an older principal session beat the newer one');
+	// Without `window` (rpm 22 and earlier): the old heuristic, last plugins.* line of any plugin.
+	assert(judgeHebraLoad(jsonl(failedEvent('P'), activated('E')), '0.6.35').status === 'loaded', 'a log without window stopped using the last-session heuristic');
+	assert(judgeHebraLoad(jsonl(failedEvent('P'), other('P', undefined, 7)), '0.6.35').status === 'failed', 'a log without window lost the failure');
+	// Mixed: old lines without window (rotated) and new ones with window (live). Window lines decide.
+	const mixed = judgeHebraLoad(jsonl(activated('OLD'), other('OLD', undefined, 5), w('principal', 'P', failedEvent('P')), w('editor', 'E', activated('E'))), '0.6.35');
+	assert(mixed.status === 'failed', `a mixed log was ${mixed.status}`);
+	// Mixed, the old session was the only one with tyrian: the principal session has none -> no-data, not the old verdict.
+	const mixedNone = judgeHebraLoad(jsonl(activated('OLD'), w('principal', 'P', other('P', 'principal', 8))), '0.6.35');
+	assert(mixedNone.reason === 'no-tyrian-event-in-latest-plugin-session', `a mixed log reused the old session: ${mixedNone.status}`);
+}
+
 function testLoadFileReading() {
 	const dir = join(testRoot, 'diagnostics');
 	mkdirSync(dir, { recursive: true });
@@ -256,6 +282,7 @@ function testLoadFileReading() {
 	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: jsonl(windowLine) }).status === 'failed', 'a window line in the live log erased the rotated failure');
 	assert(rotatedRead({ rotated: jsonl(failedEvent('A')), live: jsonl(activated('B')) }).status === 'loaded', 'the live log did not outrank the rotated one');
 	assert(rotatedRead({ rotated: jsonl(activated('A')), live: jsonl(failedEvent('A', { t: 5 })) }).status === 'failed', 'the live log of the same session did not outrank the rotated one');
+	assert(rotatedRead({ rotated: jsonl(activated('OLD')), live: jsonl({ ...failedEvent('P'), window: 'principal' }, { ...activated('E'), window: 'editor' }) }).status === 'failed', 'rotated lines without window and live lines with window were not mixed by window');
 	assert(rotatedRead({ rotated: null, live: null }).reason === 'file-missing', 'neither log present was not file-missing');
 	assert(rotatedRead({ rotated: '', live: '' }).reason === 'empty', 'two empty logs were not empty');
 	// The per-file cap keeps the tail of EACH file: a big live log does not push the rotated failure out.
