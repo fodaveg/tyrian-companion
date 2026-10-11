@@ -128,6 +128,24 @@ describe('the core hands the vault and the collector mode to VaultRuntime', () =
 		expect(viaCore).toHaveBeenCalledOnce();
 	});
 
+	// RT-17: a switch to consult leaves no heartbeat that asks a silent session store again, so the core's retry is armed
+	// after every switch, applied or failed; the delegate itself stays the one line above.
+	it.each([['applied', null], ['failed', new Error('switch failed')]] as const)(
+		'a mode switch %s through VaultRuntime arms the core\'s session store retry once, through the port', async (_case, failure) => {
+			harness = createRuntimeHarness();
+			const own = harness.core as unknown as { sessionStoreRetry: { arm(): void } | null; applyCollectorModeChange(context?: unknown): Promise<void> };
+			const arm = vi.fn();
+			own.sessionStoreRetry = { arm };
+			const applying = vi.spyOn(VaultRuntime.prototype as unknown as { applyCollectorModeChangeNow(): Promise<void> }, 'applyCollectorModeChangeNow')
+				.mockImplementation(async () => { expect(arm).not.toHaveBeenCalled(); if (failure !== null) throw failure; });
+
+			const switching = own.applyCollectorModeChange(CONTEXT);
+			if (failure === null) await expect(switching).resolves.toBeUndefined(); else await expect(switching).rejects.toBe(failure);
+
+			expect(applying).toHaveBeenCalledExactlyOnceWith(CONTEXT);
+			expect(arm).toHaveBeenCalledOnce();
+		});
+
 	it('awaitLocalDebugShutdown waits for the drain the core records, read live through the port', async () => {
 		harness = createRuntimeHarness();
 		const own = harness.core as unknown as { localDebugShutdown: Promise<void> | null };
