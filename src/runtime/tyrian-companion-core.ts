@@ -15,11 +15,10 @@
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
-import { farmingBagCapacity, farmingGoalForSession, projectBagPriceIngameState, projectFarmingIngameState, projectLiveFarmingIngameState } from './farming-runtime-projection';
-import { observeFarmingSessionContext, readFarmingSessionContext, type FarmingSessionContext, type FarmingGroupContext } from './farming-session-context';
-import { liveObservedFrom, projectFarmingGoal, type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
+import { farmingGoalForSession, projectBagPriceIngameState } from './farming-runtime-projection';
+import { observeFarmingSessionContext, type FarmingGroupContext, type FarmingSessionContext } from './farming-session-context';
+import { type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
-import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
@@ -162,6 +161,7 @@ import {
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
+import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
@@ -508,7 +508,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private sessionHistory!: SessionHistoryService;
 	private lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private liveSessionLoot!: LiveSessionLootTracker;
-	private farmingSessionContext: FarmingSessionContext | null = null;
 	private farmingGroupContext: FarmingGroupContext = null;
 	private farmingReminders: FarmingManualReminder[] = [];
 	private sessionSummarySaveState: SessionSummarySaveState = 'unknown';
@@ -585,6 +584,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * history's runtime authority, the recovery's pilot hooks and the farming state a start captures.
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
+	/**
+	 * DE-01, step 3f: the farming session's context and its saved copy, the reminders and the three
+	 * projections (goal progress, preparation context, in-game state). It reads the core's fields
+	 * through `farmingSessionRuntimePort`, under their own names; the core keeps the group context
+	 * and the reminders a start and the live session write, and `recordIngameSessionFailure`.
+	 */
+	private readonly farming: FarmingSessionRuntime = new FarmingSessionRuntime(TyrianCompanionCore.farmingSessionRuntimePort(this));
 	/**
 	 * DE-01, steps 3c and 3d: the live session's lifecycle (start, stop, finalization, recovery,
 	 * discard, clear, abandon, a stuck live session), the session state the views read, and the
@@ -1393,7 +1399,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			onObservedDelta: (delta) => {
 				const session = this.sessions.getState();
 				if (session.status === 'active') {
-					const context = this.currentFarmingSessionContext(session.sessionId);
+					const context = this.farming.currentFarmingSessionContext(session.sessionId);
 					if (context && delta.status !== 'invalid') this.persistFarmingSessionContext(observeFarmingSessionContext(context, delta.window?.to ?? null));
 					fireAndForgetLocal(this.localDebugActions,
 						{ component: 'session', action: 'session_projection', state: 'live_loot' },
@@ -3100,6 +3106,33 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `FarmingSessionRuntime` reads from this core and asks of it (DE-01, step 3f). Getters over
+	 * the core's own fields, so a service `initializeRuntime` builds later or a setting changed is
+	 * read as it stands; the group context and the reminders are setters too.
+	 */
+	private static farmingSessionRuntimePort(core: TyrianCompanionCore): FarmingSessionRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get host() { return core.host; },
+			get sessions() { return core.sessions; },
+			get inventoryAdvisor() { return core.inventoryAdvisor; },
+			get assistedDetection() { return core.assistedDetection; },
+			get liveSessions() { return core.liveSessions; },
+			get sessionSummarySaveState() { return core.sessionSummarySaveState; },
+			get farmingGroupContext() { return core.farmingGroupContext; },
+			set farmingGroupContext(value) { core.farmingGroupContext = value; },
+			get farmingReminders() { return core.farmingReminders; },
+			set farmingReminders(value) { core.farmingReminders = value; },
+			getCollectorMode: () => core.getCollectorMode(),
+			getSessionState: () => core.getSessionState(),
+			getIngamePresence: () => core.getIngamePresence(),
+			getLiveSessionLoot: () => core.getLiveSessionLoot(),
+			recordIngameSessionFailure: (error) => { core.recordIngameSessionFailure(error); },
+		};
+	}
+
+	/**
 	 * What `SessionCommandRuntime` reads from this core and asks of it (DE-01, step 3d). Getters over
 	 * the core's own fields, read as they stand; the modals, the controller, its dispatch and the
 	 * ribbon are setters too, so the commands write the core's own fields, which its unload, its
@@ -3349,28 +3382,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.lootPresentation.get();
 	}
 
-	/** Session-local intent is matched by id after reload, never inferred from changed defaults. */
-	private currentFarmingSessionContext(sessionId: string): FarmingSessionContext | null {
-		if (this.farmingSessionContext?.sessionId === sessionId) return this.farmingSessionContext;
-		try {
-			const loaded = readFarmingSessionContext(this.host.localStorage?.load('tyrian-farming-session'));
-			if (loaded?.sessionId === sessionId) this.farmingSessionContext = loaded;
-		} catch (error) { this.recordIngameSessionFailure(error); }
-		return this.farmingSessionContext?.sessionId === sessionId ? this.farmingSessionContext : null;
-	}
+	/** The captured farming context's saved copy (`FarmingSessionRuntime`). */
+	private persistFarmingSessionContext(context: FarmingSessionContext): void { this.farming.persistFarmingSessionContext(context); }
 
-	private persistFarmingSessionContext(context: FarmingSessionContext): void {
-		this.farmingSessionContext = context;
-		try { this.host.localStorage?.save('tyrian-farming-session', context); }
-		catch (error) { this.recordIngameSessionFailure(error); }
-	}
-
-	/** The next session's saved goal (`SessionRuntime`); an active session keeps the one it captured. */
+	/** The farming session's context, reminders and projections (`FarmingSessionRuntime`). */
 	getFarmingGoal(): FarmingGoalV1 { return this.session.getFarmingGoal(); }
 	/** Serialized with the other two preference forms (`SessionRuntime.saveFarmingSettings`). */
 	saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { return this.session.saveFarmingGoal(goal); }
-	getFarmingGroupContext(): FarmingGroupContext { return this.farmingGroupContext; }
-	setFarmingGroupContext(context: FarmingGroupContext): void { this.farmingGroupContext = context; }
+	getFarmingGroupContext(): FarmingGroupContext { return this.farming.getFarmingGroupContext(); }
+	setFarmingGroupContext(context: FarmingGroupContext): void { this.farming.setFarmingGroupContext(context); }
 	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return this.session.getFarmingPreparationSettings(); }
 	saveFarmingPreparationSettings(settings: FarmingPreparationSettingsV1): Promise<void> {
 		return this.session.saveFarmingPreparationSettings(settings);
@@ -3379,72 +3399,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	saveFarmingDeclaredBuildPreference(value: FarmingDeclaredBuildPreferenceV1 | null): Promise<void> {
 		return this.session.saveFarmingDeclaredBuildPreference(value);
 	}
-	getFarmingReminders(): readonly FarmingManualReminder[] { return this.farmingReminders.map((reminder) => ({ ...reminder })); }
-	startFarmingReminder(kind: FarmingReminderKind, minutes: number): void {
-		if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1_440) return;
-		this.farmingReminders = [...this.farmingReminders.filter((reminder) => reminder.kind !== kind),
-			{ kind, durationMinutes: minutes, startedAt: new Date().toISOString() }];
-	}
-	clearFarmingReminder(kind: FarmingReminderKind): void {
-		this.farmingReminders = this.farmingReminders.filter((reminder) => reminder.kind !== kind);
-	}
-
-	/** The newest already captured capacity evidence; reading it never requests account data. */
-	private farmingCapacitySnapshot(): StorageSnapshot | null {
-		if (!this.runtimeReady) return null;
-		const baseline = this.sessions.getBaselineSnapshot();
-		const inventory = this.inventoryAdvisor.analysis()?.source.input.snapshot ?? null;
-		const live = this.assistedDetection.getLastSnapshot();
-		return [baseline, inventory, live].filter((snapshot): snapshot is StorageSnapshot => snapshot !== null && (!baseline || snapshot.accountId === baseline.accountId))
-			.sort((left, right) => Date.parse(right.completedAt) - Date.parse(left.completedAt))[0] ?? null;
-	}
-
-	getFarmingGoalProgress(): FarmingGoalProgress | null {
-		if (!this.runtimeReady) return null;
-		const live = this.liveSessions?.getRuntime();
-		if (live) {
-			const view = this.liveSessions!.getView(); const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === 36038);
-			const covered = liveObservedFrom(live.startedAt,view.lastObservationAt,view.observedItemsMs);
-			return projectFarmingGoal(live.farmingGoal,{startedAt:live.startedAt,now:new Date(Date.parse(live.startedAt)+(view.elapsedMs ?? 0)).toISOString(),endedAt:live.endedAt,
-				observedBags:live.lastValidItemsAt === null ? null : bags?.positive ?? 0,finalNetBags:live.phase === 'complete' ? bags?.net ?? 0 : null,
-				observedFrom:covered,observedAt:view.lastObservationAt,sampleCount:live.sampleCount,maxObservationAgeMs:5000});
-		}
-		const state = this.sessions.getState();
-		const observed = state.status === 'error' ? state.failedState : state;
-		const context = observed.status === 'idle' ? null : this.currentFarmingSessionContext(observed.sessionId);
-		return farmingGoalForSession(state, this.getLiveSessionLoot(), context, Date.now());
-	}
-
-	getFarmingPreparationContext(): FarmingPreparationContext {
-		const live = this.liveSessions?.getRuntime();
-		if (live) return {characterName:live.context?.character ?? null,buildName:null,freeBagSlots:live.lastSample?.freeSlots ?? null,
-			freeBagSlotsCharacter:live.context?.character ?? null,freeBagSlotsObservedAt:live.lastObservationAt,collectorMode:this.getCollectorMode(),
-			addonConnection:live.connection,magicFindBreakdown:null,magicFindObservedAt:null};
-		const state = this.getSessionState();
-		const session = state.status === 'error' ? state.failedState : state;
-		const context = session.status === 'idle' || session.status === 'starting' ? null : session.startContext;
-		const presence = this.getIngamePresence();
-		const snapshot = this.farmingCapacitySnapshot();
-		const bags = farmingBagCapacity(snapshot, presence, Date.now());
-		return {
-			characterName: context?.characterName ?? bags.character, buildName: context?.build.name ?? null,
-			freeBagSlots: bags.slots, freeBagSlotsCharacter: bags.character, freeBagSlotsObservedAt: snapshot?.completedAt ?? null, collectorMode: this.getCollectorMode(),
-			addonConnection: presence.status === 'present' ? 'connected' : 'disconnected',
-			magicFindBreakdown: context?.magicFind.breakdown ?? null, magicFindObservedAt: context?.capturedAt ?? null,
-		};
-	}
-
-	/** The game consumes the same goal/evidence as the host, with identities removed at the wire boundary. */
-	getFarmingIngameState(): FarmingIngameState {
-		if (this.liveSessions !== null) return projectLiveFarmingIngameState({view:this.liveSessions.getView(),goal:this.getFarmingGoalProgress(),
-			now:Date.now(),preparationEnabled:this.settings.farmingPreparation.enabled});
-		return projectFarmingIngameState({
-			state: this.getSessionState(), loot: this.getLiveSessionLoot(), snapshot: this.farmingCapacitySnapshot(),
-			presence: this.getIngamePresence(), goal: this.getFarmingGoalProgress(), now: Date.now(),
-			saveFailed: this.sessionSummarySaveState === 'failed', preparationEnabled: this.settings.farmingPreparation.enabled,
-			observationFailed: this.runtimeReady && this.assistedDetection.getState().scheduler.consecutiveFailures > 0,
-		});
-	}
+	getFarmingReminders(): readonly FarmingManualReminder[] { return this.farming.getFarmingReminders(); }
+	startFarmingReminder(kind: FarmingReminderKind, minutes: number): void { this.farming.startFarmingReminder(kind, minutes); }
+	clearFarmingReminder(kind: FarmingReminderKind): void { this.farming.clearFarmingReminder(kind); }
+	getFarmingGoalProgress(): FarmingGoalProgress | null { return this.farming.getFarmingGoalProgress(); }
+	getFarmingPreparationContext(): FarmingPreparationContext { return this.farming.getFarmingPreparationContext(); }
+	getFarmingIngameState(): FarmingIngameState { return this.farming.getFarmingIngameState(); }
 
 	/** Public gross price of the Halloween bag for `price2`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
 	getBagPriceIngameState(): PriceIngameState {
@@ -3584,9 +3544,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * own loads take the index (a note already inspected is read again only once the host reports
 	 * it changed); its explicit refresh asks for `rebuild`, which reads every note again.
 	 */
-	async loadSessionHistory(source: 'index' | 'rebuild' = 'index'): Promise<SessionHistoryLoadResult> {
-		if (!this.runtimeReady) return { status: 'unavailable' };
-		return await this.sessionHistory.scan(source);
+	loadSessionHistory(source: 'index' | 'rebuild' = 'index'): Promise<SessionHistoryLoadResult> {
+		return this.session.loadSessionHistory(source);
 	}
 
 	/** Writes the history's export (`SessionRuntime`); the settings row follows each step. */
@@ -5213,7 +5172,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const sessionId = runtime.state.status === 'complete' ? runtime.state.sessionId : '';
 		const economy = this.sessionEconomyFor(runtime);
 		const { firstSeenItemIds, rareUnpricedOrBoundItemIds } = this.sessionHalloweenInfoItemIds(sessionId);
-		const farmingContext = this.currentFarmingSessionContext(sessionId);
+		const farmingContext = this.farming.currentFarmingSessionContext(sessionId);
 		// Optional evidence must be absent rather than present with undefined: the durable
 		// note boundary accepts exact keys, including when boot restores a legacy session.
 		const liveLoot = this.liveSessionLoot.getState();

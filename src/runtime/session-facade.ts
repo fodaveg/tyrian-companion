@@ -4,7 +4,7 @@
  * the durable session history's export and scrub, the next session's saved farming preferences
  * (goal, preparation, declared build) with their serialized writes, and the saved live sessions
  * (list, selection, the view and alerts of the selected one, the comparison and the export); with
- * the nine fields only they use.
+ * the nine fields only they use. `loadSessionHistory`, the only scan of the history (H9.7), is here too.
  *
  * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views and the settings
  * panel see. The core keeps:
@@ -12,7 +12,6 @@
  *   `liveSessions`, `liveHistory`);
  * - the history's runtime authority and its gate: the live session's start, stop and recovery
  *   take their leases from it;
- * - `loadSessionHistory`, the only scan of the history (H9.7);
  * - the recovery's own pilot hooks (`pilotRecoveryIdentity`, `ensurePilotRecoveryPresented`) with
  *   the two sets they fill;
  * - the farming state a start captures (the group context and the reminders).
@@ -58,6 +57,7 @@ import type {
 	SessionHistoryScrubResult,
 	SessionHistoryService,
 } from '../sessions/session-history';
+import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionHistoryView, SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { refusedInConsult } from './core-actions';
 
@@ -90,7 +90,7 @@ export interface SessionRuntimePort {
 	/** The settings panel's history row, repainted on each step of an export or a scrub. */
 	readonly settingTab: { refreshSessionHistoryRow(): void };
 	/** Built in `initializeRuntime`; read only once `runtimeReady` says so. */
-	readonly sessionHistory: Pick<SessionHistoryService, 'export' | 'previewScrub' | 'revokeScrub' | 'scrub'>;
+	readonly sessionHistory: Pick<SessionHistoryService, 'export' | 'previewScrub' | 'revokeScrub' | 'scrub' | 'scan'>;
 	/** The core's own: the live session's start, stop and recovery take their leases from it too. */
 	readonly sessionHistoryRuntimeAuthority: SessionHistoryRuntimeAuthority;
 	/** Built in `initializeRuntime`; read only once `runtimeReady` says so. */
@@ -367,6 +367,16 @@ export class SessionRuntime {
 	}
 
 	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
+
+	/**
+	 * Reads durable session notes only after the visible history action is activated. The view's
+	 * own loads take the index (a note already inspected is read again only once the host reports
+	 * it changed); its explicit refresh asks for `rebuild`, which reads every note again.
+	 */
+	async loadSessionHistory(source: 'index' | 'rebuild' = 'index'): Promise<SessionHistoryLoadResult> {
+		if (!this.runtimeReady) return { status: 'unavailable' };
+		return await this.sessionHistory.scan(source);
+	}
 
 	async exportSessionHistory(): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }

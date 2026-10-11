@@ -205,6 +205,9 @@ describe('H6.7 credential boundary', () => {
 			'src/catalog/persistent-catalog-cache.ts',
 			// DE-01, step 3e: it writes the session's notes and the summary's saved proof, so its name
 			// keeps it inside the persistence guard; a rename that leaves the guard turns this red.
+			// DE-01, step 3f: it saves the captured farming context in the device's local storage, so its name
+			// keeps it inside the persistence guard like its sibling; a rename that leaves the guard turns this red.
+			'src/runtime/farming-session-runtime.ts',
 			'src/runtime/session-note-runtime.ts',
 			'src/sessions/coordination-store.ts',
 			// DE-07: the heartbeat re-saves the active SessionRuntimeRecord (`saveActiveEvidence`), so its
