@@ -1,5 +1,24 @@
 # Estado
 
+## Candidato 0.6.40: nota de sesión y transiciones del servicio de inicio fuera de sus clases (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.40` sobre el canal 0.6.39 publicado
+(`fcefcecf`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.40 se ha visto en un Obsidian ni en un Hebra reales.
+- Contenido:
+  - DE-01: `SessionNoteRuntime` (`src/runtime/session-note-runtime.ts`, dentro de la guarda de persistencia) con 12
+    métodos de nota y resumen; el núcleo pasa de 5.788 a 5.660 líneas. El congelado que fijaba la búsqueda de la nota
+    se redirige (0 llamadas a `readSession` en el núcleo, 1 en la fachada) y se añade un test de comportamiento.
+  - DE-07, segunda mitad: `ManualSessionTransitions` (`src/sessions/manual-session-runtime-transitions.ts`, dentro de la
+    guarda) con arranque, parada, recuperación, finalización al arrancar y reclamación; el servicio pasa de 1.839 a
+    1.152 líneas. Los traductores de error HTTP llegan por el puerto (sin ciclo de imports). 51 mutaciones del puerto
+    en rojo, 10 cubiertas con tests nuevos.
+  - Revisiones independientes de los dos lotes: cuerpos idénticos y bundles de Hebra y Obsidian construidos.
+- Pendiente: DE-01 (vista en vivo, lifecycleCore restante, farming, piloto, historial); un lease concedido tras cerrar
+  no se libera (arreglo propuesto en `safeAcquire`). El gate, la publicación y verla en hosts reales.
+
 ## Canal 0.6.39 publicado: latido que no se rearma tras cerrar y núcleo y servicio de inicio partidos (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.39` = `0edf0754` (atestación; candidato `1435ce0a`,

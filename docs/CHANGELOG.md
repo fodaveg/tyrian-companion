@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.40 - Orden interno: nota de sesión y servicio de inicio partidos
+
+Se actualiza desde la 0.6.39 publicada. No cambia nada visible. Nada de esto se ha visto todavía en un Obsidian ni en
+un Hebra reales; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Limpieza interna, sin cambios visibles. La nota y el resumen de la sesión (guardar, restaurar, reintentar, abrir)
+  salen del núcleo a su propio módulo; el arranque, la parada, la recuperación y la reclamación del servicio de inicio
+  manual de sesión salen a su propio módulo. Las comprobaciones que leían el texto del código para la búsqueda de la
+  nota de un resumen pasan a ejecutarlo.
+
 ## Release beta 0.6.39 - Un temporizador menos al cerrar y más orden interno
 
 Se actualiza desde la 0.6.38 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
