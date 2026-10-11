@@ -1,8 +1,10 @@
 # Estado
 
-## Candidato 0.6.45: estilos de Hebra con respaldo, tests del falso 1.4.0 y addon 0.8.7 (11 oct 2026)
+## Canal 0.6.45 publicado: estilos de Hebra con respaldo, tests del falso 1.4.0 y addon 0.8.7 (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.45` sobre el canal 0.6.44 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.45` = `88f1ff4b` (atestación; candidato `31f526ad`,
+árbol `334a6c09`). Gate local verde (check 9/9 con 7454 tests, guardrails 25/25, BRAT PASS); CI 38121926786 y Release
+38122498326 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.45` sobre el canal 0.6.44 publicado
 (`3020a593`, más la documentación del canal `73db2993`); añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
