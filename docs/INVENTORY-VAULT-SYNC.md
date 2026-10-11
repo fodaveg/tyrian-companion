@@ -29,11 +29,9 @@ vault.
    objeto (H18.14). Si esa captura no sirve para reescribir notas (instantánea inestable, un almacén
    incompleto o más de 15 minutos de antigüedad), la sincronización hace **un** análisis más, que la
    vista también pasa a mostrar; nunca una segunda captura privada de las notas.
-2. Si el plan desactivaría alguna fila que ya no aparece en la cuenta, el flujo se detiene antes de
-   escribir y muestra **Confirmar cambios antes de escribir** con el recuento de filas nuevas,
-   actualizadas, sin cambios, inactivas (a papelera) y en conflicto; nada se escribe hasta que pulsas
-   **Confirmar y escribir**. Si el plan solo crea o actualiza filas, sin desactivar ninguna, escribe
-   sin pedir confirmación.
+2. Si el plan desactiva filas que ya no aparecen en la cuenta, se escribe igual, sin pedir confirmación
+   (decisión H18.37, `src/ui/inventory-vault-sync-run-controller.ts`). El resumen cuenta las filas nuevas,
+   actualizadas, sin cambios, inactivas (a papelera) y en conflicto.
 3. Al escribir, el plugin relee cada nota que va a cambiar. Una nota que cambió entre la vista
    previa y la escritura, que pertenece a otra herramienta, que usa un schema futuro o cuyo bloque
    gestionado se editó a mano es un **conflicto de esa nota**: no se toca y se cuenta en el resumen,
