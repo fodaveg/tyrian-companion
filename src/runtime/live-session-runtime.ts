@@ -132,7 +132,7 @@ export interface LiveSessionRuntimePort {
 		| 'start' | 'stop' | 'stopAt' | 'captureFinalNow' | 'getPriceSnapshot' | 'finalizeStoppedSession' | 'getBaselineSnapshot'
 	>;
 	/** The live session's lifecycle, built in `initializeRuntime`; null before it and on a device without one. */
-	readonly liveSessions: Pick<LiveSessionLifecycle, 'isStuck' | 'discard' | 'getRuntime' | 'stop' | 'getStopFailure'> | null;
+	readonly liveSessions: Pick<LiveSessionLifecycle, 'isStuck' | 'isRetryingNote' | 'discard' | 'getRuntime' | 'stop' | 'getStopFailure'> | null;
 	readonly liveSessionLoot: Pick<LiveSessionLootTracker, 'getState' | 'begin' | 'reconcile'>;
 	/** The addon's session link; null until the in-game server built it. */
 	readonly ingameSessionMarker: Pick<IngameSessionMarker, 'clearStoppedByPlayer' | 'reconcile' | 'markStoppedByPlayer' | 'restoreLink'> | null;
@@ -624,6 +624,11 @@ export class LiveSessionRuntime {
 	 */
 	isLiveSessionStuck(): boolean {
 		return this.liveSessions?.isStuck() ?? false;
+	}
+
+	/** The live session is closed and its note is being written again by the heartbeat (`LiveSessionLifecycle.isRetryingNote`). */
+	isLiveNoteRetrying(): boolean {
+		return this.liveSessions?.isRetryingNote() ?? false;
 	}
 
 	/** Drops the stuck live session (see `LiveSessionLifecycle.discard`) and leaves its own trace, under codes of its own. */

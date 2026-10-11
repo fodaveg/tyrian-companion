@@ -131,6 +131,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions, Partial<Fa
 	getSessionRecoveryState(): SessionRecoveryState;
 	/** The live session cannot finish by itself: the panel then offers to discard it (see `LiveSessionLifecycle.isStuck`). */
 	isLiveSessionStuck?(): boolean;
+	/** The closed live session's note is retried by itself: the panel says so instead of offering to discard it. */
+	isLiveNoteRetrying?(): boolean;
 	/** No output folder in the library and only «Aplicar» creates it: the panel says so instead of offering a start. */
 	isOutputFolderMissing?(): boolean;
 	isPilotRecoveryClassificationRequired?(): boolean;

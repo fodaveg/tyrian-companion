@@ -585,6 +585,15 @@ export class LiveSessionLifecycle {
 		if (this.record?.phase === 'complete' && this.record.summaryReceipt === null) return true;
 		return this.failure && !this.unread && !this.recovering && this.reclaimingAs === null;
 	}
+	/**
+	 * The session is closed and its note could not be written, but the heartbeat writes it again on every beat: it is not lost
+	 * and discarding it would throw away a note that is about to be saved. Still `isStuck` (the player may drop it from the
+	 * command palette), so a panel must say «retrying» instead of «cannot finish» while this holds.
+	 */
+	isRetryingNote(): boolean {
+		return this.record?.phase === 'complete' && this.record.summaryReceipt === null && this.noteFailure === 'note_not_saved'
+			&& this.options.onComplete !== undefined && !this.disposed;
+	}
 	/** Why the last `stop` answered false (null while none failed): the caller names it in its diagnostic and in what it tells the player. */
 	getStopFailure(): LiveStopFailure | null { return this.stopFailure; }
 	private refuse(reason: LiveStopFailure): false { this.stopFailure = reason; return false; }

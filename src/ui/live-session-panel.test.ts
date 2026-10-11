@@ -838,6 +838,14 @@ describe('Session tab: a session that cannot finish can be discarded', () => {
 		expect(h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!.hasAttribute('hidden')).toBe(false);
 	});
 
+	it.each([['en', 'could not be saved. It is tried again by itself'], ['es', 'Se reintenta sola']] as const)(
+		'a note that is written again by itself says so in %s, with no discard and no «cannot finish» (F4)', (locale, line) => {
+			const h = harness({ ...liveView(3), phase: 'complete' }, control({ canStop: false, noteRetrying: true, stuckSession: false }), locale);
+			expect(h.panel.element.textContent).toContain(line);
+			expect(h.panel.element.textContent).not.toMatch(/cannot finish|no puede terminar/);
+			expect(h.panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__discard')!.hasAttribute('hidden')).toBe(true);
+		});
+
 	it('says nothing about it for a session that can finish, or while it is finishing', () => {
 		const h = harness(liveView(3), control({ stuckSession: false }));
 		expect(h.panel.element.querySelector('.tyrian-live-session__old')!.hasAttribute('hidden')).toBe(true);

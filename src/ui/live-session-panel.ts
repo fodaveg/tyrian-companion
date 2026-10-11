@@ -39,6 +39,8 @@ export interface LiveSessionControlState {
 	oldSession: { canDiscard: boolean } | null;
 	/** The live session cannot finish by itself and the player may drop it (after a confirmation the host asks). */
 	stuckSession?: boolean;
+	/** The session is closed, its note did not save and the plugin writes it again by itself: say so, offer no discard. */
+	noteRetrying?: boolean;
 	/** The output folder is not in the library yet: no session starts until «Aplicar» in Settings creates it. */
 	outputFolderMissing?: boolean;
 }
@@ -564,6 +566,7 @@ export class LiveSessionPanel {
 		const startMode = !stopMode && !busy;
 		// A live session that cannot finish comes before an old one blocking the start: the button discards that one.
 		const stuck = control.stuckSession === true && !control.consult && !busy;
+		const retrying = control.noteRetrying === true && !control.consult && !busy;
 		const oldBlocks = startMode && control.oldSession !== null && !control.consult;
 		let hint = '';
 		if (control.consult) hint = this.copy('hintConsult');
@@ -578,8 +581,11 @@ export class LiveSessionPanel {
 		this.setText(this.alert, failureCopy === null ? '' : this.copy(failureCopy));
 		this.alert.hidden = failureCopy === null;
 
-		this.oldLine.hidden = !oldBlocks && !stuck;
-		if (stuck) {
+		this.oldLine.hidden = !oldBlocks && !stuck && !retrying;
+		if (retrying) {
+			this.setText(this.oldText, this.copy('noteRetrying'));
+			this.discard.hidden = true;
+		} else if (stuck) {
 			this.setText(this.oldText, this.copy('stuckSession'));
 			this.discard.hidden = false;
 			this.setText(this.discard, this.copy('discardStuck'));

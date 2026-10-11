@@ -3222,7 +3222,7 @@
 .tyrian-live-session__notices { display: grid; gap: var(--size-4-2); }
 .tyrian-live-session__hint { color: var(--text-muted); line-height: var(--line-height-normal); overflow-wrap: anywhere; }
 .tyrian-live-session__alert, .tyrian-live-session__notice { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-1) var(--size-4-2); border-radius: var(--radius-s); font-size: var(--font-ui-smaller); }
-.tyrian-live-session__alert { background: var(--background-modifier-error); color: var(--text-error); font-weight: var(--font-semibold); }
+.tyrian-live-session__alert { background: var(--background-modifier-error); color: var(--text-on-accent); font-weight: var(--font-semibold); }
 .tyrian-live-session__notice { background: color-mix(in srgb, var(--text-warning) 14%, transparent); color: var(--text-warning); }
 .tyrian-live-session__notice-text { flex: 1; min-width: 0; overflow: hidden; font-weight: var(--font-semibold); text-overflow: ellipsis; white-space: nowrap; }
 .tyrian-live-session__notice-time { flex: none; font-variant-numeric: tabular-nums; }

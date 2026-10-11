@@ -64,6 +64,7 @@ const FACADE: Readonly<Record<FacadeMethod, readonly [call: (core: TyrianCompani
 	confirmClearCompletedSession: [(core) => { core.confirmClearCompletedSession(); }, []],
 	resetCompletedSession: [(core) => core.resetCompletedSession(), []],
 	isLiveSessionStuck: [(core) => core.isLiveSessionStuck(), []],
+	isLiveNoteRetrying: [(core) => core.isLiveNoteRetrying(), []],
 	canAbandonSession: [(core) => core.canAbandonSession(), []],
 	confirmAbandonSession: [(core) => { core.confirmAbandonSession(); }, []],
 	openManualSessionStart: [(core) => { core.openManualSessionStart(BOUNDARY); }, [BOUNDARY]],

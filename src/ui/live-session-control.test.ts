@@ -87,6 +87,15 @@ describe('the one button reaches the product actions that already exist', () => 
 		expect(liveSessionControl(value, view).getLiveSessionControl()).toMatchObject({ stuckSession: true, oldSession: { canDiscard: false } });
 	});
 
+	it('a closed session whose note is written again by itself is not offered for discard (F4)', () => {
+		const { value } = source({
+			describe: (id) => id === 'discard-saved-session' ? descriptor(id, { available: true }) : descriptor(id),
+			isLiveSessionStuck: () => true, isLiveNoteRetrying: () => true,
+		});
+		expect(liveSessionControl(value, () => ({ phase: 'complete' }) as never).getLiveSessionControl())
+			.toMatchObject({ stuckSession: false, noteRetrying: true });
+	});
+
 	it('starts, finishes and discards through run(); only a rejection is a failure, never unavailable or cancelled', async () => {
 		const { value, run } = source();
 		const control = liveSessionControl(value, view);
