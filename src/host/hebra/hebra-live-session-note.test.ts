@@ -34,8 +34,8 @@ import { activateTyrian } from './hebra-runtime';
 
 interface LiveCore {
 	settings: { alertIngameEnabled: boolean };
-	liveIngamePort(): LiveIngamePort;
-	ingamePresenceTracker(): IngamePresenceTracker;
+	/** `AlertRuntime` owns the bridge internals (DE-01, step 3g). */
+	alerts: { liveIngamePort(): LiveIngamePort; ingamePresenceTracker(): IngamePresenceTracker };
 	ingameSessionMarker: IngameSessionMarker;
 	liveSessions: LiveSessionLifecycle;
 	getProductActionController(): ProductActionController;
@@ -158,12 +158,12 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		const test = collectorHebra();
 		const { core, cleanup } = await activate(test, new IDBFactory());
 		core.settings.alertIngameEnabled = true;
-		const tracker = core.ingamePresenceTracker();
+		const tracker = core.alerts.ingamePresenceTracker();
 		const source = sourceOf(FIRST_EPOCH);
 		tracker.apply({ kind: 'authenticated', connectionId: 'a', client: 'nexus', instance: INSTANCE, atMs: now });
 		tracker.apply({ kind: 'context', connectionId: 'a', context: source.context, atMs: now });
 		await settle(core);
-		const port = core.liveIngamePort();
+		const port = core.alerts.liveIngamePort();
 		expect(await port.open(source)).toBe('ready');
 		const readAt = now;
 		now = readAt + HANDSHAKE_MS;
@@ -200,7 +200,7 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 			component: 'session', action: 'session_finish', level: 'error', phase: 'failure', code: 'storage_failure', state: 'finish_record_stale',
 		}));
 		expect(core.getLiveSessionView(), 'the session is still running').toMatchObject({ phase: 'active', sessionId: first });
-		expect(await core.liveIngamePort().open(sourceOf(FIRST_EPOCH)), 'and the addon is not turned away because of the failed stop').toBe('ready');
+		expect(await core.alerts.liveIngamePort().open(sourceOf(FIRST_EPOCH)), 'and the addon is not turned away because of the failed stop').toBe('ready');
 		await cleanup();
 	}, 30_000);
 
@@ -285,14 +285,14 @@ function confirmButton(): HTMLButtonElement | null {
 /** The game connects, plays `SAMPLES` seconds with the addon's real timing and exits. Resolves to the session id. */
 async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: string, handshakeMs = HANDSHAKE_MS, ending: 'game_exit' | 'finish_button' | 'none' = 'game_exit'): Promise<string> {
 	core.settings.alertIngameEnabled = true;
-	const tracker = core.ingamePresenceTracker();
+	const tracker = core.alerts.ingamePresenceTracker();
 	const source = sourceOf(epoch);
 	// The addon's `Instant` at its first inventory read of the epoch: every `ms` counts from here.
 	const readAt = now;
 	tracker.apply({ kind: 'authenticated', connectionId, client: 'nexus', instance: INSTANCE, atMs: now });
 	tracker.apply({ kind: 'context', connectionId, context: source.context, atMs: now });
 	await settle(core);
-	const port = core.liveIngamePort();
+	const port = core.alerts.liveIngamePort();
 	expect(await port.open(source), 'the epoch opens').toBe('ready');
 	now = readAt + handshakeMs;
 	expect(await port.commit(sampleOf(source, 0, 0)), 'the baseline is stored').toBe('stored');
@@ -318,7 +318,7 @@ async function playUntilGameExit(core: LiveCore, connectionId: string, epoch: st
 /** The three things David saw fail: the button, the addon's answer and the session that never came. */
 async function expectTheNextConnectionToStartASession(core: LiveCore, finished: string): Promise<void> {
 	now += 60_000;
-	const tracker = core.ingamePresenceTracker();
+	const tracker = core.alerts.ingamePresenceTracker();
 	const source = sourceOf(SECOND_EPOCH);
 	tracker.apply({ kind: 'authenticated', connectionId: 'b', client: 'nexus', instance: INSTANCE, atMs: now });
 	tracker.apply({ kind: 'context', connectionId: 'b', context: source.context, atMs: now });
@@ -326,7 +326,7 @@ async function expectTheNextConnectionToStartASession(core: LiveCore, finished: 
 	expect(core.getProductActionController().describe('start-farming-session').available,
 		'«Iniciar sesión» is enabled once the game is connected').toBe(true);
 	await settle(core);
-	expect(await core.liveIngamePort().open(source), 'the addon is answered `ready`, not `source_conflict`').toBe('ready');
+	expect(await core.alerts.liveIngamePort().open(source), 'the addon is answered `ready`, not `source_conflict`').toBe('ready');
 	const view = core.getLiveSessionView();
 	expect(view.phase, 'a new session is running').toBe('active');
 	expect(view.sessionId, 'and it is not the finished one').not.toBe(finished);

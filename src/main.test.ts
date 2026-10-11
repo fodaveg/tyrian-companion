@@ -14,10 +14,14 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
+import { AlertRuntime, type AlertRuntimePort } from './runtime/alert-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
 import { InventoryRuntime, type InventoryRuntimePort } from './runtime/inventory-runtime';
+import { HalloweenObservationRuntime, type HalloweenObservationRuntimePort } from './runtime/halloween-observation-runtime';
+import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './runtime/price-history-runtime';
+import { ManagedAssetsRuntime, type ManagedAssetsRuntimePort } from './runtime/managed-assets-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -25,7 +29,7 @@ import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
 import { RETIRED_MANAGED_ASSETS } from './assets/retired-assets';
 import { genericManagedAssets, legacyRetiredBases } from './test/managed-asset-fixture';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
-import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
+import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './assets/managed-assets-lifecycle';
 import { managedAssetMarker, type ManagedAssetsInspection, type PackagedAsset } from './assets/managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
@@ -73,6 +77,26 @@ interface StartIntentHarness {
  * over that same object through the core's own port (`liveSessionRuntimePort`), so the object's
  * fields and the core's methods it lends are read exactly as the moved code reads them in production.
  */
+/**
+ * DE-01, step 3g: the managed assets are `ManagedAssetsRuntime`'s. The cases below that ran them as
+ * methods of `TyrianCompanionCore` on a plain object run them on a runtime built over that same object
+ * through the core's own port (`managedAssetsRuntimePort`), so the row's view is written to the
+ * object's own field, and the core's methods it lends are called, as in production. One runtime per
+ * object: it keeps the «warned once per plugin load» of a held automatic update, as the core's does.
+ */
+const assetsRuntimes = new WeakMap<object, ManagedAssetsRuntime>();
+function assetsOver(harness: object): ManagedAssetsRuntime {
+	let runtime = assetsRuntimes.get(harness);
+	if (runtime === undefined) {
+		const portOf = (TyrianCompanionCore as unknown as {
+			managedAssetsRuntimePort(this: void, core: object): ManagedAssetsRuntimePort;
+		}).managedAssetsRuntimePort;
+		runtime = new ManagedAssetsRuntime(portOf(harness));
+		assetsRuntimes.set(harness, runtime);
+	}
+	return runtime;
+}
+
 function liveOver(harness: object): LiveSessionRuntime {
 	const portOf = (TyrianCompanionCore as unknown as {
 		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
@@ -119,6 +143,33 @@ function inventoryOver(harness: object): InventoryRuntime {
 		inventoryRuntimePort(this: void, core: object): InventoryRuntimePort;
 	}).inventoryRuntimePort;
 	return new InventoryRuntime(portOf(harness));
+}
+
+/**
+ * DE-01, step 3g: the Halloween observation is `HalloweenObservationRuntime`'s. The cases below that
+ * ran it as methods of `TyrianCompanionCore` on a plain object run it on a runtime built over that same
+ * object through the core's own port (`halloweenObservationRuntimePort`), so the account references are
+ * written to the object's own fields. `active` stands in for the observation surface being live, which
+ * a new session never is.
+ */
+function halloweenOver(harness: object, active = true): HalloweenObservationRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		halloweenObservationRuntimePort(this: void, core: object): HalloweenObservationRuntimePort;
+	}).halloweenObservationRuntimePort;
+	const runtime = new HalloweenObservationRuntime(portOf(harness));
+	vi.spyOn(runtime, 'halloweenObservationActive').mockReturnValue(active);
+	return runtime;
+}
+
+/**
+ * DE-01, step 3g: the price history is `PriceHistoryRuntime`'s; the same arrangement, through
+ * `priceHistoryRuntimePort`.
+ */
+function priceHistoryOver(harness: object): PriceHistoryRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		priceHistoryRuntimePort(this: void, core: object): PriceHistoryRuntimePort;
+	}).priceHistoryRuntimePort;
+	return new PriceHistoryRuntime(portOf(harness));
 }
 
 describe('connection diagnostics composition', () => {
@@ -189,28 +240,24 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const harness = withObsidianHost({
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
-			halloweenObservationActive: () => true,
 			halloween: { activate, disable, setOnline },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const switchHalloweenAccount = (TyrianCompanionCore.prototype as unknown as {
-			switchHalloweenAccount(this: typeof harness, accountId: string): Promise<string>;
-		}).switchHalloweenAccount;
+		const observation = halloweenOver(harness);
 
-		await switchHalloweenAccount.call(harness, 'account-1');
+		await observation.switchHalloweenAccount('account-1');
 		expect(activate).toHaveBeenCalledTimes(1);
 		expect(disable).toHaveBeenCalledTimes(1);
 
 		// A second "Comprobar conexión" for the SAME account used to call `activate` again,
 		// even though nothing about the account changed.
-		await switchHalloweenAccount.call(harness, 'account-1');
+		await observation.switchHalloweenAccount('account-1');
 		expect(activate).toHaveBeenCalledTimes(1);
 		expect(disable).toHaveBeenCalledTimes(1);
 
 		// A genuinely different account still goes through the full reactivation path.
-		await switchHalloweenAccount.call(harness, 'account-2');
+		await observation.switchHalloweenAccount('account-2');
 		expect(activate).toHaveBeenCalledTimes(2);
 		expect(disable).toHaveBeenCalledTimes(2);
 	});
@@ -219,7 +266,6 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const activate = vi.fn(async () => undefined);
 		const prototype = TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: unknown): Promise<ConnectionState>;
-			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 		};
 		const harness = withObsidianHost({
 			runtimeReady: true,
@@ -232,14 +278,12 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
-			halloweenObservationActive: () => true,
 			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
 			// `checkConnection` calls `this.switchHalloweenAccount`; the harness needs the real
 			// implementation, not a mock, since that private method is exactly what H14.11 fixes.
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-			switchHalloweenAccount: prototype.switchHalloweenAccount,
+			switchHalloweenAccount(this: object, accountId: string, parent?: unknown) { return halloweenOver(this).switchHalloweenAccount(accountId, parent as never); },
 			// Detection is always armed with a connected account now (Lote S, 2026-09-09):
 			// `checkConnection` also calls `this.armAssistedDetection`.
 			armAssistedDetection: vi.fn(async () => 'unavailable'),
@@ -257,7 +301,6 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const activate = vi.fn(() => new Promise<void>(() => undefined));
 		const prototype = TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: unknown): Promise<ConnectionState>;
-			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 		};
 		const harness = withObsidianHost({
 			runtimeReady: true,
@@ -270,12 +313,10 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
-			halloweenObservationActive: () => true,
 			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-			switchHalloweenAccount: prototype.switchHalloweenAccount,
+			switchHalloweenAccount(this: object, accountId: string, parent?: unknown) { return halloweenOver(this).switchHalloweenAccount(accountId, parent as never); },
 			armAssistedDetection: vi.fn(async () => 'unavailable'),
 		});
 
@@ -295,7 +336,6 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			const activate = (): Promise<void> => { activations += 1; return Promise.reject(new Error('Halloween runtime is disposed.')); };
 			const prototype = TyrianCompanionCore.prototype as unknown as {
 				checkConnection(this: unknown): Promise<ConnectionState>;
-				switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 			};
 			const harness = withObsidianHost({
 				runtimeReady: true,
@@ -308,12 +348,10 @@ describe('Halloween backfill wiring (H14.11)', () => {
 				live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 				alertAccountRef: null as string | null,
 				halloweenAccountRef: null as string | null,
-				halloweenObservationActive: () => true,
 				halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 				halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 				settings: DEFAULT_SETTINGS,
-				// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-				switchHalloweenAccount: prototype.switchHalloweenAccount,
+				switchHalloweenAccount(this: object, accountId: string, parent?: unknown) { return halloweenOver(this).switchHalloweenAccount(accountId, parent as never); },
 				armAssistedDetection: vi.fn(async () => 'unavailable'),
 			});
 			await expect(prototype.checkConnection.call(harness)).resolves.toMatchObject({ status: 'connected' });
@@ -1106,12 +1144,6 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 		manifest: { version: string };
 		updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	}
-	const proto = TyrianCompanionCore.prototype as unknown as {
-		isPriceHistoryOptInOffered(this: OptInHarness): boolean;
-		enablePriceHistory(this: OptInHarness): Promise<void>;
-		dismissPriceHistoryOptIn(this: OptInHarness): Promise<void>;
-	};
-
 	/** Only `settings`, `manifest` and the Settings tab's own `updateSettings`: any other member would be undefined. */
 	function harness(): OptInHarness & { updates: Partial<TyrianSettings>[] } {
 		const updates: Partial<TyrianSettings>[] = [];
@@ -1131,19 +1163,19 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 
 	it('offers on a default install from settings alone, and both buttons write through updateSettings', async () => {
 		const enabled = harness();
-		expect(proto.isPriceHistoryOptInOffered.call(enabled)).toBe(true);
+		expect(priceHistoryOver(enabled).isPriceHistoryOptInOffered()).toBe(true);
 		expect(enabled.updates).toEqual([]);
-		await proto.enablePriceHistory.call(enabled);
+		await priceHistoryOver(enabled).enablePriceHistory();
 		expect(enabled.updates).toEqual([{ priceHistoryEnabled: true }]);
-		expect(proto.isPriceHistoryOptInOffered.call(enabled)).toBe(false);
+		expect(priceHistoryOver(enabled).isPriceHistoryOptInOffered()).toBe(false);
 
 		const dismissed = harness();
-		await proto.dismissPriceHistoryOptIn.call(dismissed);
+		await priceHistoryOver(dismissed).dismissPriceHistoryOptIn();
 		expect(dismissed.updates).toEqual([{ priceHistoryNoticeDismissedVersion: '0.1.35' }]);
 		expect(dismissed.settings.priceHistoryEnabled).toBe(false);
-		expect(proto.isPriceHistoryOptInOffered.call(dismissed)).toBe(false);
+		expect(priceHistoryOver(dismissed).isPriceHistoryOptInOffered()).toBe(false);
 		dismissed.manifest.version = '0.1.36';
-		expect(proto.isPriceHistoryOptInOffered.call(dismissed)).toBe(true);
+		expect(priceHistoryOver(dismissed).isPriceHistoryOptInOffered()).toBe(true);
 	});
 });
 
@@ -1214,15 +1246,12 @@ describe('Halloween production gating', () => {
 		let session: SessionState = { version: SESSION_STATE_VERSION, status: 'idle' };
 		const harness = {
 			sessions: { getState: () => session },
-			observeHalloweenDelta,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const observe = (TyrianCompanionCore.prototype as unknown as {
-			observeAcceptedHalloweenDelta(this: typeof harness, value: StorageDelta): Promise<void>;
-		}).observeAcceptedHalloweenDelta;
-		await observe.call(harness, delta);
+		const observation = halloweenOver(harness);
+		vi.spyOn(observation, 'observeHalloweenDelta').mockImplementation(observeHalloweenDelta);
+		await observation.observeAcceptedHalloweenDelta(delta);
 		session = { version: SESSION_STATE_VERSION, status: 'active', sessionId: 'session-halloween' } as SessionState;
-		await observe.call(harness, delta);
+		await observation.observeAcceptedHalloweenDelta(delta);
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(delta, 'assisted_poll', 'session:session-halloween');
 	});
 });
@@ -1569,7 +1598,6 @@ describe('automatic Base update behind the inventory sync (H18.18)', () => {
 		const notices: string[] = [];
 		const plugin = Object.assign(harness, {
 			managedAssets: manager,
-			managedAssetsAutoUpdateWarned: false,
 			inventoryVaultSyncRun: {
 				invalidate: () => undefined,
 				current: () => ({ status: 'idle' as const, lastRun: {
@@ -1579,11 +1607,7 @@ describe('automatic Base update behind the inventory sync (H18.18)', () => {
 			},
 			emitNotice: (_message: string, source: string) => { notices.push(source); },
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const update = (TyrianCompanionCore.prototype as unknown as {
-			updateManagedAssetsAfterInventorySync(this: typeof plugin): Promise<void>;
-		}).updateManagedAssetsAfterInventorySync;
-		return { vault, manager, plugin, notices, update: () => update.call(plugin) };
+		return { vault, manager, plugin, notices, update: () => assetsOver(plugin).updateManagedAssetsAfterInventorySync() };
 	}
 
 	it('brings an untouched Base up to the newer plugin after a successful sync, through the Settings apply path', async () => {
@@ -1674,11 +1698,7 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 		const plugin = Object.assign(harness, { managedAssets: manager, collectorMode: 'collector',
 			emitNotice: (message: string, source: string) => { messages.push(`${source}: ${message}`); } });
 		manager.setBundle({ bundleVersion: 2, locale: language, assets: [sessions, extra] });
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const create = (TyrianCompanionCore.prototype as unknown as {
-			updateManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
-		}).updateManagedAssetsOnLoad;
-		return { vault, manager, plugin, messages, sessions, extra, load: () => create.call(plugin) };
+		return { vault, manager, plugin, messages, sessions, extra, load: () => assetsOver(plugin).updateManagedAssetsOnLoad() };
 	}
 
 	it('creates the Base the installed manifest lacks, says which, and leaves the existing one byte for byte', async () => {
@@ -1741,13 +1761,12 @@ describe('a new Base of the bundle is created on load, and nothing else (9 Oct 2
 		const messages: string[] = [];
 		const never = Object.assign(buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' }),
 			{ managedAssets: manager, collectorMode: 'collector', emitNotice: (message: string) => { messages.push(message); } });
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const create = (TyrianCompanionCore.prototype as unknown as { updateManagedAssetsOnLoad(this: typeof never): Promise<void> }).updateManagedAssetsOnLoad;
-		await create.call(never);
+		const create = (): Promise<void> => assetsOver(never).updateManagedAssetsOnLoad();
+		await create();
 		expect(never.settings.managedAssetsRoot).toBeNull();
 		// The Hebra host adopts the output folder as the root without installing anything.
 		never.settings = { ...never.settings, managedAssetsRoot: 'Home' };
-		await create.call(never);
+		await create();
 		expect(vault.writeCount).toBe(0);
 		expect(vault.contents.size).toBe(0);
 		expect(messages).toEqual([]);
@@ -1827,12 +1846,8 @@ describe('the load retires the Bases the bundle no longer ships (9 Oct 2026)', (
 				status: 'success' as const, finishedAt: '2026-10-09T10:00:00.000Z', durationMs: 1, summary: null, error: null } }) },
 		});
 		manager.setBundle({ bundleVersion: 8, locale: 'es', assets: current, retired: RETIRED_MANAGED_ASSETS });
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			updateManagedAssetsOnLoad(this: typeof plugin): Promise<void>;
-			updateManagedAssetsAfterInventorySync(this: typeof plugin): Promise<void>;
-		};
-		return { vault, messages, plugin, load: () => proto.updateManagedAssetsOnLoad.call(plugin),
-			sync: () => proto.updateManagedAssetsAfterInventorySync.call(plugin) };
+		return { vault, messages, plugin, load: () => assetsOver(plugin).updateManagedAssetsOnLoad(),
+			sync: () => assetsOver(plugin).updateManagedAssetsAfterInventorySync() };
 	}
 
 	it('trashes the three untouched Bases on load, keeps the others, and says which', async () => {
@@ -2257,7 +2272,7 @@ describe('alert dispatch diagnostics', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'alert-dispatch' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const dispatch = (TyrianCompanionCore.prototype as unknown as {
+		const dispatch = (AlertRuntime.prototype as unknown as {
 			dispatchAlert(this: typeof harness, alert: AlertV1): void;
 		}).dispatchAlert;
 		const alert: AlertV1 = {
@@ -2275,16 +2290,20 @@ describe('alert dispatch diagnostics', () => {
 	});
 });
 
+/** A real `AlertRuntime` over the fields a test sets; the rest of its port is read only when a channel runs. */
+function alertsOver(fields: object) {
+	return new AlertRuntime(withObsidianHost({ ...fields }) as unknown as AlertRuntimePort) as unknown as
+		Pick<AlertRuntime, 'getAlertIngameServerErrorCode'> & { ensureAlertIngameServer(): Promise<unknown> };
+}
+
 describe('in-game alert server start diagnostics', () => {
 	it('a disabled bridge does not bind or manufacture a port failure', async () => {
 		alertIngameServerMocks.start.mockClear();
 		const record=vi.fn((_input:LocalDebugRecordInput) => true);
-		const harness=withObsidianHost({settings:{alertIngamePort:47823,alertIngameEnabled:false},alertIngameCloseFlight:null,
-			alertIngameServerErrorCode:null,localDebugActions:new LocalDebugActionRunner({diagnostics:{record} as unknown as LocalDebugLogger,createId:() => 'disabled-bridge'})});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit disabled host harness.
-		const ensure=(TyrianCompanionCore.prototype as unknown as {ensureAlertIngameServer(this:typeof harness):Promise<unknown>}).ensureAlertIngameServer;
-		await expect(ensure.call(harness)).resolves.toBeNull();
-		expect(alertIngameServerMocks.start).not.toHaveBeenCalled(); expect(harness.alertIngameServerErrorCode).toBeNull(); expect(record).not.toHaveBeenCalled();
+		const alerts=alertsOver({settings:{alertIngamePort:47823,alertIngameEnabled:false},
+			localDebugActions:new LocalDebugActionRunner({diagnostics:{record} as unknown as LocalDebugLogger,createId:() => 'disabled-bridge'})});
+		await expect(alerts.ensureAlertIngameServer()).resolves.toBeNull();
+		expect(alertIngameServerMocks.start).not.toHaveBeenCalled(); expect(alerts.getAlertIngameServerErrorCode()).toBeNull(); expect(record).not.toHaveBeenCalled();
 	});
 	// H15.17 (2026-09-10 incident): `.catch(() => null)` discarded the rejection entirely, so a
 	// port already in use (or denied by the OS) looked identical to the addon simply not being
@@ -2295,27 +2314,18 @@ describe('in-game alert server start diagnostics', () => {
 		);
 		const record = vi.fn((_input: LocalDebugRecordInput) => true);
 		const diagnostics = { record } as unknown as LocalDebugLogger;
-		const harness = withObsidianHost({
+		const settingTab = { refreshAlertIngameServerRow: vi.fn() };
+		const alerts = alertsOver({
 			settings: { alertIngamePort: 47_823, alertIngameEnabled: true, language: 'en' },
 			emitNotice: vi.fn(),
-			alertIngameServer: null,
-			alertIngameServerPort: null,
-			alertIngameServerFlight: null,
-			alertIngameServerErrorCode: null as string | null,
-			// The bind fixture needs the actual source port factory; no source callback runs on rejection.
-			liveIngamePort: () => (TyrianCompanionCore.prototype as unknown as {liveIngamePort():unknown}).liveIngamePort.call(harness),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'ingame-server-start' }),
-			settingTab: { refreshAlertIngameServerRow: vi.fn() },
+			settingTab,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
-		}).ensureAlertIngameServer;
 
-		await expect(ensure.call(harness)).resolves.toBeNull();
+		await expect(alerts.ensureAlertIngameServer()).resolves.toBeNull();
 
-		expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
-		expect(harness.settingTab.refreshAlertIngameServerRow).toHaveBeenCalled();
+		expect(alerts.getAlertIngameServerErrorCode()).toBe('EADDRINUSE');
+		expect(settingTab.refreshAlertIngameServerRow).toHaveBeenCalled();
 		const failure = record.mock.calls.map(([input]) => input).find(
 			(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
 		);
@@ -2325,18 +2335,13 @@ describe('in-game alert server start diagnostics', () => {
 	// HP-05: two collectors on one machine (Obsidian and Hebra) fight for 47823; the loser says so.
 	const busyPortHarness = (language: 'es' | 'en' = 'en') => {
 		const emitNotice = vi.fn();
-		const harness = withObsidianHost({
+		const harness = alertsOver({
 			settings: { alertIngamePort: 47_823, alertIngameEnabled: true, language },
-			alertIngameServer: null, alertIngameServerPort: null, alertIngameServerFlight: null,
-			alertIngameServerErrorCode: null as string | null, alertIngamePortBusyNoticed: false,
-			liveIngamePort: () => ({}),
 			emitNotice,
 			localDebugActions: null,
 			settingTab: { refreshAlertIngameServerRow: vi.fn() },
 		});
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
-		}).ensureAlertIngameServer.bind(harness);
+		const ensure = () => harness.ensureAlertIngameServer();
 		return { harness, emitNotice, ensure };
 	};
 
@@ -2346,7 +2351,7 @@ describe('in-game alert server start diagnostics', () => {
 			const { harness, emitNotice, ensure } = busyPortHarness('en');
 			await expect(ensure()).resolves.toBeNull();
 			await expect(ensure()).resolves.toBeNull();
-			expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
+			expect(harness.getAlertIngameServerErrorCode()).toBe('EADDRINUSE');
 			expect(emitNotice).toHaveBeenCalledTimes(1);
 			expect(emitNotice).toHaveBeenCalledWith(expect.stringContaining('Port 47823'), 'ingame_port_busy');
 			expect(emitNotice.mock.calls[0]?.[0]).toContain('Tyrian Companion in another program');
@@ -2365,14 +2370,14 @@ describe('in-game alert server start diagnostics', () => {
 		const { harness, emitNotice, ensure } = busyPortHarness();
 		await expect(ensure()).resolves.not.toBeNull();
 		expect(emitNotice).not.toHaveBeenCalled();
-		expect(harness.alertIngameServerErrorCode).toBeNull();
+		expect(harness.getAlertIngameServerErrorCode()).toBeNull();
 	});
 
 	it('any other listen error keeps its code and shows no notice', async () => {
 		alertIngameServerMocks.start.mockRejectedValueOnce(Object.assign(new Error('listen EACCES'), { code: 'EACCES' }));
 		const { harness, emitNotice, ensure } = busyPortHarness();
 		await expect(ensure()).resolves.toBeNull();
-		expect(harness.alertIngameServerErrorCode).toBe('EACCES');
+		expect(harness.getAlertIngameServerErrorCode()).toBe('EACCES');
 		expect(emitNotice).not.toHaveBeenCalled();
 	});
 });
@@ -2393,12 +2398,8 @@ describe('managed assets preview diagnostics', () => {
 			notifyRuntimeStarting: vi.fn(),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'managed-assets-preview' }),
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const preview = (TyrianCompanionCore.prototype as unknown as {
-			previewManagedAssets(this: typeof harness): Promise<void>;
-		}).previewManagedAssets;
 
-		await preview.call(harness);
+		await assetsOver(harness).previewManagedAssets();
 
 		expect(harness.managedAssetsView).toMatchObject({ status: 'error', message: 'inspect_failed' });
 		const failure = record.mock.calls.map(([input]) => input).find(
@@ -2418,16 +2419,11 @@ describe('managed assets preview diagnostics', () => {
 			notifyRuntimeStarting: vi.fn(),
 			localDebugActions: undefined,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const preview = (TyrianCompanionCore.prototype as unknown as {
-			previewManagedAssets(this: ReturnType<typeof build>): Promise<void>;
-		}).previewManagedAssets;
-
 		const withRoot = build('Tyrian Companion');
-		await preview.call(withRoot);
+		await assetsOver(withRoot).previewManagedAssets();
 		expect(withRoot.managedAssetsView).toMatchObject({ status: 'ready', message: 'preview_unowned' });
 		const fresh = build(null);
-		await preview.call(fresh);
+		await assetsOver(fresh).previewManagedAssets();
 		expect(fresh.managedAssetsView).toMatchObject({ status: 'ready', message: 'preview_unowned_no_root' });
 	});
 
@@ -2444,10 +2440,7 @@ describe('managed assets preview diagnostics', () => {
 			notifyRuntimeStarting: vi.fn(),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'managed-assets-replace-list' }),
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const list = (TyrianCompanionCore.prototype as unknown as {
-			listUnownedManagedAssets(this: typeof harness): Promise<Array<{ id: string; path: string }>>;
-		}).listUnownedManagedAssets;
+		const list = { call: (target: object) => assetsOver(target).listUnownedManagedAssets() };
 
 		await expect(list.call(harness)).resolves.toEqual([]);
 		expect(harness.managedAssetsView).toMatchObject({ status: 'error', message: 'inspect_failed' });
@@ -2597,7 +2590,7 @@ describe('local diagnostics composition', () => {
 				return result;
 			} },
 			sessions: { dispose: vi.fn(async () => { events.push('sessions:dispose'); }) },
-			ingameReceipts: { dispose: vi.fn() },
+			alerts: new AlertRuntime({} as AlertRuntimePort),
 			// No assisted proposal is live: the live session runtime closes none (DE-01, step 3d).
 			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
 		}) as unknown as TyrianCompanionCore;
@@ -2693,7 +2686,7 @@ interface ManagedAssetsRootHarness {
 }
 
 /**
- * Wires the real `TyrianCompanionPlugin` prototype methods that implement folder-change
+ * Wires the real `ManagedAssetsRuntime` (over the core's own port) and the core's `updateSettings` that implement folder-change
  * reconciliation to an isolated harness object instead of a full plugin instance, following
  * this file's established `.call(harness, …)` pattern. Every method the exercised methods call
  * on `this` is either a real bound method (so recursive calls stay real) or a narrow stub for a
@@ -2704,14 +2697,7 @@ function buildManagedAssetsRootHarness(
 	initialSettings: TyrianSettings,
 ): ManagedAssetsRootHarness {
 	const proto = TyrianCompanionCore.prototype as unknown as {
-		applyManagedAssets(this: ManagedAssetsRootHarness, guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void>;
-		applyManagedAssetsIfStillDue(this: ManagedAssetsRootHarness, requireReady: boolean): Promise<ManagedAssetsInspection | null>;
-		announceManagedAssetsFollowed(this: ManagedAssetsRootHarness, applied: ManagedAssetsInspection): boolean;
 		updateSettings(this: ManagedAssetsRootHarness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
-		relocateManagedAssets(this: ManagedAssetsRootHarness): Promise<unknown>;
-		reconcileManagedAssetsRoot(this: ManagedAssetsRootHarness): Promise<void>;
-		ensureManagedAssetsAuthority(this: ManagedAssetsRootHarness): Promise<boolean>;
-		runManagedAssetsLifecycle(this: ManagedAssetsRootHarness, operation: () => Promise<unknown>): Promise<unknown>;
 	};
 	const harness: ManagedAssetsRootHarness = withObsidianHost({
 		runtimeReady: true,
@@ -2728,14 +2714,14 @@ function buildManagedAssetsRootHarness(
 		renderViews: () => undefined,
 		renderInventoryAdvisorViews: () => undefined,
 		emitNotice: () => undefined,
-		applyManagedAssets: (guard) => proto.applyManagedAssets.call(harness, guard),
-		applyManagedAssetsIfStillDue: (requireReady) => proto.applyManagedAssetsIfStillDue.call(harness, requireReady),
-		announceManagedAssetsFollowed: (applied) => proto.announceManagedAssetsFollowed.call(harness, applied),
+		applyManagedAssets: (guard) => assetsOver(harness).applyManagedAssets(guard),
+		applyManagedAssetsIfStillDue: (requireReady) => assetsOver(harness).applyManagedAssetsIfStillDue(requireReady),
+		announceManagedAssetsFollowed: (applied) => assetsOver(harness).announceManagedAssetsFollowed(applied),
 		updateSettings: (update) => proto.updateSettings.call(harness, update),
-		relocateManagedAssets: () => proto.relocateManagedAssets.call(harness),
-		reconcileManagedAssetsRoot: () => proto.reconcileManagedAssetsRoot.call(harness),
-		ensureManagedAssetsAuthority: () => proto.ensureManagedAssetsAuthority.call(harness),
-		runManagedAssetsLifecycle: (operation) => proto.runManagedAssetsLifecycle.call(harness, operation),
+		relocateManagedAssets: () => assetsOver(harness).relocateManagedAssets(),
+		reconcileManagedAssetsRoot: () => assetsOver(harness).reconcileManagedAssetsRoot(),
+		ensureManagedAssetsAuthority: () => assetsOver(harness).ensureManagedAssetsAuthority(),
+		runManagedAssetsLifecycle: (operation) => assetsOver(harness).runManagedAssetsLifecycle(operation as () => Promise<ManagedAssetsLifecycleResult>),
 	} satisfies ManagedAssetsRootHarness);
 	return harness;
 }

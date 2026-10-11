@@ -11,7 +11,8 @@ import type { TyrianHost } from './host/tyrian-host';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 import { HttpTransportError } from './core/http';
 
-interface RuntimeAccess {host:TyrianHost;liveIngamePort():LiveIngamePort;liveSessions:LiveSessionLifecycle;liveEconomy:LiveSessionEconomy}
+interface AlertsAccess {liveIngamePort():LiveIngamePort}
+interface RuntimeAccess {host:TyrianHost;alerts:AlertsAccess;liveSessions:LiveSessionLifecycle;liveEconomy:LiveSessionEconomy}
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ'; const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-07T08:00:00.000Z');
 const THRESHOLD_ROW = 'Alert me about a drop from';
@@ -32,7 +33,7 @@ async function runtime() {
 	const sample = (cursor:number,rows:Array<[0,number,number]>):LiveIngameSample => ({...source,cursor,contextSeq:0,
 		sourceElapsedMs:cursor*1000,mode:cursor===0?'baseline':'sample',itemCoverage:'complete',currencyCoverage:'none',
 		unknownPositions:0,freeSlots:null,rows,observedAt:new Date(now).toISOString()});
-	return {h,access,port:access.liveIngamePort(),source,sample,setNow:(value:number) => {now=value;}};
+	return {h,access,alerts:access.alerts,port:access.alerts.liveIngamePort(),source,sample,setNow:(value:number) => {now=value;}};
 }
 /** The real settings panel over the real core: what the user types goes through the row's own handler and `updateSettings`. */
 async function typeInThresholdRow(f:Awaited<ReturnType<typeof runtime>>, value:string): Promise<void> {

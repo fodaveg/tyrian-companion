@@ -15,21 +15,18 @@
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
-import { farmingGoalForSession, projectBagPriceIngameState } from './farming-runtime-projection';
+import { farmingGoalForSession } from './farming-runtime-projection';
 import { observeFarmingSessionContext, type FarmingGroupContext, type FarmingSessionContext } from './farming-session-context';
 import { type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
-import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
-import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
+import { LiveSourceConnections } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
 import { newLiveSessionFormat } from '../sessions/live-session-format';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-model';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
-import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
@@ -49,35 +46,21 @@ import type {
 import { labelledVault, sessionHistoryVault } from './vault-ports';
 import { createTyrianCoreRuntime, flushTyrianLocalDebug } from './tyrian-runtime';
 import { GuildWars2AccountGateway } from '../account/account-service';
-import {
-	ALERT_LATENCY_MINUTES,
-	type AlertKind,
-	type AlertV1,
-} from '../alerts/alert-contract';
-import { ALERT_CHANNEL_PENDING, AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
-import { systemNotificationChannelResult } from '../alerts/alert-system-notification';
+import type { AlertV1 } from '../alerts/alert-contract';
+import { AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { EmittedAlertQueue } from '../alerts/emitted-alert-queue';
-import { readAlertDelivery, type AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
-import { IngameAlertReceiptTracker, type IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
-import type { IngameAlertBroadcast } from '../alerts/alert-ingame-server';
-import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from '../alerts/alert-webhook';
-import { alertIngamePayload } from '../alerts/alert-ingame';
-import { startAlertIngameServer, type AlertIngameServerHandle } from '../alerts/alert-ingame-server';
+import type { AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
+import { ALERT_WEBHOOK_TIMEOUT_MS } from '../alerts/alert-webhook';
+import { AlertRuntime, ALERT_INGAME_SECRET_COMMAND_ID, type AlertRuntimePort } from './alert-runtime';
 import {
-	IngamePresenceTracker,
-	type IngameConnectionEvent,
 	type IngamePresenceEvent,
 	type IngamePresenceSnapshot,
 } from '../alerts/alert-ingame-presence';
 import {
-	createIngameBridgeNonce,
 	createIngameBridgeSecret,
-	ingameBridgeSecretMatches,
-	type IngameBridgeClient,
 	isUsableIngameBridgeSecret,
 } from '../alerts/alert-ingame-protocol';
-import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from '../alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from '../account/connection-service';
 import {
 	GuildWars2Client,
@@ -92,21 +75,16 @@ import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
 import type { StorageDelta } from '../account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from '../assets/generic-assets';
 import { RETIRED_MANAGED_ASSETS } from '../assets/retired-assets';
-import { ManagedAssetsManager, type ManagedAssetsFailureCause, type ManagedAssetsResult } from '../assets/managed-assets';
+import { ManagedAssetsManager } from '../assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
-import {
-	decideManagedAssetsAutoUpdate,
-	planManagedAssets,
-	type ManagedAssetsAutoUpdateDecision,
-	type ManagedAssetsInspection,
-} from '../assets/managed-assets-model';
-import type { ManagedAssetsMessageCode, ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
+import type { ManagedAssetsInspection } from '../assets/managed-assets-model';
+import type { ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from '../assets/managed-assets-pointer';
 import { HostRequestTransport, HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HostApiKeyProvider } from '../core/secret-provider';
 import { SerialTaskQueue } from '../core/serial-task-queue';
-import { createTranslator, type Locale, type Translator } from '../core/i18n';
+import { createTranslator, type Translator } from '../core/i18n';
 import {
 	type LocalDebugAction,
 	type LocalDebugComponent,
@@ -119,7 +97,6 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
-import { vaultFailureCause } from '../core/vault-failure-cause';
 import { LocalDebugLogger } from '../core/local-debug-logger';
 import { resanitizeLocalDebugRecord } from '../core/local-debug-sanitizer';
 import {
@@ -127,9 +104,8 @@ import {
 	LocalDebugPersistenceProbe,
 } from '../core/local-debug-persistence';
 import { requestPersistentStorage } from '../core/persistent-storage';
-import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
-import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
-import { halloweenObservationActive } from '../halloween/halloween-activation';
+import { translateRuntime } from '../core/i18n-runtime-catalog';
+import type { PriceHistoryRuntime as PriceHistoryService, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
 import { IndexedDbHalloweenStore } from '../halloween/halloween-store';
 import type { HalloweenRuntime, HalloweenRuntimeState } from '../halloween/halloween-runtime';
@@ -138,7 +114,6 @@ import type {
 	HalloweenPriceAlertRuntimeState,
 } from '../halloween/halloween-price-alert-runtime';
 import { assembleHalloween } from './assemble-halloween';
-import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from '../halloween/halloween-price-alert';
 import type {
 	PriceHistorySettings,
 	PriceHistorySide,
@@ -151,7 +126,7 @@ import {
 	detectionActionOutcome,
 	vaultSyncActionOutcome,
 } from './core-outcomes';
-import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult } from './core-actions';
+import { consulting, consumeRecorded, fireAndForgetLocal } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
 	resolveSaleSeasonalInputFor,
@@ -161,6 +136,9 @@ import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
 import { InventoryRuntime, type InventoryRuntimePort } from './inventory-runtime';
+import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './price-history-runtime';
+import { HalloweenObservationRuntime, halloweenPriceAlertSettingsFrom, type HalloweenObservationRuntimePort } from './halloween-observation-runtime';
+import { ManagedAssetsRuntime, canMoveManagedAssets, type ManagedAssetsRuntimePort } from './managed-assets-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
@@ -176,9 +154,7 @@ import {
 } from '../economy/price-seed-bulk-refresh';
 import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
-import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
-import { paintPriceHistoryNoteBlock } from '../ui/price-history-note-block-controller';
 import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
 import {
 	assembleAdvisor,
@@ -204,7 +180,6 @@ import {
 	mergeSettingsUpdate,
 	migrateSettings,
 	SETTINGS_SCHEMA_VERSION,
-	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	type SettingsPatchOverBase,
@@ -394,7 +369,7 @@ export {
 } from './core-sale-rules';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
-export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
+export { ALERT_INGAME_SECRET_COMMAND_ID };
 /** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
 export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
@@ -526,7 +501,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	/** DU-13: the copy of the preferences in the host's settings; told of the changes that bypass the preferences store. */
 	private inventoryPreferencesBackup: InventoryPreferencesBackup | null = null;
-	private priceHistory: PriceHistoryRuntime | null = null;
+	private priceHistory: PriceHistoryService | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
 	/** Set once during `initializeRuntime`; `readCachedPriceSeed`'s own key, reused by `refreshSaleHeroTiming`. */
@@ -602,51 +577,38 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * keeps building the controllers it drives and the settings write chain.
 	 */
 	private readonly inventory: InventoryRuntime = new InventoryRuntime(TyrianCompanionCore.inventoryRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the price history (its state and opt-in, the series and seeds the panels ask
+	 * for, the note block, the watch list's names, the bag's public price). It reads the core's
+	 * fields through `priceHistoryRuntimePort`; the core keeps the services and the shared catalog.
+	 */
+	private readonly priceHistoryFacade: PriceHistoryRuntime = new PriceHistoryRuntime(TyrianCompanionCore.priceHistoryRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the Halloween observation (its states, the storage delta reaching it, the
+	 * account switch). It reads and writes the core's fields through `halloweenObservationRuntimePort`;
+	 * the core keeps the two services and both account references.
+	 */
+	private readonly halloweenObservation: HalloweenObservationRuntime = new HalloweenObservationRuntime(TyrianCompanionCore.halloweenObservationRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the managed assets (the Settings row's actions, the lifecycle and journaled runs
+	 * behind them, the follow of a changed output folder and the automatic update after a sync and on
+	 * load). It reads the core's fields through `managedAssetsRuntimePort`; the core builds the manager,
+	 * the lifecycle and the pointer store, and owns the row's view.
+	 */
+	private readonly assetsRuntime: ManagedAssetsRuntime = new ManagedAssetsRuntime(TyrianCompanionCore.managedAssetsRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
 	/** Scope of the durable alert queue. Resolved from the session baseline when Halloween has not set it. */
 	private alertAccountRef: string | null = null;
-	private alertScopeFlight: Promise<string | null> | null = null;
 	private alertQueue: EmittedAlertQueue | null = null;
-	private emittedAlerts: readonly EmittedAlertRecordV1[] = [];
-	/** H18.38: delivery record per `alertId`, already read as it stands now (a stale `pending` reads `restart`). */
-	private alertDeliveries: ReadonlyMap<string, AlertDeliveryRecordV1> = new Map();
 	/**
-	 * H18.38: the ack state of each alert sent through the in-game bridge, and the alert each `seq`
-	 * belongs to. Its `onChange` is what writes the delivery record, so the record follows the
-	 * ack, the 15 s timeout and a late ack without another code path.
+	 * DE-01, step 3g: the alerts and the in-game bridge (the emitter's channels, the loopback server,
+	 * the acks and the game presence, the queue's view model). It reads the core's fields through
+	 * `alertRuntimePort`; the core keeps the queue and the emitter, the account scope and the
+	 * credential-touching pieces (the bridge token, the webhook's transport).
 	 */
-	private readonly ingameReceipts = new IngameAlertReceiptTracker(
-		{
-			schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-			cancel: (handle) => { window.clearTimeout(handle as number); },
-		},
-		(alertSeq, receipt) => { this.persistIngameReceipt(alertSeq, receipt); },
-	);
-	private readonly ingameTracked = new Map<number, {
-		alert: AlertV1; emittedAtMs: number; alertId: string; sentTo: readonly IngameBridgeClient[];
-	}>();
-	private readonly liveIngameTracked = new Map<number, {sessionId:string;outboxId:string;sentTo:IngameBridgeClient[]}>();
-	/** `alertId`s whose ack this process is still waiting for. */
-	private readonly ingameAwaitingAck = new Set<string>();
-	/** In-game bridge (H13.9/H13.15). Null until an alert actually needs it, or after it fails to bind. */
-	private alertIngameServer: AlertIngameServerHandle | null = null;
-	private alertIngameServerPort: number | null = null;
-	private alertIngameServerFlight: Promise<AlertIngameServerHandle | null> | null = null;
-	private alertIngameCloseFlight: Promise<void> | null = null;
-	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
-	private alertIngameServerErrorCode: string | null = null;
-	/** HP-05: the busy-port notice is shown once per plugin start, however many times the bind is retried. */
-	private alertIngamePortBusyNoticed = false;
-	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
-	private alertIngameSeq = 0;
-	/**
-	 * H18.23: game presence reported by the authenticated addons. Outlives any one server (a port
-	 * change is a loss with grace, not a new game) and is what H18.26 subscribes to. Built on first
-	 * use by `ingamePresenceTracker`, and dropped on unload.
-	 */
-	private alertIngamePresence: IngamePresenceTracker | null = null;
+	private readonly alerts: AlertRuntime = new AlertRuntime(TyrianCompanionCore.alertRuntimePort(this));
 	/** H18.26: turns that presence into the session lifecycle; built once the runtime is ready. */
 	private ingameSessionMarker: IngameSessionMarker | null = null;
 	/** R1b: the collector's footprint in the status note. Running only while this installation collects. */
@@ -678,8 +640,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
 	private managedAssetsView: ManagedAssetsView =
 		{ status: 'idle', message: 'not_inspected', plan: null };
-	/** H18.18: a held automatic Base update warns once per plugin load, not on every sync. */
-	private managedAssetsAutoUpdateWarned = false;
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
@@ -967,9 +927,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			open: async () => await IndexedDbHalloweenStore.open(
 				indexedDB, undefined, undefined, this.persistenceDiagnostics('halloween', 'halloween_alert'),
 			),
-			accountRef: () => this.resolveAlertAccountRef(),
+			accountRef: () => this.alerts.resolveAlertAccountRef(),
 		});
-		this.alertEmitter = this.buildAlertEmitter(this.alertQueue);
+		this.alertEmitter = this.alerts.buildAlertEmitter(this.alertQueue);
 		// A player who left `ingame` enabled last session must not have to trigger an alert to
 		// find out the addon can connect: open the listener now, the same way it would open on
 		// the settings toggle below, instead of waiting for `deliver` to reach for it.
@@ -1111,7 +1071,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			evaluateSellSignal: async (port) => { await this.sale.evaluateSellSignal(port); },
 			// No network without a session, the seed included.
 			sessionActive: () => this.sessions?.getState().status === 'active',
-			emittedAlerts: () => this.emittedAlerts,
+			emittedAlerts: () => this.alerts.getEmittedAlerts(),
 			cooldownHours: () => this.settings.halloweenPriceAlertCooldownHours,
 			heldQuantity: () => this.observedBagQuantity(),
 			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
@@ -2018,7 +1978,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
-		this.ingameReceipts.dispose();
+		this.alerts.disposeIngameReceipts();
 		this.alertQueue?.dispose();
 		this.sessionCatalog?.dispose();
 		this.sessionCatalog = null;
@@ -2031,8 +1991,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.ingameSessionMarker = null;
 		this.collectorHeartbeat?.stop();
 		this.collectorHeartbeat = null;
-		this.alertIngamePresence?.dispose();
-		this.alertIngamePresence = null;
+		this.alerts.disposeIngamePresence();
 		this.startModal?.close();
 		this.discardModal?.close();
 		this.clearModal?.close();
@@ -2393,141 +2352,50 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.sale.refreshSale(options);
 	}
 
-	getPriceHistoryState(): PriceHistoryRuntimeState {
-		return this.priceHistory?.getState() ?? disabledPriceHistoryState();
-	}
+	/** The price history's state (`PriceHistoryRuntime`). */
+	getPriceHistoryState(): PriceHistoryRuntimeState { return this.priceHistoryFacade.getPriceHistoryState(); }
 
-	getHalloweenState(): HalloweenRuntimeState {
-		return this.halloween?.getState() ?? disabledHalloweenState();
-	}
+	/** The Halloween notices as the views read them (`HalloweenObservationRuntime`). */
+	getHalloweenState(): HalloweenRuntimeState { return this.halloweenObservation.getHalloweenState(); }
 
-	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
-		return this.halloweenPriceAlert?.getState() ?? disabledHalloweenPriceAlertState();
-	}
+	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState { return this.halloweenObservation.getHalloweenPriceAlertState(); }
 
-	// `acknowledgeHalloweenNotice`/`acknowledgeHalloweenPriceNotice` are gone (Lote S, 2026-09-09):
-	// nobody marks an aviso reviewed anymore. `this.halloween`/`this.halloweenPriceAlert` keep their
-	// own `acknowledge()` capability and `acknowledgedAt` bookkeeping — that stays out of scope, see
-	// the final report — this host simply stops calling it.
-
-	private async observeHalloweenDelta(
+	private observeHalloweenDelta(
 		delta: StorageDelta,
 		source: 'assisted_poll' | 'session_final',
 		episodeId: string,
 		classification?: Parameters<HalloweenRuntime['observeDelta']>[0]['classification'],
 	): Promise<void> {
-		if (delta.status === 'invalid' || delta.accountId === null) return;
-		// The account hash is resolved before the seasonal gate, not after it: it scopes the
-		// durable alert queue too, and outside the festival window that queue is the only
-		// surface still writing.
-		const accountRef = await this.switchHalloweenAccount(delta.accountId);
-		if (accountRef !== this.halloweenAccountRef) return;
-		if (!this.halloweenObservationActive() || this.halloween === null) return;
-		await this.halloween.observeDelta({ delta, source, episodeId, classification });
+		return this.halloweenObservation.observeHalloweenDelta(delta, source, episodeId, classification);
 	}
 
-	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
-		const session = this.sessions.getState();
-		if (session.status !== 'active') return;
-		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
+	private observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> { return this.halloweenObservation.observeAcceptedHalloweenDelta(delta); }
+
+	private switchHalloweenAccount(accountId: string, parent?: ResolvedLocalDebugActionContext): Promise<string> {
+		return this.halloweenObservation.switchHalloweenAccount(accountId, parent);
 	}
 
-	private async switchHalloweenAccount(
-		accountId: string,
-		parent?: ResolvedLocalDebugActionContext,
-	): Promise<string> {
-		const accountRef = await sha256Text(accountId);
-		this.alertAccountRef = accountRef;
-		// An unchanged account has nothing to do here: it was already activated the first time
-		// this account was observed, and this used to call `activate` again on every single
-		// "Comprobar conexión", even when nothing changed. Toggling the setting, a secret
-		// change and the season opening reactivate through their own dedicated paths below.
-		if (accountRef === this.halloweenAccountRef) return accountRef;
-		this.halloweenAccountRef = accountRef;
-		await this.halloweenPriceAlert?.configure(
-			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, parent,
-		);
-		if (!this.halloweenObservationActive() || this.halloween === null) return accountRef;
-		this.halloween.disable(parent);
-		// Z21: `activate` drains the session-note backfill (it reads and parses every candidate note,
-		// seconds on a big vault), so awaiting it here held "Comprobar conexión" and what runs after it
-		// (`armAssistedDetection`, `reconcilePendingProposals`) behind the walk. It runs in the
-		// background instead. Loot does NOT skip the wait, on purpose: `HalloweenRuntime.observeDelta`
-		// awaits the pending activation and every backfill flight before counting anything, and
-		// per-episode flights stay serialised, so no loot is counted twice or lost while the walk goes
-		// on. `activate` reports store failures through the runtime state; only a disposed runtime
-		// rejects, which is not an error here.
-		void this.halloween.activate(parent).catch(() => undefined);
-		this.halloween.setOnline(this.host.environment.isOnline());
-		return accountRef;
+	enablePriceHistory(): Promise<void> { return this.priceHistoryFacade.enablePriceHistory(); }
+
+	/** Whether the advisor shows the price-history opt-in offer (`PriceHistoryRuntime`). */
+	isPriceHistoryOptInOffered(): boolean { return this.priceHistoryFacade.isPriceHistoryOptInOffered(); }
+
+	/** «Ahora no» on that offer (`PriceHistoryRuntime`). */
+	dismissPriceHistoryOptIn(): Promise<void> { return this.priceHistoryFacade.dismissPriceHistoryOptIn(); }
+
+	loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
+		return this.priceHistoryFacade.loadPriceHistorySeries(itemId, side, windowDays);
 	}
 
-	async enablePriceHistory(): Promise<void> {
-		await this.updateSettings({ priceHistoryEnabled: true });
-	}
+	/** The datawars2 seed of one item for an Inventory row's «Detalles» (`PriceHistoryRuntime`). */
+	ensurePriceHistorySeed(itemId: number): Promise<void> { return this.priceHistoryFacade.ensurePriceHistorySeed(itemId); }
 
-	/** Whether the advisor shows the price-history opt-in offer. Reads settings only; starts no I/O. */
-	isPriceHistoryOptInOffered(): boolean {
-		return priceHistoryOptInOffered(this.settings, this.host.environment.pluginVersion);
-	}
+	/** Last known datawars2 seed for one item; a stale read (`PriceHistoryRuntime`). */
+	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState { return this.priceHistoryFacade.getPriceHistorySeedState(itemId); }
 
-	/** «Ahora no» on that offer: records the installed version, so the next release offers it again. */
-	async dismissPriceHistoryOptIn(): Promise<void> {
-		await this.updateSettings({ priceHistoryNoticeDismissedVersion: this.host.environment.pluginVersion });
-	}
-
-	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
-		if (!this.runtimeReady || this.priceHistory === null) { this.notifyRuntimeStarting(); return; }
-		await this.priceHistory.loadSeries(itemId, side, windowDays);
-		// `ensure` never throws: a datawars2 failure is a state on the seed service, not an
-		// exception, so the local series above is never held hostage to a third party.
-		await this.priceHistoryPanelSeed?.ensure(itemId);
-		this.renderInventoryAdvisorViews();
-	}
-
-	/**
-	 * The datawars2 seed of one item for the chart inside an Inventory row's «Detalles». Unlike
-	 * `loadPriceHistorySeries` it never touches the price panel's selected item or its local series:
-	 * the seed service takes any item id (the watch list only bounds the LOCAL captures), and it
-	 * already carries the 24 h cache and the shared interactive download turn. With the history off
-	 * it does nothing at all, so opening a row cannot start a request the player has not consented to.
-	 */
-	async ensurePriceHistorySeed(itemId: number): Promise<void> {
-		if (!this.settings.priceHistoryEnabled || !this.runtimeReady || this.priceHistoryPanelSeed === null) return;
-		await this.priceHistoryPanelSeed.ensure(itemId);
-		this.renderInventoryAdvisorViews();
-	}
-
-	/** Last known datawars2 seed for one item; a stale read, it never starts a download itself. */
-	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState {
-		return this.priceHistoryPanelSeed?.getState(itemId)
-			?? { status: 'idle', itemId, days: [], failureReason: null, retrievedAt: null };
-	}
-
-	/**
-	 * H9.2 piloto: the `tyrian-price-history` code-block handler Obsidian invokes for every
-	 * rendered note that carries one, never at load. Shares the exact same 24h-cached seed
-	 * service as the settings panel (`priceHistoryPanelSeed`): a note and the panel showing
-	 * the same item inside that window never cost a second request.
-	 */
-	private async paintPriceHistoryNoteBlockView(
-		source: string,
-		el: HTMLElement,
-		ctx: TyrianCodeBlockContext,
-	): Promise<void> {
-		const frontmatterItemName = frontmatterTcItemName(ctx.frontmatter);
-		await paintPriceHistoryNoteBlock(el, source, {
-			translator: createTranslator(this.settings.language),
-			ready: () => this.runtimeReady && this.priceHistoryPanelSeed !== null,
-			getState: (itemId) => this.getPriceHistorySeedState(itemId),
-			ensure: async (itemId) => await this.priceHistoryPanelSeed?.ensure(itemId)
-				?? this.getPriceHistorySeedState(itemId),
-			itemName: () => frontmatterItemName,
-			// A note can render this block before `initializeRuntime` finishes (H18 bug, 28 sep):
-			// nothing else ever repaints a code block on its own, so without this the block was
-			// stuck on "loading" forever. Retried exactly once, the moment startup settles.
-			whenReady: () => this.whenRuntimeReady(),
-		});
+	/** The `tyrian-price-history` code-block handler (`PriceHistoryRuntime`). */
+	private paintPriceHistoryNoteBlockView(source: string, el: HTMLElement, ctx: TyrianCodeBlockContext): Promise<void> {
+		return this.priceHistoryFacade.paintPriceHistoryNoteBlockView(source, el, ctx);
 	}
 
 	/** Resolves once, the first time after this call that `runtimeReady` settles (ready or failed). */
@@ -2540,34 +2408,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const resolve of this.runtimeReadyWaiters.splice(0)) resolve();
 	}
 
-	/**
-	 * Public catalog name + icon for the price-history watch list.
-	 *
-	 * Reuses the same lazily-opened, IndexedDB-cached catalog service the session
-	 * loot panel uses: names and icons ride the one existing 7-day cache instead of
-	 * a bespoke one, and a second panel opening inside that window never repeats
-	 * the network request.
-	 */
-	async resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
-		if (itemIds.length === 0 || this.sessionCatalogFactory === null) return {};
-		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-			component: 'price_history', action: 'price_history_load_series', state: 'price_history_catalog',
-		});
-		try {
-			this.sessionCatalog ??= await this.sessionCatalogFactory();
-			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
-			const resolved: Record<number, { name: string; icon: string | null }> = {};
-			for (const [key, item] of Object.entries(items)) {
-				const itemId = Number(key);
-				if (!Number.isSafeInteger(itemId)) continue;
-				resolved[itemId] = { name: item.name, icon: safePublicRenderIconUrl(item.icon) };
-			}
-			span.success('resolved', { itemCount: itemIds.length });
-			return resolved;
-		} catch (error) {
-			span.failure(error, 'network_failure', 'price_history_catalog_unavailable');
-			return {};
-		}
+	/** Public catalog name + icon for the price-history watch list (`PriceHistoryRuntime`). */
+	resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
+		return this.priceHistoryFacade.resolvePriceHistoryItemCatalog(itemIds);
 	}
 
 	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState { return this.inventory.getInventoryPreferencesEditorState(); }
@@ -2586,123 +2429,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Writes a plan that paused for confirmation because it would deactivate rows (`InventoryRuntime`). */
 	confirmInventoryVaultSync(): Promise<void> { return this.inventory.confirmInventoryVaultSync(); }
 
-	/**
-	 * H18.18: the Bases follow a newer plugin on their own, but only behind the explicit inventory
-	 * sync that just rewrote the notes they read (never on load: PRODUCT.md principle 2 and 4).
-	 * Only an installed root that already is the output folder is touched, and only when the
-	 * manual preview's own conflict rule finds nothing the user edited
-	 * (`decideManagedAssetsAutoUpdate`); the write is the Settings "Aplicar" path, unchanged. A held
-	 * update keeps today's manual preview, ready in Settings, and warns once per plugin load.
-	 */
-	private async updateManagedAssetsAfterInventorySync(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		// A manual inventory sync also runs in consult, but the Bases stay the collector's to write.
-		if (consulting(this)) return;
-		const state = this.inventoryVaultSyncRun.current();
-		if (!this.runtimeReady || state.status !== 'idle' || state.lastRun?.status !== 'success') return;
-		const root = this.settings.managedAssetsRoot;
-		if (root === null || root !== this.settings.outputFolder
-			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
-		const perform = async () => {
-			let decision: ManagedAssetsAutoUpdateDecision;
-			let inspection: ManagedAssetsInspection;
-			try {
-				inspection = await this.managedAssets.inspect(root);
-				decision = decideManagedAssetsAutoUpdate(inspection);
-			} catch (error) {
-				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
-			}
-			const translator = createTranslator(this.settings.language);
-			if (decision.action === 'manual') {
-				this.managedAssetsView = { status: 'ready', message: 'preview_blocked', plan: planManagedAssets(inspection, 'upgrade') };
-				this.settingTab.refreshManagedAssetsRow();
-				if (!this.managedAssetsAutoUpdateWarned) {
-					this.managedAssetsAutoUpdateWarned = true;
-					this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_blocked');
-				}
-				return undefined;
-			}
-			if (decision.action === 'none') return undefined;
-			const applied = await this.applyManagedAssetsIfStillDue(false);
-			if (applied === null && this.managedAssetsView.status === 'ready') return undefined;
-			if (this.managedAssetsView.status !== 'ready') {
-				this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_updated');
-			} else if (applied !== null && !this.announceManagedAssetsFollowed(applied)) {
-				this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdated'), 'managed_assets_updated');
-			}
-			return undefined;
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'after_inventory_sync' }, perform)
-			?? perform());
-	}
+	/** The Bases follow a newer plugin after the one-click inventory sync (`ManagedAssetsRuntime`). */
+	private updateManagedAssetsAfterInventorySync(): Promise<void> { return this.assetsRuntime.updateManagedAssetsAfterInventorySync(); }
 
-	/**
-	 * David, 9 Oct 2026 (his choices «Sí, que las cree solo», «Actualizarla también» and «Borrarlos si no los editaste»): on
-	 * load the managed Bases follow the plugin exactly as they do after an inventory sync, with ONE rule
-	 * (`decideManagedAssetsAutoUpdate`): create the new ones, update those the user did not edit, and
-	 * retire those the bundle no longer ships (an unedited file is removed as the host's deleted-files setting says, an edited one stays
-	 * and stops being managed). A Base the user edited, a deleted one, a conflict or a newer manifest
-	 * holds everything back: nothing is written and, unlike the sync, nobody is warned (an edit made on
-	 * purpose would nag at every start). It additionally needs a `ready` manifest (an installation that
-	 * never applied assets gets nothing), the same root as the sync path (installed, equal to the output
-	 * folder, no legacy) and a collector. The «last sync succeeded» condition is the sync's and does not
-	 * apply. It runs after `runtimeReady`, off the boot path, through the Settings «Aplicar» path.
-	 */
-	private async updateManagedAssetsOnLoad(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host) || this.unloaded || !this.runtimeReady || consulting(this)) return;
-		const root = this.settings.managedAssetsRoot;
-		if (root === null || root !== this.settings.outputFolder
-			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
-		const perform = async () => {
-			// An unreadable manifest throws: `run` records the failure and the boot's fire-and-forget swallows it.
-			const inspection = await this.managedAssets.inspect(root);
-			if (this.unloaded || inspection.manifestStatus !== 'ready' || decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return undefined;
-			const applied = await this.applyManagedAssetsIfStillDue(true);
-			if (applied !== null && !this.unloaded && this.managedAssetsView.status === 'ready') this.announceManagedAssetsFollowed(applied);
-			return undefined;
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'on_load' }, perform) ?? perform());
-	}
-
-	/**
-	 * Applies the managed assets only if the decision still holds on the inspection the apply itself acts on
-	 * (same flight, no gap for a sync or an edit in between), and not after the plugin unloaded. Returns that
-	 * inspection, or `null` when nothing was applied. `requireReady`: the load never acts without a `ready`
-	 * manifest; the sync may also recover a lost one, as `decideManagedAssetsAutoUpdate` allows.
-	 */
-	private async applyManagedAssetsIfStillDue(requireReady: boolean): Promise<ManagedAssetsInspection | null> {
-		const seen: { inspection: ManagedAssetsInspection | null } = { inspection: null };
-		await this.applyManagedAssets((inspection) => {
-			if (this.unloaded || (requireReady && inspection.manifestStatus !== 'ready')) return false;
-			if (decideManagedAssetsAutoUpdate(inspection).action !== 'apply') return false;
-			seen.inspection = inspection;
-			return true;
-		// An automatic apply never creates a missing output folder: only the press of «Aplicar» does.
-		}, { createOutputFolder: false });
-		return seen.inspection;
-	}
-
-	/**
-	 * Says what the apply did, naming files: created, updated, removed (retired and not edited) and kept
-	 * without being managed (retired and edited). Returns false when there was nothing to name.
-	 */
-	private announceManagedAssetsFollowed(applied: ManagedAssetsInspection): boolean {
-		const translator = createTranslator(this.settings.language);
-		const base = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
-		const named = (status: string): string[] => applied.assets.filter((entry) => entry.status === status).map((entry) => entry.asset.relativePath);
-		const report = this.managedAssets.retirementReport();
-		let said = false;
-		const say = (key: 'notices.managedAssetsAutoCreated' | 'notices.managedAssetsAutoLoadUpdated' | 'notices.managedAssetsAutoRetired' | 'notices.managedAssetsAutoReleased', names: string[]): void => {
-			if (names.length === 0) return;
-			said = true;
-			this.emitNotice(translateRuntime(translator, key, { names: names.join(', ') }), 'managed_assets_updated');
-		};
-		say('notices.managedAssetsAutoCreated', named('create'));
-		say('notices.managedAssetsAutoLoadUpdated', named('update'));
-		say('notices.managedAssetsAutoRetired', report.trashed.map(base));
-		say('notices.managedAssetsAutoReleased', report.kept.map(base));
-		return said;
-	}
+	/** On load the managed Bases follow the plugin, off the boot path (`ManagedAssetsRuntime`). */
+	private updateManagedAssetsOnLoad(): Promise<void> { return this.assetsRuntime.updateManagedAssetsOnLoad(); }
 
 	/** Discards a pending destructive plan without writing anything (`InventoryRuntime`). */
 	cancelInventoryVaultSync(): void { this.inventory.cancelInventoryVaultSync(); }
@@ -2826,10 +2557,92 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `AlertRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the
+	 * core's own fields, so the settings replaced on a save, the queue and emitter built in
+	 * `initializeRuntime` and the services built later are read as they stand. The bridge token and
+	 * the webhook's transport stay here: this core is the reviewed home of `host.secrets` and `core/http`.
+	 */
+	private static alertRuntimePort(core: TyrianCompanionCore): AlertRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get collectorMode() { return core.collectorMode; },
+			get unloaded() { return core.unloaded; },
+			get localDebugActions() { return core.localDebugActions; },
+			get host() { return core.host; },
+			get settingTab() { return core.settingTab; },
+			get alertEmitter() { return core.alertEmitter; },
+			get alertQueue() { return core.alertQueue; },
+			get alertAccountRef() { return core.alertAccountRef; },
+			set alertAccountRef(value) { core.alertAccountRef = value; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get liveSessionLoot() { return core.liveSessionLoot; },
+			get liveSourceConnections() { return core.liveSourceConnections; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			renderViews: () => { core.renderViews(); },
+			readAlertIngameSecret: () => core.readAlertIngameSecret(),
+			copyAlertIngameSecret: () => core.copyAlertIngameSecret(),
+			alertWebhookTransport: () => {
+				const transport = new HostRequestTransport(core.host.http, {
+					maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: core.localDebugActions ?? undefined,
+					// Z9: Discord answers 204 with no body; any 2xx is a delivery, whatever it says.
+					ignoreResponseBody: true,
+				});
+				return { post: async (request) => await transport.send(request) };
+			},
+			getFarmingIngameState: () => core.getFarmingIngameState(),
+			getBagPriceIngameState: () => core.getBagPriceIngameState(),
+			startIngameSession: (character) => core.startIngameSession(character),
+			recordIngameSessionFailure: (error) => { core.recordIngameSessionFailure(error); },
+		};
+	}
+
+	/**
 	 * What `LiveViewRuntime` reads from this core (DE-01, step 3f). Getters over the core's own
 	 * fields, read as they stand: the controllers, the placement and the product actions are built
 	 * after the port.
 	 */
+	private static priceHistoryRuntimePort(core: TyrianCompanionCore): PriceHistoryRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get priceHistory() { return core.priceHistory; },
+			get priceHistoryPanelSeed() { return core.priceHistoryPanelSeed; },
+			get sessionCatalogFactory() { return core.sessionCatalogFactory; },
+			get sessionCatalog() { return core.sessionCatalog; },
+			set sessionCatalog(value) { core.sessionCatalog = value; },
+			get liveSessions() { return core.liveSessions; },
+			get liveEconomy() { return core.liveEconomy; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			whenRuntimeReady: () => core.whenRuntimeReady(),
+			renderInventoryAdvisorViews: () => { core.renderInventoryAdvisorViews(); },
+			updateSettings: (settings) => core.updateSettings(settings),
+		};
+	}
+
+	/**
+	 * What `HalloweenObservationRuntime` reads from this core and writes back to it (DE-01, step 3g).
+	 * Getters over the core's own fields, so the services built in `initializeRuntime` are read as they
+	 * stand; the two account references are setters too, which `unload`, the reset and the alert queue
+	 * also read.
+	 */
+	private static halloweenObservationRuntimePort(core: TyrianCompanionCore): HalloweenObservationRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get host() { return core.host; },
+			get sessions() { return core.sessions; },
+			get halloween() { return core.halloween; },
+			get halloweenPriceAlert() { return core.halloweenPriceAlert; },
+			get halloweenAccountRef() { return core.halloweenAccountRef; },
+			set halloweenAccountRef(value) { core.halloweenAccountRef = value; },
+			get alertAccountRef() { return core.alertAccountRef; },
+			set alertAccountRef(value) { core.alertAccountRef = value; },
+		};
+	}
+
 	private static liveViewRuntimePort(core: TyrianCompanionCore): LiveViewRuntimePort {
 		return {
 			get runtimeReady() { return core.runtimeReady; },
@@ -2873,6 +2686,32 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			updateManagedAssetsAfterInventorySync: () => core.updateManagedAssetsAfterInventorySync(),
 			serializeSettingsWrite: (section) => core.serializeSettingsWrite(section),
 			loadSettingsBase: () => core.loadSettingsBase(),
+		};
+	}
+
+	/**
+	 * What `ManagedAssetsRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the
+	 * core's own fields, so the manager and the lifecycle `initializeRuntime` builds later and a setting
+	 * changed are read as they stand; the row's view is a setter too, as the core owns it.
+	 */
+	private static managedAssetsRuntimePort(core: TyrianCompanionCore): ManagedAssetsRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get unloaded() { return core.unloaded; },
+			get collectorMode() { return core.collectorMode; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get managedAssets() { return core.managedAssets; },
+			get managedAssetsLifecycle() { return core.managedAssetsLifecycle; },
+			get managedAssetsView() { return core.managedAssetsView; },
+			set managedAssetsView(value) { core.managedAssetsView = value; },
+			get settingTab() { return core.settingTab; },
+			get inventoryVaultSyncRun() { return core.inventoryVaultSyncRun; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			notifyConsultMode: () => { core.notifyConsultMode(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			updateSettings: (settings) => core.updateSettings(settings),
 		};
 	}
 
@@ -3178,12 +3017,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	getFarmingPreparationContext(): FarmingPreparationContext { return this.farming.getFarmingPreparationContext(); }
 	getFarmingIngameState(): FarmingIngameState { return this.farming.getFarmingIngameState(); }
 
-	/** Public gross price of the Halloween bag for `price2`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
-	getBagPriceIngameState(): PriceIngameState {
-		this.liveEconomy?.refreshBagQuote();
-		return projectBagPriceIngameState({ phase: this.liveSessions?.getView().phase ?? 'idle',
-			quote: this.liveEconomy?.rawQuote(HALLOWEEN_TOT_BAG_ITEM_ID) ?? null, now: Date.now() });
-	}
+	/** Public gross price of the Halloween bag for `price2` (`PriceHistoryRuntime`). */
+	getBagPriceIngameState(): PriceIngameState { return this.priceHistoryFacade.getBagPriceIngameState(); }
 
 	getLiveSessionLoot(): LiveSessionLootState { return this.liveView.getLiveSessionLoot(); }
 
@@ -3251,10 +3086,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.liveEconomy?.entity(kind,id) ?? null;
 	}
 	private enrichLiveSession(entry: LiveJournalEntryV1): void { if (!this.unloaded) this.liveEconomy?.observe(entry); }
-	private async emitLiveSessionAlert(intent: LiveAlertOutboxV1) {
-		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
-		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
-	}
+	private emitLiveSessionAlert(intent: LiveAlertOutboxV1) { return this.alerts.emitLiveSessionAlert(intent); }
 
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
 	getSellSignalState(): SellSignalRuntimeState | null {
@@ -3267,9 +3099,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** The Companion card's escape hatch for a blocked `operation_conflict`: the same journaled Move. */
-	async retryManagedAssetsReconciliation(): Promise<void> {
-		await this.reconcileManagedAssetsRoot();
-	}
+	retryManagedAssetsReconciliation(): Promise<void> { return this.assetsRuntime.retryManagedAssetsReconciliation(); }
 
 	getSessionSummarySaveState(): SessionSummarySaveState { return this.notes.getSessionSummarySaveState(); }
 
@@ -3302,7 +3132,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	retrySessionSummarySave(): Promise<void> { return this.notes.retrySessionSummarySave(); }
 
-	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
+	getManagedAssetsView() { return this.assetsRuntime.getManagedAssetsView(); }
 
 	getSessionHistoryView(): SessionHistoryView { return this.session.getSessionHistoryView(); }
 
@@ -3363,412 +3193,34 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** True while the Halloween observation surface is live: the pack's window, or the manual widening. */
-	private halloweenObservationActive(): boolean {
-		// New sessions are passive; the legacy authenticated monitor remains a local history source.
-		return false;
-	}
+	private halloweenObservationActive(): boolean { return this.halloweenObservation.halloweenObservationActive(); }
 
-	/**
-	 * The single exit point for loot and price alerts.
-	 *
-	 * Operational messages (sync results, command failures, "the plugin is still
-	 * starting") keep going through `emitNotice`: they are answers to something
-	 * the user just did, and waking the desktop and the speakers for them would
-	 * make the channels that matter meaningless.
-	 */
-	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> {
-		const emitter = this.alertEmitter;
-		if (emitter === null) return Promise.resolve({ delivered: [], failed: [], rejected: true });
-		return emitter.emit(alert);
-	}
+	/** The single exit point for loot and price alerts (`AlertRuntime`). */
+	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> { return this.alerts.emitAlert(alert); }
 
-	/**
-	 * Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback.
-	 *
-	 * H15.16 (2026-09-10 incident): `AlertDeliveryReport` never matches `isOutcome()`, so
-	 * `fireAndForget`'s span always logged `success ok` even when every channel had failed;
-	 * the alert IS the product, so a failed delivery now surfaces as its own failure record.
-	 */
-	private dispatchAlert(alert: AlertV1): void {
-		// R1b: only the collector alerts. Nothing in consult produces one; this keeps it that way.
-		if (consulting(this)) return;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
-			async () => {
-				const report = await this.emitAlert(alert);
-				if (report.failed.length === 0) return report;
-				return { ...report, phase: 'failure' as const, code: 'unavailable' as const, details: { failed: report.failed } };
-			});
-	}
+	/** Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback (`AlertRuntime`). */
+	private dispatchAlert(alert: AlertV1): void { this.alerts.dispatchAlert(alert); }
 
-	/** Bags this session has actually observed. The absolute gain is only meaningful on a real stack. */
-	private observedBagQuantity(): number {
-		const state = this.liveSessionLoot?.getState();
-		if (state === undefined || state.status === 'idle') return 0;
-		return state.rows.find((row) => row.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.quantity ?? 0;
-	}
+	/** Bags this session has actually observed (`AlertRuntime`). */
+	private observedBagQuantity(): number { return this.alerts.observedBagQuantity(); }
 
-	/**
-	 * Projects one policy verdict onto the value-free half of the H13.3 OR and emits it.
-	 *
-	 * The always-alert reasons this detector reads (`skin_not_unlocked`, `mini_not_unlocked`) never
-	 * need a quote to fire, but that does not mean the underlying item has none: an unlockable skin
-	 * or mini can still carry a real market price in its own evidence. `policyAlertPriceOf` carries
-	 * that price through instead of inventing a blank one, so the alert only ever calls an item
-	 * unquoted once its evidence has actually confirmed that.
-	 *
-	 * H14.3 narrowed `ALWAYS_ALERT_REASONS`: `rare_unpriced_or_bound` and `first_seen` no longer
-	 * page the player regardless of value (David, 3 sep: "un solo aviso, sin interruptores"); they
-	 * still travel inside the item's `reasons` and surface as information in the session note
-	 * instead (`firstSeenItemIds`/`rareUnpricedOrBoundItemIds` in `session-note-model.ts`).
-	 */
-	private dispatchPolicyAlert(item: HalloweenAlertItem): void {
-		const alert = decideLootAlert({
-			itemId: item.itemId,
-			name: item.name ?? translateRuntime(createTranslator(this.settings.language), 'halloween.unknownItem', {
-				itemId: item.itemId,
-			}),
-			quantity: item.quantity,
-			...policyAlertPriceOf(item),
-			alwaysAlertReasons: alwaysAlertReasonsOf(item),
-		}, this.settings.valuableLootThresholdCopper);
-		if (alert !== null) this.dispatchAlert(alert);
-	}
+	/** Projects one policy verdict onto the value-free half of the H13.3 OR and emits it (`AlertRuntime`). */
+	private dispatchPolicyAlert(item: HalloweenAlertItem): void { this.alerts.dispatchPolicyAlert(item); }
 
-	/**
-	 * Builds the six channels once, in the order the player perceives them.
-	 *
-	 * Each closure reads `this.settings` at delivery time rather than capturing
-	 * it: a webhook the user pastes mid-session has to work on the next alert
-	 * without rebuilding the emitter, and the in-game bridge follows the same
-	 * rule for its enabled flag and port.
-	 */
-	private buildAlertEmitter(queue: EmittedAlertQueue, liveScope?: {sessionId:string;outboxId:string}): AlertEmitter {
-		const requireLiveCollector = () => { if (liveScope && (consulting(this) || this.unloaded)) throw new Error('Live alert collection is unavailable.'); };
-		// The reviewed outbound boundary stays at exactly one module, so the webhook rides the
-		// same transport every other call uses instead of reaching for the host's HTTP call
-		// here. Configured never to retry: a webhook host that is down is not worth a second
-		// attempt in the middle of a run.
-		const webhookTransport = new HostRequestTransport(this.host.http, {
-			maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: this.localDebugActions ?? undefined,
-			// Z9: Discord answers 204 with no body; any 2xx is a delivery, whatever it says.
-			ignoreResponseBody: true,
-		});
-		return new AlertEmitter([
-			{
-				id: 'toast',
-				deliver: (alert) => { requireLiveCollector(); this.emitNotice(this.alertToastText(alert,liveScope !== undefined), alertNoticeSource(alert.kind)); },
-			},
-			{
-				id: 'system_notification',
-				deliver: (alert) => {
-					requireLiveCollector();
-					const translator = createTranslator(this.settings.language);
-					// The host picks the urgency from its own platform (Linux asks for `critical`).
-					const outcome = this.host.notify.system({
-						title: translateRuntime(translator, liveScope ? 'alerts.observedIncrease.title' : alertTitleKey(alert.kind)),
-						body: this.alertBodyText(alert,liveScope !== undefined),
-					});
-					return systemNotificationChannelResult(outcome);
-				},
-			},
-			{
-				id: 'sound',
-				deliver: () => {
-					requireLiveCollector();
-					const outcome = this.host.notify.sound();
-					// A suspended context still resuming: accepted, not failed. The report counts it as delivered
-					// and is not corrected later; if the resume rejects or lands past its margin, no tone sounds.
-					if (outcome === 'pending') return ALERT_CHANNEL_PENDING;
-					if (outcome !== 'played') {
-						throw new Error('No audio output was available.');
-					}
-					return undefined;
-				},
-			},
-			{
-				id: 'webhook',
-				deliver: async (alert) => {
-					requireLiveCollector();
-					const outcome = await postAlertWebhook(
-						this.settings.alertWebhookUrl, alert,
-						{ post: async (request) => await webhookTransport.send(request) },
-						{
-							schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-							cancel: (handle) => { window.clearTimeout(handle as number); },
-						},
-					);
-					if (outcome === 'failed') throw new Error('The alert webhook did not answer in time.');
-				},
-			},
-			{
-				id: 'ingame',
-				deliver: async (alert, context) => {
-					requireLiveCollector();
-					// Off ships as a silent success, exactly like the webhook's empty URL: a
-					// fresh install pays nothing for a channel it never enabled. Enabled but
-					// unreachable is different, and must NOT look like success: the addon
-					// exists to be seen mid-game, and a swallowed failure here is a banner
-					// the player never gets shown, with nothing in the emitter report to say why.
-					if (!this.settings.alertIngameEnabled) return;
-					const server = await this.ensureAlertIngameServer();
-					requireLiveCollector();
-					if (server === null || server.clientCount() === 0) {
-						// The step "Recibido en el juego" still needs to say the alert reached nobody.
-						this.trackIngameAlert(alert, context.emittedAtMs, this.nextAlertIngameSeq(), { v2Clients: [], v3Clients: [] }, liveScope);
-						throw new Error(server === null ? 'The in-game alert server is not available.' : 'No in-game addon is connected.');
-					}
-					// Each connection gets the version its `hello` asked for (v3 adds `alert_ack`).
-					const alertSeq = this.nextAlertIngameSeq();
-					const delivery = server.broadcastAlert(alertSeq, (version) => JSON.stringify(alertIngamePayload(alert, alertSeq, version)));
-					this.trackIngameAlert(alert, context.emittedAtMs, alertSeq, delivery, liveScope);
-				},
-			},
-			{
-				id: 'queue',
-				deliver: async (alert, context) => {
-					requireLiveCollector();
-					if (liveScope) {
-						if (!this.liveSessions?.hasDispatchingClaim(liveScope.sessionId,liveScope.outboxId)) throw new Error('The durable live alert claim is unavailable.');
-						return;
-					}
-					if (!await queue.enqueue(alert, context.emittedAtMs)) throw new Error('The durable alert queue is unavailable.');
-					this.refreshEmittedAlerts();
-				},
-			},
-		]);
-	}
+	/** Opens or closes the loopback listener to match `alertIngameEnabled` (`AlertRuntime`). */
+	private syncAlertIngameServer(): void { this.alerts.syncAlertIngameServer(); }
 
-	/**
-	 * Lazily starts (or restarts, on a port change) the in-game loopback server.
-	 *
-	 * Read at delivery time, the same way the webhook channel reads `this.settings.alertWebhookUrl`
-	 * fresh on every alert: a player who flips the setting or edits the port mid-session must not
-	 * have to reload the plugin for the next alert to reach the game. Concurrent alerts share one
-	 * in-flight start instead of racing two servers onto the same port.
-	 */
-	/**
-	 * Opens or closes the loopback listener to match `alertIngameEnabled`, instead of leaving it
-	 * to the next `deliver` call. Read at plugin load and at every settings save (see
-	 * `updateSettings`), the same two moments `ensureAlertIngameServer` itself would otherwise be
-	 * reached from only at delivery time. Without this, a player who just flipped the setting had
-	 * no listener for the addon to connect to until the first alert fired, and that first alert
-	 * opened the server and found `clientCount() === 0` in the same breath: it was declared
-	 * `failed`, and the first hallazgo of a session, the one that matters most, never reached the
-	 * game. A port failure here (occupied, permission) is caught by `ensureAlertIngameServer`
-	 * itself and never reaches this method as a rejection, so it cannot stop the plugin load.
-	 */
-	private syncAlertIngameServer(): void {
-		// R1b: the bridge port is the collector's; switching to consult closes it like the toggle does.
-		if (!this.settings.alertIngameEnabled || consulting(this)) {
-			fireAndForgetLocal(this.localDebugActions,
-				{ component: 'notification', action: 'notification_emit', state: 'ingame_server_close' },
-				async () => { await this.closeAlertIngameServer(); });
-			return;
-		}
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'notification', action: 'notification_emit', state: 'ingame_server_sync' },
-			async () => {
-				const server = await this.ensureAlertIngameServer();
-				if (server === null) throw new Error('The in-game alert server could not be started.');
-			});
-	}
+	/** A failed drain retains the handle and backing services so the next attempt can retry it (`AlertRuntime`). */
+	private closeAlertIngameServer(): Promise<void> { return this.alerts.closeAlertIngameServer(); }
 
-	private async ensureAlertIngameServer(): Promise<AlertIngameServerHandle | null> {
-		if (consulting(this) || this.unloaded) return null;
-		await this.alertIngameCloseFlight;
-		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled) return null;
-		const port = this.settings.alertIngamePort;
-		if (this.alertIngameServer !== null && this.alertIngameServerPort === port) return this.alertIngameServer;
-		if (this.alertIngameServer !== null) {
-			await this.closeAlertIngameServer();
-		}
-		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) return null;
-		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
-		const flight = startAlertIngameServer(
-			this.host.tcpServer,
-			port,
-			{
-				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-				cancel: (handle) => { window.clearTimeout(handle as number); },
-			},
-			{
-				authenticate: (candidate) => ingameBridgeSecretMatches(candidate, this.readAlertIngameSecret()),
-				now: () => Date.now(),
-				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
-				onConnectionEvent: (event) => { this.onIngameConnectionEvent(event); },
-				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
-				farmingState: () => this.getFarmingIngameState(),
-				priceState: () => this.getBagPriceIngameState(),
-				onFarmingError: (error) => { this.recordIngameSessionFailure(error); },
-				live: this.liveIngamePort(),
-			},
-		)
-			.then(async (server) => {
-				if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) {
-					this.alertIngameServer = server; this.alertIngameServerPort = port;
-					await server.close();
-					if (this.alertIngameServer === server) { this.alertIngameServer = null; this.alertIngameServerPort = null; }
-					return null;
-				}
-				this.alertIngameServer = server;
-				this.alertIngameServerPort = port;
-				this.alertIngameServerErrorCode = null;
-				this.settingTab.refreshAlertIngameServerRow();
-				return server;
-			})
-			.catch((error: unknown) => {
-				// H15.17 (2026-09-10 incident): this used to discard the rejection entirely, so a
-				// port already in use or denied by the OS looked identical to the addon simply not
-				// being enabled: no log line, and the settings row kept showing the toggle as fine.
-				const mapped = unmappedErrorLogDetails(error);
-				this.alertIngameServerErrorCode = typeof mapped.code === 'string' ? mapped.code : mapped.reason as string;
-				this.localDebugActions?.event({
-					component: 'notification', action: 'notification_emit', state: 'ingame_server_start',
-					level: 'error', phase: 'failure', code: 'unavailable',
-					details: { errorName: mapped.reason, code: mapped.code },
-				});
-				this.settingTab.refreshAlertIngameServerRow();
-				return null;
-			})
-			.finally(() => { this.alertIngameServerFlight = null; });
-		this.alertIngameServerFlight = flight;
-		const server = await flight;
-		// HP-05: after the bind's own retries, a port held by another app (usually the other host).
-		if (server === null && this.alertIngameServerErrorCode === 'EADDRINUSE' && !this.alertIngamePortBusyNoticed) {
-			this.alertIngamePortBusyNoticed = true;
-			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.ingamePortBusy', { port: String(port) }), 'ingame_port_busy');
-		}
-		return server;
-	}
+	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise (`AlertRuntime`). */
+	getAlertIngameServerErrorCode(): string | null { return this.alerts.getAlertIngameServerErrorCode(); }
 
-	/** What the bridge reports about one connection: which producers are here, then the game presence. */
-	private onIngameConnectionEvent(event: IngameConnectionEvent): void {
-		this.liveSourceConnections.apply(event);
-		this.ingamePresenceTracker().apply(event);
-	}
+	/** H18.23: what the authenticated addons say about the game right now (`AlertRuntime`). */
+	getIngamePresence(): IngamePresenceSnapshot { return this.alerts.getIngamePresence(); }
 
-	/** The selected Nexus producer is the sole source; effective Blish context cannot substitute it. */
-	private liveIngamePort(): LiveIngamePort {
-		return {
-			open: async (source) => {
-				if (this.ingameSessionMarker?.blocksAutomaticRestart()) return 'source_conflict';
-				if (source.context.state !== 'gameplay') return 'not_gameplay';
-				if (source.build !== NEXUS_LIVE_BUILD || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
-				const prior = this.liveSessions?.getRuntime();
-				// Another instance takes over only from a producer that is gone: written as disconnected,
-				// or seen disconnecting by this host when storage could not write it (SPEC-live-loot §2).
-				const relievedAt = prior == null ? null : liveSourceReliefAt(prior, source.sourceInstance, this.liveSourceConnections);
-				if (prior != null && relievedAt !== null) {
-					if (!await this.liveSessions?.stop(relievedAt,prior.sessionId)) return 'source_conflict';
-				}
-				if (this.liveSessions?.getRuntime()?.phase !== 'active') await this.startIngameSession(source.context.character);
-				if (this.liveSessions?.getRuntime()?.phase !== 'active') return 'source_conflict';
-				const opened = await this.liveSessions?.open(source) ?? 'not_gameplay';
-				const current = this.liveSessions?.getRuntime();
-				if (opened === 'ready' && prior?.sessionId !== current?.sessionId && current) this.ingameSessionMarker?.linkReplacement(prior?.sessionId ?? null,current.sessionId,'automatic');
-				return opened;
-			},
-			commit: async (sample) => await this.liveSessions?.commit({ ...sample,
-				rows: sample.rows.map(([kind,idNumber,quantity]) => ({kind:kind === 0 ? 'item' : 'currency',idNumber,quantity})),
-			}) ?? 'not_owner',
-			gap: async (event) => { await this.liveSessions?.gap(event); },
-			onError: (error) => { this.recordIngameSessionFailure(error); },
-		};
-	}
-
-	/** A failed drain retains the handle and backing services so the next attempt can retry it. */
-	private async closeAlertIngameServer(): Promise<void> {
-		if (this.alertIngameCloseFlight !== null) return await this.alertIngameCloseFlight;
-		const flight = (async () => {
-			await this.alertIngameServerFlight;
-			const server = this.alertIngameServer;
-			if (server === null) return;
-			await server.close();
-			if (this.alertIngameServer === server) { this.alertIngameServer = null; this.alertIngameServerPort = null; }
-		})();
-		this.alertIngameCloseFlight = flight;
-		try { await flight; } finally { if (this.alertIngameCloseFlight === flight) this.alertIngameCloseFlight = null; }
-	}
-
-	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise. */
-	getAlertIngameServerErrorCode(): string | null {
-		return this.alertIngameServerErrorCode;
-	}
-
-	/** Starts the ack bookkeeping of one alert written to the bridge; `sent` reports it through `onChange`. */
-	private trackIngameAlert(alert: AlertV1, emittedAtMs: number, alertSeq: number, delivery: IngameAlertBroadcast, liveScope?: {sessionId:string;outboxId:string}): void {
-		// Both origins share the bridge sequence, including gaps and alternating legacy/live alerts.
-		for (const seq of new Set([...this.liveIngameTracked.keys(), ...this.ingameTracked.keys()])) {
-			if (seq > alertSeq - 256) continue;
-			const tracked = this.ingameTracked.get(seq);
-			if (tracked) this.ingameAwaitingAck.delete(tracked.alertId);
-			this.ingameReceipts.forget(seq);
-			this.liveIngameTracked.delete(seq);
-			this.ingameTracked.delete(seq);
-		}
-		if (liveScope) {
-			this.liveIngameTracked.set(alertSeq,{...liveScope,sentTo:[...new Set([...delivery.v3Clients,...delivery.v2Clients])]});
-			this.ingameReceipts.sent(alertSeq,delivery); return;
-		}
-		const alertId = this.alertQueue?.alertIdFor(alert, emittedAtMs) ?? null;
-		if (alertId === null) return;
-		const sentTo = [...new Set([...delivery.v3Clients, ...delivery.v2Clients])];
-		this.ingameTracked.set(alertSeq, { alert, emittedAtMs, alertId, sentTo });
-		if (delivery.v3Clients.length > 0) this.ingameAwaitingAck.add(alertId);
-		this.ingameReceipts.sent(alertSeq, delivery);
-	}
-
-	private persistIngameReceipt(alertSeq: number, receipt: IngameAlertReceipt): void {
-		const live = this.liveIngameTracked.get(alertSeq);
-		if (live) {
-			fireAndForgetLocal(this.localDebugActions,{component:'notification',action:'notification_emit',state:'live_receipt_write'},async () => {
-				await this.liveSessions?.updateAlert(live.outboxId,(prior) => ({...prior,sentTo:live.sentTo,
-					receipt:prior.receipt?.state === 'received' ? prior.receipt : receipt}),true,live.sessionId);
-			});
-			return;
-		}
-		const tracked = this.ingameTracked.get(alertSeq);
-		const queue = this.alertQueue;
-		if (tracked === undefined || queue === null) return;
-		if (receipt.state !== 'pending') this.ingameAwaitingAck.delete(tracked.alertId);
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'halloween', action: 'halloween_alert', state: 'alert_delivery_write' },
-			async () => {
-				const saved = await queue.saveDelivery({
-					alert: tracked.alert, emittedAtMs: tracked.emittedAtMs, sentTo: tracked.sentTo, receipt,
-				});
-				if (saved) this.refreshEmittedAlerts();
-			});
-	}
-
-	private nextAlertIngameSeq(): number {
-		this.alertIngameSeq += 1;
-		return this.alertIngameSeq;
-	}
-
-	/** H18.23: what the authenticated addons say about the game right now. H18.26 reads this. */
-	getIngamePresence(): IngamePresenceSnapshot {
-		return this.ingamePresenceTracker().snapshot();
-	}
-
-	/** H18.23: every presence transition (`started`, `context`, `lost`, `restored`, `ended`). */
-	onIngamePresence(listener: (event: IngamePresenceEvent) => void): () => void {
-		return this.ingamePresenceTracker().subscribe(listener);
-	}
-
-	private ingamePresenceTracker(): IngamePresenceTracker {
-		this.alertIngamePresence ??= new IngamePresenceTracker({
-			timer: {
-				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-				cancel: (handle) => { window.clearTimeout(handle as number); },
-			},
-			now: () => Date.now(),
-			createPresenceId: () => createIngameBridgeNonce((bytes) => { crypto.getRandomValues(bytes); }),
-			recordObserverFailure: (error) => { this.recordAlertIngamePresenceFailure(error); },
-		});
-		return this.alertIngamePresence;
-	}
+	/** H18.23: every presence transition (`AlertRuntime`). */
+	onIngamePresence(listener: (event: IngamePresenceEvent) => void): () => void { return this.alerts.onIngamePresence(listener); }
 
 	/**
 	 * Reads the bridge secret from `SecretStorage` for one comparison and keeps nothing. Like the
@@ -3863,26 +3315,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		) ?? run());
 	}
 
-	/**
-	 * The palette's "Copy in-game bridge token" (0.2.1): the same action as the settings button, for
-	 * a player who cannot find the row. With the bridge off it only says to turn it on and generates
-	 * nothing. The notices carry fixed copy, never the value.
-	 */
-	async copyAlertIngameSecretFromCommand(): Promise<void> {
-		const translator = createTranslator(this.settings.language);
-		if (!this.settings.alertIngameEnabled) {
-			this.emitNotice(translator.t('settings.alerts.ingame.secret.bridgeOff'), 'ingame_secret_copy');
-			return;
-		}
-		try {
-			const outcome = await this.copyAlertIngameSecret();
-			if (outcome === 'shown') return;
-			this.emitNotice(translator.t(outcome === 'generated'
-				? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'), 'ingame_secret_copy');
-		} catch {
-			this.emitNotice(translator.t('settings.alerts.ingame.secret.failed'), 'ingame_secret_copy');
-		}
-	}
+	/** The palette's "Copy in-game bridge token" (`AlertRuntime`). */
+	copyAlertIngameSecretFromCommand(): Promise<void> { return this.alerts.copyAlertIngameSecretFromCommand(); }
 
 	/**
 	 * Two commands with no interface of their own: the active live session as CSV, and the preserved
@@ -3954,13 +3388,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await (this.localDebugActions?.run({ component: 'vault', action: 'vault_write', state: 'achievements_sync' }, perform) ?? perform());
 	}
 
-	private registerAlertIngameSecretCommand(): void {
-		this.host.ui.registerCommand({
-			id: ALERT_INGAME_SECRET_COMMAND_ID,
-			name: createTranslator(this.settings.language).t('commands.copyIngameBridgeToken'),
-			callback: () => { void this.copyAlertIngameSecretFromCommand(); },
-		});
-	}
+	private registerAlertIngameSecretCommand(): void { this.alerts.registerAlertIngameSecretCommand(); }
 
 	/**
 	 * H18.26: the in-game presence marks the session. Built once the session runtime is ready, it
@@ -4090,102 +3518,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
-	private recordAlertIngamePresenceFailure(error: unknown): void {
-		const mapped = unmappedErrorLogDetails(error);
-		this.localDebugActions?.event({
-			component: 'notification', action: 'notification_emit', state: 'ingame_presence_listener',
-			level: 'error', phase: 'failure', code: 'internal_failure',
-			details: { errorName: mapped.reason },
-		});
-	}
+	/** H18.38: what became of each alert on its way to the game, by `alertId` (`AlertRuntime`). */
+	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1> { return this.alerts.getAlertDeliveries(); }
 
-	/** Resolves the queue scope, falling back to the active session baseline before Halloween sets it. */
-	private resolveAlertAccountRef(): Promise<string | null> {
-		if (this.alertAccountRef !== null) return Promise.resolve(this.alertAccountRef);
-		if (this.alertScopeFlight !== null) return this.alertScopeFlight;
-		const accountId = this.sessions?.getBaselineSnapshot()?.accountId ?? null;
-		if (accountId === null) return Promise.resolve(null);
-		const flight = sha256Text(accountId).then(
-			(accountRef) => { this.alertAccountRef = accountRef; return accountRef; },
-			() => null,
-		).finally(() => { if (this.alertScopeFlight === flight) this.alertScopeFlight = null; });
-		this.alertScopeFlight = flight;
-		return flight;
-	}
-
-	/** H18.38: what became of each alert on its way to the game, by `alertId`. An alert with none has no delivery data. */
-	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1> {
-		return this.alertDeliveries;
-	}
-
-	/** Newest first. Read by the panel so a dropped banner is still recoverable. */
-	getEmittedAlerts(): readonly EmittedAlertRecordV1[] {
-		return this.emittedAlerts;
-	}
-
-	/**
-	 * Reloads the durable queue into the synchronous view model.
-	 *
-	 * Only called once an alert has been written or an account resolved, never
-	 * on load: the queue opens its database on first use, and a vault that never
-	 * farms must not pay for a connection it will not read.
-	 */
-	private refreshEmittedAlerts(): void {
-		const queue = this.alertQueue;
-		if (queue === null) return;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'halloween', action: 'halloween_alert', state: 'alert_queue_read' },
-			async () => {
-				const [alerts, deliveries] = await Promise.all([queue.read(), queue.readDeliveries()]);
-				this.emittedAlerts = alerts;
-				this.alertDeliveries = new Map(deliveries.map((record) => [
-					record.alertId, readAlertDelivery(record, this.ingameAwaitingAck.has(record.alertId)),
-				]));
-				this.renderViews();
-			});
-	}
-
-	/** Toast copy: the alert plus the latency the interface owes the player. */
-	private alertToastText(alert: AlertV1, live = false): string {
-		if (live) return this.alertBodyText(alert,true);
-		const translator = createTranslator(this.settings.language);
-		return `${this.alertBodyText(alert)} ${translateRuntime(translator, 'notices.alertLatency', {
-			minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
-		})}`;
-	}
-
-	/** One line per kind. A price signal never borrows the loot wording: it is not a find. */
-	private alertBodyText(alert: AlertV1, live = false): string {
-		const translator = createTranslator(this.settings.language);
-		if (live) return translateRuntime(translator,'alerts.observedIncrease.body',{name:alert.name,quantity:alert.quantity,
-			value:alert.totalCopper === null ? translateRuntime(translator,'alerts.queue.noValue') : formatCopperCompact(alert.totalCopper,this.settings.language)});
-		const reason = translateRuntime(translator, alertReasonKey(alert.reason));
-		// A price signal says what acting on it is WORTH, in copper, on the stack
-		// the player actually holds. The amplitude of this bag is 1,35x, which is
-		// about five gold over five hundred bags and nothing over one: the ratio
-		// is the same in both cases and only the absolute number decides.
-		if (alert.kind === 'hold_signal' || alert.kind === 'sell_signal') {
-			if (alert.totalCopper === null) {
-				return translateRuntime(translator, alert.kind === 'sell_signal' ? 'notices.sellSignal' : 'notices.holdSignal', {
-					name: alert.name, value: translateRuntime(translator, 'alerts.queue.noValue'),
-				});
-			}
-			return translateRuntime(translator, alert.kind === 'sell_signal' ? 'notices.sellSignalGain' : 'notices.holdSignalGain', {
-				name: alert.name,
-				quantity: alert.quantity,
-				gain: formatCopperCompact(alert.totalCopper, this.settings.language),
-			});
-		}
-		if (alert.totalCopper === null) {
-			return translateRuntime(translator, 'notices.alwaysAlertLoot', {
-				name: alert.name, quantity: alert.quantity, reason,
-			});
-		}
-		return translateRuntime(translator, 'notices.valuableLoot', {
-			name: alert.name, quantity: alert.quantity,
-			value: formatCopperCompact(alert.totalCopper, this.settings.language),
-		});
-	}
+	/** Newest first. Read by the panel so a dropped banner is still recoverable (`AlertRuntime`). */
+	getEmittedAlerts(): readonly EmittedAlertRecordV1[] { return this.alerts.getEmittedAlerts(); }
 
 	/** DU-04: tells the user the settings come from a newer release and stay as they are until the plugin is updated. */
 	private warnSettingsReadOnly(): void {
@@ -4216,274 +3553,38 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
-	 * False when the host declared `capabilities.managedAssets: false` (a host with no Bases; Hebra declares
-	 * `true`): Settings shows no assets row and nothing here installs, moves, repairs, replaces or removes them.
-	 * An omitted capability means true, so Obsidian is unchanged.
+	 * Whether the host keeps managed assets, whether it can move them and whether a root is set, and the
+	 * Settings row's actions: preview, apply, repair, replace, list, move and remove (`ManagedAssetsRuntime`).
 	 */
-	managedAssetsSupported(): boolean {
-		return hostSupportsManagedAssets(this.host);
+	managedAssetsSupported(): boolean { return this.assetsRuntime.managedAssetsSupported(); }
+
+	managedAssetsCanMove(): boolean { return this.assetsRuntime.managedAssetsCanMove(); }
+
+	hasManagedAssetsRoot(): boolean { return this.assetsRuntime.hasManagedAssetsRoot(); }
+
+	previewManagedAssets(): Promise<void> { return this.assetsRuntime.previewManagedAssets(); }
+
+	applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean, options: ManagedAssetsWriteOptions = {}): Promise<void> {
+		return this.assetsRuntime.applyManagedAssets(guard, options);
 	}
 
-	/** False when the host cannot move assets between roots (Hebra): no Move button, no automatic follow. */
-	managedAssetsCanMove(): boolean {
-		return canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder);
+	repairManagedAssets(options: ManagedAssetsWriteOptions = {}): Promise<void> { return this.assetsRuntime.repairManagedAssets(options); }
+
+	replaceUnownedManagedAssets(confirmed: readonly string[], options: ManagedAssetsWriteOptions = {}): Promise<void> {
+		return this.assetsRuntime.replaceUnownedManagedAssets(confirmed, options);
 	}
 
-	hasManagedAssetsRoot(): boolean {		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
+	listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> { return this.assetsRuntime.listUnownedManagedAssets(); }
+
+	relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
+		return this.assetsRuntime.relocateManagedAssets(parent);
 	}
 
-	// Every press of the Assets row that does nothing (still starting, only consulting) says so in the row, with a
-	// message that tells what to do, besides the notice. Written inline: the tests drive these methods with a plain `this`.
-	async previewManagedAssets(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_root_retained', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
-		this.managedAssetsView = { status: 'working', message: 'inspecting', plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		// H15.19 (2026-09-10 incident): the catch below fixed the view but never registered
-		// anything, so a failed inspection (a corrupt manifest, a Vault read that threw) looked
-		// identical in the local debug log to a preview that never ran at all.
-		const perform = async () => {
-			try {
-				const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
-				const plan = await this.managedAssets.preview(root, kind);
-				// Files of the user's at a managed path are not touched by Apply: the preview says so and points to Replace.
-				const message = !plan.canApply ? 'preview_blocked'
-					: plan.steps.some((step) => step.status === 'occupied_unowned')
-						// Replace needs a managed root: a fresh install, with none, can only be told to move or rename the files.
-						? (this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null ? 'preview_unowned' : 'preview_unowned_no_root')
-						: 'preview_ready';
-				this.managedAssetsView = { status: 'ready', message, plan };
-				return undefined;
-			} catch (error) {
-				const cause = vaultFailureCause(error);
-				this.managedAssetsView = { status: 'error', message: cause === undefined ? 'inspect_failed' : managedAssetsFailureCode('unavailable', cause), plan: null };
-				return { phase: 'failure' as const, code: cause === undefined ? 'unknown_failure' as const : 'missing' as const, details: { ...unmappedErrorLogDetails(error), ...(cause === undefined ? {} : { code: cause }) } };
-			}
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_preview' }, perform) ?? perform());
-		this.settingTab.refreshManagedAssetsRow();
-	}
+	removeManagedAssets(): Promise<void> { return this.assetsRuntime.removeManagedAssets(); }
 
-	/**
-	 * `guard` is the caller's last word on the inspection the apply acts on (see `ManagedAssetsManager.apply`).
-	 * `options.createOutputFolder`: only the Settings press passes it (`createMissingOutputFolder`).
-	 */
-	async applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean, options: ManagedAssetsWriteOptions = {}): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		const outputFolder = this.settings.outputFolder;
-		const result = await this.runManagedAssetsLifecycle(async () => (
-			await createMissingOutputFolder(this.host, outputFolder, outputFolder, options)
-			?? await this.managedAssetsLifecycle.install(outputFolder, undefined, guard)
-		));
-		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
-	}
-
-	async repairManagedAssets(options: ManagedAssetsWriteOptions = {}): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		if (!this.settings.managedAssetsRoot) return;
-		const root = this.settings.managedAssetsRoot;
-		const outputFolder = this.settings.outputFolder;
-		await this.runManagedAssetOperation(async () => (
-			await createMissingOutputFolder(this.host, root, outputFolder, options) ?? await this.managedAssets.apply(root, 'repair')
-		));
-	}
-
-	/**
-	 * The explicit «Replace» of Settings (the user confirmed it): overwrites the Bases the plugin cannot prove
-	 * it wrote (edited by hand, or from a build nothing published) with the ones it ships. No automatic path
-	 * reaches it: the preview keeps listing those files as «Yours, left untouched» until this runs.
-	 */
-	async replaceUnownedManagedAssets(confirmed: readonly string[], options: ManagedAssetsWriteOptions = {}): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return;
-		}
-		if (!this.settings.managedAssetsRoot) return;
-		const root = this.settings.managedAssetsRoot;
-		const outputFolder = this.settings.outputFolder;
-		await this.runManagedAssetOperation(async () => (
-			await createMissingOutputFolder(this.host, root, outputFolder, options) ?? await this.managedAssets.replaceUnowned(root, confirmed)
-		));
-	}
-
-	/**
-	 * What «Replace» would overwrite right now (a fresh read, not the last preview): shown in its confirmation,
-	 * and the exact set `replaceUnownedManagedAssets` is then limited to. Empty when nothing can be listed; an unreadable manifest throws, as the Settings preview's own inspection would.
-	 */
-	async listUnownedManagedAssets(): Promise<Array<{ id: string; path: string }>> {
-		if (!hostSupportsManagedAssets(this.host)) return [];
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return []; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return []; }
-		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
-			this.settingTab.refreshManagedAssetsRow();
-			return [];
-		}
-		// No root and no legacy one: nothing to list, silent as Repair is in that same case.
-		const root = this.settings.managedAssetsRoot;
-		if (!root) return [];
-		let found: Array<{ id: string; path: string }> = [];
-		const perform = async () => {
-			try {
-				found = await this.managedAssets.listUnowned(root);
-				this.managedAssetsView = found.length === 0
-					? { status: 'ready', message: 'no_unowned', plan: null }
-					: this.managedAssetsView;
-				return undefined;
-			} catch (error) {
-				found = [];
-				this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null };
-				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
-			}
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_replace_list' }, perform) ?? perform());
-		this.settingTab.refreshManagedAssetsRow();
-		return found;
-	}
-
-	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
-	 * pointer could not be confirmed to match the retained root first). */
-	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
-		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return null;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return null; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return null; }
-		const destination = this.settings.outputFolder;
-		const legacyRoot = this.settings.legacyManagedAssetsRoot;
-		if (!await this.ensureManagedAssetsAuthority(parent)) return null;
-		const result = await this.runManagedAssetsLifecycle(
-			() => this.managedAssetsLifecycle.move(destination, legacyRoot ?? undefined, parent),
-		);
-		if ('root' in result && (legacyRoot === null || result.status === 'relocated' && result.root === destination)) {
-			await this.updateSettings({ managedAssetsRoot: result.root });
-		}
-		return result;
-	}
-
-	async removeManagedAssets(): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host)) return;
-		if (!this.runtimeReady) { this.managedAssetsView = { status: 'error', message: 'runtime_starting', plan: null }; this.settingTab.refreshManagedAssetsRow(); this.notifyRuntimeStarting(); return; }
-		if (refusedInConsult(this)) { this.managedAssetsView = { status: 'error', message: 'consult_mode', plan: null }; this.settingTab.refreshManagedAssetsRow(); return; }
-		const legacyRoot = this.settings.legacyManagedAssetsRoot;
-		if (!await this.ensureManagedAssetsAuthority()) return;
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
-		if ('root' in result && (legacyRoot === null || result.status === 'removed' && result.root === null)) {
-			await this.updateSettings({ managedAssetsRoot: result.root });
-		}
-	}
-
-	/**
-	 * The output-folder selector is the single source of truth for managed assets: Bases and
-	 * templates must never sit somewhere the user never chose. This heals both an explicit
-	 * folder change and a divergence discovered at startup (an install whose Bases root never
-	 * followed a later folder change, e.g. an upgrade from before H5.8) through the exact same
-	 * journaled Move lifecycle as the manual "Move" action, not a bespoke copy of it. Move only
-	 * deletes origin bytes after the destination install already succeeded and refuses to run
-	 * over a modified/unowned/conflicting root, so a blocked reconciliation always leaves both
-	 * roots exactly as they were: nothing is ever moved halfway or silently overwritten. A
-	 * completed or blocked attempt still surfaces through a Notice, because relocating files in
-	 * the user's Vault without them ever seeing it is worse than telling them after the fact;
-	 * the Settings row and its manual Move button remain the escape hatch when this is blocked.
-	 *
-	 * A retained legacy root is deliberately excluded: `managed-assets.test.ts` documents that
-	 * adopting one only ever happens through an explicit lifecycle Move, and this must not turn
-	 * that into something that fires on its own the next time Obsidian starts.
-	 */
-	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
-		if (!hostSupportsManagedAssets(this.host) || !canMoveManagedAssets(this.host, this.settings.legacyManagedAssetsRoot ?? this.settings.managedAssetsRoot, this.settings.outputFolder)) return;
-		// R1b: moving the Bases is a collector write; a consult installation leaves them where they are.
-		if (consulting(this) || this.settings.legacyManagedAssetsRoot !== null) return;
-		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
-		const result = await this.relocateManagedAssets(parent);
-		const translator = createTranslator(this.settings.language);
-		if (result === null) {
-			this.emitNotice(
-				translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'),
-				'managed_assets_blocked',
-			);
-			return;
-		}
-		if (result.status === 'relocated') {
-			this.emitNotice(
-				translateRuntime(translator, 'notices.managedAssetsAutoRelocated', { root: this.settings.outputFolder }),
-				'managed_assets_relocated',
-			);
-		} else if (result.status !== 'unchanged') {
-			this.emitNotice(
-				translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'),
-				'managed_assets_blocked',
-			);
-		}
-	}
-
-	private async ensureManagedAssetsAuthority(parent?: ResolvedLocalDebugActionContext): Promise<boolean> {
-		if (this.settings.legacyManagedAssetsRoot !== null) return true;
-		const mirroredRoot = this.settings.managedAssetsRoot;
-		if (!mirroredRoot) return true;
-		const adopted = await this.runManagedAssetsLifecycle(
-			() => this.managedAssetsLifecycle.install(mirroredRoot, parent),
-		);
-		return 'root' in adopted && adopted.root === mirroredRoot;
-	}
-
-	private async runManagedAssetsLifecycle(operation: () => Promise<ManagedAssetsLifecycleResult>): Promise<ManagedAssetsLifecycleResult> {
-		this.managedAssetsView = { status: 'working', message: 'applying_lifecycle', plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		let result: ManagedAssetsLifecycleResult;
-		try { result = await operation(); }
-		catch { result = { status: 'unavailable', message: 'The durable managed-assets authority is unavailable.' }; }
-		this.managedAssetsView = 'root' in result
-			? { status: 'ready', message: 'lifecycle_ready', plan: null }
-			: { status: 'error', message: managedAssetsFailureCode(result.status, result.cause), plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		return result;
-	}
-
-	private async runManagedAssetOperation(operation: () => Promise<ManagedAssetsResult>): Promise<ManagedAssetsResult> {
-		this.managedAssetsView = { status: 'working', message: 'applying_journal', plan: null };
-		this.settingTab.refreshManagedAssetsRow();
-		let result!: ManagedAssetsResult;
-		// Repair and Replace used to leave nothing in the local log when they failed: the record carries the real code now.
-		const perform = async () => {
-			result = await operation();
-			if (!('message' in result)) return undefined;
-			return {
-				phase: 'failure' as const,
-				code: result.cause === undefined || result.cause === 'only_unowned_files' ? 'validation_failed' as const : 'missing' as const,
-				details: { status: result.status, message: result.message, ...result.details },
-			};
-		};
-		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply' }, perform) ?? perform());
-		if (result.status === 'applied' || result.status === 'unchanged' || result.status === 'detached') {
-			this.managedAssetsView = { status: 'ready', message: result.status === 'detached' ? 'ownership_detached' : 'assets_ready', plan: null };
-		} else if ('message' in result) {
-			this.managedAssetsView = { status: 'error', message: managedAssetsFailureCode(result.status, result.cause), plan: null };
-		}
-		this.settingTab.refreshManagedAssetsRow();
-		return result;
+	/** The output folder moved: the Bases follow it through the journaled Move (`ManagedAssetsRuntime`). */
+	private reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		return this.assetsRuntime.reconcileManagedAssetsRoot(parent);
 	}
 
 	confirmClearCompletedSession(): void {
@@ -4908,21 +4009,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 	}
 
-	/**
-	 * H14.3: `first_seen` and `rare_unpriced_or_bound` no longer alert (`ALWAYS_ALERT_REASONS`);
-	 * the note surfaces them as information instead, read from the Halloween notice this session
-	 * already produced (`episodeId` is `session:<sessionId>`, same key `observeHalloweenDelta`
-	 * writes under). Outside the festival, or without a matching notice, both stay empty.
-	 */
+	/** H14.3: the note's first-seen and rare-unpriced items (`HalloweenObservationRuntime`). */
 	private sessionHalloweenInfoItemIds(sessionId: string): { firstSeenItemIds: number[]; rareUnpricedOrBoundItemIds: number[] } {
-		const notice = this.halloween?.getState().notices.find((entry) => entry.episodeId === `session:${sessionId}`);
-		const firstSeenItemIds: number[] = [];
-		const rareUnpricedOrBoundItemIds: number[] = [];
-		for (const item of notice?.items ?? []) {
-			if (item.reasons.some((reason) => reason.code === 'first_seen')) firstSeenItemIds.push(item.itemId);
-			if (item.reasons.some((reason) => reason.code === 'rare_unpriced_or_bound')) rareUnpricedOrBoundItemIds.push(item.itemId);
-		}
-		return { firstSeenItemIds, rareUnpricedOrBoundItemIds };
+		return this.halloweenObservation.sessionHalloweenInfoItemIds(sessionId);
 	}
 
 	/** Only evidence measured from *this* runtime record may travel with it into the note. */
@@ -5027,21 +4116,6 @@ function sessionEconomyKey(runtime: SessionRuntimeRecord): string | null {
 		: null;
 }
 
-function disabledPriceHistoryState(): PriceHistoryRuntimeState {
-	return {
-		status: 'disabled', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
-		daily: [], lastSampleAtMs: null, nextCaptureAtMs: null, provisionalDayUtc: null,
-	};
-}
-
-function disabledHalloweenState(): HalloweenRuntimeState {
-	return { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null };
-}
-
-function disabledHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
-	return { status: 'disabled', projection: null, notices: [], unreadCount: 0 };
-}
-
 function connectionScopes(state: ConnectionState): string[] {
 	return state.status === 'connected' || state.status === 'warning' ? [...state.details.scopes] : [];
 }
@@ -5052,19 +4126,6 @@ function priceHistorySettingsFrom(settings: TyrianSettings): PriceHistorySetting
 		intervalMinutes: settings.priceHistoryIntervalMinutes,
 		rawRetentionDays: settings.priceHistoryRawRetentionDays,
 		dailyRetentionDays: settings.priceHistoryDailyRetentionDays,
-	};
-}
-
-/**
- * The price alert keeps its own opt-in, but its Halloween half now follows the
- * calendar: after H13.3 `halloweenEnabled` only widens the window, so reading it
- * directly would have left the price surface dark during the festival.
- */
-function halloweenPriceAlertSettingsFrom(settings: TyrianSettings, nowMs: number = Date.now()) {
-	return {
-		enabled: halloweenObservationActive(settings.halloweenEnabled, nowMs) && settings.halloweenPriceAlertEnabled,
-		minimumAboveP90Bps: settings.halloweenPriceAlertMinimumAboveP90Bps,
-		cooldownHours: settings.halloweenPriceAlertCooldownHours,
 	};
 }
 
@@ -5079,58 +4140,7 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 	};
 }
 
-function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable', cause?: ManagedAssetsFailureCause): ManagedAssetsMessageCode {
-	const byCause: Record<ManagedAssetsFailureCause, ManagedAssetsMessageCode> = {
-		bytes_not_synced: 'operation_bytes_not_synced', output_folder_missing: 'operation_output_folder_missing',
-		host_refused: 'operation_host_refused', only_unowned_files: 'operation_only_unowned',
-		output_folder_create_failed: 'operation_output_folder_create_failed',
-	};
-	if (cause !== undefined) return byCause[cause];
-	const codes: Record<typeof status, ManagedAssetsMessageCode> = {
-		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
-	};
-	return codes[status];
-}
 
-/** `ctx.frontmatter` is `any`; this is the one place that reads `tc_item_name` out of it safely. */
-function frontmatterTcItemName(frontmatter: unknown): string | null {
-	if (typeof frontmatter !== 'object' || frontmatter === null) return null;
-	const value = (frontmatter as Record<string, unknown>).tc_item_name;
-	return typeof value === 'string' ? value : null;
-}
-
-/** Closed diagnostic cause per alert kind, so a delivery record never carries the visible text. */
-function alertNoticeSource(kind: AlertKind): NoticeDiagnosticSource {
-	if (kind === 'valuable_loot') return 'valuable_loot';
-	if (kind === 'always_alert') return 'halloween_observation';
-	return 'halloween_price_alert';
-}
-
-function alertTitleKey(kind: AlertKind): RuntimeTranslationKey {
-	if (kind === 'valuable_loot') return 'alerts.title.valuable_loot';
-	if (kind === 'always_alert') return 'alerts.title.always_alert';
-	if (kind === 'sell_signal') return 'alerts.title.sell_signal';
-	return 'alerts.title.hold_signal';
-}
-
-function alertReasonKey(reason: AlertV1['reason']): RuntimeTranslationKey {
-	if (reason === 'valuable') return 'alerts.reason.valuable';
-	if (reason === 'rare_unpriced_or_bound') return 'alerts.reason.rare_unpriced_or_bound';
-	if (reason === 'first_seen') return 'alerts.reason.first_seen';
-	if (reason === 'skin_not_unlocked') return 'alerts.reason.skin_not_unlocked';
-	if (reason === 'mini_not_unlocked') return 'alerts.reason.mini_not_unlocked';
-	if (reason === 'bid_above_reference') return 'alerts.reason.bid_above_reference';
-	return 'alerts.reason.bid_below_reference';
-}
-
-function formatCopperCompact(copper: number, locale: Locale): string {
-	const gold = Math.floor(copper / 10_000);
-	const silver = Math.floor(copper / 100) % 100;
-	const remainder = copper % 100;
-	return locale === 'es'
-		? `${String(gold)} oro · ${String(silver)} plata · ${String(remainder)} cobre`
-		: `${String(gold)} gold · ${String(silver)} silver · ${String(remainder)} copper`;
-}
 
 /** Retains valid sanitized records, including the internal IDs required to reconstruct one action. */
 function safeLocalDebugJsonl(value: string, newestLimit?: number): string {
@@ -5213,49 +4223,6 @@ async function ensureAdapterDirectory(
 		current = current.length === 0 ? segment : `${current}/${segment}`;
 		if (!await adapter.exists(current)) await adapter.mkdir(current);
 	}
-}
-
-/**
- * David, 10 Oct 2026 (Assets row: «la carpeta de salida no existe en la biblioteca […] si no existe, se crea»):
- * before a write the Settings row asked for with `createOutputFolder: true` (the presses of Apply, Repair and
- * Replace) into the output folder, a host whose `createFolder` cannot create that folder (Hebra) creates it.
- * Never without that flag (a start, an automatic apply, Remove, Move), nor for a root outside the output folder.
- * Returns the failure the row shows when creating it failed (the host already reported why), null otherwise.
- * Tolerates an absent host, like `consulting`.
- */
-async function createMissingOutputFolder(
-	host: TyrianHost | undefined,
-	root: string,
-	outputFolder: string,
-	options: ManagedAssetsWriteOptions,
-): Promise<{ status: 'unavailable'; message: string; cause: 'output_folder_create_failed' } | null> {
-	if (options.createOutputFolder !== true || (root !== outputFolder && !root.startsWith(`${outputFolder}/`))) return null;
-	const vault = host?.vault;
-	if (vault?.createOutputFolder === undefined) return null;
-	if (await vault.createOutputFolder()) return null;
-	return { status: 'unavailable', message: 'The output folder is not in the library and could not be created.', cause: 'output_folder_create_failed' };
-}
-
-/**
- * Whether the managed assets can be moved off the root the settings name. A host that declared
- * `capabilities.managedAssetsMove: false` (Hebra: the vault IS the output folder) can only do it while that root is
- * still READABLE in the vault. There the vault is the output folder, so that is decided by paths alone: the root is
- * the output folder or lies inside it (the manifest may be lost and its Bases intact, which Move adopts). Once the
- * output folder moved away from it (a sibling, or a folder inside it) nothing of the old root can be read and
- * Apply installs afresh instead.
- */
-function canMoveManagedAssets(host: TyrianHost | undefined, root: string | null, outputFolder: string): boolean {
-	if (host?.capabilities?.managedAssetsMove !== false) return true;
-	return root !== null && (root === outputFolder || root.startsWith(`${outputFolder}/`));
-}
-
-/**
- * Whether the host keeps managed assets (Bases): true unless it declared
- * `capabilities.managedAssets: false`. Tolerates an absent host, like `consulting` does for the
- * isolated `this` objects the tests drive.
- */
-function hostSupportsManagedAssets(host: TyrianHost | undefined): boolean {
-	return host?.capabilities?.managedAssets !== false;
 }
 
 /**

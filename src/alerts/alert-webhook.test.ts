@@ -175,7 +175,7 @@ async function deliveredBody(alert: AlertV1): Promise<string> {
 	return sent[0] ?? '';
 }
 
-/** The alert line `TyrianCompanionPlugin.alertBodyText` builds for a loot alert, catalogue included. */
+/** The alert line `AlertRuntime.alertBodyText` builds for a loot alert, catalogue included. */
 function emitterBodyText(alert: AlertV1, locale: Locale): string {
 	const translator = createTranslator(locale);
 	const reason = translateRuntime(translator, reasonKey(alert.reason));

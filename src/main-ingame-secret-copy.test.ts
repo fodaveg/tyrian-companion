@@ -179,7 +179,7 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 		});
 		plugin.core.settings = { ...DEFAULT_SETTINGS, language: 'es' };
 		(plugin.core as unknown as { registerAlertIngameSecretCommand(): void }).registerAlertIngameSecretCommand();
-		const copy = vi.spyOn(plugin.core as unknown as SecretCopyHarness, 'copyAlertIngameSecretFromCommand').mockResolvedValue();
+		const copy = vi.spyOn((plugin.core as unknown as { alerts: SecretCopyHarness }).alerts, 'copyAlertIngameSecretFromCommand').mockResolvedValue();
 
 		expect(commands.map(({ id, name }) => ({ id, name }))).toEqual([
 			{ id: ALERT_INGAME_SECRET_COMMAND_ID, name: 'Copiar token del puente con el juego' },

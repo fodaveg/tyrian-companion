@@ -266,7 +266,7 @@ describe('H13.4 alert channel cabling', () => {
 
 		// Port 0 really opens a loopback listener; close it so the suite does not
 		// leak a socket per run.
-		await (plugin as unknown as { alertIngameServer: { close(): Promise<void> } | null }).alertIngameServer?.close();
+		await (plugin as unknown as { alerts: { alertIngameServer: { close(): Promise<void> } | null } }).alerts.alertIngameServer?.close();
 	});
 
 	it('opens the in-game server the moment the setting turns on, with no alert in between', async () => {
@@ -274,7 +274,7 @@ describe('H13.4 alert channel cabling', () => {
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
 		const plugin = alertWiringPlugin(new IDBFactory());
-		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 
 		// Ships off by default: loading the plugin with the channel disabled must not
 		// open a socket at all.
@@ -318,7 +318,7 @@ describe('H13.4 alert channel cabling', () => {
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
 		const plugin = alertWiringPlugin(new IDBFactory());
-		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 		await plugin.initializeRuntime();
 		const port = await freeLoopbackPort();
 		try {
@@ -355,7 +355,7 @@ describe('H13.4 alert channel cabling', () => {
 			getIngamePresence(): { status: string; context: unknown };
 			onIngamePresence(listener: (event: { kind: string }) => void): () => void;
 		};
-		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 		const heard: string[] = [];
 		plugin.onIngamePresence((event) => { heard.push(event.kind); });
 		await plugin.initializeRuntime();
@@ -394,7 +394,7 @@ describe('H13.4 alert channel cabling', () => {
 		const plugin = alertWiringPlugin(new IDBFactory());
 		plugin.host.secrets.set('gw2-key', 'synthetic-gw2-key');
 		plugin.settings.apiKeySecret = 'gw2-key';
-		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 		await plugin.initializeRuntime();
 		const port = await freeLoopbackPort();
 		try {
@@ -426,7 +426,7 @@ describe('H13.4 alert channel cabling', () => {
 		const plugin = alertWiringPlugin(new IDBFactory()) as AlertWiringHarness & {
 			getIngamePresence(): { status: string };
 		};
-		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 		await plugin.initializeRuntime();
 		const port = await freeLoopbackPort();
 		try {
@@ -457,7 +457,7 @@ describe('H13.4 alert channel cabling', () => {
 			vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 			vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
 			const plugin = alertWiringPlugin(new IDBFactory());
-			const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+			const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 			await plugin.initializeRuntime();
 			const port = await freeLoopbackPort();
 			try {
@@ -566,7 +566,7 @@ describe('H13.4 alert channel cabling', () => {
 			vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
 			vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
 			const plugin = alertWiringPlugin(new IDBFactory());
-			const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+			const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 			await plugin.initializeRuntime();
 			const requests: string[] = [];
 			const economy = (plugin as unknown as { liveEconomy: { options: { gateway: unknown } } }).liveEconomy;
@@ -661,7 +661,7 @@ describe('H13.4 alert channel cabling', () => {
 			vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
 			vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
 			const plugin = alertWiringPlugin(new IDBFactory());
-			const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+			const server = () => (plugin as unknown as { alerts: { alertIngameServer: AlertIngameServerHandle | null } }).alerts.alertIngameServer;
 			await plugin.initializeRuntime();
 			const port = await freeLoopbackPort();
 			try {

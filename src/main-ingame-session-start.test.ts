@@ -24,9 +24,11 @@ import { createSessionContaminationReview } from './sessions/session-contaminati
 import type { TyrianHost } from './host/tyrian-host';
 import type { AlertV1 } from './alerts/alert-contract';
 
-interface RuntimeAccess {host:TyrianHost;liveIngamePort():LiveIngamePort;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;alertIngameServer:AlertIngameServerHandle|null;
-	alertIngameServerPort:number|null;ensureAlertIngameServer():Promise<AlertIngameServerHandle|null>;ingamePresenceTracker():IngamePresenceTracker;
-	onIngameConnectionEvent(event:IngameConnectionEvent):void;
+/** The moved alert/bridge internals: `AlertRuntime` owns them now (DE-01, step 3g). */
+interface AlertsAccess {liveIngamePort():LiveIngamePort;alertIngameServer:AlertIngameServerHandle|null;alertIngameServerPort:number|null;
+	ensureAlertIngameServer():Promise<AlertIngameServerHandle|null>;ingamePresenceTracker():IngamePresenceTracker;
+	onIngameConnectionEvent(event:IngameConnectionEvent):void}
+interface RuntimeAccess {host:TyrianHost;alerts:AlertsAccess;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;
 	ingameSessionMarker:IngameSessionMarker;commands:Pick<SessionCommandRuntime,'setupSessionCommands'>;setupProductActions():void;productActions:ProductActionController;
 	sessionCommands:SessionCommandController;collectorMode:'collector'|'consult';liveEconomy:LiveSessionEconomy;emitLiveSessionAlert(intent:unknown):Promise<unknown>}
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ'; const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -75,10 +77,10 @@ async function runtime(withLegacy: boolean|'complete' = false) {
 	const sample = (cursor:number,quantity:number,selected=source):LiveIngameSample => ({...selected,cursor,contextSeq:0,
 		sourceElapsedMs:cursor*1000,mode:cursor===0?'baseline':'sample',itemCoverage:'complete',currencyCoverage:'none',
 		unknownPositions:0,freeSlots:null,rows:[[0,36038,quantity]],observedAt:new Date(now).toISOString()});
-	return {h,access,port:access.liveIngamePort(),source,sample,setNow:(value:number) => {now=value;}};
+	return {h,access,alerts:access.alerts,port:access.alerts.liveIngamePort(),source,sample,setNow:(value:number) => {now=value;}};
 }
 async function presence(f:Awaited<ReturnType<typeof runtime>>,connectionId='a',source=f.source) {
-	const tracker=f.access.ingamePresenceTracker(); f.h.core.settings.alertIngameEnabled=true;
+	const tracker=f.alerts.ingamePresenceTracker(); f.h.core.settings.alertIngameEnabled=true;
 	tracker.apply({kind:'authenticated',connectionId,client:'nexus',instance:source.sourceInstance,atMs:Date.now()});
 	tracker.apply({kind:'context',connectionId,context:source.context,atMs:Date.now()});
 	await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture(); return tracker;
@@ -86,7 +88,7 @@ async function presence(f:Awaited<ReturnType<typeof runtime>>,connectionId='a',s
 
 /** One connection event as the bridge reports it, through the core's own handler and settled. */
 async function bridge(f:Awaited<ReturnType<typeof runtime>>,event:IngameConnectionEvent) {
-	f.h.core.settings.alertIngameEnabled=true; f.access.onIngameConnectionEvent(event);
+	f.h.core.settings.alertIngameEnabled=true; f.alerts.onIngameConnectionEvent(event);
 	await f.access.ingameSessionMarker.reconcile(); await f.access.liveSessions.capture();
 }
 /** The store the live session writes to, to make it refuse writes the way a dead engine does. */
@@ -96,13 +98,13 @@ function livePersistence(f:Awaited<ReturnType<typeof runtime>>) {
 describe('real passive Nexus composition', () => {
 	it('repaints the open views on every presence transition, so the Session button does not stay on "open the game" while idle', async () => {
 		const f=await runtime(); const render=vi.spyOn(f.h.core as unknown as {renderViews():void},'renderViews');
-		f.h.core.settings.alertIngameEnabled=true; const tracker=f.access.ingamePresenceTracker(); render.mockClear();
+		f.h.core.settings.alertIngameEnabled=true; const tracker=f.alerts.ingamePresenceTracker(); render.mockClear();
 		tracker.apply({kind:'authenticated',connectionId:'a',client:'nexus',instance:INSTANCE,atMs:Date.now()});
 		tracker.apply({kind:'context',connectionId:'a',context:f.source.context,atMs:Date.now()});
 		expect(f.h.core.getIngamePresence().status).toBe('present'); expect(render).toHaveBeenCalled();
 	});
 	it('bounds receipt tracking across alternating origins and sparse shared sequences', async () => {
-		const f=await runtime(); const local=f.h.core as unknown as {
+		const f=await runtime(); const local=f.alerts as unknown as {
 			liveIngameTracked:Map<number,unknown>;ingameTracked:Map<number,{alertId:string}>;ingameAwaitingAck:Set<string>;
 			trackIngameAlert(alert:AlertV1,at:number,seq:number,delivery:{v2Clients:[];v3Clients:[]}):void;
 		};
@@ -132,7 +134,7 @@ describe('real passive Nexus composition', () => {
 		await expect(f.port.open({...f.source,epoch:'AwMDAwMDAwMDAwMDAwMDAw'})).resolves.toBe('source_conflict'); expect(f.h.core.getLiveSessionView().sessionId).toBe(id);
 		await expect(f.access.productActions.run('start-farming-session')).resolves.toBe('completed'); expect(f.h.core.getLiveSessionView().sessionId).not.toBe(id);
 		const restarted=f.h.core.getLiveSessionView().sessionId;
-		await f.h.core.stopManualSession(); const tracker=f.access.ingamePresenceTracker();
+		await f.h.core.stopManualSession(); const tracker=f.alerts.ingamePresenceTracker();
 		tracker.apply({kind:'closed',connectionId:'a',atMs:AT,lastSeenAtMs:AT,reason:'game_exit'}); await f.access.ingameSessionMarker.reconcile();
 		await presence(f,'new-game'); await expect(f.port.open({...f.source,epoch:'BAQEBAQEBAQEBAQEBAQEBA'})).resolves.toBe('ready');
 		expect(f.h.core.getLiveSessionView().sessionId).not.toBe(restarted);
@@ -177,11 +179,11 @@ describe('real passive Nexus composition', () => {
 	});
 	it.each(['shutdown','consult'] as const)('a bridge replacement waiting for old close cannot bind after %s', async (mode) => {
 		const f=await runtime(); let release:(() => void)|null=null; const closing=new Promise<void>((resolve) => {release=resolve;});
-		const close=vi.fn(async () => await closing); f.access.alertIngameServer={close} as unknown as AlertIngameServerHandle; f.access.alertIngameServerPort=123;
+		const close=vi.fn(async () => await closing); f.alerts.alertIngameServer={close} as unknown as AlertIngameServerHandle; f.alerts.alertIngameServerPort=123;
 		f.h.core.settings.alertIngameEnabled=true; f.h.core.settings.alertIngamePort=456;
-		const restarting=f.access.ensureAlertIngameServer(); await vi.waitFor(() => {expect(close).toHaveBeenCalledOnce();});
+		const restarting=f.alerts.ensureAlertIngameServer(); await vi.waitFor(() => {expect(close).toHaveBeenCalledOnce();});
 		const stopping=mode==='shutdown' ? f.h.shutdown() : Promise.resolve(); if (mode==='consult') f.access.collectorMode='consult';
-		release!(); await expect(restarting).resolves.toBeNull(); await stopping; expect(f.access.alertIngameServer).toBeNull(); expect(close).toHaveBeenCalledOnce();
+		release!(); await expect(restarting).resolves.toBeNull(); await stopping; expect(f.alerts.alertIngameServer).toBeNull(); expect(close).toHaveBeenCalledOnce();
 		if (mode==='shutdown') {f.h.dispose();active=null;}
 	});
 	it('another lease already owned by this host cannot be reused or released for the API archival', async () => {
@@ -345,7 +347,7 @@ describe('real passive Nexus composition', () => {
 	it('shutdown retains the live store and lease until the bridge durable drain finishes', async () => {
 		const f = await runtime(); await f.port.open(f.source); let release: (()=>void)|null = null;
 		const closing = new Promise<void>((resolve) => {release=resolve;});
-		f.access.alertIngameServer = {close:async () => await closing} as AlertIngameServerHandle;
+		f.alerts.alertIngameServer = {close:async () => await closing} as AlertIngameServerHandle;
 		const liveDispose = vi.spyOn(f.access.liveSessions,'dispose'); const legacyDispose = vi.spyOn(f.access.sessions,'dispose');
 		const shutdown = f.h.shutdown(); await Promise.resolve(); expect(liveDispose).not.toHaveBeenCalled(); expect(legacyDispose).not.toHaveBeenCalled();
 		release!(); await shutdown; expect(liveDispose).toHaveBeenCalledOnce(); expect(legacyDispose).toHaveBeenCalledOnce();
@@ -353,14 +355,14 @@ describe('real passive Nexus composition', () => {
 	});
 	it('a rejected bridge drain retains backing resources and supports an explicit retry', async () => {
 		const f = await runtime(); await f.port.open(f.source); let rejected = true;
-		f.access.alertIngameServer = {close:async () => {if(rejected) throw new Error('Controlled durable gap failure');}} as AlertIngameServerHandle;
+		f.alerts.alertIngameServer = {close:async () => {if(rejected) throw new Error('Controlled durable gap failure');}} as AlertIngameServerHandle;
 		const liveDispose = vi.spyOn(f.access.liveSessions,'dispose'); const legacyDispose = vi.spyOn(f.access.sessions,'dispose');
 		await expect(f.h.shutdown()).rejects.toThrow(); expect(liveDispose).not.toHaveBeenCalled(); expect(legacyDispose).not.toHaveBeenCalled();
 		rejected = false; await f.h.shutdown(); expect(liveDispose).toHaveBeenCalledOnce(); f.h.dispose(); active = null;
 	});
 	it('the awaitable host stop surfaces a failed durable drain and can retry the retained handle', async () => {
 		const f = await runtime(); await f.port.open(f.source); let rejected = true;
-		f.access.alertIngameServer = {close:async () => {if(rejected) throw new Error('Controlled durable drain failure');}} as AlertIngameServerHandle;
+		f.alerts.alertIngameServer = {close:async () => {if(rejected) throw new Error('Controlled durable drain failure');}} as AlertIngameServerHandle;
 		const dispose = vi.spyOn(f.access.liveSessions,'dispose'); await expect(f.h.core.stop()).rejects.toThrow(); expect(dispose).not.toHaveBeenCalled();
 		rejected = false; await f.h.core.stop(); expect(dispose).toHaveBeenCalledOnce(); f.h.dispose(); active = null;
 	});

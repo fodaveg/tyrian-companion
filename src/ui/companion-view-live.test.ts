@@ -5,6 +5,8 @@ import type { ProductActionController } from './product-action-controller';
 import type { LiveObservationV1, LiveSessionViewV1 } from '../sessions/live-session-model';
 
 const original = new Map<string, PropertyDescriptor | undefined>();
+/** Obsidian declares the `create*` helpers on `Node`, so fragments get them too; the rest stay on elements. */
+const ownerOf = (name: string): object => (name.startsWith('create') ? Node.prototype : HTMLElement.prototype);
 /** Only the existing Obsidian DOM conveniences are added to the isolated happy-dom fixture. */
 beforeEach(() => {
  const methods = {
@@ -20,10 +22,10 @@ beforeEach(() => {
   createDiv(this: HTMLElement, options: {text?: string; cls?: string} = {}) { return this.createEl('div', options); },
   createSpan(this: HTMLElement, options: {text?: string; cls?: string} = {}) { return this.createEl('span', options); },
  };
- for(const [name, value] of Object.entries(methods)) { original.set(name,Object.getOwnPropertyDescriptor(HTMLElement.prototype,name)); Object.defineProperty(HTMLElement.prototype,name,{value,configurable:true}); }
+ for(const [name, value] of Object.entries(methods)) { original.set(name,Object.getOwnPropertyDescriptor(ownerOf(name),name)); Object.defineProperty(ownerOf(name),name,{value,configurable:true}); }
  for(const [name,value] of [['doc',document],['win',window]] as const) { original.set(name,Object.getOwnPropertyDescriptor(HTMLElement.prototype,name)); Object.defineProperty(HTMLElement.prototype,name,{value,configurable:true}); }
 });
-afterEach(() => { for(const [name,descriptor] of original) { if(descriptor) Object.defineProperty(HTMLElement.prototype,name,descriptor); else Reflect.deleteProperty(HTMLElement.prototype,name); } original.clear(); });
+afterEach(() => { for(const [name,descriptor] of original) { if(descriptor) Object.defineProperty(ownerOf(name),name,descriptor); else Reflect.deleteProperty(ownerOf(name),name); } original.clear(); });
 
 const at = (seconds: number): string => new Date(Date.UTC(2026, 9, 6, 8, 0, seconds)).toISOString();
 function observation(cursor: number): LiveObservationV1 {
