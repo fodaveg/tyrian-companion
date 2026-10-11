@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.41: una reserva concedida después de cerrar se rechaza (11 oct 2026)
+## Canal 0.6.41 publicado: una reserva concedida después de cerrar se rechaza (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.41` sobre el canal 0.6.40 publicado
-(`4ab9ddd0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.41` = `4c5a2047` (atestación; candidato `fa6e5f64`,
+árbol `648ab486`). Gate local verde (check 9/9 con 7199 tests, guardrails 25/25, BRAT PASS); CI 38104901253 y Release
+38105427674 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.41` sobre el canal
+0.6.40 publicado (`4ab9ddd0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.41 se ha visto en un Obsidian ni en un Hebra reales.
