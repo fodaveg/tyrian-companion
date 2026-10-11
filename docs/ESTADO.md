@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.40: nota de sesión y transiciones del servicio de inicio fuera de sus clases (11 oct 2026)
+## Canal 0.6.40 publicado: nota de sesión y transiciones del servicio de inicio fuera de sus clases (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.40` sobre el canal 0.6.39 publicado
-(`fcefcecf`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.40` = `3ac3dbdd` (atestación; candidato `2f1410a4`,
+árbol `7d6ed7cf`). Gate local verde (check 9/9 con 7191 tests, guardrails 25/25, BRAT PASS); CI 38103326498 y Release
+38104003663 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.40` sobre el canal
+0.6.39 publicado (`fcefcecf`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.40 se ha visto en un Obsidian ni en un Hebra reales.
@@ -17,7 +19,7 @@
     en rojo, 10 cubiertas con tests nuevos.
   - Revisiones independientes de los dos lotes: cuerpos idénticos y bundles de Hebra y Obsidian construidos.
 - Pendiente: DE-01 (vista en vivo, lifecycleCore restante, farming, piloto, historial); un lease concedido tras cerrar
-  no se libera (arreglo propuesto en `safeAcquire`). El gate, la publicación y verla en hosts reales.
+  no se libera (arreglo propuesto en `safeAcquire`). Verla en hosts reales.
 
 ## Canal 0.6.39 publicado: latido que no se rearma tras cerrar y núcleo y servicio de inicio partidos (11 oct 2026)
 
