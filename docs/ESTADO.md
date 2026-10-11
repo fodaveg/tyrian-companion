@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.44: arreglos del audit de bugs del 11 oct (11 oct 2026)
+## Canal 0.6.44 publicado: arreglos del audit de bugs del 11 oct (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.44` sobre el canal 0.6.43 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.44` = `3020a593` (atestación; candidato `352182d9`,
+árbol `613daf29`). Gate local verde (check 9/9 con 7451 tests, guardrails 25/25, BRAT PASS); CI 38120578013 y Release
+38121235170 en verde; `release:brat-verify` PASS con 8 assets, release normal. Addon de Nexus 0.8.7 publicado aparte
+(etiqueta `0.8.7` = `267e3f4`, AF10). Rama `integracion/0.6.44` sobre el canal 0.6.43 publicado
 (`bbc1ddae`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
