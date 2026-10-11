@@ -1,19 +1,23 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 /**
- * RT-09 level 1: is what Hebra has INSTALLED for Tyrian Companion the bytes of the GitHub release?
+ * RT-09. Level 1: is what Hebra has INSTALLED for Tyrian Companion the bytes of the GitHub release?
  *
  * It reads `<plugins>/installed.json` (Hebra's per-device registry) and the three files under
  * `<plugins>/tyrian-companion/<version>/`, and compares their sha256 with the registry and with the
- * `digest` of `gh release view <version> --json assets`. It never opens Hebra, never writes, and says
- * nothing about whether the plugin LOADED: that needs Hebra to expose its state (RT-09 level 2).
+ * `digest` of `gh release view <version> --json assets`. It never opens Hebra and never writes.
+ *
+ * Level 2 (separate verdict, `load`): did Hebra LOAD the plugin? It reads the load events Hebra writes to its
+ * `diagnostico.jsonl` (`plugins.activated` / `plugins.load-failed`, id `tyrian-companion`) in the most recent
+ * session. Hebra's diagnostic log is OFF by default, so no events means `no-data`, never "did not load".
+ * Only the `session` of any line and the fields of the tyrian-companion plugin events are read or printed.
  */
-export const HEBRA_INSTALL_CONTRACT_VERSION = 1;
+export const HEBRA_INSTALL_CONTRACT_VERSION = 2;
 
 const PLUGIN_ID = 'tyrian-companion';
 const HEBRA_FILES = ['hebra.json', 'hebra-main.mjs', 'hebra-styles.css'];
@@ -28,6 +32,15 @@ const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u;
 /** Hebra itself refuses a registry larger than this (`plugin_store.rs`, `MAX_REGISTRY_BYTES`). */
 const MAX_REGISTRY_BYTES = 1024 * 1024;
 const HEBRA_APP_ID = 'net.fodaveg.hebra';
+const DIAGNOSTICS_FILE_NAME = 'diagnostico.jsonl';
+/**
+ * The diagnostics log is append-only and can grow: only its last 4 MiB are read (the most recent session is
+ * at the end). A cut at the start drops the partial first line, which is not counted as malformed.
+ */
+export const MAX_DIAGNOSTICS_BYTES = 4 * 1024 * 1024;
+const LOAD_EVENTS = Object.freeze(['plugins.activated', 'plugins.load-failed']);
+/** Values taken from the log are echoed to a terminal: only this shape is kept, anything else prints as `?`. */
+const SAFE_TOKEN = /^[A-Za-z0-9._+-]{1,64}$/u;
 
 export class HebraInstallError extends Error {
 	constructor(code) {
@@ -55,9 +68,114 @@ export function defaultHebraPluginsDirectory(platform = process.platform, home =
 	return null;
 }
 
+/**
+ * Where Hebra writes `diagnostico.jsonl`. Only Linux is known (`<data>/net.fodaveg.hebra/diagnostico.jsonl`, next to
+ * `plugins/`); macOS and Windows return null on purpose: pass `--diagnostics-file`.
+ */
+export function defaultHebraDiagnosticsFile(platform = process.platform, home = homedir(), xdgDataHome = process.env.XDG_DATA_HOME) {
+	const plugins = platform === 'linux' ? defaultHebraPluginsDirectory(platform, home, xdgDataHome) : null;
+	return plugins === null ? null : resolve(dirname(plugins), DIAGNOSTICS_FILE_NAME);
+}
+
+/**
+ * Level 2 verdict from the text of the log. `installedVersion` is the version in Hebra's registry.
+ *  - `loaded`: the last tyrian-companion load event of the latest session is `plugins.activated` of that version.
+ *  - `version-mismatch`: it is `plugins.activated`, but of another version than the installed one.
+ *  - `failed`: it is `plugins.load-failed` (stage, code, incompatibility and errorName are reported).
+ *  - `no-data`: no file, empty, or the latest session has no tyrian-companion load event. NOT a failure.
+ * The latest session is the `session` of the last well-formed line of the file, whatever its event.
+ */
+export function judgeHebraLoad(text, installedVersion) {
+	let malformed = 0;
+	let session = null;
+	let last = null;
+	for (const line of text.split('\n')) {
+		if (line.trim().length === 0) continue;
+		const entry = parseLine(line);
+		if (entry === null) {
+			malformed += 1;
+			continue;
+		}
+		if (typeof entry.session === 'string') {
+			if (entry.session !== session) last = null;
+			session = entry.session;
+		}
+		if (LOAD_EVENTS.includes(entry.event) && entry.id === PLUGIN_ID && entry.session === session) last = entry;
+	}
+	if (last === null) return Object.freeze({ status: 'no-data', reason: session === null ? 'no-events' : 'no-plugin-events', malformed });
+	if (last.event === 'plugins.load-failed') {
+		return Object.freeze({
+			status: 'failed', malformed,
+			version: token(last.version), stage: token(last.stage), code: token(last.code),
+			incompatibility: token(last.incompatibility), errorName: token(last.errorName),
+		});
+	}
+	const version = token(last.version);
+	return Object.freeze({ status: version === installedVersion ? 'loaded' : 'version-mismatch', version, installed: installedVersion, malformed });
+}
+
+/** Reads (the tail of) the diagnostics log and judges it. It never throws: an unusable file is `no-data`. */
+export function readHebraLoad({ diagnosticsFile, installedVersion, maxBytes = MAX_DIAGNOSTICS_BYTES }) {
+	if (typeof diagnosticsFile !== 'string' || diagnosticsFile.length === 0) return Object.freeze({ status: 'no-data', reason: 'path-unknown', malformed: 0 });
+	if (!existsSync(diagnosticsFile)) return Object.freeze({ status: 'no-data', reason: 'file-missing', malformed: 0 });
+	let text;
+	try {
+		if (!lstatSync(diagnosticsFile).isFile()) throw new Error('not-a-file');
+		const fd = openSync(diagnosticsFile, 'r');
+		try {
+			const size = fstatSync(fd).size;
+			const length = Math.min(size, maxBytes);
+			const buffer = Buffer.alloc(length);
+			let read = 0;
+			while (read < length) {
+				const chunk = readSync(fd, buffer, read, length - read, size - length + read);
+				if (chunk === 0) break;
+				read += chunk;
+			}
+			text = buffer.subarray(0, read).toString('utf8');
+			if (size > length) text = text.slice(text.indexOf('\n') + 1);
+		} finally {
+			closeSync(fd);
+		}
+	} catch {
+		return Object.freeze({ status: 'no-data', reason: 'unreadable', malformed: 0 });
+	}
+	if (text.trim().length === 0) return Object.freeze({ status: 'no-data', reason: 'empty', malformed: 0 });
+	return judgeHebraLoad(text, installedVersion);
+}
+
+/** `failed` and `version-mismatch` fail the script; `loaded` passes; `no-data` is a warning (Hebra's log is off by default). */
+export function loadVerdictFailsInstall(load) {
+	return load.status === 'failed' || load.status === 'version-mismatch';
+}
+
+/** One line for the PASS/FAIL report, built only from sanitised fields. */
+export function describeHebraLoad(load) {
+	const skipped = load.malformed > 0 ? `; lineas-ilegibles=${String(load.malformed)}` : '';
+	if (load.status === 'loaded') return `carga=loaded (activada ${load.version})${skipped}`;
+	if (load.status === 'version-mismatch') return `carga=version-mismatch (activada ${load.version}, instalada ${load.installed})${skipped}`;
+	if (load.status === 'failed') return `carga=failed (version=${load.version}; stage=${load.stage}; code=${load.code}; incompatibility=${load.incompatibility}; errorName=${load.errorName})${skipped}`;
+	return `carga=no-data (${load.reason}; el registro de diagnostico de Hebra puede estar apagado: actívalo en Ajustes de Hebra o pasa --diagnostics-file <ruta>; no prueba que no cargara)${skipped}`;
+}
+
+function parseLine(line) {
+	try {
+		const value = JSON.parse(line);
+		return isRecord(value) ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+function token(value) {
+	return typeof value === 'string' && SAFE_TOKEN.test(value) ? value : '?';
+}
+
 /** Fails unless the installed registry entry, its files and the release agree byte for byte. */
 export function verifyHebraInstall({
+	diagnosticsFile = null,
 	ghCommand = 'gh',
+	loadCheck = true,
 	pluginsDir,
 	pluginsDirIsDefault = false,
 	readReleaseAssets = readGhReleaseAssets,
@@ -67,6 +185,7 @@ export function verifyHebraInstall({
 	if (
 		typeof pluginsDir !== 'string' || pluginsDir.length === 0 || typeof readReleaseAssets !== 'function' ||
 		typeof ghCommand !== 'string' || ghCommand.length === 0 || typeof releaseCheck !== 'boolean' ||
+		typeof loadCheck !== 'boolean' || (diagnosticsFile !== null && typeof diagnosticsFile !== 'string') ||
 		(releaseTag !== null && (typeof releaseTag !== 'string' || !SEMVER.test(releaseTag)))
 	) fail('invalid-arguments');
 	const root = requireDirectory(resolve(pluginsDir), pluginsDirIsDefault ? 'plugins-dir-default-missing' : 'plugins-dir-missing');
@@ -99,6 +218,7 @@ export function verifyHebraInstall({
 		version: record.version,
 		previous: record.previous,
 		releaseChecked: releaseCheck,
+		load: loadCheck ? readHebraLoad({ diagnosticsFile, installedVersion: record.version }) : null,
 		files: Object.freeze({ ...actual }),
 	});
 }
@@ -110,13 +230,14 @@ export function parseHebraInstallArguments(argv, { platform = process.platform, 
 	let ghSet = false;
 	let releaseTag = null;
 	let releaseCheck = true;
+	let diagnosticsFile = null;
 	for (let index = 0; index < argv.length; index += 1) {
 		const argument = argv[index];
 		if (argument === '--no-release-check' && releaseCheck) {
 			releaseCheck = false;
 			continue;
 		}
-		if ((argument === '--plugins-dir' || argument === '--gh-cli' || argument === '--release-tag') && index + 1 < argv.length) {
+		if ((argument === '--plugins-dir' || argument === '--gh-cli' || argument === '--release-tag' || argument === '--diagnostics-file') && index + 1 < argv.length) {
 			const value = argv[index + 1];
 			if (value.startsWith('--')) fail('usage');
 			if (argument === '--plugins-dir' && pluginsDir === null) pluginsDir = value;
@@ -124,6 +245,7 @@ export function parseHebraInstallArguments(argv, { platform = process.platform, 
 				ghCommand = value;
 				ghSet = true;
 			} else if (argument === '--release-tag' && releaseTag === null) releaseTag = value;
+			else if (argument === '--diagnostics-file' && diagnosticsFile === null) diagnosticsFile = value;
 			else fail('usage');
 			index += 1;
 			continue;
@@ -134,7 +256,9 @@ export function parseHebraInstallArguments(argv, { platform = process.platform, 
 	const pluginsDirIsDefault = pluginsDir === null;
 	if (pluginsDirIsDefault) pluginsDir = defaultHebraPluginsDirectory(platform, home, xdgDataHome);
 	if (pluginsDir === null) fail('plugins-dir-required');
-	return Object.freeze({ ghCommand, pluginsDir: resolve(pluginsDir), pluginsDirIsDefault, releaseCheck, releaseTag });
+	// The default log sits next to the DEFAULT plugins directory only: another --plugins-dir may be another profile.
+	if (diagnosticsFile === null && pluginsDirIsDefault) diagnosticsFile = defaultHebraDiagnosticsFile(platform, home, xdgDataHome);
+	return Object.freeze({ diagnosticsFile: diagnosticsFile === null ? null : resolve(diagnosticsFile), ghCommand, pluginsDir: resolve(pluginsDir), pluginsDirIsDefault, releaseCheck, releaseTag });
 }
 
 function findRecord(registry) {
@@ -205,9 +329,11 @@ const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).hr
 if (invokedPath === import.meta.url) {
 	try {
 		const result = verifyHebraInstall(parseHebraInstallArguments(process.argv.slice(2)));
+		const loadFails = loadVerdictFailsInstall(result.load);
 		process.stdout.write(
-			`hebra install v${String(HEBRA_INSTALL_CONTRACT_VERSION)}: PASS (version=${result.version}; previous=${result.previous ?? 'none'}; release-bytes=${result.releaseChecked ? 'match' : 'not-checked'}; carga: no comprobada)\n`,
+			`hebra install v${String(HEBRA_INSTALL_CONTRACT_VERSION)}: ${loadFails ? 'FAIL' : 'PASS'} (version=${result.version}; previous=${result.previous ?? 'none'}; release-bytes=${result.releaseChecked ? 'match' : 'not-checked'}; ${describeHebraLoad(result.load)})\n`,
 		);
+		if (loadFails) process.exitCode = 1;
 	} catch (error) {
 		const code = error instanceof HebraInstallError ? error.code : 'unexpected-failure';
 		process.stderr.write(`hebra install: ${code}\n${code === 'plugins-dir-default-missing' ? 'La ruta por defecto es una suposicion (no existe aqui); usa --plugins-dir <datos de Hebra>/plugins.\n' : ''}${code === 'plugins-dir-required' ? 'Indica el directorio con --plugins-dir <datos de Hebra>/plugins. No hay ruta por defecto en esta plataforma.\n' : ''}`);

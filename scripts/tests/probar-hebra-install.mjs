@@ -1,11 +1,18 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 
 import {
 	HebraInstallError,
+	defaultHebraDiagnosticsFile,
 	defaultHebraPluginsDirectory,
+	describeHebraLoad,
+	judgeHebraLoad,
+	loadVerdictFailsInstall,
+	readHebraLoad,
 	parseHebraInstallArguments,
 	verifyHebraInstall,
 } from '../verify-hebra-install.mjs';
@@ -27,6 +34,9 @@ try {
 	testOptOutOfTheReleaseCheckSkipsGh();
 	testGhIsNamedTheRepository();
 	testArgumentsAndPlatformDefaults();
+	testLoadVerdicts();
+	testLoadFileReading();
+	testCommandLineExitCodes();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
 }
@@ -141,6 +151,99 @@ function testArgumentsAndPlatformDefaults() {
 	assertCode(() => parseHebraInstallArguments(['--bogus'], { platform: 'linux', home: '/h' }), 'usage', 'an unknown flag was accepted');
 	assertCode(() => parseHebraInstallArguments(['--plugins-dir'], { platform: 'linux', home: '/h' }), 'usage', 'a flag without value was accepted');
 	assertCode(() => parseHebraInstallArguments(['--no-release-check', '--release-tag', '0.6.35'], { platform: 'linux', home: '/h' }), 'usage', 'a release tag with the check disabled was accepted');
+}
+
+function activated(session, version = '0.6.35', extra = {}) {
+	return { t: 1, seq: 1, session, event: 'plugins.activated', id: 'tyrian-companion', version, ...extra };
+}
+function failedEvent(session, extra = {}) {
+	return { t: 2, seq: 2, session, event: 'plugins.load-failed', id: 'tyrian-companion', version: '0.6.35', stage: 'activacion', code: 'activate-lanza', incompatibility: 'ninguna', errorName: 'TypeError', ...extra };
+}
+function jsonl(...lines) {
+	return `${lines.map((line) => (typeof line === 'string' ? line : JSON.stringify(line))).join('\n')}\n`;
+}
+
+/** RT-09 level 2: the verdict of the load events, apart from the bytes. */
+function testLoadVerdicts() {
+	const loaded = judgeHebraLoad(jsonl(activated('s1')), '0.6.35');
+	assert(loaded.status === 'loaded' && loaded.version === '0.6.35', `an activated event of the installed version was ${loaded.status}`);
+	assert(!loadVerdictFailsInstall(loaded), 'loaded failed the install');
+
+	const failed = judgeHebraLoad(jsonl(activated('s1'), failedEvent('s1')), '0.6.35');
+	assert(failed.status === 'failed' && failed.stage === 'activacion' && failed.code === 'activate-lanza' && failed.incompatibility === 'ninguna' && failed.errorName === 'TypeError',
+		`a load-failed event was ${failed.status}`);
+	assert(loadVerdictFailsInstall(failed), 'failed did not fail the install');
+	assert(describeHebraLoad(failed).includes('code=activate-lanza'), 'the failed report hides its code');
+
+	// The last event of the session decides: it activated after failing once.
+	assert(judgeHebraLoad(jsonl(failedEvent('s1'), activated('s1')), '0.6.35').status === 'loaded', 'an older failure beat a later activation');
+
+	// An old session that activated, and a newer one with no tyrian-companion event at all: no data, not "loaded".
+	const stale = judgeHebraLoad(jsonl(activated('old'), { t: 3, seq: 1, session: 'new', event: 'sync.started' }), '0.6.35');
+	assert(stale.status === 'no-data' && stale.reason === 'no-plugin-events', `an activation of an old session counted for the new one: ${stale.status}`);
+	assert(!loadVerdictFailsInstall(stale), 'no-data failed the install');
+	assert(describeHebraLoad(stale).includes('apagado'), 'no-data does not say the log may be off');
+
+	// A failure of an old session does not poison a new session that activated.
+	assert(judgeHebraLoad(jsonl(failedEvent('old'), activated('new')), '0.6.35').status === 'loaded', 'an old failure beat the new session');
+	// Another plugin's events are not Tyrian's.
+	assert(judgeHebraLoad(jsonl(failedEvent('s1', { id: 'other' })), '0.6.35').status === 'no-data', 'another plugin failure was attributed to tyrian-companion');
+
+	const mismatch = judgeHebraLoad(jsonl(activated('s1', '0.6.34')), '0.6.35');
+	assert(mismatch.status === 'version-mismatch' && mismatch.version === '0.6.34' && mismatch.installed === '0.6.35', `an activation of another version was ${mismatch.status}`);
+	assert(loadVerdictFailsInstall(mismatch), 'version-mismatch did not fail the install');
+
+	const broken = judgeHebraLoad(`{nope\n${jsonl(activated('s1'))}[1,2]\n`, '0.6.35');
+	assert(broken.status === 'loaded' && broken.malformed === 2, `broken lines were not skipped and counted (${broken.status}, ${String(broken.malformed)})`);
+	assert(describeHebraLoad(broken).includes('lineas-ilegibles=2'), 'the broken-line count is not reported');
+
+	// Nothing but the sanitised fields reaches the report.
+	const hostile = judgeHebraLoad(jsonl(failedEvent('s1', { errorName: 'Bad\u001b[31m name', secret: 'TOKEN-123' })), '0.6.35');
+	assert(hostile.errorName === '?' && !JSON.stringify(hostile).includes('TOKEN-123'), 'a free-form or foreign field leaked into the verdict');
+}
+
+function testLoadFileReading() {
+	const dir = join(testRoot, 'diagnostics');
+	mkdirSync(dir, { recursive: true });
+	const read = (name, content, maxBytes) => {
+		const path = join(dir, name);
+		if (content !== null) writeFileSync(path, content);
+		return readHebraLoad({ diagnosticsFile: path, installedVersion: '0.6.35', ...(maxBytes === undefined ? {} : { maxBytes }) });
+	};
+	assert(read('absent.jsonl', null).reason === 'file-missing', 'an absent log was not no-data/file-missing');
+	assert(read('empty.jsonl', '').reason === 'empty', 'an empty log was not no-data/empty');
+	assert(readHebraLoad({ diagnosticsFile: null, installedVersion: '0.6.35' }).reason === 'path-unknown', 'an unknown path was not no-data/path-unknown');
+	assert(readHebraLoad({ diagnosticsFile: dir, installedVersion: '0.6.35' }).status === 'no-data', 'a directory as log did not degrade to no-data');
+	assert(read('ok.jsonl', jsonl(activated('s1'))).status === 'loaded', 'a log with an activation was not loaded');
+	// Big log: only the tail is read, and the cut first line is not counted as malformed.
+	const padding = jsonl(...Array.from({ length: 200 }, (_, index) => ({ t: index, session: 'old', event: 'noise', filler: 'x'.repeat(50) })));
+	const big = read('big.jsonl', padding + jsonl(activated('new')), 600);
+	assert(big.status === 'loaded' && big.malformed === 0, `a log over the cap was ${big.status} with ${String(big.malformed)} malformed`);
+	assert(defaultHebraDiagnosticsFile('linux', '/h', undefined) === resolve('/h', '.local', 'share', 'net.fodaveg.hebra', 'diagnostico.jsonl'), 'Linux diagnostics default is not next to plugins/');
+	assert(defaultHebraDiagnosticsFile('darwin', '/h') === null && defaultHebraDiagnosticsFile('win32', '/h') === null, 'a diagnostics path was guessed outside Linux');
+	assert(parseHebraInstallArguments(['--plugins-dir', '/x/plugins'], { platform: 'linux', home: '/h' }).diagnosticsFile === null, 'a custom plugins directory inherited the default log');
+	assert(parseHebraInstallArguments(['--plugins-dir', '/x/plugins', '--diagnostics-file', '/x/d.jsonl'], { platform: 'darwin', home: '/h' }).diagnosticsFile === resolve('/x/d.jsonl'), '--diagnostics-file was not honoured');
+}
+
+/** The real command line, with a fake Hebra and no release check: what decides the exit code. */
+function testCommandLineExitCodes() {
+	const script = fileURLToPath(new URL('../verify-hebra-install.mjs', import.meta.url));
+	const plugins = fakeHebra('cli');
+	const run = (content) => {
+		const log = join(testRoot, 'cli', 'diagnostico.jsonl');
+		if (content !== null) writeFileSync(log, content);
+		return spawnSync(process.execPath, [script, '--plugins-dir', plugins, '--no-release-check', '--diagnostics-file', log], { encoding: 'utf8' });
+	};
+	const cases = [
+		['activated', jsonl(activated('s1')), 0, 'carga=loaded'],
+		['failed', jsonl(failedEvent('s1')), 1, 'carga=failed'],
+		['mismatch', jsonl(activated('s1', '0.6.1')), 1, 'carga=version-mismatch'],
+		['no-data', jsonl({ session: 's1', event: 'x' }), 0, 'carga=no-data'],
+	];
+	for (const [name, content, status, text] of cases) {
+		const result = run(content);
+		assert(result.status === status && result.stdout.includes(text) && result.stdout.includes('hebra install v2:'), `CLI ${name}: exit ${String(result.status)}, ${result.stdout}${result.stderr}`);
+	}
 }
 
 function manifestText(version, files = { 'hebra-main.mjs': `sha256:${sha('export const main = 1;\n')}`, 'hebra-styles.css': `sha256:${sha('.tc-x{}\n')}` }) {
