@@ -24,10 +24,19 @@ usuario; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
 - Hebra, avisos del sistema. Con una Hebra que tenga la API 1.5 (rpm 0.2.0-22), los avisos piden urgencia crítica en
   Linux, para que GNOME los enseñe encima del juego a pantalla completa, y silencio en todas las plataformas, porque el
   sonido ya lo pone el plugin; igual que en Obsidian. Con una Hebra anterior, el aviso sale como hasta ahora.
+- Sesiones en modo consulta que pasan a recolector. Una sesión cargada en consulta se recupera al pasar el dispositivo
+  a recolector: la activa se reclama y la terminada verifica su nota antes de que su diario se pueda podar.
+- Historial. Borrar el historial no se permite mientras la sesión en vivo no se ha podido leer.
+- Hebra, ajustes. El panel de ajustes ya no deja un selector de carpetas vivo por cada apertura. Al cerrar el plugin,
+  las escrituras pendientes del llavero terminan aunque el cierre falle.
+- Diagnóstico. El registro exportado conserva la clase del error de la sesión in-game, de la escritura de la nota y de
+  los logros de Leyspring.
 - Interno: la sesión del juego y la nota y exportación de la sesión salen del núcleo a piezas propias (el núcleo baja
   de 3.940 a 3.596 líneas), la vista previa del borrado del historial dice «arrancando» antes del arranque en vez de
   fallar, se quita un test duplicado, y `hebra:verify-install` lee ahora los eventos `plugins.*` del registro de
-  diagnóstico de Hebra para decir si cargó (`loaded`, `failed`, `version-mismatch`; `no-data` es un aviso, no un fallo).
+  diagnóstico de Hebra para decir si cargó (`loaded`, `failed`, `version-mismatch`; `no-data` es un aviso, no un fallo). `hebra:verify-install` juzga el último
+  arranque de la ventana principal (la última sesión con eventos `plugins.*`) y lee también `diagnostico.1.jsonl`; el
+  contrato BRAT con `--assets-dir` comprueba el `manifest.json` publicado y el `.zip.sha256`.
 
 ## Release beta 0.6.45 - Estilos de Hebra con respaldo y addon que vuelve tras un cierre cancelado
 
