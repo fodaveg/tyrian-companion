@@ -199,6 +199,12 @@ export class LiveSessionPanel {
 	private readonly coinCache = new Map<string, Tile>();
 	private pending: 'start' | 'stop' | 'discard' | null = null;
 	private failure: 'start' | 'stop' | 'discard' | null = null;
+	/**
+	 * What the panel showed when a finish or a discard failed (Z7-6): the failure speaks of THAT session
+	 * and phase. Once they change (the session ended by another route, the old one was dropped) the alert
+	 * is no longer true and goes; while they hold, it stays, also when the failure was the note not saving.
+	 */
+	private failureScope = '';
 	private sessionId: string | null = null;
 	private shown = PAGE_SIZE;
 	private chartKey = '';
@@ -361,6 +367,7 @@ export class LiveSessionPanel {
 		if (view.sessionId !== this.sessionId) { this.sessionId = view.sessionId; this.shown = PAGE_SIZE; this.rowCache.clear(); }
 		if (view.phase === 'active' && this.failure === 'start') this.failure = null;
 		const control = this.actions.getLiveSessionControl();
+		if ((this.failure === 'stop' || this.failure === 'discard') && this.failureScope !== this.scopeOf(view, control)) this.failure = null;
 		this.renderHeader(view, control);
 		const hasSession = view.sessionId !== null;
 		const hasData = hasSession && view.observationCount > 0;
@@ -590,6 +597,16 @@ export class LiveSessionPanel {
 		}
 	}
 
+	private scopeOf(view: LiveSessionViewV1, control: LiveSessionControlState): string {
+		return `${String(view.sessionId)}|${view.phase}|${String(control.oldSession !== null)}|${String(control.stuckSession === true)}`;
+	}
+
+	/** Records a failed finish or discard together with the state it failed in. */
+	private fail(failure: 'start' | 'stop' | 'discard'): void {
+		this.failure = failure;
+		this.failureScope = this.scopeOf(this.actions.getLiveSessionView(0, 1), this.actions.getLiveSessionControl());
+	}
+
 	private async press(): Promise<void> {
 		if (this.toggle.getAttribute('aria-disabled') === 'true' || this.pending !== null) return;
 		const stopping = this.actions.getLiveSessionView(0, 1).phase === 'active';
@@ -598,7 +615,7 @@ export class LiveSessionPanel {
 		this.refresh();
 		try {
 			if (stopping) await this.actions.stopLiveSession(); else await this.actions.startLiveSession();
-		} catch { this.failure = stopping ? 'stop' : 'start'; }
+		} catch { this.fail(stopping ? 'stop' : 'start'); }
 		finally { this.pending = null; this.refresh(); }
 	}
 
@@ -606,7 +623,7 @@ export class LiveSessionPanel {
 		if (this.pending !== null) return;
 		this.pending = 'discard'; this.failure = null;
 		this.refresh();
-		try { await this.actions.discardOldSession(); } catch { this.failure = 'discard'; }
+		try { await this.actions.discardOldSession(); } catch { this.fail('discard'); }
 		finally { this.pending = null; this.refresh(); }
 	}
 
