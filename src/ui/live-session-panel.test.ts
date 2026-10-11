@@ -286,6 +286,22 @@ describe('Session tab: figures, objects and chart', () => {
 		const section = (panel: LiveSessionPanel): HTMLElement | null => panel.element.querySelector<HTMLElement>('.tyrian-live-session__currencies');
 		const tiles = (panel: LiveSessionPanel): HTMLElement[] => Array.from(panel.element.querySelectorAll<HTMLElement>('ul.tyrian-live-session__coins > li'));
 
+		it('asks for no referrer, and swaps an icon that fails to load for the same ? as a missing source; a loaded one is left alone', () => {
+			const { panel } = harness(withCoins([[1, 5]]), control(), 'en', undefined, known);
+			const images = Array.from(panel.element.querySelectorAll<HTMLImageElement>('li img'));
+			expect(images.length).toBeGreaterThan(0);
+			expect(images.every((image) => image.getAttribute('referrerpolicy') === 'no-referrer')).toBe(true);
+			const failing = tiles(panel)[0]!.querySelector('img')!;
+			const parent = failing.parentElement!;
+			failing.dispatchEvent(new Event('load'));
+			expect(failing.isConnected).toBe(true);
+			failing.dispatchEvent(new Event('error'));
+			expect(failing.isConnected).toBe(false);
+			const marker = parent.querySelector('.tyrian-live-session__missing')!;
+			expect(marker.textContent).toBe('?');
+			expect(marker.getAttribute('aria-hidden')).toBe('true');
+		});
+
 		it('gives the coins their own labelled section after the objects, with the number of coins, and none without coins', () => {
 			const { panel } = harness(withCoins([[1, 15_525], [2, 5]]), control(), 'en', undefined, known);
 			const head = section(panel)!.querySelector('h4')!;

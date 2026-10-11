@@ -949,12 +949,20 @@ export class LiveSessionPanel {
 				const url = new URL(source);
 				if (url.origin === GW2_ICON_ORIGIN && url.username === '' && url.password === '') {
 					const image = this.document.createElementNS(HTML_NS, 'img') as HTMLImageElement;
-					image.src = url.href; image.alt = ''; image.loading = 'lazy';
+					// A load that fails (network, 404, CSP) shows the same marker as a missing source, never a gap.
+					image.addEventListener('error', () => { image.replaceWith(this.missingIcon()); });
+					image.referrerPolicy = 'no-referrer'; image.alt = ''; image.loading = 'lazy';
+					image.src = url.href;
 					if (small) image.className = 'tyrian-live-session__icon';
 					return image;
 				}
 			} catch { /* A source that is not a URL falls through to the placeholder. */ }
 		}
+		return this.missingIcon();
+	}
+
+	/** The quiet `?` standing in for an icon that has no usable source or did not load. */
+	private missingIcon(): HTMLElement {
 		const missing = this.node('span', 'tyrian-live-session__missing', '?');
 		missing.setAttribute('aria-hidden', 'true');
 		return missing;

@@ -1086,6 +1086,20 @@ describe('AchievementsView: the elements of each followed achievement, with chec
 		expect(h.refresh).toHaveBeenCalledWith(VAULT, [META_ID, 9351, 9410, 9468]);
 	});
 
+	it('an element icon that fails to load leaves the slot empty, as a missing one does; a loaded one stays', async () => {
+		const h = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: READING, entries: [{ id: META_ID, done: false, current: 23, max: 36, repeated: null, bits: null }] });
+		h.view.mount();
+		await h.settle();
+		const icon = h.container.querySelector<HTMLImageElement>('.tyrian-achievements__elements img')!;
+		const slot = icon.parentElement!;
+		icon.dispatchEvent(new Event('load'));
+		expect(icon.isConnected).toBe(true);
+		icon.dispatchEvent(new Event('error'));
+		expect(icon.isConnected).toBe(false);
+		expect(slot.querySelector('img')).toBeNull();
+		expect(slot.textContent).toBe('');
+	});
+
 	it('a meta whose members were not read says the elements are not read; one whose category lists nothing else says so; all done is marked', async () => {
 		const unread = harness({ tracked: [META_ID], details: members, categories: [...CATEGORIES, LEYSPRING], readingIds: [META_ID], entries: [{ id: META_ID, done: false, current: 23, max: 36, repeated: null, bits: null }] });
 		unread.view.mount();

@@ -480,8 +480,8 @@ export class AchievementsView {
 	 */
 	private applyIcon(slot: HTMLElement, icon: string | null): void {
 		const url = safePublicRenderIconUrl(icon);
-		if (url === null || slot.querySelector('img') !== null) return;
-		slot.createEl('img', {
+		if (url === null || slot.querySelector('img') !== null || slot.dataset.iconFailed !== undefined) return;
+		const image = slot.createEl('img', {
 			cls: 'tyrian-achievements__icon',
 			// `loading` and `referrerpolicy` before `src`: a browser may start the request as soon as `src` is set.
 			attr: {
@@ -489,6 +489,8 @@ export class AchievementsView {
 				alt: '', 'aria-hidden': 'true', width: String(ACHIEVEMENT_ICON_SIZE), height: String(ACHIEVEMENT_ICON_SIZE), src: url,
 			},
 		});
+		// A load that fails leaves the slot empty, as a missing icon does, and is not retried on every repaint.
+		image.addEventListener('error', () => { image.remove(); slot.dataset.iconFailed = ''; });
 	}
 
 	/** The explicit action, and the only call with the key. */
