@@ -36,7 +36,7 @@ import type { ReservationGoal } from '../economy/reservation-model';
 import type { SeasonalWindowV1 } from '../economy/seasonal-window';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { SaleRuntime, type SaleRuntimePort } from '../runtime/sale-runtime';
-import { InventoryRuntime, type InventoryRuntimePort } from '../runtime/inventory-runtime';
+import { inventoryOver } from '../test/inventory-over';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import type { InventoryAdvisorViewRow } from '../ui/inventory-advisor-view-model';
 import {
@@ -777,7 +777,7 @@ describe('seed phases of an inventory sync, by composition of the real analysis,
 			sale: null as SaleRuntime | null,
 		};
 		// DE-01, step 3g: the analysis and the one-click action are `InventoryRuntime`'s, over a port that reads this harness.
-		const inventory = new InventoryRuntime(harness as unknown as InventoryRuntimePort);
+		const inventory = inventoryOver(harness);
 		const port = {
 			settings: { language: 'es' as const, priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 180, recommendationCapitalThresholdCopper: 1 },
 			runtimeReady: true, unloaded: false, collectorMode: 'collector' as const, vaultId: VAULT, localDebugActions: null,

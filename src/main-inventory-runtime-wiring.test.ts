@@ -2,6 +2,31 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+// What `initializeRuntime` hands the services it builds, recorded while the real ones still run.
+const built = vi.hoisted(() => ({
+	advisor: [] as unknown[],
+	oneClick: [] as unknown[][],
+	manual: [] as unknown[][],
+}));
+vi.mock('./runtime/assemble-advisor', async (importOriginal) => {
+	const original = await importOriginal<typeof import('./runtime/assemble-advisor')>();
+	return { ...original, assembleAdvisor: (input: Parameters<typeof original.assembleAdvisor>[0]) => { built.advisor.push(input); return original.assembleAdvisor(input); } };
+});
+vi.mock('./ui/inventory-vault-sync-run-controller', async (importOriginal) => {
+	const original = await importOriginal<typeof import('./ui/inventory-vault-sync-run-controller')>();
+	class Recording extends original.InventoryVaultOneClickSyncController {
+		constructor(...args: ConstructorParameters<typeof original.InventoryVaultOneClickSyncController>) { super(...args); built.oneClick.push(args); }
+	}
+	return { ...original, InventoryVaultOneClickSyncController: Recording };
+});
+vi.mock('./ui/inventory-vault-sync-controller', async (importOriginal) => {
+	const original = await importOriginal<typeof import('./ui/inventory-vault-sync-controller')>();
+	class Recording extends original.InventoryVaultSyncController {
+		constructor(...args: ConstructorParameters<typeof original.InventoryVaultSyncController>) { super(...args); built.manual.push(args); }
+	}
+	return { ...original, InventoryVaultSyncController: Recording };
+});
+
 import { InventoryRuntime } from './runtime/inventory-runtime';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 
@@ -10,7 +35,7 @@ import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harnes
  * runtime once, with the caller's arguments, and answers what the runtime answered; the port reads
  * and publishes the core's fields as they stand.
  */
-type Delegate = Exclude<keyof InventoryRuntime, never>;
+type Delegate = keyof InventoryRuntime;
 type Core = Record<string, (...args: unknown[]) => unknown>;
 
 const GOAL = { id: 'goal-1' };
@@ -84,5 +109,69 @@ describe('the core hands the inventory to InventoryRuntime', () => {
 		await own.inventory.refreshInventoryAdvisorForSync(() => undefined, () => undefined);
 		expect(seen).toBe(true);
 		expect(own.inventoryAnalysisForSync).toBe(false);
+	});
+
+	describe('the closures initializeRuntime builds reach InventoryRuntime', () => {
+		type OneClickDeps = { refreshAdvisor(onPhase: unknown, onProgress: unknown): Promise<void> };
+		type AdvisorInput = {
+			writeCaptureReceipt(receipt: unknown): unknown;
+			preferencesBackup: { settings: { write(backup: unknown, final: boolean): Promise<unknown> } };
+		};
+
+		async function initialized(): Promise<void> {
+			built.advisor.length = 0; built.oneClick.length = 0; built.manual.length = 0;
+			harness = createRuntimeHarness();
+			const setup = harness.core as unknown as {
+				localDebugActions: null;
+				settingTab: { refreshConnectionRow(): void; refreshForSettingsChange(): void };
+			};
+			// The harness's recording port predates `fireAndForget`; without a port the boot runs those actions directly.
+			setup.localDebugActions = null;
+			setup.settingTab = { refreshConnectionRow: () => undefined, refreshForSettingsChange: () => undefined };
+			// A configured key is what makes this device a collector.
+			harness.core.settings = { ...harness.core.settings, apiKeySecret: 'tyrian-test-key', language: 'es' };
+			await harness.initializeRuntime();
+		}
+
+		it('the one-click sync refreshes the advisor through refreshInventoryAdvisorForSync', async () => {
+			await initialized();
+			const reached = vi.spyOn(InventoryRuntime.prototype, 'refreshInventoryAdvisorForSync').mockResolvedValue(undefined);
+			const [deps] = built.oneClick.at(-1) as [OneClickDeps];
+			const onPhase = () => undefined;
+			const onProgress = () => undefined;
+			await deps.refreshAdvisor(onPhase, onProgress);
+			expect(reached).toHaveBeenCalledExactlyOnceWith(onPhase, onProgress);
+		});
+
+		it('the one-click sync records its outcome through recordInventorySyncOutcome', async () => {
+			await initialized();
+			const reached = vi.spyOn(InventoryRuntime.prototype, 'recordInventorySyncOutcome').mockResolvedValue(undefined);
+			const onOutcome = (built.oneClick.at(-1) as unknown[])[3] as (outcome: unknown) => void;
+			const outcome = { status: 'success' };
+			onOutcome(outcome);
+			await Promise.resolve();
+			expect(reached).toHaveBeenCalledExactlyOnceWith(outcome);
+		});
+
+		it('the manual preview reads the notes\' analysis through inventoryAnalysisForNotes', async () => {
+			await initialized();
+			const reached = vi.spyOn(InventoryRuntime.prototype, 'inventoryAnalysisForNotes').mockRejectedValue(new Error('reached'));
+			const [deps] = built.manual.at(-1) as [{ preview(): Promise<unknown> }];
+			await expect(deps.preview()).rejects.toThrow('reached');
+			expect(reached).toHaveBeenCalledOnce();
+		});
+
+		it('the advisor writes its receipt and the preferences copy through the facade', async () => {
+			await initialized();
+			const receipt = vi.spyOn(InventoryRuntime.prototype, 'writeInventoryAdvisorCaptureReceipt').mockResolvedValue(undefined);
+			const backup = vi.spyOn(InventoryRuntime.prototype, 'writeInventoryPreferencesBackup').mockResolvedValue('saved');
+			const input = built.advisor.at(-1) as AdvisorInput;
+			const receiptValue = { version: 1 };
+			await input.writeCaptureReceipt(receiptValue);
+			const copy = { version: 1 };
+			await input.preferencesBackup.settings.write(copy, true);
+			expect(receipt).toHaveBeenCalledExactlyOnceWith(receiptValue);
+			expect(backup).toHaveBeenCalledExactlyOnceWith(copy, true);
+		});
 	});
 });
