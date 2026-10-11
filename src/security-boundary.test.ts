@@ -204,6 +204,9 @@ describe('H6.7 credential boundary', () => {
 			'src/assets/managed-assets-pointer.ts',
 			'src/catalog/persistent-catalog-cache.ts',
 			'src/sessions/coordination-store.ts',
+			// DE-07: the heartbeat re-saves the active SessionRuntimeRecord (`saveActiveEvidence`), so its
+			// name keeps it inside the persistence guard; a rename that leaves the guard turns this red.
+			'src/sessions/manual-session-runtime-heartbeat.ts',
 			'src/sessions/pending-proposal-store.ts',
 			'src/sessions/session-detection-quality-store.ts',
 			'src/sessions/session-note-model.ts',

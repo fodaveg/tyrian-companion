@@ -23,8 +23,10 @@ import {
 import {
 	IndexedDbSessionRuntimeStore,
 	MemorySessionRuntimeStore,
+	type SessionRuntimeLoadResult,
 	type SessionRuntimeStore,
 } from './session-runtime-store';
+import { API_SETTLEMENT_TICK_MS } from './session-api-settlement';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
 import { SessionCommandController } from '../ui/session-command-controller';
 import { HttpTransportError } from '../core/http';
@@ -1738,6 +1740,124 @@ describe('ManualSessionStartService', () => {
 			expect(second.service.getState()).toMatchObject({ status: 'active', authority: { instanceId: 'wl1:instance-two', fence: 2 } });
 			await second.service.dispose();
 		});
+	});
+});
+
+describe('dispose while an automatic reclaim is in flight (DE-07)', () => {
+	/**
+	 * A session whose heartbeat lost the lease, so the watch retries it on its own; the retry's
+	 * reclaim waits on `load()` until the test releases it, after `dispose()`. The watch and the
+	 * heartbeat read `disposed` through their ports, and these cases pin that they read it then.
+	 */
+	async function reclaimHeldAcrossDispose() {
+		clock = Date.parse('2026-08-13T07:59:59.500Z');
+		const intervals = new Map<number, { callback: () => void; periodMs: number }>();
+		let nextHandle = 1;
+		let fence = 0;
+		const renew = vi.fn(async () => ({ status: 'lost' as const }));
+		const leases = coordinator({
+			acquire: vi.fn(async () => {
+				fence += 1;
+				return { status: 'acquired' as const, handle: { ...handle, fence, acquiredAt: clock, renewedAt: clock, expiresAt: clock + 30_000 } };
+			}),
+			renew,
+		});
+		const inner = new MemorySessionRuntimeStore();
+		let held: Promise<SessionRuntimeLoadResult> | null = null;
+		const load = vi.fn(async (): Promise<SessionRuntimeLoadResult> => await (held ?? inner.load()));
+		const store: SessionRuntimeStore = {
+			load,
+			save: async (record) => await inner.save(record),
+			clear: async (authority) => await inner.clear(authority),
+			forceClear: async () => await inner.forceClear(),
+			close: () => undefined,
+		};
+		const onAutoRecovered = vi.fn();
+		const service = new ManualSessionStartService(leases, {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		}, serviceOptions({
+			runtimeStore: store,
+			onAutoRecovered,
+			setInterval: vi.fn((callback: () => void, periodMs: number) => {
+				const id = nextHandle++;
+				intervals.set(id, { callback, periodMs });
+				return id;
+			}),
+			clearInterval: vi.fn((id: unknown) => { intervals.delete(id as number); }),
+		}));
+		const tick = (periodMs: number): void => {
+			for (const entry of [...intervals.values()].filter((candidate) => candidate.periodMs === periodMs)) entry.callback();
+		};
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'started' });
+		tick(10_000);
+		await vi.waitFor(() => expect(service.getState()).toMatchObject({ status: 'error', code: 'lease_lost' }));
+		await vi.waitFor(() => expect(inner.load()).resolves.toMatchObject({ record: { state: { status: 'error' } } }));
+
+		let release!: (result: SessionRuntimeLoadResult) => void;
+		held = new Promise((resolve) => { release = resolve; });
+		const loadsBefore = load.mock.calls.length;
+		clock += 60_000;
+		tick(API_SETTLEMENT_TICK_MS);
+		await vi.waitFor(() => expect(load.mock.calls.length).toBe(loadsBefore + 1));
+		await service.dispose();
+		expect([...intervals.values()]).toEqual([]);
+		const renewsBefore = renew.mock.calls.length;
+		/** Lets the reclaim and the retry around it run to the end. */
+		const settle = async (): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 20)); };
+		return { service, intervals, inner, renew, renewsBefore, onAutoRecovered, release, settle, tick };
+	}
+
+	it('leaves the watch unarmed when the reclaim fails after dispose', async () => {
+		const held = await reclaimHeldAcrossDispose();
+		held.release({ status: 'error', code: 'unavailable' });
+		await held.settle();
+
+		expect([...held.intervals.values()].map((entry) => entry.periodMs)).not.toContain(API_SETTLEMENT_TICK_MS);
+	});
+
+	it('never renews again, nor reports a recovery, when the reclaim succeeds after dispose', async () => {
+		const held = await reclaimHeldAcrossDispose();
+		held.release(await held.inner.load());
+		await held.settle();
+		held.tick(10_000);
+		await held.settle();
+
+		expect([...held.intervals.values()].map((entry) => entry.periodMs)).toEqual([]);
+		expect(held.renew).toHaveBeenCalledTimes(held.renewsBefore);
+		expect(held.onAutoRecovered).not.toHaveBeenCalled();
+		expect([...held.intervals.values()].map((entry) => entry.periodMs)).not.toContain(API_SETTLEMENT_TICK_MS);
+	});
+
+	it('arms no heartbeat for a start whose lease arrives after dispose', async () => {
+		clock = Date.parse('2026-08-13T07:59:59.500Z');
+		const intervals = new Map<number, number>();
+		let nextHandle = 1;
+		let grant!: () => void;
+		const granted = new Promise<void>((resolve) => { grant = resolve; });
+		const acquire = vi.fn(async () => {
+			await granted;
+			return { status: 'acquired' as const, handle };
+		});
+		const service = new ManualSessionStartService(coordinator({ acquire }), {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		}, serviceOptions({
+			setInterval: vi.fn((_callback: () => void, periodMs: number) => {
+				const id = nextHandle++;
+				intervals.set(id, periodMs);
+				return id;
+			}),
+			clearInterval: vi.fn((id: unknown) => { intervals.delete(id as number); }),
+		}));
+		const started = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce());
+		await service.dispose();
+		grant();
+		await started;
+
+		expect([...intervals.values()]).toEqual([]);
 	});
 });
 

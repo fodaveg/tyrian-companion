@@ -12310,6 +12310,106 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/sessions/manual-session-evidence.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/sessions/manual-session-runtime-heartbeat.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "0edcd688c740c961d0ec39d952871234449444fa",
+					"kind": "void_expression",
+					"line": 78,
+					"column": 56,
+					"endLine": 78,
+					"endColumn": 80,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.runHeartbeat",
+						"scope": "startHeartbeat",
+						"justification": "The \"startHeartbeat\" owner deliberately detaches \"this.runHeartbeat\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"startHeartbeat\" owner deliberately detaches \"this.runHeartbeat\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.runHeartbeat\" in \"startHeartbeat\"."
+				},
+				{
+					"id": "4faa0efb611553ed22c6cd91c804ae7921f3cb23",
+					"kind": "callback_registration",
+					"line": 83,
+					"column": 18,
+					"endLine": 85,
+					"endColumn": 5,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "runHeartbeat",
+						"justification": "The \"runHeartbeat\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"runHeartbeat\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"runHeartbeat\"."
+				},
+				{
+					"id": "dae6078e977075362e41f61e344facfa6a35303c",
+					"kind": "void_expression",
+					"line": 100,
+					"column": 5,
+					"endLine": 100,
+					"endColumn": 35,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.saveActiveEvidence",
+						"scope": "heartbeat",
+						"justification": "The \"heartbeat\" owner deliberately detaches \"this.saveActiveEvidence\" so an IndexedDB write never delays or fails the lease renewal; that named operation catches every failure and records it through this.diagnostics.event, so a lost evidence save is never silent."
+					},
+					"reason": "Allowlisted void_expression: The \"heartbeat\" owner deliberately detaches \"this.saveActiveEvidence\" so an IndexedDB write never delays or fails the lease renewal; that named operation catches every failure and records it through this.diagnostics.event, so a lost evidence save is never silent. Verified target: \"this.saveActiveEvidence\" in \"heartbeat\"."
+				},
+				{
+					"id": "12d93d7d1b0d3c7570b09f4c1d0b86194a82336b",
+					"kind": "catch_clause",
+					"line": 111,
+					"column": 5,
+					"endLine": 115,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "heartbeat",
+						"justification": "The \"heartbeat\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"heartbeat\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"heartbeat\"."
+				},
+				{
+					"id": "7aa4c45ed9d74d0fd5a2e3c98a5c917d2b04ac9d",
+					"kind": "catch_clause",
+					"line": 142,
+					"column": 5,
+					"endLine": 148,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.diagnostics.event"
+					},
+					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
+				}
+			]
+		},
+		"src/sessions/manual-session-start-failure.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/sessions/manual-session-start-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/sessions/manual-session-start-service.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -12317,9 +12417,9 @@
 				{
 					"id": "4975a591f4832757e7b7daa5ef764ffbbcb96e3b",
 					"kind": "void_expression",
-					"line": 359,
+					"line": 165,
 					"column": 62,
-					"endLine": 359,
+					"endLine": 165,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12333,9 +12433,9 @@
 				{
 					"id": "ea83f70e7f572ea899e26ca6453cf1fc91e4d538",
 					"kind": "catch_clause",
-					"line": 447,
+					"line": 290,
 					"column": 61,
-					"endLine": 447,
+					"endLine": 290,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12349,9 +12449,9 @@
 				{
 					"id": "5652a96c5b1d1d031a9d99672e92877abc5b7ca3",
 					"kind": "void_expression",
-					"line": 493,
+					"line": 336,
 					"column": 27,
-					"endLine": 493,
+					"endLine": 336,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12365,9 +12465,9 @@
 				{
 					"id": "ece7f301135473e1747af10a53bac87e604c67b8",
 					"kind": "callback_registration",
-					"line": 516,
+					"line": 359,
 					"column": 18,
-					"endLine": 518,
+					"endLine": 361,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12382,9 +12482,9 @@
 				{
 					"id": "11d0928664608b8f20f5b2e108bfc213effd5529",
 					"kind": "callback_registration",
-					"line": 536,
+					"line": 379,
 					"column": 18,
-					"endLine": 538,
+					"endLine": 381,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12399,9 +12499,9 @@
 				{
 					"id": "c215646a3b0e1b7f87d8b3a6498a6969539e0ece",
 					"kind": "catch_clause",
-					"line": 576,
+					"line": 419,
 					"column": 5,
-					"endLine": 578,
+					"endLine": 421,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12415,9 +12515,9 @@
 				{
 					"id": "4b288698335298af4f43c393bea4783172383775",
 					"kind": "callback_registration",
-					"line": 589,
+					"line": 432,
 					"column": 18,
-					"endLine": 591,
+					"endLine": 434,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12432,9 +12532,9 @@
 				{
 					"id": "cc7bd25234879018f8fb89045ee882df9ab46914",
 					"kind": "callback_registration",
-					"line": 635,
+					"line": 478,
 					"column": 18,
-					"endLine": 637,
+					"endLine": 480,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12449,9 +12549,9 @@
 				{
 					"id": "c9c6564b96cb7cd0a60db8f01c32045bf79dddeb",
 					"kind": "callback_registration",
-					"line": 675,
+					"line": 518,
 					"column": 18,
-					"endLine": 677,
+					"endLine": 520,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12466,9 +12566,9 @@
 				{
 					"id": "5c64f4e01bb401e8baa1bf031334c033893bc99a",
 					"kind": "catch_clause",
-					"line": 751,
+					"line": 594,
 					"column": 52,
-					"endLine": 751,
+					"endLine": 594,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12482,9 +12582,9 @@
 				{
 					"id": "06ea0a798d7dc463ffabfe02c269c0ae87e843b9",
 					"kind": "catch_clause",
-					"line": 763,
+					"line": 606,
 					"column": 4,
-					"endLine": 774,
+					"endLine": 617,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12498,9 +12598,9 @@
 				{
 					"id": "ed98ff87dacffeb1e44809b46b2f45acf8007ada",
 					"kind": "callback_registration",
-					"line": 913,
+					"line": 756,
 					"column": 18,
-					"endLine": 915,
+					"endLine": 758,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12515,9 +12615,9 @@
 				{
 					"id": "ccd6a889042fa85fa4b9a4870259410419cbcec4",
 					"kind": "catch_clause",
-					"line": 1137,
+					"line": 980,
 					"column": 5,
-					"endLine": 1140,
+					"endLine": 983,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12531,9 +12631,9 @@
 				{
 					"id": "fb7e7f4691f05d0462e736da2b7a7504a545fcde",
 					"kind": "catch_clause",
-					"line": 1188,
+					"line": 1031,
 					"column": 5,
-					"endLine": 1192,
+					"endLine": 1035,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12547,9 +12647,9 @@
 				{
 					"id": "c3ed97e76d43be26bfb009db898d98fd333b3b94",
 					"kind": "catch_clause",
-					"line": 1290,
+					"line": 1133,
 					"column": 6,
-					"endLine": 1302,
+					"endLine": 1145,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -12561,9 +12661,9 @@
 				{
 					"id": "1ecfc5f2c0a8de798a59ad30337a338aeca5965d",
 					"kind": "catch_clause",
-					"line": 1331,
+					"line": 1174,
 					"column": 5,
-					"endLine": 1349,
+					"endLine": 1192,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12577,9 +12677,9 @@
 				{
 					"id": "d9b07796f4adb8f5cde284ff618cd10964f333a7",
 					"kind": "catch_clause",
-					"line": 1346,
+					"line": 1189,
 					"column": 7,
-					"endLine": 1346,
+					"endLine": 1189,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12593,9 +12693,9 @@
 				{
 					"id": "2f7a91f51e101efba27e637e8a30d2843a9e5842",
 					"kind": "catch_clause",
-					"line": 1447,
+					"line": 1290,
 					"column": 5,
-					"endLine": 1449,
+					"endLine": 1292,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12607,76 +12707,11 @@
 					"reason": "Allowlisted catch_clause: The \"resolveFarmedLossItemIds\" owner explicitly handles \"fallback_return\": a failed catalog type lookup returns no farmed-loss exemptions, so every loss keeps degrading the session exactly as before the exemption existed, and the note names the unknown type as its reason; the catalog capture underneath records its own request diagnostics. Verified recovery: \"fallback_return\" in \"resolveFarmedLossItemIds\"."
 				},
 				{
-					"id": "3a3ac2b6bd2ce08c85ee241602d72f093aa592a0",
-					"kind": "void_expression",
-					"line": 1521,
-					"column": 56,
-					"endLine": 1521,
-					"endColumn": 80,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.runHeartbeat",
-						"scope": "startHeartbeat",
-						"justification": "The \"startHeartbeat\" owner deliberately detaches \"this.runHeartbeat\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"startHeartbeat\" owner deliberately detaches \"this.runHeartbeat\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.runHeartbeat\" in \"startHeartbeat\"."
-				},
-				{
-					"id": "ae210ccd786489f094001462c575dc9599be828c",
-					"kind": "callback_registration",
-					"line": 1526,
-					"column": 18,
-					"endLine": 1528,
-					"endColumn": 5,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "runHeartbeat",
-						"justification": "The \"runHeartbeat\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"runHeartbeat\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"runHeartbeat\"."
-				},
-				{
-					"id": "2f4c0d725054717cd7c6fd6c0f25b98a3a6ef92b",
-					"kind": "void_expression",
-					"line": 1543,
-					"column": 5,
-					"endLine": 1543,
-					"endColumn": 35,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.saveActiveEvidence",
-						"scope": "heartbeat",
-						"justification": "The \"heartbeat\" owner deliberately detaches \"this.saveActiveEvidence\" so an IndexedDB write never delays or fails the lease renewal; that named operation catches every failure and records it through this.diagnostics.event, so a lost evidence save is never silent."
-					},
-					"reason": "Allowlisted void_expression: The \"heartbeat\" owner deliberately detaches \"this.saveActiveEvidence\" so an IndexedDB write never delays or fails the lease renewal; that named operation catches every failure and records it through this.diagnostics.event, so a lost evidence save is never silent. Verified target: \"this.saveActiveEvidence\" in \"heartbeat\"."
-				},
-				{
-					"id": "be241d8353516e762b8c7f7ef86841165c12ef24",
-					"kind": "catch_clause",
-					"line": 1554,
-					"column": 5,
-					"endLine": 1558,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "heartbeat",
-						"justification": "The \"heartbeat\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"heartbeat\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"heartbeat\"."
-				},
-				{
 					"id": "e813f9a75d1ea7c82817777c76c228f4b6fedca8",
 					"kind": "void_expression",
-					"line": 1581,
+					"line": 1380,
 					"column": 4,
-					"endLine": 1581,
+					"endLine": 1380,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12690,9 +12725,9 @@
 				{
 					"id": "be8ef9e94e36dd77b03b5ebe973e77f58c8f648a",
 					"kind": "promise_catch",
-					"line": 1581,
+					"line": 1380,
 					"column": 9,
-					"endLine": 1581,
+					"endLine": 1380,
 					"endColumn": 58,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -12707,9 +12742,9 @@
 				{
 					"id": "70a537878b3202797185e681ca881c3772dff1d0",
 					"kind": "catch_clause",
-					"line": 1585,
+					"line": 1384,
 					"column": 5,
-					"endLine": 1585,
+					"endLine": 1384,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12721,57 +12756,11 @@
 					"reason": "Allowlisted catch_clause: The \"failFromAuthority\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"failFromAuthority\"."
 				},
 				{
-					"id": "78f9239f90f88fba32a29b81c28defa35fc2049d",
-					"kind": "void_expression",
-					"line": 1646,
-					"column": 4,
-					"endLine": 1646,
-					"endColumn": 37,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.runAutoRetry",
-						"scope": "checkSettlement",
-						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
-					},
-					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
-				},
-				{
-					"id": "8399a5db85d063a8137735acffba8231ca6fc607",
-					"kind": "void_expression",
-					"line": 1653,
-					"column": 4,
-					"endLine": 1653,
-					"endColumn": 37,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.runAutoRetry",
-						"scope": "checkSettlement",
-						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
-					},
-					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
-				},
-				{
-					"id": "e0a297fa5960cf4908a3d4c2fd7927fcf200a644",
-					"kind": "catch_clause",
-					"line": 1705,
-					"column": 5,
-					"endLine": 1712,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.diagnostics.event"
-					},
-					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
-				},
-				{
 					"id": "a74b8a10cc69291ef1cc618abd071674d703c6c7",
 					"kind": "callback_registration",
-					"line": 1724,
+					"line": 1408,
 					"column": 18,
-					"endLine": 1726,
+					"endLine": 1410,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12784,25 +12773,11 @@
 					"reason": "Allowlisted callback_registration: The \"reclaim\" owner registers \"finally\" only to release its single in-flight reclaim slot; it clears one field, performs no I/O and cannot reject. Verified registration: \"finally\" in \"reclaim\"."
 				},
 				{
-					"id": "7201fea7f3d33010a6cfd569eb5fef4c468191b1",
-					"kind": "catch_clause",
-					"line": 1947,
-					"column": 5,
-					"endLine": 1953,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.diagnostics.event"
-					},
-					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
-				},
-				{
 					"id": "823819fb29f080f24b88993f2c9faabc0b02df60",
 					"kind": "catch_clause",
-					"line": 1981,
+					"line": 1639,
 					"column": 5,
-					"endLine": 1981,
+					"endLine": 1639,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12816,9 +12791,9 @@
 				{
 					"id": "4875e885d3e9147fb0429f1113fbf326799594cc",
 					"kind": "catch_clause",
-					"line": 1990,
+					"line": 1648,
 					"column": 5,
-					"endLine": 1990,
+					"endLine": 1648,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12832,9 +12807,9 @@
 				{
 					"id": "f7d959371b5c71afafb84bdbea0ee390f819089c",
 					"kind": "catch_clause",
-					"line": 2038,
+					"line": 1696,
 					"column": 34,
-					"endLine": 2038,
+					"endLine": 1696,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12848,9 +12823,9 @@
 				{
 					"id": "a35bb57cf78b7d9cbc1bc79554ca9de0848b62ba",
 					"kind": "catch_clause",
-					"line": 2042,
+					"line": 1700,
 					"column": 50,
-					"endLine": 2044,
+					"endLine": 1702,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12864,9 +12839,9 @@
 				{
 					"id": "88bcc48dd42e18c052403d5cc21911384100e5aa",
 					"kind": "catch_clause",
-					"line": 2055,
+					"line": 1713,
 					"column": 61,
-					"endLine": 2055,
+					"endLine": 1713,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12880,9 +12855,9 @@
 				{
 					"id": "44717ecdead23eb3317c04301854643e6ecd0ae6",
 					"kind": "catch_clause",
-					"line": 2126,
+					"line": 1784,
 					"column": 62,
-					"endLine": 2126,
+					"endLine": 1784,
 					"endColumn": 120,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12896,9 +12871,9 @@
 				{
 					"id": "c254da1e12c35c1b99a40fd8d17f34a890bea42d",
 					"kind": "catch_clause",
-					"line": 2130,
+					"line": 1788,
 					"column": 58,
-					"endLine": 2130,
+					"endLine": 1788,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12908,6 +12883,58 @@
 						"justification": "The \"safeRelease\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"safeRelease\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"safeRelease\"."
+				}
+			]
+		},
+		"src/sessions/manual-session-watch.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "31d0c9f59528a9b3e1e56cf3cb4e2411094c36c5",
+					"kind": "void_expression",
+					"line": 130,
+					"column": 4,
+					"endLine": 130,
+					"endColumn": 37,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.runAutoRetry",
+						"scope": "checkSettlement",
+						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
+					},
+					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
+				},
+				{
+					"id": "5a62e9b66205835477bc0a12dcccb45a9fd35dab",
+					"kind": "void_expression",
+					"line": 137,
+					"column": 4,
+					"endLine": 137,
+					"endColumn": 37,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.runAutoRetry",
+						"scope": "checkSettlement",
+						"justification": "The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost."
+					},
+					"reason": "Allowlisted void_expression: The \"checkSettlement\" owner deliberately detaches \"this.runAutoRetry\" from its synchronous timer tick; that named operation catches every failure, records it through this.diagnostics.event and schedules the next attempt, so a failed retry is never lost. Verified target: \"this.runAutoRetry\" in \"checkSettlement\"."
+				},
+				{
+					"id": "4b38b898b10a66a7473d93c7f595d57d57d59b96",
+					"kind": "catch_clause",
+					"line": 189,
+					"column": 5,
+					"endLine": 196,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.diagnostics.event"
+					},
+					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
 				}
 			]
 		},
