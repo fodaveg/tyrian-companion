@@ -247,12 +247,17 @@ export class LiveSessionLifecycle {
 			// the presence it was started with still holds, so it is taken back as after an outage, not as after a restart
 			// (which would write the player as gone since the start, and close the session ten minutes later).
 			const own = this.ownStarts.has(loaded.record.sessionId); this.ownStarts.clear();
-			if (!this.options.enabled()) return;
+			// Raised and armed on a consult device too (A-1): nothing there reads or writes them (the beat, a start and a reclaim
+			// all wait for `enabled()`, and the history scrub is refused there), and the device may become a collector without this
+			// load happening again. The first beat after that reclaims the active session as after a restart, or verifies the note
+			// of the complete one before its journal can be let go on the receipt's word.
 			this.recovering = true; this.hostRestarted = !own;
 			this.noteNeedsVerification = loaded.record.phase === 'complete';
 			// Armed before anything else can fail: a session that is in memory is what the beat brings back.
 			this.armHeartbeat();
+			// Only read: the characters seen and the summary-written mark are the ones the session left, whoever reads them later.
 			await this.restoreSummaryState(loaded.record);
+			if (!this.options.enabled()) return;
 			if (loaded.record.phase === 'active' && !await this.reclaim()) return;
 			if (loaded.record.phase === 'complete') {
 				await this.saveCompletedNote();

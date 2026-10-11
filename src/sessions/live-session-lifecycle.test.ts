@@ -930,6 +930,93 @@ describe('passive live session lifecycle', () => {
 			await running.service.dispose(); await unsaved.service.dispose(); await f.service.dispose();
 		});
 	});
+	describe('a session loaded while the device is in consult, once the device becomes a collector (A-1)', () => {
+		/**
+		 * A first host that left a session `phase` (with its summary marked written when complete), and a second one over the same
+		 * store that loads it in consult until `collect()`. Every write the store or the coordinator could take is watched from
+		 * before that load, and so is the note writer: `notes` is the vault it checks, which writes a missing note back only
+		 * while `writable`.
+		 */
+		async function loadedInConsult(phase: 'active' | 'complete') {
+			const f = fixture();
+			const id = (await f.service.start('Test'))!; await f.service.open(f.source);
+			await f.service.commit(f.sample(0,0)); f.setNow(AT+1000); await f.service.commit(f.sample(1,3));
+			if (phase === 'complete') { await expect(f.service.stop(AT+2000)).resolves.toBe(true); await f.service.markSummaryWritten(id); }
+			await f.service.dispose();
+			let collector = false; let interval: (() => void) | null = null;
+			const vault = { notes: new Set<string>(), writable: true };
+			const onComplete = vi.fn(async (record: { sessionId: string }) => {
+				if (!vault.notes.has(record.sessionId)) { if (!vault.writable) return null; vault.notes.add(record.sessionId); }
+				return 'Sessions/live.md';
+			});
+			// The same fixture's coordinator, so the lease the second host takes is a later one than the first host's.
+			const acquire = vi.spyOn(f.options.coordinator,'acquire'); acquire.mockClear();
+			const service = new LiveSessionLifecycle({ ...f.options, enabled: () => collector, onComplete,
+				setInterval: (callback: () => void) => { interval = callback; return 2; }, clearInterval: () => { interval = null; } });
+			const writes: Record<string, { mock: { calls: unknown[] } }> = { saveLive: vi.spyOn(f.store,'saveLive'), clear: vi.spyOn(f.store,'clear'),
+				replaceLiveJournal: vi.spyOn(f.store,'replaceLiveJournal'), pruneLiveJournal: vi.spyOn(f.store,'pruneLiveJournal'),
+				savePruneQueue: vi.spyOn(f.store,'savePruneQueue'), saveSummaryState: vi.spyOn(f.store,'saveSummaryState'), acquire, onComplete };
+			f.setNow(AT+60_000); await service.initialize();
+			const second = { service, source: f.source, sample: f.sample, setNow: f.setNow, onComplete, acquire };
+			return { id, second, vault, store: f.store,
+				written: () => Object.entries(writes).filter(([, spy]) => spy.mock.calls.length > 0).map(([name]) => name),
+				beat: async () => { interval?.(); await service.capture(); }, collect: () => { collector = true; },
+				queued: async () => (await f.store.loadPruneQueue()).map((row) => row.sessionId) };
+		}
+		it('an active session is reclaimed by the first beat after the switch, and a sample after a new baseline is stored', async () => {
+			const { id, second, written, beat, collect } = await loadedInConsult('active');
+			expect(second.service.getView()).toMatchObject({ sessionId: id, phase: 'active' }); expect(second.service.isStuck()).toBe(false);
+			// In consult the beat does nothing: nothing is taken, nothing is written.
+			await beat(); await beat();
+			expect(written(), 'nothing written in consult').toEqual([]);
+			expect(second.service.getRuntime()?.gaps.map((gap) => gap.reason)).not.toContain('host_restart');
+			collect(); await beat();
+			expect(second.acquire.mock.calls.map(([sessionId]) => sessionId), 'the beat reclaims it').toEqual([id]);
+			expect(second.service.getRuntime()?.gaps.map((gap) => gap.reason), 'as after a restart').toContain('host_restart');
+			expect(second.service.getCharacters().map((row) => row.name), 'with the characters it saw').toEqual(['Test']);
+			// The reclaim leaves no epoch: the producer opens again and sends a baseline before its samples count.
+			const epoch = 'AwMDAwMDAwMDAwMDAwMDAw';
+			await expect(second.service.open({ ...second.source, epoch })).resolves.toBe('ready');
+			await expect(second.service.commit(second.sample(0,3,{ epoch }))).resolves.toBe('stored');
+			second.setNow(AT+61_000); await expect(second.service.commit(second.sample(1,5,{ epoch }))).resolves.toBe('stored');
+			expect(second.service.getView().totals[0]?.positive, 'three before the restart, two after').toBe(5);
+			await expect(second.service.stop(AT+62_000)).resolves.toBe(true);
+			await second.service.dispose();
+		});
+		it('a sealed session whose note is gone keeps its journal out of the prune queue until the note is back in the vault', async () => {
+			const { id, second, vault, store, written, beat, collect, queued } = await loadedInConsult('complete');
+			expect(second.service.getView()).toMatchObject({ sessionId: id, phase: 'complete' });
+			await beat(); expect(written(), 'nothing written in consult').toEqual([]);
+			// The player deleted the note, and the vault refuses to write it back.
+			vault.writable = false; collect();
+			expect(second.service.canRetireSealed(), 'the scrub gate does not take the receipt\'s word').toBe(false);
+			await expect(second.service.retireSealed(), 'nor does the scrub').resolves.toBe(false);
+			await expect(second.service.start('Next'), 'nor does a start').resolves.toBeNull();
+			await beat();
+			expect(second.onComplete, 'the note was looked for').toHaveBeenCalled();
+			expect(await queued(), 'its journal is not queued').not.toContain(id);
+			expect((await store.readLiveJournal(id)).length, 'and stays readable').toBe(2);
+			expect(second.service.getRuntime()).toMatchObject({ sessionId: id, phase: 'complete' });
+			// Once the vault takes the note back, the session is sealed again and the next start lets its journal go.
+			vault.writable = true; await beat();
+			expect(vault.notes.has(id), 'the note is written back').toBe(true);
+			await expect(second.service.start('Next')).resolves.not.toBeNull();
+			expect(await queued()).toContain(id);
+			await second.service.dispose();
+		});
+		it('a sealed session whose note is in the vault is verified by the first beat after the switch, then retired', async () => {
+			const { id, second, vault, written, beat, collect } = await loadedInConsult('complete');
+			vault.notes.add(id);
+			await beat(); expect(written(), 'nothing written in consult').toEqual([]);
+			collect(); await beat();
+			expect(second.onComplete, 'the note is verified').toHaveBeenCalledOnce();
+			expect(second.onComplete.mock.calls[0]?.[0]).toMatchObject({ sessionId: id });
+			expect(second.service.isSummaryWritten(), 'and its summary is not written again').toBe(true);
+			expect(second.service.canRetireSealed()).toBe(true);
+			await expect(second.service.retireSealed()).resolves.toBe(true);
+			await second.service.dispose();
+		});
+	});
 	describe('discarding only what this host may', () => {
 		/** A second host over the same store whose coordinator says the session is somebody else\'s. */
 		async function otherHost(f: ReturnType<typeof fixture>, acquire: unknown) {
