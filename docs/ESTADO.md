@@ -20,6 +20,9 @@
   ausente) deja `canStart` en falso; el panel muestra `hintOutputFolder`. Cuatro tests del runtime rojos antes y verdes
   después. Una sesión ya activa cuya carpeta desaparezca después no se cubre. Contrato: decisión «Carpeta de salida
   ausente en Hebra» de [ARCHITECTURE](ARCHITECTURE.md), que sigue sin crear la carpeta fuera de «Aplicar».
+- Hebra de David en Fedora (rpm 0.2.0-26), 11 oct: `node scripts/verify-hebra-install.mjs` da PASS (`version=0.6.48;
+  previous=0.6.47; release-bytes=match; carga=loaded (activada 0.6.48)`). Es instalación y carga en Hebra, no QA de
+  sesión.
 - Pendiente: verlo en hosts reales.
 
 ## Canal 0.6.47 publicado: la sesión se recupera al pasar a recolector con el almacén mudo (11 oct 2026)
