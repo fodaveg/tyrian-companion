@@ -72,6 +72,7 @@ import {
 import { failure, ManualSessionStartError, SessionTransitionRejectedError } from './manual-session-start-failure';
 import { lastSavedEvidenceAt, snapshotReference, stopFailureFloor, uncoveredStretches } from './manual-session-evidence';
 import { ManualSessionWatch } from './manual-session-watch';
+import { ManualSessionHeartbeat } from './manual-session-heartbeat';
 
 // DE-07: the vocabulary moved to `manual-session-start-model.ts`; its consumers keep importing it from here.
 export {
@@ -92,8 +93,8 @@ export class ManualSessionStartService {
 	private state: SessionState = initialSessionState();
 	private lastFailure: SessionStartFailure | null = null;
 	private currentHandle: ActiveSessionLeaseHandle | null = null;
-	private heartbeatHandle: unknown = null;
-	private heartbeatFlight: Promise<void> | null = null;
+	/** The renewal in flight, kept by `ManualSessionHeartbeat`; awaited before a session changes hands. */
+	private get heartbeatFlight(): Promise<void> | null { return this.leaseHeartbeat.heartbeatFlight; }
 	private authorityFailure: SessionStartFailure | null = null;
 	private startFlight: Promise<ManualSessionStartResult> | null = null;
 	private stopFlight: Promise<ManualSessionStopResult> | null = null;
@@ -144,8 +145,11 @@ export class ManualSessionStartService {
 	private readonly observedPlayIntervals: () => readonly ObservedPlayInterval[];
 	/** The settlement wait and the automatic retries (H18.7), over this service's own state. */
 	private readonly watch: ManualSessionWatch;
-	/** Last instant the active record was re-saved as evidence (H18.11); 0 before the first. */
-	private lastEvidenceSavedAt = 0;
+	/** The lease renewal and the periodic evidence save of an active session, over this service's own state. */
+	private readonly leaseHeartbeat: ManualSessionHeartbeat;
+	/** Last instant the active record was re-saved as evidence (H18.11); kept by `ManualSessionHeartbeat`. */
+	private get lastEvidenceSavedAt(): number { return this.leaseHeartbeat.lastEvidenceSavedAt; }
+	private set lastEvidenceSavedAt(at: number) { this.leaseHeartbeat.lastEvidenceSavedAt = at; }
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -186,6 +190,22 @@ export class ManualSessionStartService {
 			reclaim: () => this.reclaim(),
 			runRecovery: (action, mode) => this.runRecovery(action, mode),
 			continueRecoveredSession: (deferred) => { this.continueRecoveredSession(deferred); },
+		});
+		this.leaseHeartbeat = new ManualSessionHeartbeat({
+			disposed: () => this.disposed,
+			state: () => this.state,
+			baselineSnapshot: () => this.baselineSnapshot,
+			stopFlight: () => this.stopFlight,
+			currentHandle: () => this.currentHandle,
+			setCurrentHandle: (handle) => { this.currentHandle = handle; },
+			coordinator: () => this.coordinator,
+			runtimeStore: () => this.runtimeStore,
+			diagnostics: () => this.diagnostics,
+			scheduleInterval: (callback, milliseconds) => this.scheduleInterval(callback, milliseconds),
+			cancelInterval: (handle) => { this.cancelInterval(handle); },
+			safeNowOr: (fallback) => this.safeNowOr(fallback),
+			logAuthorityFailure: (action, reason) => { this.logAuthorityFailure(action, reason); },
+			failFromAuthority: (mapped) => { this.failFromAuthority(mapped); },
 		});
 	}
 
@@ -1333,53 +1353,9 @@ export class ManualSessionStartService {
 		));
 	}
 
-	private startHeartbeat(handle: ActiveSessionLeaseHandle): void {
-		this.currentHandle = handle;
-		this.stopHeartbeat();
-		const ttl = handle.expiresAt - handle.renewedAt;
-		// No upper cap here: a 10 s ceiling on a 300 s lease (H14.22) would still renew every
-		// 10 s and lose the whole point of the longer TTL. `ttl / 3` alone still guarantees at
-		// least two renewal attempts before the lease could expire.
-		const interval = Math.max(1_000, Math.floor(ttl / 3));
-		this.heartbeatHandle = this.scheduleInterval(() => { void this.runHeartbeat(); }, interval);
-	}
+	private startHeartbeat(handle: ActiveSessionLeaseHandle): void { this.leaseHeartbeat.startHeartbeat(handle); }
 
-	private runHeartbeat(): Promise<void> {
-		if (this.heartbeatFlight) return this.heartbeatFlight;
-		const flight = this.heartbeat().finally(() => {
-			if (this.heartbeatFlight === flight) this.heartbeatFlight = null;
-		});
-		this.heartbeatFlight = flight;
-		return flight;
-	}
-
-	private async heartbeat(): Promise<void> {
-		if (this.disposed || !this.currentHandle) return;
-		const observed = this.currentHandle;
-		try {
-			const result = await this.coordinator.renew(observed);
-			if (result.status === 'renewed') {
-				if (this.currentHandle?.sessionId === observed.sessionId && this.currentHandle.fence === observed.fence) {
-					this.currentHandle = result.handle;
-				}
-				// Detached on purpose: an IndexedDB write must never delay or fail the lease renewal.
-				void this.saveActiveEvidence();
-				return;
-			}
-			const reason = result.status === 'lost'
-				? 'lease_lost'
-				: result.code === 'clock_anomaly' ? 'clock_anomaly' : 'coordination_unavailable';
-			this.logAuthorityFailure('session_heartbeat', reason);
-			const mapped = reason === 'lease_lost'
-				? failure('lease_lost', 'The session lease was lost.')
-				: failure('coordination_unavailable', 'Session coordination became unavailable.');
-			this.failFromAuthority(mapped);
-		} catch {
-			this.logAuthorityFailure('session_heartbeat', 'coordination_unavailable');
-			const mapped = failure('coordination_unavailable', 'Session coordination became unavailable.');
-			this.failFromAuthority(mapped);
-		}
-	}
+	private runHeartbeat(): Promise<void> { return this.leaseHeartbeat.runHeartbeat(); }
 
 	private failFromAuthority(mapped: SessionStartFailure): void {
 		this.authorityFailure = mapped;
@@ -1408,12 +1384,7 @@ export class ManualSessionStartService {
 		} catch { /* the state machine remains fail-closed */ }
 	}
 
-	private stopHeartbeat(): void {
-		if (this.heartbeatHandle !== null) {
-			this.cancelInterval(this.heartbeatHandle);
-			this.heartbeatHandle = null;
-		}
-	}
+	private stopHeartbeat(): void { this.leaseHeartbeat.stopHeartbeat(); }
 
 	private armSettlement(): void { this.watch.armSettlement(); }
 
@@ -1636,32 +1607,6 @@ export class ManualSessionStartService {
 			this.diagnostics?.event({
 				component: 'session', action: 'session_recover', level: 'warn', phase: 'failure',
 				code: 'unavailable', state: 'unobserved_gap', details: { code: saved?.status ?? 'invalid' },
-			});
-		}
-	}
-
-	/**
-	 * H18.11: re-saves the active record once per `SESSION_EVIDENCE_SAVE_INTERVAL_MS` from the
-	 * heartbeat, so its `persistedAt` is the last instant this window saw the session alive. It
-	 * never touches the lease or the session state: a refused or failed write only means the
-	 * evidence stays older, and is recorded instead of failing the session.
-	 */
-	private async saveActiveEvidence(): Promise<void> {
-		if (this.state.status !== 'active' || !this.baselineSnapshot || this.stopFlight) return;
-		const now = this.safeNowOr(-1);
-		if (now < 0 || now - this.lastEvidenceSavedAt < SESSION_EVIDENCE_SAVE_INTERVAL_MS) return;
-		// Claimed before the write, so a heartbeat that lands meanwhile does not issue a second one.
-		const previous = this.lastEvidenceSavedAt;
-		this.lastEvidenceSavedAt = now;
-		try {
-			const record = createSessionRuntimeRecord(this.state, this.baselineSnapshot, null, null, now, null, null);
-			const saved = record === null ? null : await this.runtimeStore.save(record);
-			if (saved?.status !== 'saved' && this.lastEvidenceSavedAt === now) this.lastEvidenceSavedAt = previous;
-		} catch (error) {
-			if (this.lastEvidenceSavedAt === now) this.lastEvidenceSavedAt = previous;
-			this.diagnostics?.event({
-				component: 'session', action: 'session_heartbeat', level: 'warn', phase: 'failure',
-				code: 'unavailable', state: 'evidence_save', details: unmappedErrorLogDetails(error),
 			});
 		}
 	}
