@@ -136,11 +136,6 @@ export type ManualSessionStopResult =
 	| { status: 'failed'; failure: SessionStopFailure };
 
 /**
- * `status` is always `'finalized'` on success: since `permissions.finalize` never comes back
- * `false` anymore (David, 2026-09-09), a review that computed cleanly always finalizes the session
- * in the same step, and the old `'reviewed'` (provisional, unfinalized) outcome is unreachable.
- */
-/**
  * Stop failures a session may be abandoned from: the ones no retry fixes by itself, because the
  * two snapshots can never be compared (the key now reads another account, or the final snapshot
  * disagrees with the baseline). Network, rate limit, lease and coordination failures retry on
@@ -156,6 +151,11 @@ export type SessionAbandonResult =
 	| { status: 'abandoned'; state: Extract<SessionState, { status: 'abandoned' }> }
 	| { status: 'failed'; message: string };
 
+/**
+ * `status` is always `'finalized'` on success: since `permissions.finalize` never comes back
+ * `false` anymore (David, 2026-09-09), a review that computed cleanly always finalizes the session
+ * in the same step, and the old `'reviewed'` (provisional, unfinalized) outcome is unreachable.
+ */
 export type SessionContaminationReviewResult =
 	| {
 			status: 'finalized';
