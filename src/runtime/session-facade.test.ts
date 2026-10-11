@@ -55,8 +55,11 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		localDebugActions: null,
 		host: {
 			environment: { hostVersion: '1.9.0', pluginVersion: 'test' },
-			vault: { file: unused('host.vault.file') },
-			ui: { openNote: unused('host.ui.openNote') },
+			vault: {
+				file: unused('host.vault.file'), read: unused('host.vault.read'), create: unused('host.vault.create'),
+				exists: unused('host.vault.exists'), createFolder: unused('host.vault.createFolder'),
+			},
+			ui: { openNote: unused('host.ui.openNote'), registerCommand: unused('host.ui.registerCommand') },
 		},
 		settingTab: { refreshSessionHistoryRow: () => undefined },
 		sessionHistory: {
@@ -88,6 +91,14 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		},
 		liveSessions: null,
 		liveHistory: null,
+		sessions: {
+			getState: unused('sessions.getState'),
+			getRecoveryState: unused('sessions.getRecoveryState'),
+			initialize: unused('sessions.initialize'),
+			getPreservedLegacyRuntime: unused('sessions.getPreservedLegacyRuntime'),
+			readPreservedLegacyRuntime: unused('sessions.readPreservedLegacyRuntime'),
+		},
+		assistedDetection: { getState: unused('assistedDetection.getState') },
 		notifyConsultMode: unused('notifyConsultMode'),
 		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		emitNotice: unused('emitNotice'),
@@ -182,8 +193,8 @@ describe('openSessionHistoryNote (history row link)', () => {
 			settings: { ...SETTINGS, language },
 			host: {
 				...port().host,
-				vault: { file: (path) => existing.includes(path) ? { path } : null },
-				ui: { openNote },
+				vault: { ...port().host.vault, file: (path) => existing.includes(path) ? { path } : null },
+				ui: { ...port().host.ui, openNote },
 			},
 			emitNotice,
 		}));
@@ -247,6 +258,44 @@ describe('the session history scrub and export through SessionRuntime', () => {
 			status: 'unavailable', erased: 0, alreadyAbsent: 0, message: 'History scrub could not be completed safely.',
 		});
 		expect(runtime.getSessionHistoryView()).toEqual({ status: 'scrub_unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 });
+	});
+
+	it('the settings panel\'s preview before the runtime is ready says it is still starting, without asking the saved sessions again', async () => {
+		const notifyRuntimeStarting = vi.fn();
+		// `sessions` is the port's `unused` stub: reading it before the boot built it throws, as the core's own undefined field did.
+		const runtime = new SessionRuntime(port({ runtimeReady: false, notifyRuntimeStarting }));
+
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toEqual({
+			status: 'unavailable', message: 'Tyrian Companion is still starting.',
+		});
+		expect(notifyRuntimeStarting).toHaveBeenCalledOnce();
+	});
+
+	it('the settings panel\'s preview on a consult device is refused once, without asking the saved sessions again', async () => {
+		const notifyConsultMode = vi.fn();
+		const runtime = new SessionRuntime(port({ collectorMode: 'consult', notifyConsultMode }));
+
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toEqual({
+			status: 'unavailable', message: 'This installation is in consult mode.',
+		});
+		expect(notifyConsultMode).toHaveBeenCalledOnce();
+	});
+
+	it('the settings panel\'s preview on a ready collector asks saved sessions that did not answer again before the preview (Z2-2)', async () => {
+		const order: string[] = [];
+		const previewScrub = vi.fn(async (): Promise<SessionHistoryScrubPreview> => { order.push('preview'); return { status: 'blocked', message: 'not idle' }; });
+		const runtime = new SessionRuntime(port({
+			sessionHistory: { ...port().sessionHistory, previewScrub },
+			sessions: {
+				...port().sessions,
+				getRecoveryState: () => ({ status: 'error', code: 'unavailable' }) as ReturnType<SessionRuntimePort['sessions']['getRecoveryState']>,
+				initialize: async () => { order.push('initialize'); },
+			},
+		}));
+
+		await runtime.previewSessionHistoryScrubAfterRecovery();
+
+		expect(order).toEqual(['initialize', 'preview']);
 	});
 
 	it('refuses the scrub on a consult device and says so once, without reaching the history', async () => {

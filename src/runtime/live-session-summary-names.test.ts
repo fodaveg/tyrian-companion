@@ -104,13 +104,14 @@ async function loadedCore(options: { cached?: boolean; network?: boolean; langua
 		for (const item of ITEMS) await cache.set({ ...key, kind: 'items', id: item.id }, { ...stored, value: parseCatalogItem(itemJson(item.id, item.name)) });
 		for (const currency of CURRENCIES) await cache.set({ ...key, kind: 'currencies', id: currency.id }, { ...stored, value: parseCatalogCurrency(currencyJson(currency.id, currency.name)) });
 	}
+	// DE-01, tenth wave: the core's `SessionNoteRuntime` wires the summaries, over the core's own fields.
 	const internals = core as unknown as { liveSessions: LiveSessionLifecycle; liveSummaryNetwork: boolean; sessionCatalogFactory: () => Promise<PublicCatalogService>;
-		createLiveSummaries(vault: SummaryVault): LiveSessionSummaryService };
+		notes: { createLiveSummaries(vault: SummaryVault): LiveSessionSummaryService } };
 	internals.liveSessions = restored;
 	internals.sessionCatalogFactory = async () => new PublicCatalogService(gateway, cache);
 	internals.liveSummaryNetwork = options.network === true;
 	const vault = new SummaryVault();
-	await internals.createLiveSummaries(vault).observe();
+	await internals.notes.createLiveSummaries(vault).observe();
 	return { text: vault.summary(), calls, core };
 }
 

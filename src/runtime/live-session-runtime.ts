@@ -28,9 +28,9 @@
  *   `savedSessionNotePath`) and the farming state a start captures (`farmingGroupContext`,
  *   `farmingReminders`), which the lifecycle writes and the core's note, summary and farming code
  *   read;
- * - the note's input (`sessionNoteInput`), the loot projection and Halloween; the summary's write
- *   and its proof (`persistCompletedSessionSummary`, `ensureCompletedSummarySaved`) are
- *   `SessionNoteRuntime`'s (step 3e), reached through the core's `notes`.
+ * - Halloween; the summary's write and its proof (`persistCompletedSessionSummary`,
+ *   `ensureCompletedSummarySaved`) are `SessionNoteRuntime`'s (step 3e), and so are the note's input
+ *   (`sessionNoteInput`) and the loot projection (tenth wave), reached through the core's `notes`.
  * It hands all of that through `LiveSessionRuntimePort`; the getters below carry the names of the
  * core's own fields, so the moved code reads as it did there.
  *

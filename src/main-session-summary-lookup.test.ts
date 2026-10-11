@@ -38,6 +38,10 @@ function summaryOver(harness: object): SummarySteps {
 		sessionNoteRuntimePort(this: void, core: object): SessionNoteRuntimePort;
 	}).sessionNoteRuntimePort;
 	const notes = new SessionNoteRuntime(portOf(harness));
+	// DE-01, tenth wave: the note's input, its economy and the loot projection are the runtime's own; the
+	// harness's stubs stand in for them there, where the summary's write reaches them.
+	const { sessionNoteInput, prepareSessionEconomyEvidence, refreshLootPresentation } = harness as Record<string, unknown>;
+	Object.assign(notes, { sessionNoteInput, prepareSessionEconomyEvidence, refreshLootPresentation });
 	const own = harness as { sessionSummarySaveState: string; savedSessionNotePath: string | null };
 	return {
 		restoreCompletedSessionSummary: () => notes.restoreCompletedSessionSummary(),

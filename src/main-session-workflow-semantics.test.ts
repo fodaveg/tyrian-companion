@@ -64,15 +64,15 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 		pendingClaimRenewals: { start: () => vi.fn() },
 		getPendingProposalState: queueRead,
 		assistedDetection: { getState: () => ({ status: 'armed' }), dismissProposal: vi.fn(), disarm },
-		// The summary's proof and its write are the core's `notes`' (DE-01, step 3e).
+		// The summary's proof, its write and the loot projection are the core's `notes`' (DE-01, step 3e and tenth wave).
 		notes: {
 			ensureCompletedSummarySaved: vi.fn(async () => true),
 			persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+			refreshLootPresentation: vi.fn(async () => undefined),
 		},
 		persistFarmingSessionContext: vi.fn(),
 		// The live observation a start begins, and the summary a stop's finalization writes.
 		liveSessionLoot: { begin: vi.fn(), reconcile: vi.fn(async () => undefined) },
-		refreshLootPresentation: vi.fn(async () => undefined),
 		observeHalloweenDelta: vi.fn(async () => undefined),
 		emitNotice: vi.fn(),
 		detectionQuality: { recordAccepted: vi.fn(async () => undefined) },
