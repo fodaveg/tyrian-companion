@@ -33,6 +33,10 @@ describe('H5.11 Inventory Advisor runtime integration (source text)', () => {
 		const onload = inventoryAdvisorOnloadSource(source);
 		expect(inventoryAdvisorOnloadSafe(source)).toBe(true);
 		expect(onload).not.toMatch(/setInterval[^\n]*inventory|inventory[^\n]*setInterval/iu);
+		// DE-01 step 3f: the repaint of the Companion moved into `LiveViewRuntime`; the core only delegates.
+		const view = readModuleSource('src/runtime/live-view-runtime.ts');
+		expect(classMethodBody(view, 'LiveViewRuntime', 'renderViews')).not.toContain('renderInventoryAdvisorViews');
+		expect(classMethodBody(view, 'LiveViewRuntime', 'flushRenderViews')).not.toContain('renderInventoryAdvisorViews');
 		expect(classMethodBody(source, 'TyrianCompanionCore', 'renderViews')).not.toContain('renderInventoryAdvisorViews');
 	});
 

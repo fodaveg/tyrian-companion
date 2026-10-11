@@ -32,10 +32,15 @@ describe('product action architecture', () => {
 		expect(setup).not.toContain('this.settingTab.refreshForSettingsChange');
 		// `renderViews()` only marks the Companion surface dirty; the coalesced microtask it
 		// schedules is what actually refreshes the actions, in `flushRenderViews`.
-		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'flushRenderViews'))
+		// DE-01 step 3f: the repaints live in `LiveViewRuntime`; the core only delegates to it.
+		const view = readModuleSource('src/runtime/live-view-runtime.ts');
+		expect(classMethodCallChains(view, 'LiveViewRuntime', 'flushRenderViews'))
 			.toContain('this.productActions?.refresh');
+		expect(classMethodCallChains(view, 'LiveViewRuntime', 'renderInventoryAdvisorViews'))
+			.toContain('this.productActions?.refresh');
+		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'renderViews')).toContain('this.liveView.renderViews');
 		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'renderInventoryAdvisorViews'))
-			.toContain('this.productActions?.refresh');
+			.toContain('this.liveView.renderInventoryAdvisorViews');
 	});
 
 	it('keeps responsive, focus, reduced-motion, and 44px contracts in the product stylesheet', () => {
