@@ -532,10 +532,10 @@ describe('the first repaint once the runtime is ready (Z20)', () => {
 			},
 		};
 		const runtime = createTyrianRuntime(host);
-		const core = runtime as unknown as { runtimeReady: boolean; flushRenderViews(): void; getHalloweenState(): { status: string } };
-		const flush = core.flushRenderViews.bind(core);
+		const core = runtime as unknown as { runtimeReady: boolean; liveView: { flushRenderViews(): void }; getHalloweenState(): { status: string } };
+		const flush = core.liveView.flushRenderViews.bind(core.liveView);
 		// One entry per real repaint of the Session panel, with what the panel reads at that moment.
-		vi.spyOn(core, 'flushRenderViews').mockImplementation(() => {
+		vi.spyOn(core.liveView, 'flushRenderViews').mockImplementation(() => {
 			events.push(`repaint:${core.runtimeReady ? 'ready' : 'starting'}:halloween=${core.getHalloweenState().status}`);
 			flush();
 		});
