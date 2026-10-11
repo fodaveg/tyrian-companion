@@ -33,9 +33,14 @@ describe('H9.7 durable session history boundary', () => {
 		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'loadSessionHistory'))
 			.toContain('this.sessionHistory.scan');
 		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
-		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'inspectCompletedSessionSummary'))
+		// DE-01, step 3e: the one lookup of a finished session's note across the vault (`readSession`)
+		// lives in `SessionNoteRuntime`, and nothing else may add another, there or in the core. What
+		// each summary path asks of the history is run in `src/main-session-summary-lookup.test.ts`.
+		const notes = readModuleSource('src/runtime/session-note-runtime.ts');
+		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(0);
+		expect(classMethodCallChains(notes, 'SessionNoteRuntime', 'inspectCompletedSessionSummary'))
 			.toContain('this.sessionHistory.readSession');
-		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(1);
+		expect(calleeChains(notes).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(1);
 	});
 
 	it('uses local typed ES/EN copy and the required accessible responsive contracts', () => {
