@@ -139,20 +139,21 @@ describe('tcp-port: TyrianTcpServerPort over api.tcp', () => {
 		const { tcp, calls } = fakeTcp();
 		let refuse = true;
 		let release: () => void = () => undefined;
-		tcp.close = vi.fn(async () => {
+		const closeSpy = vi.fn(async () => {
 			calls.push('close');
 			if (refuse) { refuse = false; throw new Error('tcp close refused'); }
 			await new Promise<void>((resolve) => { release = resolve; });
 		});
+		tcp.close = closeSpy;
 		const server = await createTcpServerPort(tcp).listen(47823, '127.0.0.1', () => undefined);
 		await expect(server.close()).rejects.toThrow('tcp close refused');
 		const first = server.close();
 		const second = server.close();
-		expect(tcp.close).toHaveBeenCalledTimes(2);
+		expect(closeSpy).toHaveBeenCalledTimes(2);
 		release();
 		await Promise.all([first, second]);
 		await server.close();
-		expect(tcp.close).toHaveBeenCalledTimes(2);
+		expect(closeSpy).toHaveBeenCalledTimes(2);
 	});
 
 	it('where there is no bridge (web, iPhone) it refuses with a clear reason and a code that is not retried', async () => {
