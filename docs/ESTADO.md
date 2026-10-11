@@ -43,7 +43,13 @@
   resuelve a 0.6.47, se instala y se activa; `main.js` y `styles.css` iguales al digest publicado, 0 errores de consola
   y `verify-beta-runtime` PASS antes y después de reabrir. Sin medir: la actualización por BRAT desde una versión
   anterior ([2026-10-11-obsidian-brat-windows](evidencia/2026-10-11-obsidian-brat-windows.md)).
-- Pendiente: actualización por BRAT desde una versión anterior y la QA de sesión en hosts reales.
+- Actualización por BRAT en Obsidian real (Windows 11, desechable), 11 oct: con la 0.6.46 fijada y cargada
+  (`verify-beta-runtime` PASS), al pasar a `latest` queda la 0.6.47 con `main.js` y `styles.css` iguales al digest,
+  verificador PASS tras actualizar y tras reabrir, 0 errores de consola y el `data.json` de la 0.6.46 intacto. RT-15 en
+  Windows: tras `taskkill /F` del proceso principal, el candado de vida de la instancia muerta está libre en la
+  reabierta en cuanto se puede preguntar (3 de 3; Tyrian lo toma también en modo consulta)
+  ([2026-10-11-obsidian-windows-actualizacion](evidencia/2026-10-11-obsidian-windows-actualizacion.md)).
+- Pendiente: la QA de sesión en hosts reales (con clave y juego).
 
 ## Canal 0.6.46 publicado: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
 
