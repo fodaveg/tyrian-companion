@@ -282,6 +282,9 @@ describe('retry from error (H18.4, prueba 3)', () => {
 		clock = Date.parse('2026-08-13T08:30:00.000Z');
 		await expect(first.service.stop()).resolves.toMatchObject({ status: 'failed', failure: { code: 'lease_lost' } });
 		expect(first.service.getState()).toEqual(second.service.getState());
+		// Its evidence comes along: B's review, not the nothing A had while stopping.
+		expect(second.service.getContaminationReview()).not.toBeNull();
+		expect(first.service.getContaminationReview()).toEqual(second.service.getContaminationReview());
 		expect(first.capture.captureFinal).toHaveBeenCalledTimes(readsByA);
 		await expect(new IndexedDbSessionRuntimeStore(factory, 'retry-runtime').load()).resolves.toMatchObject({
 			record: { state: { status: 'complete', authority: { instanceId: 'window-b', fence: 2 } } },

@@ -217,6 +217,32 @@ describe('unobserved gaps are subtracted, the end stays the stop (H18.11)', () =
 		expect(rendered.content).toContain('Hubo 1 min sin observar');
 	});
 
+	it('re-saves a reopened session as of its last evidence when the clock breaks right after the recovery (DE-07)', async () => {
+		const factory = new IDBFactory();
+		const first = openWindow(factory, 'window-before-restart');
+		await start(first.service);
+		const restartAt = BASELINE + HOUR;
+		await playUntil(first, restartAt);
+		await first.service.dispose();
+
+		clock = restartAt + MINUTE;
+		const second = openWindow(factory, 'window-after-restart');
+		const persist = second.runtimeStore.save.bind(second.runtimeStore);
+		// The recovered record is saved with a sound clock; the clock breaks right after it.
+		const save = vi.spyOn(second.runtimeStore, 'save').mockImplementationOnce(async (record) => {
+			const saved = await persist(record);
+			clock = Number.NaN;
+			return saved;
+		});
+		await second.service.initialize();
+
+		// With no "now" the gap is measured up to the last evidence (none is subtracted) and the
+		// record is saved again as of that instant, never left unsaved.
+		expect(second.service.getState()).toMatchObject({ status: 'active' });
+		expect(second.service.getState()).not.toHaveProperty('unobservedGaps');
+		expect(save.mock.calls.map(([record]) => record.persistedAt)).toEqual([restartAt + MINUTE, restartAt]);
+	});
+
 	it('subtracts a three-hour suspend in the middle of the session and keeps the stop as its end', async () => {
 		const window = openWindow(new IDBFactory(), 'window-a');
 		await start(window.service);

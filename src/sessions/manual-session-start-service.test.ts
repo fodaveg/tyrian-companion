@@ -1338,6 +1338,10 @@ describe('ManualSessionStartService', () => {
 		expect(leases.acquire).toHaveBeenCalledWith('session-1');
 		expect(leases.release).toHaveBeenCalledWith(recoveredHandle);
 		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
+		// The window forgets the discarded record too: a later recover finds nothing to take back.
+		const acquiresAfterDiscard = vi.mocked(leases.acquire).mock.calls.length;
+		await expect(second.recover()).resolves.toEqual({ status: 'failed', message: 'There is no saved session available to recover.' });
+		expect(leases.acquire).toHaveBeenCalledTimes(acquiresAfterDiscard);
 	});
 
 	/**
@@ -1858,6 +1862,137 @@ describe('dispose while an automatic reclaim is in flight (DE-07)', () => {
 		await started;
 
 		expect([...intervals.values()]).toEqual([]);
+	});
+});
+
+/**
+ * The start, stop, recovery and reclaim live in `ManualSessionTransitions` and read and write the
+ * service's own fields through a port of functions. Each case pins one of those reads or writes
+ * from the outside, so a port that copied a field at construction, or a setter that dropped its
+ * value, turns it red.
+ */
+describe('the transitions read and write the service\'s own state (DE-07)', () => {
+	beforeEach(() => { clock = Date.parse('2026-08-13T07:59:59.500Z'); });
+
+	it('refuses a start after dispose without asking for a lease, and says so', async () => {
+		const leases = coordinator();
+		const changed = vi.fn();
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ onStateChange: changed }),
+		);
+		await service.dispose();
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 })).resolves.toEqual({
+			status: 'failed', failure: { code: 'coordination_unavailable', message: 'Session coordination is unavailable.' },
+		});
+		expect(leases.acquire).not.toHaveBeenCalled();
+		expect(changed).toHaveBeenCalledOnce();
+	});
+
+	it('schedules its own retry for a provisional session another window still holds at startup', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const first = new ManualSessionStartService(coordinator(), {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		}, serviceOptions({ runtimeStore }));
+		await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await stopAfterSettlement(first);
+		expect(first.getState().status).toBe('provisional');
+		await first.dispose();
+
+		const second = new ManualSessionStartService(coordinator({
+			acquire: vi.fn(async () => ({
+				status: 'busy' as const, ownerExpiresAt: handle.expiresAt,
+				ownerInstanceId: 'instance-elsewhere', ownerMachineId: 'machine-1',
+			})),
+		}), { capture: vi.fn(async () => structuredClone(captured)) }, serviceOptions({ runtimeStore }));
+		await second.initialize();
+
+		expect(second.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'provisional' } });
+		expect(second.getAutoRetryAt()).not.toBeNull();
+	});
+
+	it('fails a start whose heartbeat lost coordination during the capture, even when the fence still answers owned', async () => {
+		let tick: (() => void) | undefined;
+		let finishCapture!: () => void;
+		const capturing = new Promise<SessionStartCaptureResult>((resolve) => { finishCapture = () => { resolve(structuredClone(captured)); }; });
+		const leases = coordinator({ renew: vi.fn(async () => ({ status: 'error' as const, code: 'unavailable' as const })) });
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => await capturing) },
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+		);
+		const started = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await vi.waitFor(() => { expect(tick).toBeDefined(); });
+		tick?.();
+		await vi.waitFor(() => { expect(leases.renew).toHaveBeenCalledOnce(); });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		finishCapture();
+
+		await expect(started).resolves.toEqual({
+			status: 'failed', failure: { code: 'coordination_unavailable', message: 'Session coordination became unavailable.' },
+		});
+		expect(leases.assertOwned).not.toHaveBeenCalled();
+		expect(service.getState()).toEqual({ version: 1, status: 'idle' });
+	});
+
+	it('leaves no lease and no heartbeat behind a failed start: dispose releases nothing more', async () => {
+		const leases = coordinator();
+		const intervals = new Set<number>();
+		let nextHandle = 1;
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: async () => { throw new SessionStartCaptureError('snapshot_not_stable', 'Moving account.'); } },
+			serviceOptions({
+				setInterval: vi.fn(() => { const id = nextHandle++; intervals.add(id); return id; }),
+				clearInterval: vi.fn((id: unknown) => { intervals.delete(id as number); }),
+			}),
+		);
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'failed' });
+		expect(leases.release).toHaveBeenCalledOnce();
+		expect(nextHandle).toBe(2);
+		expect([...intervals]).toEqual([]);
+
+		await service.dispose();
+		expect(leases.release).toHaveBeenCalledOnce();
+	});
+
+	it('saves the evidence of the next session on its first heartbeat, whatever the previous one saved', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const save = vi.spyOn(runtimeStore, 'save');
+		let tick: (() => void) | undefined;
+		const leases = coordinator();
+		const service = new ManualSessionStartService(leases, {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		}, serviceOptions({ runtimeStore, setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }));
+		/** One heartbeat: the renewal and the evidence save it detaches. */
+		const beat = async (): Promise<void> => {
+			const renews = vi.mocked(leases.renew).mock.calls.length;
+			tick?.();
+			await vi.waitFor(() => { expect(leases.renew).toHaveBeenCalledTimes(renews + 1); });
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		};
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'started' });
+		await beat();
+		expect(save.mock.calls.at(-1)?.[0]).toMatchObject({ state: { status: 'active' }, persistedAt: clock });
+		await expect(service.captureFinalNow()).resolves.toMatchObject({ status: 'stopped' });
+		await expect(service.finalizeStoppedSession()).resolves.toMatchObject({ status: 'finalized' });
+		await service.markCompletedSummarySaved('Tyrian Companion/session-1.md');
+
+		// Well inside the previous session's save interval (and before the fixture's baseline starts).
+		clock += 400;
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'started' });
+		const saves = save.mock.calls.length;
+		await beat();
+		expect(save).toHaveBeenCalledTimes(saves + 1);
+		expect(save.mock.calls.at(-1)?.[0]).toMatchObject({ state: { status: 'active' }, persistedAt: clock });
 	});
 });
 
