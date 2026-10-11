@@ -3401,10 +3401,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** The captured farming context's saved copy (`FarmingSessionRuntime`). */
 	private persistFarmingSessionContext(context: FarmingSessionContext): void { this.farming.persistFarmingSessionContext(context); }
 
-	/** The farming session's context, reminders and projections (`FarmingSessionRuntime`). */
+	/** The next session's saved goal (`SessionRuntime`); an active session keeps the one it captured. */
 	getFarmingGoal(): FarmingGoalV1 { return this.session.getFarmingGoal(); }
 	/** Serialized with the other two preference forms (`SessionRuntime.saveFarmingSettings`). */
 	saveFarmingGoal(goal: FarmingGoalV1): Promise<void> { return this.session.saveFarmingGoal(goal); }
+	/** The group context, reminders and projections below are `FarmingSessionRuntime`'s. */
 	getFarmingGroupContext(): FarmingGroupContext { return this.farming.getFarmingGroupContext(); }
 	setFarmingGroupContext(context: FarmingGroupContext): void { this.farming.setFarmingGroupContext(context); }
 	getFarmingPreparationSettings(): FarmingPreparationSettingsV1 { return this.session.getFarmingPreparationSettings(); }
