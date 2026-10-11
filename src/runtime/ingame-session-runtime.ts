@@ -24,6 +24,7 @@ import type { CollectorMode, TyrianSettings } from '../core/settings';
 import type { TyrianHost } from '../host/tyrian-host';
 import { IngameSessionMarker, type IngameSessionLink, type IngameSessionView } from '../sessions/ingame-session-marker';
 import type { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
+import { recoveryAllowsLiveStart } from '../sessions/manual-session-start-model';
 import type { ManualSessionStartService } from '../sessions/manual-session-start-service';
 import type { SessionHistoryRuntimeAuthority } from '../sessions/session-history';
 import type { SessionNoteEventDeclaration } from '../sessions/session-note-model';
@@ -132,8 +133,7 @@ export class IngameSessionRuntime {
 	 * `startIngameSession` asks the store again before it goes on (Z2-2). A record that is corrupt keeps blocking.
 	 */
 	private manualRecoveryAllowsStart(): boolean {
-		const recovery = this.sessions.getRecoveryState();
-		return recovery.status === 'none' || recovery.status === 'available' || (recovery.status === 'error' && recovery.code === 'unavailable');
+		return recoveryAllowsLiveStart(this.sessions.getRecoveryState());
 	}
 
 	/**
