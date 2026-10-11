@@ -120,11 +120,16 @@ export interface HebraHostDeps {
 	 * `navigator.locks` of the page `indexedDB` is from, or `null`/absent where the webview has none
 	 * (`TyrianKvPort.locks`). Only the main window loads plugins (`startPlugins()` leaves at once in an `editor-*`
 	 * window; read at Hebra `ea14cd06`), so no second WINDOW opens these databases. A second PROCESS is ruled out
-	 * for certain only on macOS, which waits for the old one to die. On Linux `tauri-plugin-single-instance` fails
-	 * open without a D-Bus session bus and gives its name up before the process is gone, and WebKitGTK keeps its
-	 * locks per process: two live Hebras would each see the other's lock free. The coordinator's 15 s of silence
-	 * are what covers that. Handed over by the integrator's decision of 9 Oct 2026, from reading the code and with
-	 * no probe on a real client; `locks: null` in `entry.ts` turns it off. What is unverified: SPEC-live-loot §4.
+	 * on macOS, which waits for the old one to die, and on Linux since Hebra `4ffba0d5` (rpm 0.2.0-21), which
+	 * holds a `flock` on `<data>/instancia.lock` (measured on 11 Oct 2026 with the D-Bus bus broken: the second
+	 * start opens no library and shows "Ya hay otra Hebra abierta con esta biblioteca."). WebKitGTK keeps its
+	 * locks per process (measured: two live Hebras each see the other's lock free), so the lock only helps
+	 * because that `flock` leaves one process per library. After a SIGKILL the reopened Hebra has the dead one's
+	 * lock free within 0.6 s (measured). Residual risk: a Linux Hebra older than `4ffba0d5` (the API does not
+	 * expose Hebra's version), or a `flock` that cannot be used (Hebra starts without it), leaves two processes
+	 * unable to see each other's locks, and only the coordinator's 15 s of silence cover that. Windows is not
+	 * measured. Handed over by the integrator's decision of 9 Oct 2026; `locks: null` in `entry.ts` turns it
+	 * off. Evidence: docs/evidencia/2026-10-11-hebra-candado-linux.md. What is unverified: SPEC-live-loot §4.
 	 */
 	locks?: TyrianKvPort['locks'];
 	/** `navigator.storage` of the page `indexedDB` is from, or `null`/absent where the webview has none (`TyrianKvPort.storage`). */
