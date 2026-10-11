@@ -117,11 +117,16 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 		await expect(plugin.regenerateAlertIngameSecret()).rejects.toThrow();
 
 		expect(secrets.get(ALERT_INGAME_SECRET_ID)).toBe(USER_SECRET);
-		expect(clipboard.writes).toEqual([]);
+		// HP-15: copied before the save, then overwritten once the save failed.
+		expect(clipboard.writes).toHaveLength(2);
+		expect(clipboard.writes[0]).toMatch(/^[\w-]{43}$/u);
+		expect(clipboard.writes[0]).not.toBe(USER_SECRET);
+		expect(clipboard.writes[1]).toBe('');
 
 		target.updateSettings = async () => { throw new Error('disk full'); };
 		await expect(plugin.regenerateAlertIngameSecret()).rejects.toThrow('disk full');
 		expect(secrets.get(ALERT_INGAME_SECRET_ID)).toBe(USER_SECRET);
+		expect(clipboard.writes.at(-1)).toBe('');
 	});
 
 	it('reports the existing failure copy when the copy itself fails', async () => {
@@ -135,8 +140,9 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 
 	// Before the runtime is ready `updateSettings` answers `blocked`: the generated token is in
 	// SecretStorage but not selected, so the bridge would reject it. Neither "created and copied"
-	// nor the clipboard, and the next attempt reuses that same token instead of minting another.
-	it('reports a failure and copies nothing when the token selection is not saved, then reuses the stored token', async () => {
+	// nor a token left in the clipboard (HP-15: the copy lands before the save, so it is
+	// overwritten), and the next attempt reuses that same token instead of minting another.
+	it('reports a failure and leaves no token copied when the token selection is not saved, then reuses the stored token', async () => {
 		const { plugin, secrets, clipboard, saved, records } = secretCopyPlugin({ alertIngameEnabled: true });
 		const target = plugin as unknown as { updateSettings: (update: Partial<TyrianSettings>) => Promise<unknown> };
 		const save = target.updateSettings;
@@ -148,19 +154,20 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 		await plugin.copyAlertIngameSecretFromCommand();
 
 		expect(surfaces.notices).toEqual(['The token could not be copied.']);
-		expect(clipboard.writes).toEqual([]);
+		const stored = secrets.get(ALERT_INGAME_SECRET_ID);
+		expect(stored).toMatch(/^[\w-]{43}$/u);
+		expect(clipboard.writes).toEqual([stored, '']);
 		expect(surfaces.modals).toEqual([]);
 		expect(plugin.settings.alertIngameSecret).toBe('');
 		expect(records.find((record) => record.phase === 'failure')).toMatchObject({
 			component: 'notification', action: 'command_execute', state: 'ingame_secret_copy',
 		});
-		const stored = secrets.get(ALERT_INGAME_SECRET_ID);
-		expect(stored).toMatch(/^[\w-]{43}$/u);
 		await expect(plugin.copyAlertIngameSecret()).rejects.toThrow();
-		expect(clipboard.writes).toEqual([]);
+		expect(clipboard.writes).toEqual([stored, '', stored, '']);
 
 		target.updateSettings = save;
 		surfaces.notices.length = 0;
+		clipboard.writes.length = 0;
 		await plugin.copyAlertIngameSecretFromCommand();
 
 		expect(secrets.get(ALERT_INGAME_SECRET_ID)).toBe(stored);
@@ -230,9 +237,92 @@ describe('0.2.1 "Copy token" clipboard fallback', () => {
 	});
 });
 
+// HP-15: WebKit (Hebra on Linux, macOS and iOS) accepts `writeText` only while the click's transient
+// activation lasts. The fake below loses it at the first microtask after the click, so any `await`
+// before the write (saving the token selection, for one) makes the clipboard refuse it.
+describe('HP-15 "Create token" copies within the click\'s activation', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		surfaces.notices.length = 0;
+		surfaces.modals.length = 0;
+	});
+
+	/** Turns the activation on for this task only, as a click does, then runs the action. */
+	function click<T>(activation: { active: boolean }, action: () => Promise<T>): Promise<T> {
+		activation.active = true;
+		queueMicrotask(() => { activation.active = false; });
+		return action();
+	}
+
+	it('creates the first token, saves its selection and copies it, from the settings button', async () => {
+		const activation = { active: false };
+		const { plugin, secrets, clipboard, saved } = secretCopyPlugin({ alertIngameEnabled: true }, { activation });
+
+		await expect(click(activation, () => plugin.copyAlertIngameSecret())).resolves.toBe('generated');
+
+		const generated = secrets.get(ALERT_INGAME_SECRET_ID);
+		expect(generated).toMatch(/^[\w-]{43}$/u);
+		expect(clipboard.writes).toEqual([generated]);
+		expect(saved).toEqual([{ alertIngameSecret: ALERT_INGAME_SECRET_ID }]);
+		expect(surfaces.modals).toEqual([]);
+	});
+
+	it('copies the replacement token from "create new"', async () => {
+		const activation = { active: false };
+		const { plugin, secrets, clipboard } = secretCopyPlugin({ alertIngameEnabled: true, alertIngameSecret: ALERT_INGAME_SECRET_ID }, { activation });
+		secrets.set(ALERT_INGAME_SECRET_ID, USER_SECRET);
+
+		await expect(click(activation, () => plugin.regenerateAlertIngameSecret())).resolves.toBe('generated');
+
+		const created = secrets.get(ALERT_INGAME_SECRET_ID);
+		expect(created).not.toBe(USER_SECRET);
+		expect(clipboard.writes).toEqual([created]);
+		expect(surfaces.modals).toEqual([]);
+	});
+
+	it('copies a new token from the palette command and says it was created and copied', async () => {
+		const activation = { active: false };
+		const { plugin, secrets, clipboard } = secretCopyPlugin({ alertIngameEnabled: true }, { activation });
+
+		await click(activation, () => plugin.copyAlertIngameSecretFromCommand());
+
+		expect(clipboard.writes).toEqual([secrets.get(ALERT_INGAME_SECRET_ID)]);
+		expect(surfaces.notices).toEqual(['New token created and copied.']);
+		expect(surfaces.modals).toEqual([]);
+	});
+
+	// The copy has landed by the time the save fails, and the activation is gone, so WebKit refuses
+	// the overwrite: the token stays in the clipboard, but the failure copy of today says nothing was
+	// copied, no "created and copied" claims it and no modal offers it.
+	it('keeps today\'s failure copy when the selection is not saved after the copy landed', async () => {
+		const activation = { active: false };
+		const { plugin, secrets, clipboard, records } = secretCopyPlugin({ alertIngameEnabled: true }, { activation });
+		const target = plugin as unknown as { updateSettings: (update: Partial<TyrianSettings>) => Promise<unknown> };
+		target.updateSettings = async () => ({ status: 'blocked', reason: 'runtime_starting' });
+
+		await click(activation, () => plugin.copyAlertIngameSecretFromCommand());
+
+		expect(surfaces.notices).toEqual(['The token could not be copied.']);
+		expect(surfaces.modals).toEqual([]);
+		expect(clipboard.writes).toEqual([secrets.get(ALERT_INGAME_SECRET_ID)]);
+		expect(plugin.settings.alertIngameSecret).toBe('');
+		// The refused overwrite, then the action's own failure.
+		expect(records.filter((record) => record.phase === 'failure').map(({ level, code }) => ({ level, code }))).toEqual([
+			{ level: 'warn', code: 'unavailable' },
+			{ level: 'error', code: 'unknown_failure' },
+		]);
+		expect(JSON.stringify(records)).not.toContain(secrets.get(ALERT_INGAME_SECRET_ID)!);
+	});
+});
+
+/**
+ * `activation.active` stands for WebKit's transient user activation: the test turns it on, queues a
+ * microtask that turns it off, then calls the action. Any `await` before `writeText` lets that
+ * microtask run first, so the fake clipboard refuses the write the way WebKit does.
+ */
 function secretCopyPlugin(
 	settings: Partial<TyrianSettings>,
-	options: { clipboardFails?: boolean } = {},
+	options: { clipboardFails?: boolean; activation?: { active: boolean } } = {},
 ) {
 	const secrets = new Map<string, string>();
 	const secretStorage = {
@@ -261,9 +351,12 @@ function secretCopyPlugin(
 	const clipboard = { writes: [] as string[] };
 	vi.stubGlobal('navigator', {
 		clipboard: {
-			writeText: async (text: string) => {
-				if (options.clipboardFails) throw new DOMException('clipboard refused: Document is not focused.', 'NotAllowedError');
+			writeText: (text: string) => {
+				// Checked when `writeText` is called, not when its promise settles, as WebKit does.
+				if (options.clipboardFails) return Promise.reject(new DOMException('clipboard refused: Document is not focused.', 'NotAllowedError'));
+				if (options.activation?.active === false) return Promise.reject(new DOMException('clipboard refused: no user activation.', 'NotAllowedError'));
 				clipboard.writes.push(text);
+				return Promise.resolve();
 			},
 		},
 	});
