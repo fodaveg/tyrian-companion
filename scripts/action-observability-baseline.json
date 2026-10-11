@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 619,
+		"catch_clause": 620,
 		"promise_catch": 61,
 		"void_expression": 146,
 		"callback_registration": 253
@@ -8696,6 +8696,125 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/alert-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "b5c9fa57b219ff52873e09771ef34a0113a06feb",
+					"kind": "callback_registration",
+					"line": 446,
+					"column": 18,
+					"endLine": 479,
+					"endColumn": 6,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "ensureAlertIngameServer",
+						"justification": "The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
+					},
+					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
+				},
+				{
+					"id": "75c694088885e9d0eed46de68d698ff6c242e2a5",
+					"kind": "promise_catch",
+					"line": 446,
+					"column": 18,
+					"endLine": 495,
+					"endColumn": 6,
+					"registration": "catch",
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
+					},
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
+				},
+				{
+					"id": "7cf8b69e63a1d827614c596b98b09b231d495a1c",
+					"kind": "callback_registration",
+					"line": 446,
+					"column": 18,
+					"endLine": 499,
+					"endColumn": 6,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "ensureAlertIngameServer",
+						"justification": "The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
+					},
+					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"finally\" in \"ensureAlertIngameServer\"."
+				},
+				{
+					"id": "9f18056334cfe7d6a3ea25f653a0d2c03df39637",
+					"kind": "catch_clause",
+					"line": 655,
+					"column": 5,
+					"endLine": 657,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.emitNotice"
+					},
+					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
+					"kind": "void_expression",
+					"line": 664,
+					"column": 22,
+					"endLine": 664,
+					"endColumn": 66,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.copyAlertIngameSecretFromCommand",
+						"scope": "callback",
+						"justification": "The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice."
+					},
+					"reason": "Allowlisted void_expression: The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice. Verified target: \"this.copyAlertIngameSecretFromCommand\" in \"callback\"."
+				},
+				{
+					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
+					"kind": "callback_registration",
+					"line": 683,
+					"column": 18,
+					"endLine": 686,
+					"endColumn": 4,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "resolveAlertAccountRef",
+						"justification": "The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration."
+					},
+					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration. Verified registration: \"then\" in \"resolveAlertAccountRef\"."
+				},
+				{
+					"id": "378194b415575bb405c10210312836c46456263c",
+					"kind": "callback_registration",
+					"line": 683,
+					"column": 18,
+					"endLine": 686,
+					"endColumn": 91,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "resolveAlertAccountRef",
+						"justification": "The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own."
+					},
+					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
+				}
+			]
+		},
 		"src/runtime/assemble-achievements.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -8863,7 +8982,89 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/farming-session-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "506e1deeafc4fac3e503e2ac27a4bd25ef4517f4",
+					"kind": "catch_clause",
+					"line": 101,
+					"column": 5,
+					"endLine": 101,
+					"endColumn": 62,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "currentFarmingSessionContext",
+						"justification": "In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session."
+					},
+					"reason": "Allowlisted catch_clause: In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session. Verified recovery: \"local_recovery\" in \"currentFarmingSessionContext\"."
+				},
+				{
+					"id": "80257ea2929440561746e09bcdfc231866471af0",
+					"kind": "catch_clause",
+					"line": 108,
+					"column": 3,
+					"endLine": 108,
+					"endColumn": 60,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "persistFarmingSessionContext",
+						"justification": "In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session."
+					},
+					"reason": "Allowlisted catch_clause: In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session. Verified recovery: \"local_recovery\" in \"persistFarmingSessionContext\"."
+				}
+			]
+		},
+		"src/runtime/halloween-observation-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "87c3a0f437996350a4c46ad05977fcc08e050a25",
+					"kind": "void_expression",
+					"line": 147,
+					"column": 3,
+					"endLine": 147,
+					"endColumn": 62,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.halloween.activate().catch",
+						"scope": "switchHalloweenAccount",
+						"justification": "The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything."
+					},
+					"reason": "Allowlisted void_expression: The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything. Verified target: \"this.halloween.activate().catch\" in \"switchHalloweenAccount\"."
+				},
+				{
+					"id": "d3fce5748c86e663f8ace672ed450d37eab3aaa6",
+					"kind": "promise_catch",
+					"line": 147,
+					"column": 8,
+					"endLine": 147,
+					"endColumn": 62,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "switchHalloweenAccount",
+						"justification": "The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state."
+					},
+					"reason": "Allowlisted promise_catch: The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state. Verified recovery: \"intentional_noop\" in \"switchHalloweenAccount\"."
+				}
+			]
+		},
 		"src/runtime/index.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/runtime/inventory-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
@@ -9443,6 +9644,148 @@
 				}
 			]
 		},
+		"src/runtime/local-debug-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "ac4ddd0827980bf5fbed4dd4ae2b8d9170bdf134",
+					"kind": "catch_clause",
+					"line": 206,
+					"column": 5,
+					"endLine": 208,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.emitNotice"
+					},
+					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "59ed5c2c98f3597c29bd1f190fee1f21d05c38a1",
+					"kind": "catch_clause",
+					"line": 221,
+					"column": 5,
+					"endLine": 221,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "safeLocalDebugJsonl",
+						"justification": "The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"safeLocalDebugJsonl\"."
+				},
+				{
+					"id": "a87cb85f05b7c4ebba523c56351878ecad84cc86",
+					"kind": "catch_clause",
+					"line": 251,
+					"column": 5,
+					"endLine": 251,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "safeLocalDebugSupportJsonl",
+						"justification": "The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line."
+					},
+					"reason": "Allowlisted catch_clause: The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line. Verified recovery: \"intentional_noop\" in \"safeLocalDebugSupportJsonl\"."
+				}
+			]
+		},
+		"src/runtime/managed-assets-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "d9afce825e72cefbbfb66fefa43caf30eae32681",
+					"kind": "catch_clause",
+					"line": 122,
+					"column": 6,
+					"endLine": 124,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "bceef1978ef6645a1fcc0725d58ef3fe75c2040f",
+					"kind": "catch_clause",
+					"line": 270,
+					"column": 6,
+					"endLine": 274,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "a5471271a269744f0e9034bae07ffaaa44906b46",
+					"kind": "catch_clause",
+					"line": 364,
+					"column": 6,
+					"endLine": 368,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "096098af524e3ce1faefc5000bf9d471551f71e4",
+					"kind": "catch_clause",
+					"line": 464,
+					"column": 3,
+					"endLine": 464,
+					"endColumn": 113,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "runManagedAssetsLifecycle",
+						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
+				}
+			]
+		},
+		"src/runtime/price-history-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "925e402fa437c83b595ab18e1c5f5bbce5b88829",
+					"kind": "catch_clause",
+					"line": 195,
+					"column": 5,
+					"endLine": 198,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				}
+			]
+		},
 		"src/runtime/sale-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -9968,9 +10311,9 @@
 				{
 					"id": "d4fd3c7c921b4aedcfafe128fd5f0840cd1027cc",
 					"kind": "catch_clause",
-					"line": 1565,
+					"line": 1566,
 					"column": 6,
-					"endLine": 1571,
+					"endLine": 1572,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9982,9 +10325,9 @@
 				{
 					"id": "1f40e4851a1e017ed7b9a6ecdd8416721c4466b6",
 					"kind": "promise_catch",
-					"line": 1690,
+					"line": 1691,
 					"column": 3,
-					"endLine": 1690,
+					"endLine": 1691,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9999,9 +10342,9 @@
 				{
 					"id": "159de0a0475f31bec1cbaaf7c6d79c578bb9f6c7",
 					"kind": "catch_clause",
-					"line": 1726,
+					"line": 1727,
 					"column": 46,
-					"endLine": 1726,
+					"endLine": 1727,
 					"endColumn": 131,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10015,9 +10358,9 @@
 				{
 					"id": "9f0b4cfe335a6092baf0070b38ed7e7c4872a370",
 					"kind": "catch_clause",
-					"line": 1735,
+					"line": 1736,
 					"column": 5,
-					"endLine": 1737,
+					"endLine": 1738,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10031,9 +10374,9 @@
 				{
 					"id": "a0b4d649e014951a88d491bd9b0d8e7a8e327132",
 					"kind": "void_expression",
-					"line": 1792,
+					"line": 1793,
 					"column": 30,
-					"endLine": 1792,
+					"endLine": 1793,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10047,9 +10390,9 @@
 				{
 					"id": "39b977f7aee04b8faa42b51990318eb60078f1f7",
 					"kind": "callback_registration",
-					"line": 1792,
+					"line": 1793,
 					"column": 35,
-					"endLine": 1792,
+					"endLine": 1793,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10064,9 +10407,9 @@
 				{
 					"id": "5975d1589f5e6b0e0fa022521b5f7dcf7e106db8",
 					"kind": "void_expression",
-					"line": 1845,
+					"line": 1846,
 					"column": 4,
-					"endLine": 1845,
+					"endLine": 1846,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10080,9 +10423,9 @@
 				{
 					"id": "343676b02d39fb16ceeed226aa9ceb8e4ef7461a",
 					"kind": "catch_clause",
-					"line": 1922,
+					"line": 1923,
 					"column": 5,
-					"endLine": 1925,
+					"endLine": 1926,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10096,9 +10439,9 @@
 				{
 					"id": "d8fcad351b0e3fabc77a7144ea5146c2e4c808a7",
 					"kind": "catch_clause",
-					"line": 3022,
+					"line": 3039,
 					"column": 6,
-					"endLine": 3034,
+					"endLine": 3051,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -10110,9 +10453,9 @@
 				{
 					"id": "9481a982452a2b01ac678cef2ebacfe400c2cc02",
 					"kind": "catch_clause",
-					"line": 3054,
+					"line": 3071,
 					"column": 6,
-					"endLine": 3057,
+					"endLine": 3074,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10126,9 +10469,9 @@
 				{
 					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
 					"kind": "void_expression",
-					"line": 3096,
+					"line": 3113,
 					"column": 7,
-					"endLine": 3099,
+					"endLine": 3116,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10142,9 +10485,9 @@
 				{
 					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
 					"kind": "callback_registration",
-					"line": 3096,
+					"line": 3113,
 					"column": 12,
-					"endLine": 3099,
+					"endLine": 3116,
 					"endColumn": 8,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10159,9 +10502,9 @@
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 3117,
+					"line": 3134,
 					"column": 22,
-					"endLine": 3117,
+					"endLine": 3134,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10175,9 +10518,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 3117,
+					"line": 3134,
 					"column": 27,
-					"endLine": 3117,
+					"endLine": 3134,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10192,9 +10535,9 @@
 				{
 					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
 					"kind": "void_expression",
-					"line": 3174,
+					"line": 3191,
 					"column": 4,
-					"endLine": 3174,
+					"endLine": 3191,
 					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10208,9 +10551,9 @@
 				{
 					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
 					"kind": "void_expression",
-					"line": 3175,
+					"line": 3192,
 					"column": 4,
-					"endLine": 3176,
+					"endLine": 3193,
 					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10224,9 +10567,9 @@
 				{
 					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
 					"kind": "void_expression",
-					"line": 3178,
+					"line": 3195,
 					"column": 3,
-					"endLine": 3178,
+					"endLine": 3195,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10240,9 +10583,9 @@
 				{
 					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
 					"kind": "catch_clause",
-					"line": 3247,
+					"line": 3280,
 					"column": 5,
-					"endLine": 3250,
+					"endLine": 3283,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10256,9 +10599,9 @@
 				{
 					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
 					"kind": "catch_clause",
-					"line": 3258,
+					"line": 3291,
 					"column": 5,
-					"endLine": 3260,
+					"endLine": 3293,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10272,9 +10615,9 @@
 				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 3513,
+					"line": 3546,
 					"column": 6,
-					"endLine": 3515,
+					"endLine": 3548,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10288,9 +10631,9 @@
 				{
 					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
 					"kind": "catch_clause",
-					"line": 3815,
+					"line": 3848,
 					"column": 5,
-					"endLine": 3818,
+					"endLine": 3851,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10302,9 +10645,9 @@
 				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 3889,
+					"line": 3922,
 					"column": 17,
-					"endLine": 3889,
+					"endLine": 3922,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10319,9 +10662,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 3889,
+					"line": 3922,
 					"column": 17,
-					"endLine": 3889,
+					"endLine": 3922,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10336,9 +10679,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 3890,
+					"line": 3923,
 					"column": 20,
-					"endLine": 3890,
+					"endLine": 3923,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10353,9 +10696,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 3890,
+					"line": 3923,
 					"column": 20,
-					"endLine": 3890,
+					"endLine": 3923,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10415,6 +10758,42 @@
 						"justification": "The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending."
 					},
 					"reason": "Allowlisted catch_clause: The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending. Verified recovery: \"rethrow\" in \"settleVaultRelocation\"."
+				}
+			]
+		},
+		"src/runtime/vault-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "784d74be829530e012321f38a90443b49ea6e904",
+					"kind": "catch_clause",
+					"line": 314,
+					"column": 5,
+					"endLine": 321,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
+					},
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "26daf16ac95b4041d941cc92a375bad979d58a40",
+					"kind": "catch_clause",
+					"line": 354,
+					"column": 4,
+					"endLine": 354,
+					"endColumn": 114,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "perform",
+						"justification": "The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector. Verified recovery: \"rethrow\" in \"perform\"."
 				}
 			]
 		},
@@ -11438,9 +11817,9 @@
 				{
 					"id": "ef07a7d9e7c49827528eda0389cf0265575889c6",
 					"kind": "catch_clause",
-					"line": 150,
+					"line": 151,
 					"column": 5,
-					"endLine": 150,
+					"endLine": 151,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11465,9 +11844,9 @@
 				{
 					"id": "b204c0e949dc42376a40fdf92125ff9d67a0d69f",
 					"kind": "catch_clause",
-					"line": 193,
+					"line": 201,
 					"column": 3,
-					"endLine": 193,
+					"endLine": 201,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11481,9 +11860,9 @@
 				{
 					"id": "820e0fc360799498b389f663bbf47057004082ad",
 					"kind": "catch_clause",
-					"line": 222,
+					"line": 230,
 					"column": 4,
-					"endLine": 222,
+					"endLine": 230,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11497,9 +11876,9 @@
 				{
 					"id": "05c694a61bc64fe33b782f018a268866b8ddec9f",
 					"kind": "catch_clause",
-					"line": 228,
+					"line": 236,
 					"column": 4,
-					"endLine": 228,
+					"endLine": 236,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11513,9 +11892,9 @@
 				{
 					"id": "42fd9a6ae5e7ba795642e084c49f6c2e9308163c",
 					"kind": "catch_clause",
-					"line": 515,
+					"line": 527,
 					"column": 7,
-					"endLine": 515,
+					"endLine": 527,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11529,9 +11908,9 @@
 				{
 					"id": "aa5abc84dff223c7142f2ae1e9cde4ac57cda494",
 					"kind": "catch_clause",
-					"line": 521,
+					"line": 533,
 					"column": 4,
-					"endLine": 521,
+					"endLine": 533,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11545,9 +11924,9 @@
 				{
 					"id": "5afe6c8284cf9e463ca52f543ef2b5fc6f6e38fb",
 					"kind": "catch_clause",
-					"line": 524,
+					"line": 536,
 					"column": 79,
-					"endLine": 524,
+					"endLine": 536,
 					"endColumn": 123,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11561,9 +11940,9 @@
 				{
 					"id": "1769c2982cc7600e103c7b81c233fdff58ace7b0",
 					"kind": "catch_clause",
-					"line": 699,
+					"line": 714,
 					"column": 5,
-					"endLine": 699,
+					"endLine": 714,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11577,9 +11956,9 @@
 				{
 					"id": "8508cd8935b74c9ffd787fa7a6ef711172d4fa3b",
 					"kind": "catch_clause",
-					"line": 754,
+					"line": 769,
 					"column": 41,
-					"endLine": 754,
+					"endLine": 769,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11593,9 +11972,9 @@
 				{
 					"id": "7c035d4a49139072cc03c37a219deb6a85d1abd2",
 					"kind": "catch_clause",
-					"line": 900,
+					"line": 915,
 					"column": 5,
-					"endLine": 900,
+					"endLine": 915,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11609,9 +11988,9 @@
 				{
 					"id": "91c1d62daec6aad6537ee5cf7bc3e3a60123810c",
 					"kind": "catch_clause",
-					"line": 919,
+					"line": 934,
 					"column": 3,
-					"endLine": 919,
+					"endLine": 934,
 					"endColumn": 30,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11625,9 +12004,9 @@
 				{
 					"id": "1df169d046eca4030f9a385c2d3c395e34e85f3c",
 					"kind": "callback_registration",
-					"line": 965,
+					"line": 980,
 					"column": 16,
-					"endLine": 969,
+					"endLine": 984,
 					"endColumn": 27,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -11642,9 +12021,9 @@
 				{
 					"id": "69fe951b87925b65ce28ce50085a842348c73ad6",
 					"kind": "void_expression",
-					"line": 968,
+					"line": 983,
 					"column": 4,
-					"endLine": 968,
+					"endLine": 983,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11658,9 +12037,9 @@
 				{
 					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
 					"kind": "catch_clause",
-					"line": 999,
+					"line": 1014,
 					"column": 41,
-					"endLine": 999,
+					"endLine": 1014,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11674,9 +12053,9 @@
 				{
 					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
 					"kind": "catch_clause",
-					"line": 1025,
+					"line": 1041,
 					"column": 92,
-					"endLine": 1025,
+					"endLine": 1041,
 					"endColumn": 191,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11688,11 +12067,27 @@
 					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start(). Verified recovery: \"local_recovery\" in \"pruneSealed\"."
 				},
 				{
+					"id": "ebf8c4e6a7aae5bb567be14e09631b8b1fde0fd6",
+					"kind": "catch_clause",
+					"line": 1065,
+					"column": 5,
+					"endLine": 1065,
+					"endColumn": 51,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "adoptSealedOrphans",
+						"justification": "The \"adoptSealedOrphans\" catch is a \"local_recovery\": a journal listing or a vault lookup that fails (or does not answer within the storage deadline) is reported through onError once and nothing joins the prune queue, so no journal is deleted on its word; the journals it was looking at stay as they were and the next start of the host looks again. The session is untouched."
+					},
+					"reason": "Allowlisted catch_clause: The \"adoptSealedOrphans\" catch is a \"local_recovery\": a journal listing or a vault lookup that fails (or does not answer within the storage deadline) is reported through onError once and nothing joins the prune queue, so no journal is deleted on its word; the journals it was looking at stay as they were and the next start of the host looks again. The session is untouched. Verified recovery: \"local_recovery\" in \"adoptSealedOrphans\"."
+				},
+				{
 					"id": "3b957ea797d76ce6bf47810a3c79ca2fa61e2ede",
 					"kind": "catch_clause",
-					"line": 1041,
+					"line": 1078,
 					"column": 5,
-					"endLine": 1041,
+					"endLine": 1078,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11706,9 +12101,9 @@
 				{
 					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
 					"kind": "callback_registration",
-					"line": 1088,
+					"line": 1125,
 					"column": 16,
-					"endLine": 1088,
+					"endLine": 1125,
 					"endColumn": 147,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11723,9 +12118,9 @@
 				{
 					"id": "adf55f5bc4bd198a84023e136b829c746b3dbc28",
 					"kind": "catch_clause",
-					"line": 1169,
+					"line": 1207,
 					"column": 4,
-					"endLine": 1169,
+					"endLine": 1207,
 					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14178,9 +14573,9 @@
 				{
 					"id": "c813ae35e2e59af105405d02da227260709470fd",
 					"kind": "catch_clause",
-					"line": 377,
+					"line": 378,
 					"column": 5,
-					"endLine": 380,
+					"endLine": 381,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14194,9 +14589,9 @@
 				{
 					"id": "520d83415f2af1e13913349cc5f2a77301744fee",
 					"kind": "catch_clause",
-					"line": 403,
+					"line": 404,
 					"column": 5,
-					"endLine": 406,
+					"endLine": 407,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14210,9 +14605,9 @@
 				{
 					"id": "fbd0cf8aad03f79ab1914a184406d96499bde340",
 					"kind": "catch_clause",
-					"line": 427,
+					"line": 428,
 					"column": 5,
-					"endLine": 430,
+					"endLine": 431,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14226,9 +14621,9 @@
 				{
 					"id": "be88ca61842476f044619b1cd9866d699980e15c",
 					"kind": "catch_clause",
-					"line": 443,
+					"line": 444,
 					"column": 5,
-					"endLine": 446,
+					"endLine": 447,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14242,9 +14637,9 @@
 				{
 					"id": "741050ee92445fca3a9597e1d9c785fe4642e85f",
 					"kind": "catch_clause",
-					"line": 471,
+					"line": 472,
 					"column": 5,
-					"endLine": 471,
+					"endLine": 472,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14258,9 +14653,9 @@
 				{
 					"id": "87ffc19f808126f2b1271bbd6553ebd7783ef25c",
 					"kind": "catch_clause",
-					"line": 478,
+					"line": 479,
 					"column": 5,
-					"endLine": 478,
+					"endLine": 479,
 					"endColumn": 28,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14274,9 +14669,9 @@
 				{
 					"id": "d5a3e83e03a8fc55feaaa9df53e5f5b785b0120b",
 					"kind": "catch_clause",
-					"line": 485,
+					"line": 486,
 					"column": 5,
-					"endLine": 487,
+					"endLine": 488,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14290,9 +14685,9 @@
 				{
 					"id": "bbdd764f7d485361100ece9bddc72d4a37c0c728",
 					"kind": "catch_clause",
-					"line": 499,
+					"line": 500,
 					"column": 5,
-					"endLine": 501,
+					"endLine": 502,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14306,9 +14701,9 @@
 				{
 					"id": "09ec9447ac1a1b357e27b2e7622b3eaba2cc4218",
 					"kind": "catch_clause",
-					"line": 513,
+					"line": 514,
 					"column": 5,
-					"endLine": 513,
+					"endLine": 514,
 					"endColumn": 28,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14322,9 +14717,9 @@
 				{
 					"id": "08ceea7f5824daa6f85bf5cd8bf072f437c9191f",
 					"kind": "catch_clause",
-					"line": 561,
+					"line": 562,
 					"column": 3,
-					"endLine": 561,
+					"endLine": 562,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14338,9 +14733,9 @@
 				{
 					"id": "80f84018bfee414002be9e16f28ffc6e85b85ac5",
 					"kind": "catch_clause",
-					"line": 570,
+					"line": 571,
 					"column": 3,
-					"endLine": 570,
+					"endLine": 571,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14354,9 +14749,9 @@
 				{
 					"id": "42bbd3ddadec197102fdc73273ca57ff79aa1cb1",
 					"kind": "catch_clause",
-					"line": 577,
+					"line": 578,
 					"column": 121,
-					"endLine": 577,
+					"endLine": 578,
 					"endColumn": 144,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14370,9 +14765,9 @@
 				{
 					"id": "e4f2eecd2812d2933a213b9b3415d499b9c2f207",
 					"kind": "catch_clause",
-					"line": 583,
+					"line": 587,
 					"column": 107,
-					"endLine": 583,
+					"endLine": 587,
 					"endColumn": 130,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14386,9 +14781,9 @@
 				{
 					"id": "5a5250cdd454bbdb16f3406b6fca30deeba07f5e",
 					"kind": "catch_clause",
-					"line": 605,
+					"line": 609,
 					"column": 5,
-					"endLine": 611,
+					"endLine": 615,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14402,9 +14797,9 @@
 				{
 					"id": "db97233658a9585d18c5587fec4b52d9c63a9bd3",
 					"kind": "catch_clause",
-					"line": 620,
+					"line": 624,
 					"column": 29,
-					"endLine": 620,
+					"endLine": 624,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14418,9 +14813,9 @@
 				{
 					"id": "9055d317925b95d7be9091a4a0da22d4f1f452ef",
 					"kind": "catch_clause",
-					"line": 638,
+					"line": 642,
 					"column": 5,
-					"endLine": 641,
+					"endLine": 645,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14434,9 +14829,9 @@
 				{
 					"id": "7291ea0c3fa284a7efc57ea2fc32409657a45634",
 					"kind": "catch_clause",
-					"line": 652,
+					"line": 656,
 					"column": 32,
-					"endLine": 652,
+					"endLine": 656,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14450,9 +14845,9 @@
 				{
 					"id": "fff0525c15e920d54166943acca79d7c5510e151",
 					"kind": "catch_clause",
-					"line": 658,
+					"line": 662,
 					"column": 6,
-					"endLine": 661,
+					"endLine": 665,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14466,9 +14861,9 @@
 				{
 					"id": "541bbc3f0c15cae2d05afcb6d5ecd5c5f620f8ee",
 					"kind": "catch_clause",
-					"line": 740,
+					"line": 744,
 					"column": 7,
-					"endLine": 743,
+					"endLine": 747,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14789,6 +15184,11 @@
 					"reason": "Allowlisted callback_registration: The \"refusedOpen\" \"queueMicrotask\" callback belongs to a test fake of IndexedDB: it fires the error event of an open the dead engine refuses, on the next microtask as a real one would, and never ships in the bundle. Verified registration: \"queueMicrotask\" in \"refusedOpen\"."
 				}
 			]
+		},
+		"src/test/inventory-over.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/test/json-round-trip-corpus.ts": {
 			"classification": "production_source",
@@ -19399,390 +19799,6 @@
 					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
 				}
 			]
-		},
-		"src/runtime/farming-session-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "506e1deeafc4fac3e503e2ac27a4bd25ef4517f4",
-					"kind": "catch_clause",
-					"line": 101,
-					"column": 5,
-					"endLine": 101,
-					"endColumn": 62,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "currentFarmingSessionContext",
-						"justification": "In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session."
-					},
-					"reason": "Allowlisted catch_clause: In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session. Verified recovery: \"local_recovery\" in \"currentFarmingSessionContext\"."
-				},
-				{
-					"id": "80257ea2929440561746e09bcdfc231866471af0",
-					"kind": "catch_clause",
-					"line": 108,
-					"column": 3,
-					"endLine": 108,
-					"endColumn": 60,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "persistFarmingSessionContext",
-						"justification": "In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session."
-					},
-					"reason": "Allowlisted catch_clause: In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session. Verified recovery: \"local_recovery\" in \"persistFarmingSessionContext\"."
-				}
-			]
-		},
-		"src/runtime/managed-assets-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "d9afce825e72cefbbfb66fefa43caf30eae32681",
-					"kind": "catch_clause",
-					"line": 122,
-					"column": 6,
-					"endLine": 124,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "bceef1978ef6645a1fcc0725d58ef3fe75c2040f",
-					"kind": "catch_clause",
-					"line": 270,
-					"column": 6,
-					"endLine": 274,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "a5471271a269744f0e9034bae07ffaaa44906b46",
-					"kind": "catch_clause",
-					"line": 364,
-					"column": 6,
-					"endLine": 368,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "096098af524e3ce1faefc5000bf9d471551f71e4",
-					"kind": "catch_clause",
-					"line": 464,
-					"column": 3,
-					"endLine": 464,
-					"endColumn": 113,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "runManagedAssetsLifecycle",
-						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
-				}
-			]
-		},
-		"src/runtime/halloween-observation-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "87c3a0f437996350a4c46ad05977fcc08e050a25",
-					"kind": "void_expression",
-					"line": 147,
-					"column": 3,
-					"endLine": 147,
-					"endColumn": 62,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.halloween.activate().catch",
-						"scope": "switchHalloweenAccount",
-						"justification": "The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything."
-					},
-					"reason": "Allowlisted void_expression: The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything. Verified target: \"this.halloween.activate().catch\" in \"switchHalloweenAccount\"."
-				},
-				{
-					"id": "d3fce5748c86e663f8ace672ed450d37eab3aaa6",
-					"kind": "promise_catch",
-					"line": 147,
-					"column": 8,
-					"endLine": 147,
-					"endColumn": 62,
-					"registration": "catch",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "switchHalloweenAccount",
-						"justification": "The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state."
-					},
-					"reason": "Allowlisted promise_catch: The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state. Verified recovery: \"intentional_noop\" in \"switchHalloweenAccount\"."
-				}
-			]
-		},
-		"src/runtime/price-history-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "925e402fa437c83b595ab18e1c5f5bbce5b88829",
-					"kind": "catch_clause",
-					"line": 195,
-					"column": 5,
-					"endLine": 198,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "span.failure"
-					},
-					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
-				}
-			]
-		},
-		"src/runtime/alert-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "b5c9fa57b219ff52873e09771ef34a0113a06feb",
-					"kind": "callback_registration",
-					"line": 446,
-					"column": 18,
-					"endLine": 479,
-					"endColumn": 6,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
-					},
-					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
-				},
-				{
-					"id": "75c694088885e9d0eed46de68d698ff6c242e2a5",
-					"kind": "promise_catch",
-					"line": 446,
-					"column": 18,
-					"endLine": 495,
-					"endColumn": 6,
-					"registration": "catch",
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.localDebugActions.event"
-					},
-					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
-				},
-				{
-					"id": "7cf8b69e63a1d827614c596b98b09b231d495a1c",
-					"kind": "callback_registration",
-					"line": 446,
-					"column": 18,
-					"endLine": 499,
-					"endColumn": 6,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
-					},
-					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"finally\" in \"ensureAlertIngameServer\"."
-				},
-				{
-					"id": "9f18056334cfe7d6a3ea25f653a0d2c03df39637",
-					"kind": "catch_clause",
-					"line": 655,
-					"column": 5,
-					"endLine": 657,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.emitNotice"
-					},
-					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
-					"kind": "void_expression",
-					"line": 664,
-					"column": 22,
-					"endLine": 664,
-					"endColumn": 66,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.copyAlertIngameSecretFromCommand",
-						"scope": "callback",
-						"justification": "The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice."
-					},
-					"reason": "Allowlisted void_expression: The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice. Verified target: \"this.copyAlertIngameSecretFromCommand\" in \"callback\"."
-				},
-				{
-					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
-					"kind": "callback_registration",
-					"line": 683,
-					"column": 18,
-					"endLine": 686,
-					"endColumn": 4,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "resolveAlertAccountRef",
-						"justification": "The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration."
-					},
-					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration. Verified registration: \"then\" in \"resolveAlertAccountRef\"."
-				},
-				{
-					"id": "378194b415575bb405c10210312836c46456263c",
-					"kind": "callback_registration",
-					"line": 683,
-					"column": 18,
-					"endLine": 686,
-					"endColumn": 91,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "resolveAlertAccountRef",
-						"justification": "The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own."
-					},
-					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
-				}
-			]
-		},
-		"src/runtime/inventory-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/runtime/vault-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "784d74be829530e012321f38a90443b49ea6e904",
-					"kind": "catch_clause",
-					"line": 314,
-					"column": 5,
-					"endLine": 321,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.localDebugActions.event"
-					},
-					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "26daf16ac95b4041d941cc92a375bad979d58a40",
-					"kind": "catch_clause",
-					"line": 354,
-					"column": 4,
-					"endLine": 354,
-					"endColumn": 114,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "perform",
-						"justification": "The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector. Verified recovery: \"rethrow\" in \"perform\"."
-				}
-			]
-		},
-		"src/runtime/local-debug-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "ac4ddd0827980bf5fbed4dd4ae2b8d9170bdf134",
-					"kind": "catch_clause",
-					"line": 206,
-					"column": 5,
-					"endLine": 208,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.emitNotice"
-					},
-					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "59ed5c2c98f3597c29bd1f190fee1f21d05c38a1",
-					"kind": "catch_clause",
-					"line": 221,
-					"column": 5,
-					"endLine": 221,
-					"endColumn": 84,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "safeLocalDebugJsonl",
-						"justification": "The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"safeLocalDebugJsonl\"."
-				},
-				{
-					"id": "a87cb85f05b7c4ebba523c56351878ecad84cc86",
-					"kind": "catch_clause",
-					"line": 251,
-					"column": 5,
-					"endLine": 251,
-					"endColumn": 84,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "safeLocalDebugSupportJsonl",
-						"justification": "The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line."
-					},
-					"reason": "Allowlisted catch_clause: The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line. Verified recovery: \"intentional_noop\" in \"safeLocalDebugSupportJsonl\"."
-				}
-			]
-		},
-		"src/test/inventory-over.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
 		}
 	}
 }

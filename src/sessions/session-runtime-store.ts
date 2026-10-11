@@ -5,7 +5,7 @@ import { isLiveSessionRuntimeRecord, isLiveJournalEntry } from './live-session-v
 import { canUpdateLiveOutbox } from './live-session-outbox';
 import { archiveLegacyRuntime, prepareLegacyRuntimeArchive, isLegacyRuntimeArchive, LEGACY_RUNTIME_ARCHIVE_PREFIX, type LegacyRuntimeArchiveV1 } from './live-session-legacy-archive';
 import { canReplaceLiveRuntime, commitLiveRuntime, identicalJournal, journalKey,
-	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, readLiveJournalEntry, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
+	isSealedJournalQueue, LIVE_JOURNAL_PRUNE_QUEUE_KEY, liveRuntimeLoadResult, listLiveJournalSessions, markLiveAlertsProcessed, pruneLiveJournal, type SealedJournal, readLiveJournal, readLiveJournalEntry, replaceLiveJournal, type LiveSessionPersistence, type LiveRuntimeLoadResult } from './live-session-persistence';
 import { boundCompositionChanges, compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
@@ -301,6 +301,7 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore, LiveSessi
 		for (const [key, entry] of this.liveJournal) if (entry.sessionId === sessionId) this.liveJournal.delete(key);
 		return true;
 	}
+	async listLiveJournalSessions(): Promise<string[]> { return [...new Set([...this.liveJournal.values()].map((entry) => entry.sessionId))]; }
 
 	private pruneQueue: SealedJournal[] = [];
 	async loadPruneQueue(): Promise<SealedJournal[]> { return structuredClone(this.pruneQueue); }
@@ -578,6 +579,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore, LiveSe
 	}
 	async pruneLiveJournal(sessionId: string): Promise<boolean> {
 		return await this.run(async (database) => await pruneLiveJournal(database, sessionId)); // a failure reaches the lifecycle, which reports it and retries
+	}
+	async listLiveJournalSessions(): Promise<string[]> {
+		return await this.run(async (database) => await listLiveJournalSessions(database)); // a failure reaches the lifecycle, which reports it
 	}
 	async replaceLiveJournal(prior: LiveJournalEntryV1, next: LiveJournalEntryV1, owner?: LiveSessionRuntimeRecord): Promise<boolean> {
 		try { return await this.run(async (database) => await replaceLiveJournal(database,prior,next,owner)); } catch { return false; }

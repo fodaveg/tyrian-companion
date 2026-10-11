@@ -29,7 +29,7 @@ import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
-import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
+import { findSealedLiveNotes, LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
 import { knownLiveDisplayNames } from '../sessions/live-session-note-model';
 import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 
@@ -1450,6 +1450,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			thresholdCopper: () => this.settings.valuableLootThresholdCopper,
 			onCommitted: (entry) => { this.enrichLiveSession(entry); },
 			onComplete: async (record, journal, format) => await this.notes.saveLiveSessionNote(record, journal, format),
+			sealedNotes: async (sessionIds) => await findSealedLiveNotes(sessionHistoryVault(host.vault), sessionIds),
 		});
 		await this.liveSessions.initialize();
 		this.bootTrace.mark('live');

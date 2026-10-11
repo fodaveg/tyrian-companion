@@ -34,6 +34,8 @@ export interface LiveSessionPersistence {
 	readLiveJournalEntry?(sessionId: string, epoch: string, cursor: number): Promise<LiveJournalEntryV1 | null>;
 	/** Deletes the journal of a SEALED session (its note receipt is durable). Refuses the session the runtime key still holds. */
 	pruneLiveJournal?(sessionId: string): Promise<boolean>;
+	/** The id of every session with at least one journal entry, each once. Rejects when storage cannot read. */
+	listLiveJournalSessions?(): Promise<string[]>;
 	/**
 	 * Sealed sessions whose journal is still to be pruned (each with the path of its durable note), so a restart does not forget them.
 	 * Rejects when storage cannot read the queue: the lifecycle then saves nothing over it until a read works.
@@ -155,6 +157,15 @@ export async function pruneLiveJournal(database: IDBDatabase, sessionId: string)
 			request.onsuccess = () => { const cursor = request.result; if (!cursor) { pruned = true; return; } entries.delete(cursor.primaryKey); cursor.continue(); };
 		};
 		tx.oncomplete = () => resolve(pruned); tx.onerror = tx.onabort = () => resolve(false);
+	});
+}
+/** The sessions the journal holds entries of: one key cursor over the `session` index that skips to the next id, nothing deserialized. */
+export async function listLiveJournalSessions(database: IDBDatabase): Promise<string[]> {
+	return await new Promise((resolve, reject) => {
+		const tx = startIndexedDbTransaction(database, LIVE_SESSION_JOURNAL_STORE_NAME, 'readonly'); const sessions: string[] = [];
+		const request = tx.objectStore(LIVE_SESSION_JOURNAL_STORE_NAME).index('session').openKeyCursor(null, 'nextunique');
+		request.onsuccess = () => { const cursor = request.result; if (!cursor) return; if (typeof cursor.key === 'string') sessions.push(cursor.key); cursor.continue(); };
+		tx.oncomplete = () => resolve(sessions); tx.onerror = tx.onabort = () => reject(new Error('Live session journal is unavailable.'));
 	});
 }
 export function canReplaceLiveRuntime(current: LiveSessionRuntimeRecord, next: LiveSessionRuntimeRecord): boolean {

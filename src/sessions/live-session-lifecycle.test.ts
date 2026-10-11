@@ -10,7 +10,7 @@ import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { buildLiveChart } from './live-session-reducer';
-import { liveSessionViewFromStored, LiveSessionHistoryService } from './live-session-history';
+import { findSealedLiveNotes, liveSessionViewFromStored, LiveSessionHistoryService } from './live-session-history';
 import { SessionHistoryRuntimeAuthority, SessionHistoryService, type SessionHistoryFile, type SessionHistoryVault } from './session-history';
 import { currentLiveSessionCharacter } from './live-session-characters';
 import { isLiveSessionRuntimeRecord } from './live-session-validation';
@@ -387,7 +387,8 @@ describe('passive live session lifecycle', () => {
 		}
 		expect(ids).toHaveLength(10);
 		expect(await store.readLiveJournal(ids[0]!), 'the oldest sealed session is pruned').toEqual([]);
-		
+		expect((await store.listLiveJournalSessions()).sort(), 'the sessions the journal still holds, each once').toEqual(ids.slice(1).sort());
+
 		for (const id of ids.slice(1,9)) expect((await store.readLiveJournal(id)).length, `retained ${id}`).toBe(2);
 		expect((await store.readLiveJournal(ids[9]!)).length, 'the active one is never pruned').toBe(2);
 		await expect(store.pruneLiveJournal(ids[9]!), 'and the store itself refuses the session the runtime key holds').resolves.toBe(false);
@@ -442,15 +443,15 @@ describe('passive live session lifecycle', () => {
 	});
 	describe('the journals of the sessions an earlier host closed', () => {
 		/** A first host that ran `closed` sealed sessions and one more (left active unless `closeLast`), each with a two-entry journal. */
-		async function earlierHost(closed: number, closeLast = false) {
-			const f = fixture(); const ids: string[] = []; let firstInterval: (() => void) | null = null;
+		async function earlierHost(closed: number, closeLast = false, extra: Partial<ConstructorParameters<typeof LiveSessionLifecycle>[0]> = {}) {
+			const f = fixture(); const ids: string[] = []; let firstInterval: (() => void) | null = null; Object.assign(f.options, extra);
 			const first = new LiveSessionLifecycle({...f.options,setInterval:(callback) => {firstInterval=callback;return 1;}});
 			for (let round = 0; round <= closed; round += 1) {
 				const epoch = `${String.fromCharCode(66+round)}${'A'.repeat(20)}Q`; ids.push((await first.start('Test'))!);
 				f.setNow(AT+round*100_000); await first.open({...f.source,epoch}); await first.commit(f.sample(0,0,{epoch})); f.setNow(AT+round*100_000+1000); await first.commit(f.sample(1,2,{epoch}));
 				if (round < closed || closeLast) { f.setNow(AT+round*100_000+2000); await expect(first.stop(AT+round*100_000+2000)).resolves.toBe(true); }
 			}
-			const host = (overrides: Partial<typeof f.options> = {}) => {
+			const host = (overrides: Partial<ConstructorParameters<typeof LiveSessionLifecycle>[0]> = {}) => {
 				let interval: (() => void) | null = null;
 				const service = new LiveSessionLifecycle({...f.options,...overrides,setInterval:(callback) => {interval=callback;return 2;}});
 				return { service, beat: async () => { interval?.(); await service.capture(); } };
@@ -604,6 +605,54 @@ describe('passive live session lifecycle', () => {
 			expect(await lengths(), 'the owner may still be rewriting the journals it retains').toEqual([2,2,2]);
 			await first.dispose(); busy = false; await next.beat(); await next.beat();
 			expect(await lengths()).toEqual([0,0,2]); await next.service.dispose();
+		});
+		describe('the journals no queue names (sessions sealed by 0.6.12 or earlier, before the queue existed)', () => {
+			/** Three sessions sealed with their note written to `vault`, a fourth left active, and no queue at all: what 0.6.12 left behind. */
+			async function sealedBeforeTheQueue(extra: Partial<ConstructorParameters<typeof LiveSessionLifecycle>[0]> = {}) {
+				const vault = new Map<string, string>();
+				const sealed = await earlierHost(3, false, { ...extra, onComplete: async (record, journal, format) => {
+					const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'es', outputFolder: 'Tyrian' });
+					if (rendered.status !== 'ok') throw new Error('The note did not render.');
+					vault.set(rendered.note.preferredPath, rendered.note.content); return rendered.note.preferredPath;
+				} });
+				await sealed.f.store.savePruneQueue([]);
+				const files = { markdownFiles: () => [...vault.keys()].map((path) => ({ path })), read: async (file: { path: string }) => vault.get(file.path) ?? '' };
+				return { ...sealed, vault, files };
+			}
+			it('a host that starts again prunes the ones whose note the vault holds, and only those', async () => {
+				const { ids, first, host, lengths, queued, vault, files } = await sealedBeforeTheQueue(); await first.dispose();
+				const renamed = [...vault.keys()][1]!; vault.set('Tyrian/renamed.md', vault.get(renamed)!); vault.delete(renamed);
+				const sealedNotes = vi.fn(async (sessionIds: readonly string[]) => await findSealedLiveNotes(files, sessionIds));
+				const next = host({ sealedNotes }); await next.service.initialize();
+				expect(sealedNotes, 'the load asks nothing').not.toHaveBeenCalled();
+				await next.beat(); await next.beat();
+				expect(await lengths(), 'the one whose note was renamed keeps its journal, and so does the live one').toEqual([0,2,0,2]);
+				expect(sealedNotes.mock.calls, 'asked once, and only about the journals nobody holds or queued').toEqual([[ids.slice(0,3)]]);
+				expect(await queued()).toEqual([]); await next.service.dispose();
+			});
+			it('a note under the name of a session that reads as another session does not seal it', async () => {
+				const { ids, first, files, vault } = await sealedBeforeTheQueue(); await first.dispose();
+				const [own, other] = [...vault.keys()]; vault.set(other!, vault.get(own!)!);
+				expect([...(await findSealedLiveNotes(files, ids.slice(0,2))).keys()]).toEqual([ids[0]]);
+			});
+			it('the host that sealed them asks nothing about the sessions it still retains', async () => {
+				const sealedNotes = vi.fn(async () => new Map<string, string>());
+				const { firstBeat, first, lengths } = await sealedBeforeTheQueue({ sealedNotes });
+				await firstBeat(); await firstBeat();
+				expect(sealedNotes).not.toHaveBeenCalled(); expect(await lengths()).toEqual([2,2,2,2]); await first.dispose();
+			});
+			it('a vault that cannot be read is reported once, deletes nothing, and is asked again by the next host', async () => {
+				const { f, first, host, lengths, files } = await sealedBeforeTheQueue(); await first.dispose();
+				const failing = vi.fn(async () => { throw new Error('vault'); });
+				const next = host({ sealedNotes: failing }); await next.service.initialize();
+				for (let beats = 0; beats < 3; beats += 1) await next.beat();
+				expect(failing).toHaveBeenCalledTimes(1); expect(await lengths()).toEqual([2,2,2,2]);
+				expect(vi.mocked(f.options.onError).mock.calls.filter(([error]) => (error as Error).message === 'vault')).toHaveLength(1);
+				await next.service.dispose();
+				const later = host({ sealedNotes: async (sessionIds) => await findSealedLiveNotes(files, sessionIds) }); await later.service.initialize();
+				await later.beat(); await later.beat();
+				expect(await lengths()).toEqual([0,0,0,2]); await later.service.dispose();
+			});
 		});
 	});
 	describe('a presence held back during a loss', () => {
