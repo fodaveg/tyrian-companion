@@ -121,7 +121,6 @@ import {
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { vaultFailureCause } from '../core/vault-failure-cause';
 import { LocalDebugLogger } from '../core/local-debug-logger';
-import { resanitizeLocalDebugRecord } from '../core/local-debug-sanitizer';
 import {
 	createLocalDebugPersistenceSink,
 	LocalDebugPersistenceProbe,
@@ -163,13 +162,14 @@ import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
+import { VaultRuntime, type VaultRuntimePort } from './vault-runtime';
+import { LocalDebugRuntime, type LocalDebugRuntimePort } from './local-debug-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
-import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
-import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
-import { adoptVaultData, detectVaultRelocation, isVaultMark, rememberedPreviousId, settleVaultRelocation, type VaultIdentityStores, type VaultRelocation } from './vault-relocation';
+import { CollectorReadUnansweredError, loadCollectorMode } from './collector-instance';
+import type { VaultRelocation } from './vault-relocation';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import {
@@ -613,6 +613,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * the core keeps the mounted controllers, which its registration and unload also walk.
 	 */
 	private readonly liveView: LiveViewRuntime = new LiveViewRuntime(TyrianCompanionCore.liveViewRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the vault's path change and the device's collector/consult mode (the question
+	 * after a relocation, the mode's read and write, the heartbeat). It reads and writes the core's
+	 * fields through `vaultRuntimePort`; the core keeps them because its boot and its unload also use them.
+	 */
+	private readonly vaultRuntime: VaultRuntime = new VaultRuntime(TyrianCompanionCore.vaultRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the local diagnostics as the player sees them (status, folder, copy, export and
+	 * clear). It reads the core's logger, runner and shutdown drain through `localDebugRuntimePort`.
+	 */
+	private readonly debugLog: LocalDebugRuntime = new LocalDebugRuntime(TyrianCompanionCore.localDebugRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -1535,218 +1546,26 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.syncCollectorHeartbeat();
 	}
 
-	/**
-	 * The mode the device had saved, when it answered after the start had fallen back on the seed. Applied as the Settings
-	 * selector applies a change; nothing is written, the value is already the stored one. A mode chosen in Settings wins.
-	 * With a session open `consult` is refused as Settings refuses it (the notice only when `announce`), but stays PENDING:
-	 * the session state callbacks call this again, so it lands when the session ends.
-	 */
-	private adoptLateCollectorMode(announce = true): void {
-		const mode = this.lateCollectorMode;
-		if (mode === null || !this.runtimeReady) return;
-		if (this.collectorModeChosen || this.unloaded || mode === this.collectorMode) { this.lateCollectorMode = null; return; }
-		if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
-			if (announce) this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
-			return;
-		}
-		this.lateCollectorMode = null;
-		this.collectorMode = mode;
-		const applying = (async () => {
-			try { await this.applyCollectorModeChange(); } finally { this.lateCollectorApplying = null; }
-		})();
-		this.lateCollectorApplying = applying;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'settings', action: 'settings_load', state: 'collector_mode_late' }, async () => { await applying; });
-	}
+	/** The mode the device had saved, applied when it answered late (`VaultRuntime`). */
+	private adoptLateCollectorMode(announce = true): void { this.vaultRuntime.adoptLateCollectorMode(announce); }
 
-	/**
-	 * DU-02: the question Settings shows after the vault changed path; `pending` is false when there is none. The answer is
-	 * `resolveVaultRelocation`.
-	 */
-	getVaultRelocation(): { pending: boolean } {
-		return { pending: this.vaultRelocation !== null };
-	}
+	/** DU-02: the question Settings shows after the vault changed path (`VaultRuntime`). */
+	getVaultRelocation(): { pending: boolean } { return this.vaultRuntime.getVaultRelocation(); }
 
-	/**
-	 * DU-02: the user's answer. `adopt` copies the inventory preferences and the mode the device had under the previous
-	 * vault path to this one (nothing is deleted, nothing the new id already holds is overwritten, and a mode the user
-	 * already chose for the new id while the question was open wins over the old one); `fresh` adopts nothing and leaves
-	 * the old data where it is. Either way the current id is recorded and the question is not asked again. A `fresh` start
-	 * stays in consult unless the new id already stored a mode: choosing the collector is the user's, in Settings.
-	 *
-	 * ONE piece of work per answer, with no deadline of its own: it ends (the notice says what was applied) or it fails for
-	 * real, through the error or the deadline of one of its IndexedDB operations, and then nothing is left half done, the
-	 * question stays pending and the next call starts again. While it runs `isApplyingVaultRelocation()` is true (Settings
-	 * shows it and disables both buttons); a call made meanwhile gets the same answer, whatever option it names. A
-	 * plugin unloaded meanwhile ends without touching state, views or notices.
-	 */
-	resolveVaultRelocation(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult> {
-		if (this.vaultRelocationResolving !== null) return this.vaultRelocationResolving;
-		const perform = async (): Promise<VaultRelocationResult> => await this.performVaultRelocationAnswer(choice);
-		const resolving = this.localDebugActions?.run(
-			{ component: 'settings', action: 'settings_save', state: 'vault_relocation' }, perform,
-		) ?? perform();
-		this.vaultRelocationResolving = resolving;
-		if (!this.unloaded) this.settingTab.refreshForSettingsChange();
-		// The field is cleared the moment the answer ends (it cannot throw); the refresh that follows is observed, never an
-		// unhandled rejection: the answer's own failure goes to the caller, a failing refresh to the log.
-		const clear = (): void => { if (this.vaultRelocationResolving === resolving) this.vaultRelocationResolving = null; };
-		resolving.then(clear, clear);
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'settings', action: 'settings_save', state: 'vault_relocation' },
-			async () => { await Promise.allSettled([resolving]); if (!this.unloaded) this.settingTab.refreshForSettingsChange(); });
-		return resolving;
-	}
+	/** DU-02: the user's answer to that question (`VaultRuntime`). */
+	resolveVaultRelocation(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult> { return this.vaultRuntime.resolveVaultRelocation(choice); }
 
-	/** DU-02: whether an answer to the path-change question is being applied (Settings disables its buttons meanwhile). */
-	isApplyingVaultRelocation(): boolean {
-		return this.vaultRelocationResolving !== null;
-	}
+	/** DU-02: whether an answer is being applied (`VaultRuntime`). */
+	isApplyingVaultRelocation(): boolean { return this.vaultRuntime.isApplyingVaultRelocation(); }
 
-	private async performVaultRelocationAnswer(choice: 'adopt' | 'fresh'): Promise<VaultRelocationResult> {
-		const relocation = this.vaultRelocation;
-		const vaultId = this.vaultId;
-		if (this.unloaded || relocation === null || vaultId === null || !this.runtimeReady) return { status: 'none' };
-		const indexedDB = this.host.kv.indexedDB;
-		// The registry update the start left running must land before this one writes it again; its failure is already
-		// diagnosed where it started.
-		const startWrite = this.vaultRegistryWrite;
-		this.vaultRegistryWrite = null;
-		if (startWrite !== null) await Promise.allSettled([startWrite]);
-		if (this.unloaded) return { status: 'none' };
-		const adoption = choice === 'adopt' ? await adoptVaultData(indexedDB, relocation.previousVaultId, vaultId) : null;
-		if (this.unloaded) return { status: 'none' };
-		// What was copied is read again by the in-memory preferences, which cached the (empty) record of the new id. Always on
-		// an adopt, whatever this attempt copied: an earlier attempt may have copied and failed before the reload.
-		if (adoption !== null) await this.inventoryPreferences.loadCached();
-		// DU-13: the adoption writes IndexedDB past the preferences store, so the copy is told here.
-		if (adoption !== null && adoption.preferences > 0) this.inventoryPreferencesBackup?.changed();
-		if (this.unloaded) return { status: 'none' };
-		const own = await readStoredCollectorMode(indexedDB, vaultId);
-		if (this.unloaded) return { status: 'none' };
-		const adoptedMode = own === null ? adoption?.mode ?? null : null;
-		const mode = own ?? adoptedMode ?? 'consult';
-		// The question is settled in the registry first, then the mode is stored, then the local memory is settled: an
-		// attempt that fails leaves the question pending and no mode that a later attempt could take for the user's choice.
-		await settleVaultRelocation(this.vaultIdentityStores(), vaultId, {
-			save: async () => { await saveCollectorMode(indexedDB, vaultId, mode); },
-			// Only a mode this attempt wrote anew is undone: one the user had chosen for the new path stays.
-			undo: async () => { if (own === null) await deleteStoredCollectorMode(indexedDB, vaultId); },
-		});
-		if (this.unloaded) return { status: 'none' };
-		this.vaultRelocation = null;
-		this.collectorModeChosen = false;
-		if (mode !== this.collectorMode) {
-			this.collectorMode = mode;
-			await this.applyCollectorModeChange();
-			if (this.unloaded) return { status: 'none' };
-		} else this.settingTab.refreshForSettingsChange();
-		this.renderInventoryAdvisorViews();
-		const translator = createTranslator(this.settings.language);
-		// The notice says what is true now: the mode in force, and whether the old path's mode is the one applied.
-		const notice = adoption === null
-			? translateRuntime(translator, mode === 'collector' ? 'notices.vaultFreshCollector' : 'notices.vaultFresh')
-			: translateRuntime(translator, adoptedMode === null ? 'notices.vaultAdoptedNoMode' : 'notices.vaultAdopted', { preferences: adoption.preferences });
-		this.emitNotice(notice, 'vault_relocation');
-		return adoption === null ? { status: 'fresh' } : { status: 'adopted', preferences: adoption.preferences, mode: adoptedMode };
-	}
+	/** DU-02: the detection the start makes (`VaultRuntime`). */
+	private detectVaultRelocation(vaultId: string): Promise<VaultRelocation | null> { return this.vaultRuntime.detectVaultRelocation(vaultId); }
 
-	private vaultIdentityStores(): VaultIdentityStores {
-		return {
-			storage: this.host.localStorage, factory: this.host.kv.indexedDB,
-			mark: isVaultMark(this.settings.vaultMark) ? this.settings.vaultMark : '',
-		};
-	}
+	/** R1b: this device's mode, for the Settings selector (`VaultRuntime`). */
+	getCollectorMode(): CollectorMode { return this.vaultRuntime.getCollectorMode(); }
 
-	/**
-	 * DU-02: the vault's mark, created on first need and saved in the plugin's data (which travels with the folder). If a
-	 * device that syncs the same vault saved one in the meantime, that one is kept. With settings from a newer release
-	 * (DU-04) no mark is created: one that is not saved would name nothing on the next start.
-	 */
-	private async ensureVaultMark(): Promise<void> {
-		if (isVaultMark(this.settings.vaultMark)) return;
-		await this.serializeSettingsWrite(async () => {
-			const base = await this.loadSettingsBase();
-			if (base === null) return;
-			const vaultMark = isVaultMark(base.vaultMark) ? base.vaultMark : crypto.randomUUID();
-			if (base.vaultMark !== vaultMark) await this.host.settings.save({ ...base, vaultMark });
-			this.settings = { ...this.settings, vaultMark };
-		});
-	}
-
-	/**
-	 * DU-02: the detection, which never stops the start. A host whose identity is not a path has nothing to detect. When
-	 * the check itself fails and the device remembers ANOTHER id, the answer is an unverified relocation (consult and a
-	 * notice that it could not be checked): the seed must not turn a device into a collector on a guess. The registry
-	 * update the detection leaves is not awaited here: its failure is recorded and the answer to the question waits for it.
-	 */
-	private async detectVaultRelocation(vaultId: string): Promise<VaultRelocation | null> {
-		if (this.host.capabilities?.pathBoundIdentity === false) return null;
-		try {
-			// The start does not wait past the storage deadline either: an engine that answers nothing ends as a failed check.
-			// The registry update is taken over INSIDE the bounded call: a detection that finishes after the start gave up still
-			// has its failure observed.
-			const detection = await new StorageDeadline().bounded(async () => {
-				await this.ensureVaultMark();
-				const found = await detectVaultRelocation(this.vaultIdentityStores(), vaultId);
-				const write = found.registryWrite;
-				if (write !== null) {
-					this.vaultRegistryWrite = write;
-					fireAndForgetLocal(this.localDebugActions,
-						{ component: 'settings', action: 'settings_load', state: 'vault_relocation' }, async () => { await write; });
-				}
-				return found;
-			}, () => Promise.reject(new StorageUnansweredError()));
-			return detection.relocation;
-		} catch (error) {
-			this.localDebugActions?.event({
-				component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
-				code: 'storage_failure', state: 'vault_relocation', message: error,
-			});
-			const previous = rememberedPreviousId(this.host.localStorage, vaultId);
-			return previous !== null ? { previousVaultId: previous, unverified: true } : null;
-		}
-	}
-
-	/** R1b: this device's mode, for the Settings selector. */
-	getCollectorMode(): CollectorMode {
-		return this.collectorMode ?? collectorModeSeed(this.settings);
-	}
-
-	/**
-	 * R1b: the Settings selector's write. Stores the mode in this device's local `kv` only, so no
-	 * synced `data.json` carries it to another device, then applies it without a reload. Consult is
-	 * refused while a session is still open: its durable source and collector ownership stay together.
-	 */
-	async updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult> {
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<SettingsUpdateResult> => {
-			const vaultId = this.vaultId;
-			if (!this.runtimeReady || vaultId === null) {
-				this.notifyRuntimeStarting();
-				return { status: 'blocked', reason: 'runtime_starting' };
-			}
-			await this.lateCollectorApplying;
-			if (mode === this.collectorMode && !this.collectorModeReadPending && this.lateCollectorMode === null) return { status: 'saved', inventoryAdvisor: 'unchanged' };
-			if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
-				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
-				return { status: 'blocked', reason: 'session_in_progress' };
-			}
-			// Published only after the durable write, like `updateSettings`.
-			// The choice is marked when it STARTS: a real engine answers the late read before this queued write, and the read
-			// must find the choice made. A failed write takes the mark back.
-			const before = { chosen: this.collectorModeChosen, late: this.lateCollectorMode };
-			this.collectorModeChosen = true;
-			this.lateCollectorMode = null;
-			try { await saveCollectorMode(this.host.kv.indexedDB, vaultId, mode); }
-			catch (error) { this.collectorModeChosen = before.chosen; this.lateCollectorMode = before.late; throw error; }
-			this.collectorMode = mode;
-			await this.applyCollectorModeChange(context);
-			return { status: 'saved', inventoryAdvisor: 'unchanged' };
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'settings', action: 'settings_save', state: 'collector_mode' }, perform,
-		) ?? perform());
-	}
+	/** R1b: the Settings selector's write (`VaultRuntime`). */
+	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult> { return this.vaultRuntime.updateCollectorMode(mode); }
 
 	/**
 	 * Whether Settings offers the choice between the host's main screen and its sidebar: only when
@@ -1878,86 +1697,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.registerProductViews(wanted);
 	}
 
-	/** R1b: what `refusedInConsult` shows when an action only the collector may take is refused. */
-	notifyConsultMode(): void {
-		this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultMode'), 'consult_mode');
-	}
+	/** R1b: what `refusedInConsult` shows when an action only the collector may take is refused (`VaultRuntime`). */
+	notifyConsultMode(): void { this.vaultRuntime.notifyConsultMode(); }
 
-	/**
-	 * R1b: runs the collector's heartbeat (`collector-status.ts`) exactly while this installation
-	 * collects, and stops it in consult. Without a local instance id (IndexedDB unavailable) there
-	 * is no heartbeat at all rather than one under a throwaway id; the failure reaches the log.
-	 */
-	private syncCollectorHeartbeat(): void {
-		if (consulting(this) || this.unloaded) {
-			this.collectorHeartbeat?.stop();
-			this.collectorHeartbeat = null;
-			return;
-		}
-		const vaultId = this.vaultId;
-		if (this.collectorHeartbeat !== null || vaultId === null) return;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'vault', action: 'vault_write', state: 'collector_heartbeat' },
-			async () => {
-				const instanceId = await loadCollectorInstanceId(this.host.kv.indexedDB, vaultId);
-				// The mode may have flipped, or another call won, while the id was loading.
-				if (consulting(this) || this.unloaded || this.collectorHeartbeat !== null) return;
-				const heartbeat = new CollectorHeartbeat({
-					vault: labelledVault(this.host.vault, 'Collector status note'),
-					root: () => this.configuredNotesRoot(),
-					instanceId,
-					environment: this.host.environment,
-					locale: () => this.settings.language,
-					// Same rule as every note writer: nothing is written under a root with a legacy path pending.
-					writable: () => this.settings.legacyOutputFolder === null && this.settings.legacyManagedAssetsRoot === null,
-					setInterval: (callback, delayMs) => window.setInterval(callback, delayMs),
-					clearInterval: (handle) => { window.clearInterval(handle); },
-					run: (beat) => {
-						fireAndForgetLocal(this.localDebugActions,
-							{ component: 'vault', action: 'vault_write', state: 'collector_heartbeat' }, beat);
-					},
-					onConflict: (other) => {
-						this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.collectorConflict', {
-							platform: other.platform, version: other.hostVersion,
-						}), 'collector_conflict');
-					},
-				});
-				this.collectorHeartbeat = heartbeat;
-				heartbeat.start();
-			});
-	}
+	/** R1b: runs the collector's heartbeat exactly while this installation collects (`VaultRuntime`). */
+	private syncCollectorHeartbeat(): void { this.vaultRuntime.syncCollectorHeartbeat(); }
 
-	/**
-	 * R1b: applies a collector/consult switch made in Settings without a reload, through the same
-	 * paths the boot and the individual toggles use: the bridge port, detection, price history
-	 * (reopened in the new mode), Halloween, the heartbeat and the connection warm-up.
-	 */
-	private async applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> {
-		const collector = !consulting(this);
-		if (collector) this.syncAlertIngameServer();
-		else await this.closeAlertIngameServer();
-		if (collector) for (const entry of this.liveSessions?.getUnsettledPriceEntries() ?? []) this.liveEconomy?.observe(entry);
-		if (!collector) this.runRuntimeMutation(() => this.live.invalidateAndDisarmAssistedDetection('mode_off'));
-		if (this.priceHistory !== null && this.settings.priceHistoryEnabled) {
-			const settings = priceHistorySettingsFrom(this.settings);
-			await this.priceHistory.configure({ ...settings, enabled: false }, context);
-			await this.priceHistory.activate(settings, context);
-			this.priceHistory.setOnline(this.host.environment.isOnline());
-		}
-		if (this.halloween !== null) {
-			if (this.halloweenObservationActive()) {
-				await this.halloween.activate(context);
-				this.halloween.setOnline(this.host.environment.isOnline());
-			} else this.halloween.disable(context);
-		}
-		this.syncCollectorHeartbeat();
-		this.settingTab.refreshForSettingsChange();
-		// The Companion's start button reads the mode (disabled in consult).
-		this.renderViews();
-		this.renderInventoryAdvisorViews();
-		// The Achievements tab was «arrancando» until now: its services exist, so it reads the catalog.
-		this.renderAchievementsViews();
-	}
+	/** R1b: applies a collector/consult switch without a reload (`VaultRuntime`). */
+	private applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> { return this.vaultRuntime.applyCollectorModeChange(context); }
 
 	onunload(): void {
 		const finalization = this.shutdownRuntime();
@@ -1982,10 +1729,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.awaitLocalDebugShutdown();
 	}
 
-	/** Exposes the host-initiated async drain to tests and orderly embedding environments. */
-	async awaitLocalDebugShutdown(): Promise<void> {
-		await this.localDebugShutdown;
-	}
+	/** Exposes the host-initiated async drain to tests and orderly embedding environments (`LocalDebugRuntime`). */
+	awaitLocalDebugShutdown(): Promise<void> { return this.debugLog.awaitLocalDebugShutdown(); }
 
 	/** Disposes product runtimes, records the unload terminal, then drains that and the flush terminal. */
 	private async shutdownRuntime(): Promise<void> {
@@ -2201,141 +1946,35 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return { catalog: achievements.catalog, progress: achievements.progress, vaultId };
 	}
 
-	/** Returns only the bounded health projection intended for visible diagnostics UI. */
-	getLocalDebugStatus(): LocalDebugStatus {
-		return this.localDebug?.status() ?? {
-			enabled: this.settings.debugLoggingEnabled,
-			minimumLevel: this.settings.debugLoggingLevel,
-			state: this.settings.debugLoggingEnabled ? 'degraded' : 'disabled',
-			path: `${this.host.diagnostics.directory}/`,
-			bytes: 0,
-			bytesComplete: true,
-			fileCount: 0,
-			lastEventAt: null,
-			droppedRecords: 0,
-			errorCode: this.settings.debugLoggingEnabled ? 'logger_failure' : null,
-			queuedRecords: 0,
-			recoveredTails: 0,
-			errorsSinceLoad: 0,
-			lastError: null,
-		};
-	}
+	/** Only the bounded health projection intended for visible diagnostics UI (`LocalDebugRuntime`). */
+	getLocalDebugStatus(): LocalDebugStatus { return this.debugLog.getLocalDebugStatus(); }
 
-	/** Emits a lightweight view lifecycle event without coupling the view to the logger implementation. */
-	localDebugViewEvent(phase: 'open' | 'close'): void {
-		this.localDebugActions?.event({
-			component: 'ui', action: 'view_render', level: 'info', phase: 'success', code: 'ok',
-			state: phase, details: { surface: 'companion' },
-		});
-	}
+	/** A lightweight view lifecycle event (`LocalDebugRuntime`). */
+	localDebugViewEvent(phase: 'open' | 'close'): void { this.debugLog.localDebugViewEvent(phase); }
 
-	/**
-	 * «Logros» «Actualizar progreso» failed outside the reading itself (the public reads behind its ids, or the
-	 * list reload after a good reading). The view says it on screen; this keeps the fact in the diagnostics, with
-	 * the stage as `details.operation` (a field the sanitizer keeps for every component) and no message (the error may carry a path or a key).
-	 */
-	localDebugAchievementsRefreshFailure(stage: 'reading_ids' | 'reload'): void {
-		this.localDebugActions?.event({
-			component: 'ui', action: 'view_render', level: 'error', phase: 'failure', code: 'unavailable',
-			state: 'achievements_refresh', details: { surface: 'achievements', operation: stage },
-		});
-	}
+	/** «Logros» «Actualizar progreso» failed outside the reading itself (`LocalDebugRuntime`). */
+	localDebugAchievementsRefreshFailure(stage: 'reading_ids' | 'reload'): void { this.debugLog.localDebugAchievementsRefreshFailure(stage); }
 
-	/** Navigates from a degraded Companion warning to this plugin's diagnostics settings. */
-	openLocalDebugSettings(): void {
-		const open = (): void => { this.host.ui.openSettings(); };
-		if (this.localDebugActions) this.localDebugActions.runSync(
-			{ component: 'ui', action: 'command_execute', state: 'open_debug_settings' }, open,
-		);
-		else open();
-	}
+	/** Navigates from a degraded Companion warning to the diagnostics settings (`LocalDebugRuntime`). */
+	openLocalDebugSettings(): void { this.debugLog.openLocalDebugSettings(); }
 
-	/**
-	 * False when the host has no filesystem folder for the logs (`vault.fullPath` is null: Hebra keeps them in
-	 * IndexedDB), so Settings disables "open folder" and says why instead of failing with the generic error.
-	 */
-	localDebugFolderAvailable(): boolean {
-		return this.host.vault.fullPath(this.getLocalDebugStatus().path.replace(/\/$/u, '')) !== null;
-	}
+	/** False when the host has no filesystem folder for the logs (`LocalDebugRuntime`). */
+	localDebugFolderAvailable(): boolean { return this.debugLog.localDebugFolderAvailable(); }
 
-	/** Opens the resolved desktop directory through the host shell without exposing it to diagnostic records. */
-	async openLocalDebugFolder(): Promise<boolean> {
-		const run = async (): Promise<boolean> => {
-			const fullPath = this.host.vault.fullPath(this.getLocalDebugStatus().path.replace(/\/$/u, ''));
-			if (!fullPath) return false;
-			return await this.host.shell.openPath(fullPath);
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'support', action: 'command_execute', state: 'open_debug_folder' }, run,
-		) ?? run());
-	}
+	/** Opens the resolved desktop directory through the host shell (`LocalDebugRuntime`). */
+	openLocalDebugFolder(): Promise<boolean> { return this.debugLog.openLocalDebugFolder(); }
 
-	/** Copies at most the requested number of newest records after removing process-local identifiers. */
-	async copyLocalDebugEntries(limit = 50): Promise<number> {
-		const run = async (): Promise<number> => {
-			const jsonl = safeLocalDebugJsonl(await this.localDebug?.exportSanitized() ?? '', limit);
-			if (jsonl.length === 0) return 0;
-			await this.host.clipboard.writeText(jsonl);
-			return jsonl.trimEnd().split('\n').length;
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'support', action: 'debug_export', details: { recordCount: limit } }, run,
-		) ?? run());
-	}
+	/** Copies at most the requested number of newest records (`LocalDebugRuntime`). */
+	copyLocalDebugEntries(limit = 50): Promise<number> { return this.debugLog.copyLocalDebugEntries(limit); }
 
-	/** Declares the exact closed export contents before any local file is created. */
-	previewLocalDebugExport(): LocalDebugExportPreview {
-		return {
-			included: ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'],
-			excluded: ['secret_name', 'character', 'paths', 'payloads'],
-		};
-	}
+	/** Declares the exact closed export contents (`LocalDebugRuntime`). */
+	previewLocalDebugExport(): LocalDebugExportPreview { return this.debugLog.previewLocalDebugExport(); }
 
-	/** Creates one support package locally with an explicit non-secret settings allowlist. */
-	async exportLocalDebugPackage(): Promise<string | null> {
-		const run = async (): Promise<string | null> => {
-			const logsJsonl = safeLocalDebugSupportJsonl(await this.localDebug?.exportSanitized() ?? '');
-			if (logsJsonl.length === 0) return null;
-			const baseName = `diagnostic-export-${new Date().toISOString().replace(/[:.]/gu, '-')}`;
-			const directory = `${this.settings.outputFolder}/diagnostics`;
-			const supportPackage = {
-				schemaVersion: 1,
-				pluginVersion: this.host.environment.pluginVersion,
-				platform: this.host.environment.platform,
-				settings: {
-					schemaVersion: this.settings.schemaVersion,
-					language: this.settings.language,
-					pollingIntervalMinutes: this.settings.pollingIntervalMinutes,
-					debugLoggingEnabled: this.settings.debugLoggingEnabled,
-					debugLoggingLevel: this.settings.debugLoggingLevel,
-				},
-				logsJsonl,
-			};
-			if (this.host.capabilities?.supportPackageAsNote === true) {
-				return await saveSupportPackageNote(this.host, `${directory}/${SUPPORT_PACKAGE_NOTE_NAME}.md`, supportPackage);
-			}
-			const adapter = this.host.vault.adapter;
-			await ensureAdapterDirectory(adapter, directory);
-			let suffix = 0;
-			let path = `${directory}/${baseName}.json`;
-			while (await adapter.exists(path)) {
-				suffix += 1;
-				path = `${directory}/${baseName}-${String(suffix)}.json`;
-			}
-			await adapter.write(path, `${JSON.stringify(supportPackage, null, '\t')}\n`);
-			return path;
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'support', action: 'debug_export' }, run,
-		) ?? run());
-	}
+	/** Creates one support package locally (`LocalDebugRuntime`). */
+	exportLocalDebugPackage(): Promise<string | null> { return this.debugLog.exportLocalDebugPackage(); }
 
-	/** Clears retained JSONL logs only; the logger remains configured for future actions. */
-	async clearLocalDebugLogs(): Promise<boolean> {
-		// Clear is deliberately the one diagnostic control that is not wrapped in an
-		// action: a terminal emitted after `clear()` would immediately recreate a log.
-		return await this.localDebug?.clear() ?? false;
-	}
+	/** Clears retained JSONL logs only (`LocalDebugRuntime`). */
+	clearLocalDebugLogs(): Promise<boolean> { return this.debugLog.clearLocalDebugLogs(); }
 
 	getInventoryAdvisorLocale() {
 		return this.settings.language;
@@ -3122,6 +2761,77 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `VaultRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the core's
+	 * own fields, read as they stand; the mode, the relocation, the late-mode flags and the heartbeat
+	 * are setters too, because the boot and the unload write the same fields.
+	 */
+	private static vaultRuntimePort(core: TyrianCompanionCore): VaultRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			set settings(value) { core.settings = value; },
+			get runtimeReady() { return core.runtimeReady; },
+			get unloaded() { return core.unloaded; },
+			get vaultId() { return core.vaultId; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get collectorMode() { return core.collectorMode; },
+			set collectorMode(value) { core.collectorMode = value; },
+			get lateCollectorMode() { return core.lateCollectorMode; },
+			set lateCollectorMode(value) { core.lateCollectorMode = value; },
+			get collectorModeChosen() { return core.collectorModeChosen; },
+			set collectorModeChosen(value) { core.collectorModeChosen = value; },
+			get collectorModeReadPending() { return core.collectorModeReadPending; },
+			get vaultRelocation() { return core.vaultRelocation; },
+			set vaultRelocation(value) { core.vaultRelocation = value; },
+			get vaultRelocationResolving() { return core.vaultRelocationResolving; },
+			set vaultRelocationResolving(value) { core.vaultRelocationResolving = value; },
+			get vaultRegistryWrite() { return core.vaultRegistryWrite; },
+			set vaultRegistryWrite(value) { core.vaultRegistryWrite = value; },
+			get lateCollectorApplying() { return core.lateCollectorApplying; },
+			set lateCollectorApplying(value) { core.lateCollectorApplying = value; },
+			get collectorHeartbeat() { return core.collectorHeartbeat; },
+			set collectorHeartbeat(value) { core.collectorHeartbeat = value; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get liveEconomy() { return core.liveEconomy; },
+			get priceHistory() { return core.priceHistory; },
+			get halloween() { return core.halloween; },
+			get settingTab() { return core.settingTab; },
+			get inventoryPreferences() { return core.inventoryPreferences; },
+			get inventoryPreferencesBackup() { return core.inventoryPreferencesBackup; },
+			priceHistorySettings: () => priceHistorySettingsFrom(core.settings),
+			halloweenObservationActive: () => core.halloweenObservationActive(),
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			serializeSettingsWrite: (section) => core.serializeSettingsWrite(section),
+			loadSettingsBase: () => core.loadSettingsBase(),
+			configuredNotesRoot: () => core.configuredNotesRoot(),
+			syncAlertIngameServer: () => { core.syncAlertIngameServer(); },
+			closeAlertIngameServer: () => core.closeAlertIngameServer(),
+			disarmAssistedDetection: () => { core.runRuntimeMutation(() => core.live.invalidateAndDisarmAssistedDetection('mode_off')); },
+			renderViews: () => { core.renderViews(); },
+			renderInventoryAdvisorViews: () => { core.renderInventoryAdvisorViews(); },
+			renderAchievementsViews: () => { core.renderAchievementsViews(); },
+			applyCollectorModeChange: (context) => core.applyCollectorModeChange(context),
+		};
+	}
+
+	/**
+	 * What `LocalDebugRuntime` reads from this core (DE-01, step 3g). Getters over the core's own
+	 * fields: the logger and the runner are set in `onload`, the shutdown drain in `onunload`.
+	 */
+	private static localDebugRuntimePort(core: TyrianCompanionCore): LocalDebugRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get host() { return core.host; },
+			get localDebug() { return core.localDebug; },
+			get localDebugActions() { return core.localDebugActions; },
+			get localDebugShutdown() { return core.localDebugShutdown; },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+		};
+	}
+
+	/**
 	 * What `FarmingSessionRuntime` reads from this core and asks of it (DE-01, step 3f). Getters over
 	 * the core's own fields, so a service `initializeRuntime` builds later or a setting changed is
 	 * read as it stands; the group context and the reminders are setters too.
@@ -3530,20 +3240,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.session.openSessionHistoryNote(path);
 	}
 
-	/**
-	 * The incident callout's "Copiar detalle técnico" (H18.36, boceto lámina 2.3): the code
-	 * deliberately never renders as visible text, only to the clipboard, so a refused write has no
-	 * other way to reach the player — it must say so instead of leaving a copy that never happened.
-	 * `companion-view.ts` never touches `Notice` itself (`halloween-alert-panel.ts`'s own rule); this
-	 * mirrors `copyAlertIngameSecretFromCommand`'s try/notify shape.
-	 */
-	async copyLastErrorDetail(detail: string): Promise<void> {
-		try {
-			await this.host.clipboard.writeText(detail);
-		} catch {
-			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'sessionCard.copyTechnicalDetailFailed'), 'session_error_copy');
-		}
-	}
+	/** The incident callout's "Copiar detalle técnico" (`LocalDebugRuntime`). */
+	copyLastErrorDetail(detail: string): Promise<void> { return this.debugLog.copyLastErrorDetail(detail); }
 
 	retrySessionSummarySave(): Promise<void> { return this.notes.retrySessionSummarySave(); }
 
@@ -5405,89 +5103,6 @@ function formatCopperCompact(copper: number, locale: Locale): string {
 		: `${String(gold)} gold · ${String(silver)} silver · ${String(remainder)} copper`;
 }
 
-/** Retains valid sanitized records, including the internal IDs required to reconstruct one action. */
-function safeLocalDebugJsonl(value: string, newestLimit?: number): string {
-	const records: string[] = [];
-	for (const line of value.split('\n')) {
-		if (line.length === 0) continue;
-		try {
-			const parsed: unknown = JSON.parse(line);
-			if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
-			records.push(JSON.stringify(parsed));
-		} catch { /* the core export boundary already reports corrupt retained lines */ }
-	}
-	const selected = newestLimit === undefined ? records : records.slice(-Math.max(0, newestLimit));
-	return selected.length === 0 ? '' : `${selected.join('\n')}\n`;
-}
-
-/** Projects support logs to structural diagnostics without free text, stacks or personal data. */
-function safeLocalDebugSupportJsonl(value: string): string {
-	const records: string[] = [];
-	for (const line of value.split('\n')) {
-		if (line.length === 0) continue;
-		try {
-			const record = resanitizeLocalDebugRecord(JSON.parse(line));
-			if (record === null) continue;
-			const supportRecord = {
-				schemaVersion: record.schemaVersion,
-				timestampUtc: record.timestampUtc,
-				sequence: record.sequence,
-				pluginVersion: record.pluginVersion,
-				level: record.level,
-				component: record.component,
-				action: record.action,
-				phase: record.phase,
-				code: record.code,
-				actionId: record.actionId,
-				correlationId: record.correlationId,
-				...(record.durationMs === undefined ? {} : { durationMs: record.durationMs }),
-				...(record.attempt === undefined ? {} : { attempt: record.attempt }),
-			};
-			records.push(JSON.stringify(supportRecord));
-		} catch { /* the core export boundary already reports corrupt retained lines */ }
-	}
-	return records.length === 0 ? '' : `${records.join('\n')}\n`;
-}
-
-/**
- * Hebra has no folder to open, so the support package is a note of the library: created the
- * first time and rewritten after that (found by the host in the library, not by path), and opened for
- * the user. It deliberately carries no
- * frontmatter and no Tyrian marker, so neither the session history, the Bases nor the seeding of
- * the path index take it for one of theirs. The package is the allowlisted one built by the caller.
- */
-async function saveSupportPackageNote(host: TyrianHost, path: string, supportPackage: object): Promise<string> {
-	const body = [
-		`# ${SUPPORT_PACKAGE_NOTE_NAME}`,
-		'',
-		'Generated by Tyrian Companion. It holds sanitized diagnostic records and a few non-secret settings; review it before sharing it. Exporting again replaces this note.',
-		'',
-		'```json',
-		JSON.stringify(supportPackage, null, '\t'),
-		'```',
-		'',
-	].join('\n');
-	if (host.vault.saveNote === undefined) throw new Error('support package: the host declares supportPackageAsNote without vault.saveNote');
-	await host.vault.saveNote(path, body);
-	host.ui.openNote(path);
-	return path;
-}
-
-/** Title and file name of the support package when the host keeps it as a note (Hebra). */
-const SUPPORT_PACKAGE_NOTE_NAME = 'Tyrian - Paquete de soporte';
-
-/** Creates each missing portable segment so package writes remain create-only outside log rotation. */
-async function ensureAdapterDirectory(
-	adapter: { exists(path: string): Promise<boolean>; mkdir(path: string): Promise<void> },
-	directory: string,
-): Promise<void> {
-	let current = '';
-	for (const segment of directory.split('/')) {
-		current = current.length === 0 ? segment : `${current}/${segment}`;
-		if (!await adapter.exists(current)) await adapter.mkdir(current);
-	}
-}
-
 /**
  * David, 10 Oct 2026 (Assets row: «la carpeta de salida no existe en la biblioteca […] si no existe, se crea»):
  * before a write the Settings row asked for with `createOutputFolder: true` (the presses of Apply, Repair and
@@ -5543,12 +5158,4 @@ function hostSupportsMainView(host: TyrianHost | undefined): boolean {
 /** Whether the host paints a remote image inside a line of a note: true unless it declared `capabilities.remoteImages: false`. */
 function hostPaintsRemoteImages(host: TyrianHost | undefined): boolean {
 	return host?.capabilities?.remoteImages !== false;
-}
-
-/**
- * R1b: a session between its start and its final note (an `error` still wraps one of those
- * states). Idle, complete and abandoned sessions need nothing more from the API.
- */
-function sessionInProgress(state: SessionState): boolean {
-	return state.status !== 'idle' && state.status !== 'complete' && state.status !== 'abandoned';
 }

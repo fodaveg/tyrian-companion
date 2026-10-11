@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_SETTINGS } from '../core/settings';
-import { TyrianCompanionCore } from './tyrian-companion-core';
+import { LocalDebugRuntime, type LocalDebugRuntimePort } from './local-debug-runtime';
 
 const NOTE_PATH = 'Tyrian Companion/diagnostics/Tyrian - Paquete de soporte.md';
 const RECORD = JSON.stringify({
@@ -36,10 +36,10 @@ function hebraHarness(asNote: boolean) {
 		localDebug: { exportSanitized: async () => `${RECORD}\n` },
 		localDebugActions: null,
 	};
-	const exportPackage = (TyrianCompanionCore.prototype as unknown as {
-		exportLocalDebugPackage: (this: typeof harness) => Promise<string | null>;
-	}).exportLocalDebugPackage;
-	return { harness, notes, adapterWrite, openNote, run: () => exportPackage.call(harness) };
+	// The export lives in `LocalDebugRuntime` since DE-01 step 3g; the harness is the port it reads.
+	const exportPackage = (): Promise<string | null> =>
+		new LocalDebugRuntime(harness as unknown as LocalDebugRuntimePort).exportLocalDebugPackage();
+	return { harness, notes, adapterWrite, openNote, run: exportPackage };
 }
 
 describe('support package as a Hebra note', () => {

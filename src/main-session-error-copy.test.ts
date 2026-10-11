@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { LocalDebugRuntime, type LocalDebugRuntimePort } from './runtime/local-debug-runtime';
 
 /**
  * Sesión's incident callout "Copiar detalle técnico" (H18.36, boceto lámina 2.3): the code never
@@ -20,10 +20,11 @@ describe('"Copiar detalle técnico" (companion-view.ts incident callout)', () =>
 		settings: { language: 'en' | 'es' };
 		emitNotice(message: string, source: string): void;
 	}
-	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with an explicit isolated harness below.
-	const copyLastErrorDetail = (TyrianCompanionCore.prototype as unknown as {
-		copyLastErrorDetail(this: CopyLastErrorDetailHarness, detail: string): Promise<void>;
-	}).copyLastErrorDetail;
+	// The copy lives in `LocalDebugRuntime` since DE-01 step 3g; the harness is the port it reads.
+	const copyLastErrorDetail = {
+		call: (port: CopyLastErrorDetailHarness, detail: string): Promise<void> =>
+			new LocalDebugRuntime(port as unknown as LocalDebugRuntimePort).copyLastErrorDetail(detail),
+	};
 
 	it('writes the detail to the clipboard and never notifies on success', async () => {
 		const writeText = vi.fn(async (_text: string) => undefined);

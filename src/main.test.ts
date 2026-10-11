@@ -15,6 +15,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
+import { LocalDebugRuntime, type LocalDebugRuntimePort } from './runtime/local-debug-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
@@ -2511,12 +2512,10 @@ describe('local diagnostics composition', () => {
 		await logger.flush();
 		await expect(logger.exportSanitized()).resolves.not.toBe('');
 		const harness = { localDebug: logger, localDebugActions: actions };
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const clear = (TyrianCompanionCore.prototype as unknown as {
-			clearLocalDebugLogs(this: typeof harness): Promise<boolean>;
-		}).clearLocalDebugLogs;
+		// The diagnostics controls live in `LocalDebugRuntime` since DE-01 step 3g; the harness is the port it reads.
+		const clear = (): Promise<boolean> => localDebugRuntimeOver(harness).clearLocalDebugLogs();
 
-		await expect(clear.call(harness)).resolves.toBe(true);
+		await expect(clear()).resolves.toBe(true);
 		await logger.flush();
 		await expect(logger.exportSanitized()).resolves.toBe('');
 	});
@@ -2549,16 +2548,11 @@ describe('local diagnostics composition', () => {
 				write: async (path: string, value: string) => { writes.set(path, value); },
 			} } },
 		});
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			copyLocalDebugEntries(this: typeof harness, limit?: number): Promise<number>;
-			exportLocalDebugPackage(this: typeof harness): Promise<string | null>;
-			previewLocalDebugExport(this: typeof harness): { included: readonly string[]; excluded: readonly string[] };
-			clearLocalDebugLogs(this: typeof harness): Promise<boolean>;
-		};
+		const proto = localDebugRuntimeOver(harness);
 
-		await expect(proto.copyLocalDebugEntries.call(harness, 50)).resolves.toBe(1);
+		await expect(proto.copyLocalDebugEntries(50)).resolves.toBe(1);
 		expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"actionId":"action-1"'));
-		const path = await proto.exportLocalDebugPackage.call(harness);
+		const path = await proto.exportLocalDebugPackage();
 		expect(path).toMatch(/^Tyrian Companion\/diagnostics\/diagnostic-export-/u);
 		const exported = writes.get(path!);
 		expect(exported).toContain('\\"correlationId\\":\\"flow-1\\"');
@@ -2570,11 +2564,11 @@ describe('local diagnostics composition', () => {
 		expect(exported).not.toContain('stack');
 		expect(exported).not.toContain('message');
 		expect(exported).not.toContain('details');
-		expect(proto.previewLocalDebugExport.call(harness)).toEqual({
+		expect(proto.previewLocalDebugExport()).toEqual({
 			included: ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'],
 			excluded: ['secret_name', 'character', 'paths', 'payloads'],
 		});
-		await expect(proto.clearLocalDebugLogs.call(harness)).resolves.toBe(true);
+		await expect(proto.clearLocalDebugLogs()).resolves.toBe(true);
 		vi.unstubAllGlobals();
 	});
 
@@ -2583,28 +2577,20 @@ describe('local diagnostics composition', () => {
 		const status = { path: 'test-config-dir/plugins/tyrian-companion/logs/' };
 		const harness = withObsidianHost({
 			localDebugActions: null,
-			getLocalDebugStatus: () => status,
+			localDebug: { status: () => status },
 			app: { vault: { adapter: { getFullPath: (path: string) => `/vault/${path}` } } },
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const open = (TyrianCompanionCore.prototype as unknown as {
-			openLocalDebugFolder(this: typeof harness): Promise<boolean>;
-		}).openLocalDebugFolder;
-		await expect(open.call(harness)).resolves.toBe(true);
+		await expect(localDebugRuntimeOver(harness).openLocalDebugFolder()).resolves.toBe(true);
 		expect(electronMocks.openPath).toHaveBeenLastCalledWith('/vault/test-config-dir/plugins/tyrian-companion/logs');
 	});
 
 	it('reports the diagnostics folder as available only where the host resolves a full path', () => {
 		const available = (getFullPath: (path: string) => string | null) => {
 			const harness = withObsidianHost({
-				getLocalDebugStatus: () => ({ path: 'test-config-dir/plugins/tyrian-companion/logs/' }),
+				localDebug: { status: () => ({ path: 'test-config-dir/plugins/tyrian-companion/logs/' }) },
 				app: { vault: { adapter: { getFullPath } } },
 			});
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-			const check = (TyrianCompanionCore.prototype as unknown as {
-				localDebugFolderAvailable(this: typeof harness): boolean;
-			}).localDebugFolderAvailable;
-			return check.call(harness);
+			return localDebugRuntimeOver(harness).localDebugFolderAvailable();
 		};
 		expect(available((path) => `/vault/${path}`)).toBe(true);
 		expect(available(() => null)).toBe(false);
@@ -2626,13 +2612,18 @@ describe('local diagnostics composition', () => {
 			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
 		}) as unknown as TyrianCompanionCore;
 		harness.onunload();
-		await harness.awaitLocalDebugShutdown();
+		await localDebugRuntimeOver(harness).awaitLocalDebugShutdown();
 		expect(events).toEqual([
 			'start:plugin_unload', 'sessions:dispose', 'terminal:plugin_unload',
 			'start:debug_flush', 'flush', 'terminal:debug_flush', 'flush',
 		]);
 	});
 });
+
+/** A `LocalDebugRuntime` over a harness that carries the core's fields it reads (the port). */
+function localDebugRuntimeOver(harness: object): LocalDebugRuntime {
+	return new LocalDebugRuntime(harness as unknown as LocalDebugRuntimePort);
+}
 
 function memoryDebugStorage(): LocalDebugStoragePort {
 	const files = new Map<string, string>();
