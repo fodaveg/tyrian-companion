@@ -33,4 +33,9 @@ describe('formatRelativeDay', () => {
 		expect(result).not.toContain('hoy');
 		expect(result).not.toContain('ayer');
 	});
+
+	it('Z7-7: keeps the time of a future instant, tomorrow after midnight included', () => {
+		expect(formatRelativeDay('2026-09-01T00:30:00', 'es', now, LABELS)).toMatch(/\d{2}:\d{2}$/u);
+		expect(formatRelativeDay('2026-09-05T12:00:00', 'en', now, LABELS)).toMatch(/\d{2}:\d{2}/u);
+	});
 });
