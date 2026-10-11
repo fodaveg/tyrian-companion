@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.6.39: latido que no se rearma tras cerrar y núcleo y servicio de inicio partidos (11 oct 2026)
+## Canal 0.6.39 publicado: latido que no se rearma tras cerrar y núcleo y servicio de inicio partidos (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.39` sobre el canal 0.6.38 publicado
-(`9a667d06`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.39` = `0edf0754` (atestación; candidato `1435ce0a`,
+árbol `caf5af73`). Gate local verde (check 9/9 con 7165 tests, guardrails 25/25, BRAT PASS); CI 38100300290 y Release
+38101016324 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.39` sobre el canal
+0.6.38 publicado (`9a667d06`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
 - Sin verificar, y es lo primero que hay que saber: nada de la 0.6.39 se ha visto en un Obsidian ni en un Hebra reales.
@@ -20,7 +22,7 @@
   - Revisiones independientes: código movido idéntico por AST en los dos lotes; mutaciones del puerto en rojo.
 - Límite conocido: un lease concedido después del cierre no se libera y caduca por su TTL, como en la base.
 - Pendiente: DE-01 (lifecycleCore restante, nota y resumen, vista en vivo, farming, piloto, historial); DE-07 (arranque,
-  parada, recuperación y reclamación del servicio). El gate, la publicación y verla en hosts reales.
+  parada, recuperación y reclamación del servicio). Verla en hosts reales.
 
 ## Canal 0.6.38 publicado: diario de sesión en una lectura y ciclo de la sesión en vivo fuera del núcleo (11 oct 2026)
 
