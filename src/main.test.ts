@@ -14,6 +14,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
+import { AlertRuntime, type AlertRuntimePort } from './runtime/alert-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
@@ -2295,7 +2296,7 @@ describe('alert dispatch diagnostics', () => {
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'alert-dispatch' }),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const dispatch = (TyrianCompanionCore.prototype as unknown as {
+		const dispatch = (AlertRuntime.prototype as unknown as {
 			dispatchAlert(this: typeof harness, alert: AlertV1): void;
 		}).dispatchAlert;
 		const alert: AlertV1 = {
@@ -2313,16 +2314,20 @@ describe('alert dispatch diagnostics', () => {
 	});
 });
 
+/** A real `AlertRuntime` over the fields a test sets; the rest of its port is read only when a channel runs. */
+function alertsOver(fields: object) {
+	return new AlertRuntime(withObsidianHost({ ...fields }) as unknown as AlertRuntimePort) as unknown as
+		Pick<AlertRuntime, 'getAlertIngameServerErrorCode'> & { ensureAlertIngameServer(): Promise<unknown> };
+}
+
 describe('in-game alert server start diagnostics', () => {
 	it('a disabled bridge does not bind or manufacture a port failure', async () => {
 		alertIngameServerMocks.start.mockClear();
 		const record=vi.fn((_input:LocalDebugRecordInput) => true);
-		const harness=withObsidianHost({settings:{alertIngamePort:47823,alertIngameEnabled:false},alertIngameCloseFlight:null,
-			alertIngameServerErrorCode:null,localDebugActions:new LocalDebugActionRunner({diagnostics:{record} as unknown as LocalDebugLogger,createId:() => 'disabled-bridge'})});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit disabled host harness.
-		const ensure=(TyrianCompanionCore.prototype as unknown as {ensureAlertIngameServer(this:typeof harness):Promise<unknown>}).ensureAlertIngameServer;
-		await expect(ensure.call(harness)).resolves.toBeNull();
-		expect(alertIngameServerMocks.start).not.toHaveBeenCalled(); expect(harness.alertIngameServerErrorCode).toBeNull(); expect(record).not.toHaveBeenCalled();
+		const alerts=alertsOver({settings:{alertIngamePort:47823,alertIngameEnabled:false},
+			localDebugActions:new LocalDebugActionRunner({diagnostics:{record} as unknown as LocalDebugLogger,createId:() => 'disabled-bridge'})});
+		await expect(alerts.ensureAlertIngameServer()).resolves.toBeNull();
+		expect(alertIngameServerMocks.start).not.toHaveBeenCalled(); expect(alerts.getAlertIngameServerErrorCode()).toBeNull(); expect(record).not.toHaveBeenCalled();
 	});
 	// H15.17 (2026-09-10 incident): `.catch(() => null)` discarded the rejection entirely, so a
 	// port already in use (or denied by the OS) looked identical to the addon simply not being
@@ -2333,27 +2338,18 @@ describe('in-game alert server start diagnostics', () => {
 		);
 		const record = vi.fn((_input: LocalDebugRecordInput) => true);
 		const diagnostics = { record } as unknown as LocalDebugLogger;
-		const harness = withObsidianHost({
+		const settingTab = { refreshAlertIngameServerRow: vi.fn() };
+		const alerts = alertsOver({
 			settings: { alertIngamePort: 47_823, alertIngameEnabled: true, language: 'en' },
 			emitNotice: vi.fn(),
-			alertIngameServer: null,
-			alertIngameServerPort: null,
-			alertIngameServerFlight: null,
-			alertIngameServerErrorCode: null as string | null,
-			// The bind fixture needs the actual source port factory; no source callback runs on rejection.
-			liveIngamePort: () => (TyrianCompanionCore.prototype as unknown as {liveIngamePort():unknown}).liveIngamePort.call(harness),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'ingame-server-start' }),
-			settingTab: { refreshAlertIngameServerRow: vi.fn() },
+			settingTab,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
-		}).ensureAlertIngameServer;
 
-		await expect(ensure.call(harness)).resolves.toBeNull();
+		await expect(alerts.ensureAlertIngameServer()).resolves.toBeNull();
 
-		expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
-		expect(harness.settingTab.refreshAlertIngameServerRow).toHaveBeenCalled();
+		expect(alerts.getAlertIngameServerErrorCode()).toBe('EADDRINUSE');
+		expect(settingTab.refreshAlertIngameServerRow).toHaveBeenCalled();
 		const failure = record.mock.calls.map(([input]) => input).find(
 			(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
 		);
@@ -2363,18 +2359,13 @@ describe('in-game alert server start diagnostics', () => {
 	// HP-05: two collectors on one machine (Obsidian and Hebra) fight for 47823; the loser says so.
 	const busyPortHarness = (language: 'es' | 'en' = 'en') => {
 		const emitNotice = vi.fn();
-		const harness = withObsidianHost({
+		const harness = alertsOver({
 			settings: { alertIngamePort: 47_823, alertIngameEnabled: true, language },
-			alertIngameServer: null, alertIngameServerPort: null, alertIngameServerFlight: null,
-			alertIngameServerErrorCode: null as string | null, alertIngamePortBusyNoticed: false,
-			liveIngamePort: () => ({}),
 			emitNotice,
 			localDebugActions: null,
 			settingTab: { refreshAlertIngameServerRow: vi.fn() },
 		});
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
-		}).ensureAlertIngameServer.bind(harness);
+		const ensure = () => harness.ensureAlertIngameServer();
 		return { harness, emitNotice, ensure };
 	};
 
@@ -2384,7 +2375,7 @@ describe('in-game alert server start diagnostics', () => {
 			const { harness, emitNotice, ensure } = busyPortHarness('en');
 			await expect(ensure()).resolves.toBeNull();
 			await expect(ensure()).resolves.toBeNull();
-			expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
+			expect(harness.getAlertIngameServerErrorCode()).toBe('EADDRINUSE');
 			expect(emitNotice).toHaveBeenCalledTimes(1);
 			expect(emitNotice).toHaveBeenCalledWith(expect.stringContaining('Port 47823'), 'ingame_port_busy');
 			expect(emitNotice.mock.calls[0]?.[0]).toContain('Tyrian Companion in another program');
@@ -2403,14 +2394,14 @@ describe('in-game alert server start diagnostics', () => {
 		const { harness, emitNotice, ensure } = busyPortHarness();
 		await expect(ensure()).resolves.not.toBeNull();
 		expect(emitNotice).not.toHaveBeenCalled();
-		expect(harness.alertIngameServerErrorCode).toBeNull();
+		expect(harness.getAlertIngameServerErrorCode()).toBeNull();
 	});
 
 	it('any other listen error keeps its code and shows no notice', async () => {
 		alertIngameServerMocks.start.mockRejectedValueOnce(Object.assign(new Error('listen EACCES'), { code: 'EACCES' }));
 		const { harness, emitNotice, ensure } = busyPortHarness();
 		await expect(ensure()).resolves.toBeNull();
-		expect(harness.alertIngameServerErrorCode).toBe('EACCES');
+		expect(harness.getAlertIngameServerErrorCode()).toBe('EACCES');
 		expect(emitNotice).not.toHaveBeenCalled();
 	});
 });
@@ -2623,7 +2614,7 @@ describe('local diagnostics composition', () => {
 				return result;
 			} },
 			sessions: { dispose: vi.fn(async () => { events.push('sessions:dispose'); }) },
-			ingameReceipts: { dispose: vi.fn() },
+			alerts: new AlertRuntime({} as AlertRuntimePort),
 			// No assisted proposal is live: the live session runtime closes none (DE-01, step 3d).
 			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
 		}) as unknown as TyrianCompanionCore;

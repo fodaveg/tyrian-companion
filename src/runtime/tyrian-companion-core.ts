@@ -22,13 +22,11 @@ import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparati
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
-import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
+import { LiveSourceConnections } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
 import { newLiveSessionFormat } from '../sessions/live-session-format';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-model';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
 import { LiveSessionEconomy } from '../sessions/live-session-economy';
-import type { LiveIngamePort } from '../alerts/live-loot-protocol';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
@@ -48,35 +46,21 @@ import type {
 import { labelledVault, sessionHistoryVault } from './vault-ports';
 import { createTyrianCoreRuntime, flushTyrianLocalDebug } from './tyrian-runtime';
 import { GuildWars2AccountGateway } from '../account/account-service';
-import {
-	ALERT_LATENCY_MINUTES,
-	type AlertKind,
-	type AlertV1,
-} from '../alerts/alert-contract';
-import { ALERT_CHANNEL_PENDING, AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
-import { systemNotificationChannelResult } from '../alerts/alert-system-notification';
+import type { AlertV1 } from '../alerts/alert-contract';
+import { AlertEmitter, type AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { EmittedAlertQueue } from '../alerts/emitted-alert-queue';
-import { readAlertDelivery, type AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
-import { IngameAlertReceiptTracker, type IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
-import type { IngameAlertBroadcast } from '../alerts/alert-ingame-server';
-import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from '../alerts/alert-webhook';
-import { alertIngamePayload } from '../alerts/alert-ingame';
-import { startAlertIngameServer, type AlertIngameServerHandle } from '../alerts/alert-ingame-server';
+import type { AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
+import { ALERT_WEBHOOK_TIMEOUT_MS } from '../alerts/alert-webhook';
+import { AlertRuntime, ALERT_INGAME_SECRET_COMMAND_ID, type AlertRuntimePort } from './alert-runtime';
 import {
-	IngamePresenceTracker,
-	type IngameConnectionEvent,
 	type IngamePresenceEvent,
 	type IngamePresenceSnapshot,
 } from '../alerts/alert-ingame-presence';
 import {
-	createIngameBridgeNonce,
 	createIngameBridgeSecret,
-	ingameBridgeSecretMatches,
-	type IngameBridgeClient,
 	isUsableIngameBridgeSecret,
 } from '../alerts/alert-ingame-protocol';
-import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from '../alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from '../account/connection-service';
 import {
 	GuildWars2Client,
@@ -100,7 +84,7 @@ import { HostRequestTransport, HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HostApiKeyProvider } from '../core/secret-provider';
 import { SerialTaskQueue } from '../core/serial-task-queue';
-import { createTranslator, type Locale, type Translator } from '../core/i18n';
+import { createTranslator, type Translator } from '../core/i18n';
 import {
 	type LocalDebugAction,
 	type LocalDebugComponent,
@@ -120,7 +104,7 @@ import {
 	LocalDebugPersistenceProbe,
 } from '../core/local-debug-persistence';
 import { requestPersistentStorage } from '../core/persistent-storage';
-import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
+import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { PriceHistoryRuntime as PriceHistoryService, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
 import { IndexedDbHalloweenStore } from '../halloween/halloween-store';
@@ -130,7 +114,6 @@ import type {
 	HalloweenPriceAlertRuntimeState,
 } from '../halloween/halloween-price-alert-runtime';
 import { assembleHalloween } from './assemble-halloween';
-import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from '../halloween/halloween-price-alert';
 import type {
 	PriceHistorySettings,
 	PriceHistorySide,
@@ -403,7 +386,7 @@ export {
 } from './core-sale-rules';
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
-export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
+export { ALERT_INGAME_SECRET_COMMAND_ID };
 /** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
 export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
@@ -629,46 +612,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private alertEmitter: AlertEmitter | null = null;
 	/** Scope of the durable alert queue. Resolved from the session baseline when Halloween has not set it. */
 	private alertAccountRef: string | null = null;
-	private alertScopeFlight: Promise<string | null> | null = null;
 	private alertQueue: EmittedAlertQueue | null = null;
-	private emittedAlerts: readonly EmittedAlertRecordV1[] = [];
-	/** H18.38: delivery record per `alertId`, already read as it stands now (a stale `pending` reads `restart`). */
-	private alertDeliveries: ReadonlyMap<string, AlertDeliveryRecordV1> = new Map();
 	/**
-	 * H18.38: the ack state of each alert sent through the in-game bridge, and the alert each `seq`
-	 * belongs to. Its `onChange` is what writes the delivery record, so the record follows the
-	 * ack, the 15 s timeout and a late ack without another code path.
+	 * DE-01, step 3g: the alerts and the in-game bridge (the emitter's channels, the loopback server,
+	 * the acks and the game presence, the queue's view model). It reads the core's fields through
+	 * `alertRuntimePort`; the core keeps the queue and the emitter, the account scope and the
+	 * credential-touching pieces (the bridge token, the webhook's transport).
 	 */
-	private readonly ingameReceipts = new IngameAlertReceiptTracker(
-		{
-			schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-			cancel: (handle) => { window.clearTimeout(handle as number); },
-		},
-		(alertSeq, receipt) => { this.persistIngameReceipt(alertSeq, receipt); },
-	);
-	private readonly ingameTracked = new Map<number, {
-		alert: AlertV1; emittedAtMs: number; alertId: string; sentTo: readonly IngameBridgeClient[];
-	}>();
-	private readonly liveIngameTracked = new Map<number, {sessionId:string;outboxId:string;sentTo:IngameBridgeClient[]}>();
-	/** `alertId`s whose ack this process is still waiting for. */
-	private readonly ingameAwaitingAck = new Set<string>();
-	/** In-game bridge (H13.9/H13.15). Null until an alert actually needs it, or after it fails to bind. */
-	private alertIngameServer: AlertIngameServerHandle | null = null;
-	private alertIngameServerPort: number | null = null;
-	private alertIngameServerFlight: Promise<AlertIngameServerHandle | null> | null = null;
-	private alertIngameCloseFlight: Promise<void> | null = null;
-	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
-	private alertIngameServerErrorCode: string | null = null;
-	/** HP-05: the busy-port notice is shown once per plugin start, however many times the bind is retried. */
-	private alertIngamePortBusyNoticed = false;
-	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
-	private alertIngameSeq = 0;
-	/**
-	 * H18.23: game presence reported by the authenticated addons. Outlives any one server (a port
-	 * change is a loss with grace, not a new game) and is what H18.26 subscribes to. Built on first
-	 * use by `ingamePresenceTracker`, and dropped on unload.
-	 */
-	private alertIngamePresence: IngamePresenceTracker | null = null;
+	private readonly alerts: AlertRuntime = new AlertRuntime(TyrianCompanionCore.alertRuntimePort(this));
 	/** H18.26: turns that presence into the session lifecycle; built once the runtime is ready. */
 	private ingameSessionMarker: IngameSessionMarker | null = null;
 	/** R1b: the collector's footprint in the status note. Running only while this installation collects. */
@@ -987,9 +938,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			open: async () => await IndexedDbHalloweenStore.open(
 				indexedDB, undefined, undefined, this.persistenceDiagnostics('halloween', 'halloween_alert'),
 			),
-			accountRef: () => this.resolveAlertAccountRef(),
+			accountRef: () => this.alerts.resolveAlertAccountRef(),
 		});
-		this.alertEmitter = this.buildAlertEmitter(this.alertQueue);
+		this.alertEmitter = this.alerts.buildAlertEmitter(this.alertQueue);
 		// A player who left `ingame` enabled last session must not have to trigger an alert to
 		// find out the addon can connect: open the listener now, the same way it would open on
 		// the settings toggle below, instead of waiting for `deliver` to reach for it.
@@ -1131,7 +1082,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			evaluateSellSignal: async (port) => { await this.sale.evaluateSellSignal(port); },
 			// No network without a session, the seed included.
 			sessionActive: () => this.sessions?.getState().status === 'active',
-			emittedAlerts: () => this.emittedAlerts,
+			emittedAlerts: () => this.alerts.getEmittedAlerts(),
 			cooldownHours: () => this.settings.halloweenPriceAlertCooldownHours,
 			heldQuantity: () => this.observedBagQuantity(),
 			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
@@ -2038,7 +1989,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
-		this.ingameReceipts.dispose();
+		this.alerts.disposeIngameReceipts();
 		this.alertQueue?.dispose();
 		this.sessionCatalog?.dispose();
 		this.sessionCatalog = null;
@@ -2051,8 +2002,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.ingameSessionMarker = null;
 		this.collectorHeartbeat?.stop();
 		this.collectorHeartbeat = null;
-		this.alertIngamePresence?.dispose();
-		this.alertIngamePresence = null;
+		this.alerts.disposeIngamePresence();
 		this.startModal?.close();
 		this.discardModal?.close();
 		this.clearModal?.close();
@@ -2886,6 +2836,48 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `AlertRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the
+	 * core's own fields, so the settings replaced on a save, the queue and emitter built in
+	 * `initializeRuntime` and the services built later are read as they stand. The bridge token and
+	 * the webhook's transport stay here: this core is the reviewed home of `host.secrets` and `core/http`.
+	 */
+	private static alertRuntimePort(core: TyrianCompanionCore): AlertRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get collectorMode() { return core.collectorMode; },
+			get unloaded() { return core.unloaded; },
+			get localDebugActions() { return core.localDebugActions; },
+			get host() { return core.host; },
+			get settingTab() { return core.settingTab; },
+			get alertEmitter() { return core.alertEmitter; },
+			get alertQueue() { return core.alertQueue; },
+			get alertAccountRef() { return core.alertAccountRef; },
+			set alertAccountRef(value) { core.alertAccountRef = value; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get liveSessionLoot() { return core.liveSessionLoot; },
+			get liveSourceConnections() { return core.liveSourceConnections; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			renderViews: () => { core.renderViews(); },
+			readAlertIngameSecret: () => core.readAlertIngameSecret(),
+			copyAlertIngameSecret: () => core.copyAlertIngameSecret(),
+			alertWebhookTransport: () => {
+				const transport = new HostRequestTransport(core.host.http, {
+					maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: core.localDebugActions ?? undefined,
+					// Z9: Discord answers 204 with no body; any 2xx is a delivery, whatever it says.
+					ignoreResponseBody: true,
+				});
+				return { post: async (request) => await transport.send(request) };
+			},
+			getFarmingIngameState: () => core.getFarmingIngameState(),
+			getBagPriceIngameState: () => core.getBagPriceIngameState(),
+			startIngameSession: (character) => core.startIngameSession(character),
+			recordIngameSessionFailure: (error) => { core.recordIngameSessionFailure(error); },
+		};
+	}
+
+	/**
 	 * What `LiveViewRuntime` reads from this core (DE-01, step 3f). Getters over the core's own
 	 * fields, read as they stand: the controllers, the placement and the product actions are built
 	 * after the port.
@@ -3339,10 +3331,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.liveEconomy?.entity(kind,id) ?? null;
 	}
 	private enrichLiveSession(entry: LiveJournalEntryV1): void { if (!this.unloaded) this.liveEconomy?.observe(entry); }
-	private async emitLiveSessionAlert(intent: LiveAlertOutboxV1) {
-		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
-		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
-	}
+	private emitLiveSessionAlert(intent: LiveAlertOutboxV1) { return this.alerts.emitLiveSessionAlert(intent); }
 
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
 	getSellSignalState(): SellSignalRuntimeState | null {
@@ -3451,407 +3440,32 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** True while the Halloween observation surface is live: the pack's window, or the manual widening. */
 	private halloweenObservationActive(): boolean { return this.halloweenObservation.halloweenObservationActive(); }
 
-	/**
-	 * The single exit point for loot and price alerts.
-	 *
-	 * Operational messages (sync results, command failures, "the plugin is still
-	 * starting") keep going through `emitNotice`: they are answers to something
-	 * the user just did, and waking the desktop and the speakers for them would
-	 * make the channels that matter meaningless.
-	 */
-	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> {
-		const emitter = this.alertEmitter;
-		if (emitter === null) return Promise.resolve({ delivered: [], failed: [], rejected: true });
-		return emitter.emit(alert);
-	}
+	/** The single exit point for loot and price alerts (`AlertRuntime`). */
+	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> { return this.alerts.emitAlert(alert); }
 
-	/**
-	 * Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback.
-	 *
-	 * H15.16 (2026-09-10 incident): `AlertDeliveryReport` never matches `isOutcome()`, so
-	 * `fireAndForget`'s span always logged `success ok` even when every channel had failed;
-	 * the alert IS the product, so a failed delivery now surfaces as its own failure record.
-	 */
-	private dispatchAlert(alert: AlertV1): void {
-		// R1b: only the collector alerts. Nothing in consult produces one; this keeps it that way.
-		if (consulting(this)) return;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
-			async () => {
-				const report = await this.emitAlert(alert);
-				if (report.failed.length === 0) return report;
-				return { ...report, phase: 'failure' as const, code: 'unavailable' as const, details: { failed: report.failed } };
-			});
-	}
+	/** Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback (`AlertRuntime`). */
+	private dispatchAlert(alert: AlertV1): void { this.alerts.dispatchAlert(alert); }
 
-	/** Bags this session has actually observed. The absolute gain is only meaningful on a real stack. */
-	private observedBagQuantity(): number {
-		const state = this.liveSessionLoot?.getState();
-		if (state === undefined || state.status === 'idle') return 0;
-		return state.rows.find((row) => row.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.quantity ?? 0;
-	}
+	/** Bags this session has actually observed (`AlertRuntime`). */
+	private observedBagQuantity(): number { return this.alerts.observedBagQuantity(); }
 
-	/**
-	 * Projects one policy verdict onto the value-free half of the H13.3 OR and emits it.
-	 *
-	 * The always-alert reasons this detector reads (`skin_not_unlocked`, `mini_not_unlocked`) never
-	 * need a quote to fire, but that does not mean the underlying item has none: an unlockable skin
-	 * or mini can still carry a real market price in its own evidence. `policyAlertPriceOf` carries
-	 * that price through instead of inventing a blank one, so the alert only ever calls an item
-	 * unquoted once its evidence has actually confirmed that.
-	 *
-	 * H14.3 narrowed `ALWAYS_ALERT_REASONS`: `rare_unpriced_or_bound` and `first_seen` no longer
-	 * page the player regardless of value (David, 3 sep: "un solo aviso, sin interruptores"); they
-	 * still travel inside the item's `reasons` and surface as information in the session note
-	 * instead (`firstSeenItemIds`/`rareUnpricedOrBoundItemIds` in `session-note-model.ts`).
-	 */
-	private dispatchPolicyAlert(item: HalloweenAlertItem): void {
-		const alert = decideLootAlert({
-			itemId: item.itemId,
-			name: item.name ?? translateRuntime(createTranslator(this.settings.language), 'halloween.unknownItem', {
-				itemId: item.itemId,
-			}),
-			quantity: item.quantity,
-			...policyAlertPriceOf(item),
-			alwaysAlertReasons: alwaysAlertReasonsOf(item),
-		}, this.settings.valuableLootThresholdCopper);
-		if (alert !== null) this.dispatchAlert(alert);
-	}
+	/** Projects one policy verdict onto the value-free half of the H13.3 OR and emits it (`AlertRuntime`). */
+	private dispatchPolicyAlert(item: HalloweenAlertItem): void { this.alerts.dispatchPolicyAlert(item); }
 
-	/**
-	 * Builds the six channels once, in the order the player perceives them.
-	 *
-	 * Each closure reads `this.settings` at delivery time rather than capturing
-	 * it: a webhook the user pastes mid-session has to work on the next alert
-	 * without rebuilding the emitter, and the in-game bridge follows the same
-	 * rule for its enabled flag and port.
-	 */
-	private buildAlertEmitter(queue: EmittedAlertQueue, liveScope?: {sessionId:string;outboxId:string}): AlertEmitter {
-		const requireLiveCollector = () => { if (liveScope && (consulting(this) || this.unloaded)) throw new Error('Live alert collection is unavailable.'); };
-		// The reviewed outbound boundary stays at exactly one module, so the webhook rides the
-		// same transport every other call uses instead of reaching for the host's HTTP call
-		// here. Configured never to retry: a webhook host that is down is not worth a second
-		// attempt in the middle of a run.
-		const webhookTransport = new HostRequestTransport(this.host.http, {
-			maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: this.localDebugActions ?? undefined,
-			// Z9: Discord answers 204 with no body; any 2xx is a delivery, whatever it says.
-			ignoreResponseBody: true,
-		});
-		return new AlertEmitter([
-			{
-				id: 'toast',
-				deliver: (alert) => { requireLiveCollector(); this.emitNotice(this.alertToastText(alert,liveScope !== undefined), alertNoticeSource(alert.kind)); },
-			},
-			{
-				id: 'system_notification',
-				deliver: (alert) => {
-					requireLiveCollector();
-					const translator = createTranslator(this.settings.language);
-					// The host picks the urgency from its own platform (Linux asks for `critical`).
-					const outcome = this.host.notify.system({
-						title: translateRuntime(translator, liveScope ? 'alerts.observedIncrease.title' : alertTitleKey(alert.kind)),
-						body: this.alertBodyText(alert,liveScope !== undefined),
-					});
-					return systemNotificationChannelResult(outcome);
-				},
-			},
-			{
-				id: 'sound',
-				deliver: () => {
-					requireLiveCollector();
-					const outcome = this.host.notify.sound();
-					// A suspended context still resuming: accepted, not failed. The report counts it as delivered
-					// and is not corrected later; if the resume rejects or lands past its margin, no tone sounds.
-					if (outcome === 'pending') return ALERT_CHANNEL_PENDING;
-					if (outcome !== 'played') {
-						throw new Error('No audio output was available.');
-					}
-					return undefined;
-				},
-			},
-			{
-				id: 'webhook',
-				deliver: async (alert) => {
-					requireLiveCollector();
-					const outcome = await postAlertWebhook(
-						this.settings.alertWebhookUrl, alert,
-						{ post: async (request) => await webhookTransport.send(request) },
-						{
-							schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-							cancel: (handle) => { window.clearTimeout(handle as number); },
-						},
-					);
-					if (outcome === 'failed') throw new Error('The alert webhook did not answer in time.');
-				},
-			},
-			{
-				id: 'ingame',
-				deliver: async (alert, context) => {
-					requireLiveCollector();
-					// Off ships as a silent success, exactly like the webhook's empty URL: a
-					// fresh install pays nothing for a channel it never enabled. Enabled but
-					// unreachable is different, and must NOT look like success: the addon
-					// exists to be seen mid-game, and a swallowed failure here is a banner
-					// the player never gets shown, with nothing in the emitter report to say why.
-					if (!this.settings.alertIngameEnabled) return;
-					const server = await this.ensureAlertIngameServer();
-					requireLiveCollector();
-					if (server === null || server.clientCount() === 0) {
-						// The step "Recibido en el juego" still needs to say the alert reached nobody.
-						this.trackIngameAlert(alert, context.emittedAtMs, this.nextAlertIngameSeq(), { v2Clients: [], v3Clients: [] }, liveScope);
-						throw new Error(server === null ? 'The in-game alert server is not available.' : 'No in-game addon is connected.');
-					}
-					// Each connection gets the version its `hello` asked for (v3 adds `alert_ack`).
-					const alertSeq = this.nextAlertIngameSeq();
-					const delivery = server.broadcastAlert(alertSeq, (version) => JSON.stringify(alertIngamePayload(alert, alertSeq, version)));
-					this.trackIngameAlert(alert, context.emittedAtMs, alertSeq, delivery, liveScope);
-				},
-			},
-			{
-				id: 'queue',
-				deliver: async (alert, context) => {
-					requireLiveCollector();
-					if (liveScope) {
-						if (!this.liveSessions?.hasDispatchingClaim(liveScope.sessionId,liveScope.outboxId)) throw new Error('The durable live alert claim is unavailable.');
-						return;
-					}
-					if (!await queue.enqueue(alert, context.emittedAtMs)) throw new Error('The durable alert queue is unavailable.');
-					this.refreshEmittedAlerts();
-				},
-			},
-		]);
-	}
+	/** Opens or closes the loopback listener to match `alertIngameEnabled` (`AlertRuntime`). */
+	private syncAlertIngameServer(): void { this.alerts.syncAlertIngameServer(); }
 
-	/**
-	 * Lazily starts (or restarts, on a port change) the in-game loopback server.
-	 *
-	 * Read at delivery time, the same way the webhook channel reads `this.settings.alertWebhookUrl`
-	 * fresh on every alert: a player who flips the setting or edits the port mid-session must not
-	 * have to reload the plugin for the next alert to reach the game. Concurrent alerts share one
-	 * in-flight start instead of racing two servers onto the same port.
-	 */
-	/**
-	 * Opens or closes the loopback listener to match `alertIngameEnabled`, instead of leaving it
-	 * to the next `deliver` call. Read at plugin load and at every settings save (see
-	 * `updateSettings`), the same two moments `ensureAlertIngameServer` itself would otherwise be
-	 * reached from only at delivery time. Without this, a player who just flipped the setting had
-	 * no listener for the addon to connect to until the first alert fired, and that first alert
-	 * opened the server and found `clientCount() === 0` in the same breath: it was declared
-	 * `failed`, and the first hallazgo of a session, the one that matters most, never reached the
-	 * game. A port failure here (occupied, permission) is caught by `ensureAlertIngameServer`
-	 * itself and never reaches this method as a rejection, so it cannot stop the plugin load.
-	 */
-	private syncAlertIngameServer(): void {
-		// R1b: the bridge port is the collector's; switching to consult closes it like the toggle does.
-		if (!this.settings.alertIngameEnabled || consulting(this)) {
-			fireAndForgetLocal(this.localDebugActions,
-				{ component: 'notification', action: 'notification_emit', state: 'ingame_server_close' },
-				async () => { await this.closeAlertIngameServer(); });
-			return;
-		}
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'notification', action: 'notification_emit', state: 'ingame_server_sync' },
-			async () => {
-				const server = await this.ensureAlertIngameServer();
-				if (server === null) throw new Error('The in-game alert server could not be started.');
-			});
-	}
+	/** A failed drain retains the handle and backing services so the next attempt can retry it (`AlertRuntime`). */
+	private closeAlertIngameServer(): Promise<void> { return this.alerts.closeAlertIngameServer(); }
 
-	private async ensureAlertIngameServer(): Promise<AlertIngameServerHandle | null> {
-		if (consulting(this) || this.unloaded) return null;
-		await this.alertIngameCloseFlight;
-		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled) return null;
-		const port = this.settings.alertIngamePort;
-		if (this.alertIngameServer !== null && this.alertIngameServerPort === port) return this.alertIngameServer;
-		if (this.alertIngameServer !== null) {
-			await this.closeAlertIngameServer();
-		}
-		if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) return null;
-		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
-		const flight = startAlertIngameServer(
-			this.host.tcpServer,
-			port,
-			{
-				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-				cancel: (handle) => { window.clearTimeout(handle as number); },
-			},
-			{
-				authenticate: (candidate) => ingameBridgeSecretMatches(candidate, this.readAlertIngameSecret()),
-				now: () => Date.now(),
-				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
-				onConnectionEvent: (event) => { this.onIngameConnectionEvent(event); },
-				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
-				farmingState: () => this.getFarmingIngameState(),
-				priceState: () => this.getBagPriceIngameState(),
-				onFarmingError: (error) => { this.recordIngameSessionFailure(error); },
-				live: this.liveIngamePort(),
-			},
-		)
-			.then(async (server) => {
-				if (consulting(this) || this.unloaded || !this.settings.alertIngameEnabled || this.settings.alertIngamePort !== port) {
-					this.alertIngameServer = server; this.alertIngameServerPort = port;
-					await server.close();
-					if (this.alertIngameServer === server) { this.alertIngameServer = null; this.alertIngameServerPort = null; }
-					return null;
-				}
-				this.alertIngameServer = server;
-				this.alertIngameServerPort = port;
-				this.alertIngameServerErrorCode = null;
-				this.settingTab.refreshAlertIngameServerRow();
-				return server;
-			})
-			.catch((error: unknown) => {
-				// H15.17 (2026-09-10 incident): this used to discard the rejection entirely, so a
-				// port already in use or denied by the OS looked identical to the addon simply not
-				// being enabled: no log line, and the settings row kept showing the toggle as fine.
-				const mapped = unmappedErrorLogDetails(error);
-				this.alertIngameServerErrorCode = typeof mapped.code === 'string' ? mapped.code : mapped.reason as string;
-				this.localDebugActions?.event({
-					component: 'notification', action: 'notification_emit', state: 'ingame_server_start',
-					level: 'error', phase: 'failure', code: 'unavailable',
-					details: { errorName: mapped.reason, code: mapped.code },
-				});
-				this.settingTab.refreshAlertIngameServerRow();
-				return null;
-			})
-			.finally(() => { this.alertIngameServerFlight = null; });
-		this.alertIngameServerFlight = flight;
-		const server = await flight;
-		// HP-05: after the bind's own retries, a port held by another app (usually the other host).
-		if (server === null && this.alertIngameServerErrorCode === 'EADDRINUSE' && !this.alertIngamePortBusyNoticed) {
-			this.alertIngamePortBusyNoticed = true;
-			this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.ingamePortBusy', { port: String(port) }), 'ingame_port_busy');
-		}
-		return server;
-	}
+	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise (`AlertRuntime`). */
+	getAlertIngameServerErrorCode(): string | null { return this.alerts.getAlertIngameServerErrorCode(); }
 
-	/** What the bridge reports about one connection: which producers are here, then the game presence. */
-	private onIngameConnectionEvent(event: IngameConnectionEvent): void {
-		this.liveSourceConnections.apply(event);
-		this.ingamePresenceTracker().apply(event);
-	}
+	/** H18.23: what the authenticated addons say about the game right now (`AlertRuntime`). */
+	getIngamePresence(): IngamePresenceSnapshot { return this.alerts.getIngamePresence(); }
 
-	/** The selected Nexus producer is the sole source; effective Blish context cannot substitute it. */
-	private liveIngamePort(): LiveIngamePort {
-		return {
-			open: async (source) => {
-				if (this.ingameSessionMarker?.blocksAutomaticRestart()) return 'source_conflict';
-				if (source.context.state !== 'gameplay') return 'not_gameplay';
-				if (source.build !== NEXUS_LIVE_BUILD || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
-				const prior = this.liveSessions?.getRuntime();
-				// Another instance takes over only from a producer that is gone: written as disconnected,
-				// or seen disconnecting by this host when storage could not write it (SPEC-live-loot §2).
-				const relievedAt = prior == null ? null : liveSourceReliefAt(prior, source.sourceInstance, this.liveSourceConnections);
-				if (prior != null && relievedAt !== null) {
-					if (!await this.liveSessions?.stop(relievedAt,prior.sessionId)) return 'source_conflict';
-				}
-				if (this.liveSessions?.getRuntime()?.phase !== 'active') await this.startIngameSession(source.context.character);
-				if (this.liveSessions?.getRuntime()?.phase !== 'active') return 'source_conflict';
-				const opened = await this.liveSessions?.open(source) ?? 'not_gameplay';
-				const current = this.liveSessions?.getRuntime();
-				if (opened === 'ready' && prior?.sessionId !== current?.sessionId && current) this.ingameSessionMarker?.linkReplacement(prior?.sessionId ?? null,current.sessionId,'automatic');
-				return opened;
-			},
-			commit: async (sample) => await this.liveSessions?.commit({ ...sample,
-				rows: sample.rows.map(([kind,idNumber,quantity]) => ({kind:kind === 0 ? 'item' : 'currency',idNumber,quantity})),
-			}) ?? 'not_owner',
-			gap: async (event) => { await this.liveSessions?.gap(event); },
-			onError: (error) => { this.recordIngameSessionFailure(error); },
-		};
-	}
-
-	/** A failed drain retains the handle and backing services so the next attempt can retry it. */
-	private async closeAlertIngameServer(): Promise<void> {
-		if (this.alertIngameCloseFlight !== null) return await this.alertIngameCloseFlight;
-		const flight = (async () => {
-			await this.alertIngameServerFlight;
-			const server = this.alertIngameServer;
-			if (server === null) return;
-			await server.close();
-			if (this.alertIngameServer === server) { this.alertIngameServer = null; this.alertIngameServerPort = null; }
-		})();
-		this.alertIngameCloseFlight = flight;
-		try { await flight; } finally { if (this.alertIngameCloseFlight === flight) this.alertIngameCloseFlight = null; }
-	}
-
-	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise. */
-	getAlertIngameServerErrorCode(): string | null {
-		return this.alertIngameServerErrorCode;
-	}
-
-	/** Starts the ack bookkeeping of one alert written to the bridge; `sent` reports it through `onChange`. */
-	private trackIngameAlert(alert: AlertV1, emittedAtMs: number, alertSeq: number, delivery: IngameAlertBroadcast, liveScope?: {sessionId:string;outboxId:string}): void {
-		// Both origins share the bridge sequence, including gaps and alternating legacy/live alerts.
-		for (const seq of new Set([...this.liveIngameTracked.keys(), ...this.ingameTracked.keys()])) {
-			if (seq > alertSeq - 256) continue;
-			const tracked = this.ingameTracked.get(seq);
-			if (tracked) this.ingameAwaitingAck.delete(tracked.alertId);
-			this.ingameReceipts.forget(seq);
-			this.liveIngameTracked.delete(seq);
-			this.ingameTracked.delete(seq);
-		}
-		if (liveScope) {
-			this.liveIngameTracked.set(alertSeq,{...liveScope,sentTo:[...new Set([...delivery.v3Clients,...delivery.v2Clients])]});
-			this.ingameReceipts.sent(alertSeq,delivery); return;
-		}
-		const alertId = this.alertQueue?.alertIdFor(alert, emittedAtMs) ?? null;
-		if (alertId === null) return;
-		const sentTo = [...new Set([...delivery.v3Clients, ...delivery.v2Clients])];
-		this.ingameTracked.set(alertSeq, { alert, emittedAtMs, alertId, sentTo });
-		if (delivery.v3Clients.length > 0) this.ingameAwaitingAck.add(alertId);
-		this.ingameReceipts.sent(alertSeq, delivery);
-	}
-
-	private persistIngameReceipt(alertSeq: number, receipt: IngameAlertReceipt): void {
-		const live = this.liveIngameTracked.get(alertSeq);
-		if (live) {
-			fireAndForgetLocal(this.localDebugActions,{component:'notification',action:'notification_emit',state:'live_receipt_write'},async () => {
-				await this.liveSessions?.updateAlert(live.outboxId,(prior) => ({...prior,sentTo:live.sentTo,
-					receipt:prior.receipt?.state === 'received' ? prior.receipt : receipt}),true,live.sessionId);
-			});
-			return;
-		}
-		const tracked = this.ingameTracked.get(alertSeq);
-		const queue = this.alertQueue;
-		if (tracked === undefined || queue === null) return;
-		if (receipt.state !== 'pending') this.ingameAwaitingAck.delete(tracked.alertId);
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'halloween', action: 'halloween_alert', state: 'alert_delivery_write' },
-			async () => {
-				const saved = await queue.saveDelivery({
-					alert: tracked.alert, emittedAtMs: tracked.emittedAtMs, sentTo: tracked.sentTo, receipt,
-				});
-				if (saved) this.refreshEmittedAlerts();
-			});
-	}
-
-	private nextAlertIngameSeq(): number {
-		this.alertIngameSeq += 1;
-		return this.alertIngameSeq;
-	}
-
-	/** H18.23: what the authenticated addons say about the game right now. H18.26 reads this. */
-	getIngamePresence(): IngamePresenceSnapshot {
-		return this.ingamePresenceTracker().snapshot();
-	}
-
-	/** H18.23: every presence transition (`started`, `context`, `lost`, `restored`, `ended`). */
-	onIngamePresence(listener: (event: IngamePresenceEvent) => void): () => void {
-		return this.ingamePresenceTracker().subscribe(listener);
-	}
-
-	private ingamePresenceTracker(): IngamePresenceTracker {
-		this.alertIngamePresence ??= new IngamePresenceTracker({
-			timer: {
-				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
-				cancel: (handle) => { window.clearTimeout(handle as number); },
-			},
-			now: () => Date.now(),
-			createPresenceId: () => createIngameBridgeNonce((bytes) => { crypto.getRandomValues(bytes); }),
-			recordObserverFailure: (error) => { this.recordAlertIngamePresenceFailure(error); },
-		});
-		return this.alertIngamePresence;
-	}
+	/** H18.23: every presence transition (`AlertRuntime`). */
+	onIngamePresence(listener: (event: IngamePresenceEvent) => void): () => void { return this.alerts.onIngamePresence(listener); }
 
 	/**
 	 * Reads the bridge secret from `SecretStorage` for one comparison and keeps nothing. Like the
@@ -3946,26 +3560,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		) ?? run());
 	}
 
-	/**
-	 * The palette's "Copy in-game bridge token" (0.2.1): the same action as the settings button, for
-	 * a player who cannot find the row. With the bridge off it only says to turn it on and generates
-	 * nothing. The notices carry fixed copy, never the value.
-	 */
-	async copyAlertIngameSecretFromCommand(): Promise<void> {
-		const translator = createTranslator(this.settings.language);
-		if (!this.settings.alertIngameEnabled) {
-			this.emitNotice(translator.t('settings.alerts.ingame.secret.bridgeOff'), 'ingame_secret_copy');
-			return;
-		}
-		try {
-			const outcome = await this.copyAlertIngameSecret();
-			if (outcome === 'shown') return;
-			this.emitNotice(translator.t(outcome === 'generated'
-				? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'), 'ingame_secret_copy');
-		} catch {
-			this.emitNotice(translator.t('settings.alerts.ingame.secret.failed'), 'ingame_secret_copy');
-		}
-	}
+	/** The palette's "Copy in-game bridge token" (`AlertRuntime`). */
+	copyAlertIngameSecretFromCommand(): Promise<void> { return this.alerts.copyAlertIngameSecretFromCommand(); }
 
 	/**
 	 * Two commands with no interface of their own: the active live session as CSV, and the preserved
@@ -4037,13 +3633,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await (this.localDebugActions?.run({ component: 'vault', action: 'vault_write', state: 'achievements_sync' }, perform) ?? perform());
 	}
 
-	private registerAlertIngameSecretCommand(): void {
-		this.host.ui.registerCommand({
-			id: ALERT_INGAME_SECRET_COMMAND_ID,
-			name: createTranslator(this.settings.language).t('commands.copyIngameBridgeToken'),
-			callback: () => { void this.copyAlertIngameSecretFromCommand(); },
-		});
-	}
+	private registerAlertIngameSecretCommand(): void { this.alerts.registerAlertIngameSecretCommand(); }
 
 	/**
 	 * H18.26: the in-game presence marks the session. Built once the session runtime is ready, it
@@ -4173,102 +3763,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
-	private recordAlertIngamePresenceFailure(error: unknown): void {
-		const mapped = unmappedErrorLogDetails(error);
-		this.localDebugActions?.event({
-			component: 'notification', action: 'notification_emit', state: 'ingame_presence_listener',
-			level: 'error', phase: 'failure', code: 'internal_failure',
-			details: { errorName: mapped.reason },
-		});
-	}
+	/** H18.38: what became of each alert on its way to the game, by `alertId` (`AlertRuntime`). */
+	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1> { return this.alerts.getAlertDeliveries(); }
 
-	/** Resolves the queue scope, falling back to the active session baseline before Halloween sets it. */
-	private resolveAlertAccountRef(): Promise<string | null> {
-		if (this.alertAccountRef !== null) return Promise.resolve(this.alertAccountRef);
-		if (this.alertScopeFlight !== null) return this.alertScopeFlight;
-		const accountId = this.sessions?.getBaselineSnapshot()?.accountId ?? null;
-		if (accountId === null) return Promise.resolve(null);
-		const flight = sha256Text(accountId).then(
-			(accountRef) => { this.alertAccountRef = accountRef; return accountRef; },
-			() => null,
-		).finally(() => { if (this.alertScopeFlight === flight) this.alertScopeFlight = null; });
-		this.alertScopeFlight = flight;
-		return flight;
-	}
-
-	/** H18.38: what became of each alert on its way to the game, by `alertId`. An alert with none has no delivery data. */
-	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1> {
-		return this.alertDeliveries;
-	}
-
-	/** Newest first. Read by the panel so a dropped banner is still recoverable. */
-	getEmittedAlerts(): readonly EmittedAlertRecordV1[] {
-		return this.emittedAlerts;
-	}
-
-	/**
-	 * Reloads the durable queue into the synchronous view model.
-	 *
-	 * Only called once an alert has been written or an account resolved, never
-	 * on load: the queue opens its database on first use, and a vault that never
-	 * farms must not pay for a connection it will not read.
-	 */
-	private refreshEmittedAlerts(): void {
-		const queue = this.alertQueue;
-		if (queue === null) return;
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'halloween', action: 'halloween_alert', state: 'alert_queue_read' },
-			async () => {
-				const [alerts, deliveries] = await Promise.all([queue.read(), queue.readDeliveries()]);
-				this.emittedAlerts = alerts;
-				this.alertDeliveries = new Map(deliveries.map((record) => [
-					record.alertId, readAlertDelivery(record, this.ingameAwaitingAck.has(record.alertId)),
-				]));
-				this.renderViews();
-			});
-	}
-
-	/** Toast copy: the alert plus the latency the interface owes the player. */
-	private alertToastText(alert: AlertV1, live = false): string {
-		if (live) return this.alertBodyText(alert,true);
-		const translator = createTranslator(this.settings.language);
-		return `${this.alertBodyText(alert)} ${translateRuntime(translator, 'notices.alertLatency', {
-			minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
-		})}`;
-	}
-
-	/** One line per kind. A price signal never borrows the loot wording: it is not a find. */
-	private alertBodyText(alert: AlertV1, live = false): string {
-		const translator = createTranslator(this.settings.language);
-		if (live) return translateRuntime(translator,'alerts.observedIncrease.body',{name:alert.name,quantity:alert.quantity,
-			value:alert.totalCopper === null ? translateRuntime(translator,'alerts.queue.noValue') : formatCopperCompact(alert.totalCopper,this.settings.language)});
-		const reason = translateRuntime(translator, alertReasonKey(alert.reason));
-		// A price signal says what acting on it is WORTH, in copper, on the stack
-		// the player actually holds. The amplitude of this bag is 1,35x, which is
-		// about five gold over five hundred bags and nothing over one: the ratio
-		// is the same in both cases and only the absolute number decides.
-		if (alert.kind === 'hold_signal' || alert.kind === 'sell_signal') {
-			if (alert.totalCopper === null) {
-				return translateRuntime(translator, alert.kind === 'sell_signal' ? 'notices.sellSignal' : 'notices.holdSignal', {
-					name: alert.name, value: translateRuntime(translator, 'alerts.queue.noValue'),
-				});
-			}
-			return translateRuntime(translator, alert.kind === 'sell_signal' ? 'notices.sellSignalGain' : 'notices.holdSignalGain', {
-				name: alert.name,
-				quantity: alert.quantity,
-				gain: formatCopperCompact(alert.totalCopper, this.settings.language),
-			});
-		}
-		if (alert.totalCopper === null) {
-			return translateRuntime(translator, 'notices.alwaysAlertLoot', {
-				name: alert.name, quantity: alert.quantity, reason,
-			});
-		}
-		return translateRuntime(translator, 'notices.valuableLoot', {
-			name: alert.name, quantity: alert.quantity,
-			value: formatCopperCompact(alert.totalCopper, this.settings.language),
-		});
-	}
+	/** Newest first. Read by the panel so a dropped banner is still recoverable (`AlertRuntime`). */
+	getEmittedAlerts(): readonly EmittedAlertRecordV1[] { return this.alerts.getEmittedAlerts(); }
 
 	/** DU-04: tells the user the settings come from a newer release and stay as they are until the plugin is updated. */
 	private warnSettingsReadOnly(): void {
@@ -4915,38 +4414,6 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 }
 
 
-/** Closed diagnostic cause per alert kind, so a delivery record never carries the visible text. */
-function alertNoticeSource(kind: AlertKind): NoticeDiagnosticSource {
-	if (kind === 'valuable_loot') return 'valuable_loot';
-	if (kind === 'always_alert') return 'halloween_observation';
-	return 'halloween_price_alert';
-}
-
-function alertTitleKey(kind: AlertKind): RuntimeTranslationKey {
-	if (kind === 'valuable_loot') return 'alerts.title.valuable_loot';
-	if (kind === 'always_alert') return 'alerts.title.always_alert';
-	if (kind === 'sell_signal') return 'alerts.title.sell_signal';
-	return 'alerts.title.hold_signal';
-}
-
-function alertReasonKey(reason: AlertV1['reason']): RuntimeTranslationKey {
-	if (reason === 'valuable') return 'alerts.reason.valuable';
-	if (reason === 'rare_unpriced_or_bound') return 'alerts.reason.rare_unpriced_or_bound';
-	if (reason === 'first_seen') return 'alerts.reason.first_seen';
-	if (reason === 'skin_not_unlocked') return 'alerts.reason.skin_not_unlocked';
-	if (reason === 'mini_not_unlocked') return 'alerts.reason.mini_not_unlocked';
-	if (reason === 'bid_above_reference') return 'alerts.reason.bid_above_reference';
-	return 'alerts.reason.bid_below_reference';
-}
-
-function formatCopperCompact(copper: number, locale: Locale): string {
-	const gold = Math.floor(copper / 10_000);
-	const silver = Math.floor(copper / 100) % 100;
-	const remainder = copper % 100;
-	return locale === 'es'
-		? `${String(gold)} oro · ${String(silver)} plata · ${String(remainder)} cobre`
-		: `${String(gold)} gold · ${String(silver)} silver · ${String(remainder)} copper`;
-}
 
 /** Retains valid sanitized records, including the internal IDs required to reconstruct one action. */
 function safeLocalDebugJsonl(value: string, newestLimit?: number): string {
