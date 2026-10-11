@@ -31,13 +31,18 @@
 
 ## Canal 0.6.41 publicado: una reserva concedida después de cerrar se rechaza (11 oct 2026)
 
-**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.41` = `4c5a2047` (atestación; candidato `fa6e5f64`,
-árbol `648ab486`). Gate local verde (check 9/9 con 7199 tests, guardrails 25/25, BRAT PASS); CI 38104901253 y Release
+**Canal publicado; instalada y cargada en el Obsidian y el Hebra del Mac (11 oct 2026).**
+Etiqueta `0.6.41` = `4c5a2047` (atestación; candidato `fa6e5f64`, árbol `648ab486`). Gate local verde (check 9/9 con 7199 tests, guardrails 25/25, BRAT PASS); CI 38104901253 y Release
 38105427674 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.41` sobre el canal
 0.6.40 publicado (`4ab9ddd0`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
-- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.41 se ha visto en un Obsidian ni en un Hebra reales.
+- Vista en hosts reales del Mac el 11 oct 2026 (RT-01 y RT-18), sin probar en Fedora ni en Windows:
+  - Hebra (macOS): `npm run hebra:verify-install` con su ruta por defecto de macOS da «PASS (version=0.6.41;
+    previous=0.6.32; release-bytes=match)», instalada a las 07:48:14. David ve la 0.6.41 cargada en Hebra.
+  - Obsidian (bóveda `~/Documents/fodaveg`): `main.js` y `styles.css` coinciden con los `digest` de la release. El
+    plugin reescribió `data.json` a las 07:48:20 con `schemaVersion = 16`, que solo existe desde la 0.6.36.
+  - David confirma que los paneles de Tyrian funcionan en los dos hosts. No se recorrió el guion de QA paso a paso.
 - Contenido: `safeAcquire` (`src/sessions/manual-session-start-service.ts`) rechaza con `disposed` un lease que llega
   después de `dispose()` e intenta devolverlo; 8 tests (arranque, recuperación, finalización al arrancar y reclamación,
   con `acquired` y `already_owned`) comprueban que no se guarda nada ni queda un temporizador.
