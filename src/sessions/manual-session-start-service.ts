@@ -14,22 +14,17 @@ import type {
 	ActiveSessionLeaseHandle,
 	AssertLeaseResult,
 	ReleaseLeaseResult,
-	RenewLeaseResult,
 } from './coordination-model';
 import {
 	initialSessionState,
 	sessionAuthorityFromLease,
 	transitionSession,
 } from './session-state-machine';
-import {
-	SESSION_ABANDON_REASONS,
-	type SessionAbandonReason,
-	type SessionEvent,
-	type SessionFailureCode,
-	type SessionInProgressState,
-	type SessionSnapshotReference,
-	type SessionState,
-	type SessionTransitionRejection,
+import type {
+	SessionEvent,
+	SessionFailureCode,
+	SessionInProgressState,
+	SessionState,
 } from './session';
 import {
 	createSessionContaminationReview,
@@ -46,7 +41,6 @@ import {
 import {
 	normalizeSessionStartInput,
 	SessionStartCaptureError,
-	type SessionStartCaptureResult,
 	type SessionStartInput,
 } from './session-start-capture';
 import {
@@ -56,235 +50,43 @@ import {
 	settlementWindowMs,
 	type SessionApiSettlement,
 	type SessionSettlementWait,
-	type SettlementEndpoint,
 } from './session-api-settlement';
+import {
+	isAbandonableStopFailure,
+	SESSION_AUTO_RETRY_DELAYS_MS,
+	SESSION_DISPATCH_GUARD_MS,
+	SESSION_EVIDENCE_SAVE_INTERVAL_MS,
+	type ManualSessionStartResult,
+	type ManualSessionStartServiceOptions,
+	type ManualSessionStopResult,
+	type ObservedPlayInterval,
+	type RecoveryMode,
+	type SessionAbandonResult,
+	type SessionBaselineCapture,
+	type SessionContaminationReviewResult,
+	type SessionLeaseCoordinator,
+	type SessionRecoveryResult,
+	type SessionRecoveryState,
+	type SessionStartFailure,
+	type SessionStopFailure,
+	type StartupFinalization,
+} from './manual-session-start-model';
+import { failure, ManualSessionStartError, SessionTransitionRejectedError } from './manual-session-start-failure';
+import { lastSavedEvidenceAt, snapshotReference, stopFailureFloor, uncoveredStretches } from './manual-session-evidence';
 
-export interface SessionLeaseCoordinator {
-	/** Identifies this plugin instance in diagnostics; stable from its first lease on (before it, an instance may lose its life-lock mark once). */
-	readonly instanceId: string;
-	/**
-	 * `leaseTtlMs`, on both, is how long the lease lasts from that call; the coordinator's own (five minutes, H14.22)
-	 * when absent, which is what this service uses and derives its heartbeat from. The live session names its own
-	 * (`LIVE_SESSION_LEASE_TTL_MS`, the same five minutes today, and why it is not shorter).
-	 */
-	acquire(sessionId: string, leaseTtlMs?: number): Promise<AcquireLeaseResult>;
-	renew(handle: ActiveSessionLeaseHandle, leaseTtlMs?: number): Promise<RenewLeaseResult>;
-	assertOwned(handle: ActiveSessionLeaseHandle): Promise<AssertLeaseResult>;
-	release(handle: ActiveSessionLeaseHandle): Promise<ReleaseLeaseResult>;
-	dispose(): void;
-}
-
-interface SessionBaselineCapture {
-	capture(input: SessionStartInput, startedNotBefore?: number): Promise<SessionStartCaptureResult>;
-	captureFinal?(startedNotBefore?: number): Promise<StorageSnapshot>;
-}
-
-export interface SessionStartFailure {
-	code:
-		| 'busy'
-		| 'coordination_unavailable'
-		| 'invalid_input'
-		| 'missing_capability'
-		| 'snapshot_failed'
-		| 'lease_lost'
-		| 'rate_limited'
-		| 'unexpected';
-	message: string;
-}
-
-export interface SessionStopFailure {
-	code:
-		| 'coordination_unavailable'
-		| 'snapshot_failed'
-		| 'lease_lost'
-		| 'delta_invalid'
-		/**
-		 * The final snapshot belongs to another account than the baseline: the API key was changed
-		 * to a different account mid-session (H18.12). Retrying with that key reads the same account
-		 * again, so this one is never retried on its own; only the visible retry tries again.
-		 */
-		| 'account_changed'
-		| 'rate_limited'
-		| 'unexpected';
-	message: string;
-}
-
-export type SessionRecoveryState =
-	| { status: 'none' }
-	| { status: 'available'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>; message?: string }
-	| {
-			status: 'busy';
-			state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>;
-			message?: string;
-			/** When the current owner's lease naturally clears; drives the UI countdown and re-enable. */
-			ownerExpiresAt: number;
-	  }
-	| { status: 'working'; action: 'recover' | 'discard'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }> }
-	/**
-	 * `code` is the machine-readable reason (same vocabulary as `SessionRuntimeLoadResult`); `message`
-	 * is the human copy already built for it. There is no recoverable `state` here: the record could
-	 * not be read at all, so `discard` is the only action, and it does not require one.
-	 */
-	| { status: 'error'; code: 'corrupt' | 'unavailable'; message: string };
-
-type SessionRecoveryResult =
-	| { status: 'recovered'; state: SessionState }
-	| { status: 'discarded' }
-	| { status: 'busy' | 'failed'; message: string };
-
-/**
- * A state-machine rejection the service could not map to a product failure. `code` is the machine
- * reason (`illegal_transition`, `invariant_violation`...): `unmappedErrorLogDetails` logs it as
- * `details.code` and never the message.
- */
-class SessionTransitionRejectedError extends Error {
-	constructor(readonly code: SessionTransitionRejection) {
-		super(`Session transition rejected: ${code}`);
-		this.name = 'SessionTransitionRejectedError';
-	}
-}
-
-class ManualSessionStartError extends Error {
-	constructor(readonly failure: SessionStartFailure) {
-		super(failure.message);
-		this.name = 'ManualSessionStartError';
-	}
-}
-
-type ManualSessionStartResult =
-	| { status: 'started'; state: Extract<SessionState, { status: 'active' }> }
-	| { status: 'failed'; failure: SessionStartFailure };
-
-/**
- * Delays between the automatic attempts that finish what a failure interrupted (H18.7): a final
- * capture that failed (network gone during the wait), a lease that expired while the machine slept,
- * a saved session found at startup that another window still held. The last delay repeats: nothing
- * here gives up on its own, and a click on the visible retry always goes straight through.
- */
-export const SESSION_AUTO_RETRY_DELAYS_MS: readonly number[] = Object.freeze([5_000, 30_000, 60_000, 120_000, 300_000]);
-
-/**
- * How long the watch waits before dispatching a due capture or finalize again when the host never
- * got as far as calling back into the service; a real failure schedules its own backoff instead.
- */
-const SESSION_DISPATCH_GUARD_MS = 60_000;
-
-/** Who asked for a recovery: a click, `initialize()`, or the automatic retry of the watch. */
-type RecoveryMode = 'manual' | 'startup' | 'watch';
-
-export type ManualSessionStopResult =
-	| {
-			status: 'stopped';
-			state: Extract<SessionState, { status: 'provisional' }>;
-			delta: StorageDelta;
-			/**
-			 * Present only when the final snapshot had already been captured and reported by an earlier
-			 * attempt (a retry after the finalize or its save failed): the host finalizes again but must
-			 * not repeat the capture-time bookkeeping.
-			 */
-			resumed?: true;
-	  }
-	| {
-			/** The stop is committed; the final snapshot waits for the Guild Wars 2 cache window. */
-			status: 'awaiting_settlement';
-			state: Extract<SessionState, { status: 'stopping' }>;
-			wait: SessionSettlementWait;
-	  }
-	| { status: 'failed'; failure: SessionStopFailure };
-
-/**
- * `status` is always `'finalized'` on success: since `permissions.finalize` never comes back
- * `false` anymore (David, 2026-09-09), a review that computed cleanly always finalizes the session
- * in the same step, and the old `'reviewed'` (provisional, unfinalized) outcome is unreachable.
- */
-/**
- * Stop failures a session may be abandoned from: the ones no retry fixes by itself, because the
- * two snapshots can never be compared (the key now reads another account, or the final snapshot
- * disagrees with the baseline). Network, rate limit, lease and coordination failures retry on
- * their own and end in a real result, so they never offer the way out.
- */
-const ABANDONABLE_STOP_FAILURES: readonly SessionAbandonReason[] = SESSION_ABANDON_REASONS;
-
-export function isAbandonableStopFailure(code: SessionStopFailure['code']): code is SessionAbandonReason {
-	return (ABANDONABLE_STOP_FAILURES as readonly string[]).includes(code);
-}
-
-type SessionAbandonResult =
-	| { status: 'abandoned'; state: Extract<SessionState, { status: 'abandoned' }> }
-	| { status: 'failed'; message: string };
-
-type SessionContaminationReviewResult =
-	| {
-			status: 'finalized';
-			review: SessionContaminationReview;
-			state: Extract<SessionState, { status: 'complete' }>;
-	  }
-	| { status: 'failed'; message: string };
-
-/** See `takeStartupFinalization()`. */
-interface StartupFinalization {
-	sessionId: string;
-	delta: StorageDelta;
-	review: Extract<SessionContaminationReviewResult, { status: 'finalized' }>;
-}
-
-export interface ManualSessionStartServiceOptions {
-	now?: () => number;
-	sessionId?: () => string;
-	setInterval?: (callback: () => void, milliseconds: number) => unknown;
-	clearInterval?: (handle: unknown) => void;
-	onStateChange?: () => void;
-	/**
-	 * Called once the grace window elapses so the host can run the same stop pipeline it runs for
-	 * an immediate capture. The service captures on its own even without it; the callback exists
-	 * because note writing, valuation and detection bookkeeping live outside this class.
-	 */
-	onSettlementDue?: () => void;
-	runtimeStore: SessionRuntimeStore;
-	/** Legacy evidence may be restored locally without any automatic authenticated recapture. */
-	automaticAccountCapture?: boolean;
-	priceCapture?: SessionPriceCapture;
-	/**
-	 * Resolves the public-catalog type of the session's lost items before contamination review
-	 * (H14.1): a loss the catalog types `Container`/`Consumable` is farming input, not
-	 * contamination. Absent, or a resolution that misses an id, keeps that loss a conservative real
-	 * loss, exactly as before H14.1.
-	 */
-	farmedLossItemTypeCapture?: SessionItemTypeCapture;
-	/** Records a `warn` line when recover/discard finds the saved session's lease owned elsewhere. */
-	diagnostics?: LocalDebugActionPort;
-	/**
-	 * Called after the service took a session back on its own, from a timer rather than from a call
-	 * the host made (H18.7: a lease lost while the machine slept, a saved session another window held
-	 * at startup). The host resumes what it runs around a live session, such as the loot poll.
-	 */
-	onAutoRecovered?: () => void;
-	/**
-	 * H18.11: the settlement wait per endpoint the final capture reads. Absent, or an unusable
-	 * value, keeps that endpoint at the documented ten-minute ceiling; nothing is measured yet
-	 * (`API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS`).
-	 */
-	settlementWindowByEndpointMs?: Partial<Record<SettlementEndpoint, number>>;
-	/**
-	 * H18.11: the stretches the game was seen being played (the in-game presence), as epoch
-	 * milliseconds. Absent, or empty, means nothing observed the game. A gap covered by one of them
-	 * was play, so only the part none of them covers is subtracted from the session.
-	 */
-	observedPlayIntervals?: () => readonly ObservedPlayInterval[];
-}
-
-/** H18.11: one stretch the in-game presence saw the game running, `toMs` included. */
-export interface ObservedPlayInterval {
-	fromMs: number;
-	toMs: number;
-}
-
-/**
- * H18.11: how often an active session re-saves its record while the lease heartbeat runs, so
- * `persistedAt` stays the last instant Obsidian saw the session alive. A suspend or a closed
- * Obsidian stops these saves, and that last one is where the unobserved gap starts.
- */
-export const SESSION_EVIDENCE_SAVE_INTERVAL_MS = 60_000;
+// DE-07: the vocabulary moved to `manual-session-start-model.ts`; its consumers keep importing it from here.
+export {
+	isAbandonableStopFailure,
+	SESSION_AUTO_RETRY_DELAYS_MS,
+	SESSION_EVIDENCE_SAVE_INTERVAL_MS,
+	type ManualSessionStartServiceOptions,
+	type ManualSessionStopResult,
+	type ObservedPlayInterval,
+	type SessionLeaseCoordinator,
+	type SessionRecoveryState,
+	type SessionStartFailure,
+	type SessionStopFailure,
+};
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
 export class ManualSessionStartService {
@@ -2129,69 +1931,6 @@ export class ManualSessionStartService {
 	private async safeRelease(handle: ActiveSessionLeaseHandle): Promise<ReleaseLeaseResult> {
 		try { return await this.coordinator.release(handle); } catch { return { status: 'error', code: 'unavailable' }; }
 	}
-}
-
-function snapshotReference(snapshot: StorageSnapshot): SessionSnapshotReference {
-	if (snapshot.quality !== 'stable' && snapshot.quality !== 'stable_owned_placement_changed') {
-		throw new SessionStartCaptureError('snapshot_not_stable', 'The baseline snapshot was not stable.');
-	}
-	return {
-		snapshotId: snapshot.snapshotId,
-		accountId: snapshot.accountId,
-		schemaVersion: snapshot.schemaVersion,
-		startedAt: snapshot.startedAt,
-		completedAt: snapshot.completedAt,
-		quality: snapshot.quality,
-	};
-}
-
-/**
- * The latest instant known to be saved before a failure (H18.4): the record's own save (unless the
- * saved record is the failure itself) or the last heartbeat this window persisted to the lease.
- * Never later than a stop the player had already asked for in this window, and never earlier than
- * the baseline. It exists so an interrupted stop never takes the retry's clock as its end.
- */
-function lastSavedEvidenceAt(
-	record: SessionRuntimeRecord,
-	lastHeartbeatAt: number | null,
-	failed: Exclude<SessionInProgressState, { status: 'starting' }>,
-): number {
-	const baselineAt = Date.parse(record.baselineSnapshot.completedAt);
-	let at = Math.max(baselineAt, record.state.status === 'error' ? 0 : record.persistedAt, lastHeartbeatAt ?? 0);
-	if (failed.status !== 'active') at = Math.min(at, Date.parse(failed.stopRequestedAt));
-	return Math.max(at, baselineAt);
-}
-
-/**
- * H18.11: the parts of `[from, to]` that no observed play interval covers, in order, each at least
- * a second long (shorter slivers are clock noise between the last save and the presence).
- */
-function uncoveredStretches(from: number, to: number, observed: readonly ObservedPlayInterval[]): Array<[number, number]> {
-	const covered = observed
-		.filter((interval) => Number.isFinite(interval.fromMs) && Number.isFinite(interval.toMs) && interval.toMs > interval.fromMs)
-		.map((interval) => [Math.max(from, interval.fromMs), Math.min(to, interval.toMs)] as [number, number])
-		.filter(([start, end]) => end > start)
-		.sort((left, right) => left[0] - right[0]);
-	const stretches: Array<[number, number]> = [];
-	let cursor = from;
-	for (const [start, end] of covered) {
-		if (start > cursor) stretches.push([cursor, start]);
-		cursor = Math.max(cursor, end);
-	}
-	if (to > cursor) stretches.push([cursor, to]);
-	return stretches.filter(([start, end]) => end - start >= 1_000);
-}
-
-function stopFailureFloor(
-	state: Extract<SessionState, { status: 'stopping' | 'provisional' }>,
-): number {
-	return state.status === 'stopping'
-		? Date.parse(state.stopRequestedAt)
-		: Date.parse(state.finalSnapshot.completedAt);
-}
-
-function failure(code: SessionStartFailure['code'], message: string): SessionStartFailure {
-	return { code, message };
 }
 
 function mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStartFailure {
