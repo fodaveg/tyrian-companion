@@ -10090,27 +10090,11 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "d7852047155e353d997b8749bf93041caef9657c",
-					"kind": "catch_clause",
-					"line": 2750,
-					"column": 6,
-					"endLine": 2752,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
 					"id": "cf530cf92ec3897aa90a15c08bc7300979d235cd",
 					"kind": "catch_clause",
-					"line": 3542,
+					"line": 3455,
 					"column": 5,
-					"endLine": 3544,
+					"endLine": 3457,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10122,9 +10106,9 @@
 				{
 					"id": "c9f4d501ec2cb1dc97113fb49c1c990d270a5dd8",
 					"kind": "callback_registration",
-					"line": 3832,
+					"line": 3745,
 					"column": 18,
-					"endLine": 3863,
+					"endLine": 3776,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10139,9 +10123,9 @@
 				{
 					"id": "d9643cb885a00ea7d9b9681392345e345185d6c7",
 					"kind": "promise_catch",
-					"line": 3832,
+					"line": 3745,
 					"column": 18,
-					"endLine": 3877,
+					"endLine": 3790,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "observed",
@@ -10154,9 +10138,9 @@
 				{
 					"id": "54d9b3a70b55678c113eeb7717854c5d92ae86b2",
 					"kind": "callback_registration",
-					"line": 3832,
+					"line": 3745,
 					"column": 18,
-					"endLine": 3878,
+					"endLine": 3791,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10171,9 +10155,9 @@
 				{
 					"id": "d8fcad351b0e3fabc77a7144ea5146c2e4c808a7",
 					"kind": "catch_clause",
-					"line": 4063,
+					"line": 3976,
 					"column": 6,
-					"endLine": 4075,
+					"endLine": 3988,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -10185,9 +10169,9 @@
 				{
 					"id": "9481a982452a2b01ac678cef2ebacfe400c2cc02",
 					"kind": "catch_clause",
-					"line": 4095,
+					"line": 4008,
 					"column": 6,
-					"endLine": 4098,
+					"endLine": 4011,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10201,9 +10185,9 @@
 				{
 					"id": "fa67a11fad255eba6216837d9c3f67f8d2ae2312",
 					"kind": "catch_clause",
-					"line": 4126,
+					"line": 4039,
 					"column": 5,
-					"endLine": 4128,
+					"endLine": 4041,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10215,9 +10199,9 @@
 				{
 					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
 					"kind": "void_expression",
-					"line": 4155,
+					"line": 4068,
 					"column": 7,
-					"endLine": 4158,
+					"endLine": 4071,
 					"endColumn": 8,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10231,9 +10215,9 @@
 				{
 					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
 					"kind": "callback_registration",
-					"line": 4155,
+					"line": 4068,
 					"column": 12,
-					"endLine": 4158,
+					"endLine": 4071,
 					"endColumn": 8,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10248,9 +10232,9 @@
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 4176,
+					"line": 4089,
 					"column": 22,
-					"endLine": 4176,
+					"endLine": 4089,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10264,9 +10248,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 4176,
+					"line": 4089,
 					"column": 27,
-					"endLine": 4176,
+					"endLine": 4089,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10281,9 +10265,9 @@
 				{
 					"id": "37f8e1478029f922cda8f8f9a3794833e1b0bd14",
 					"kind": "void_expression",
-					"line": 4205,
+					"line": 4118,
 					"column": 22,
-					"endLine": 4205,
+					"endLine": 4118,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10297,9 +10281,9 @@
 				{
 					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
 					"kind": "void_expression",
-					"line": 4239,
+					"line": 4152,
 					"column": 4,
-					"endLine": 4239,
+					"endLine": 4152,
 					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10313,9 +10297,9 @@
 				{
 					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
 					"kind": "void_expression",
-					"line": 4240,
+					"line": 4153,
 					"column": 4,
-					"endLine": 4241,
+					"endLine": 4154,
 					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10329,9 +10313,9 @@
 				{
 					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
 					"kind": "void_expression",
-					"line": 4243,
+					"line": 4156,
 					"column": 3,
-					"endLine": 4243,
+					"endLine": 4156,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10345,9 +10329,9 @@
 				{
 					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
 					"kind": "catch_clause",
-					"line": 4312,
+					"line": 4225,
 					"column": 5,
-					"endLine": 4315,
+					"endLine": 4228,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10361,9 +10345,9 @@
 				{
 					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
 					"kind": "catch_clause",
-					"line": 4323,
+					"line": 4236,
 					"column": 5,
-					"endLine": 4325,
+					"endLine": 4238,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10377,9 +10361,9 @@
 				{
 					"id": "c934c4a5ed941b049a6566572c64101fc5fb9547",
 					"kind": "callback_registration",
-					"line": 4352,
+					"line": 4265,
 					"column": 18,
-					"endLine": 4355,
+					"endLine": 4268,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10394,9 +10378,9 @@
 				{
 					"id": "71d14f9ad532611a4703914547606f05430aa766",
 					"kind": "callback_registration",
-					"line": 4352,
+					"line": 4265,
 					"column": 18,
-					"endLine": 4355,
+					"endLine": 4268,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10409,59 +10393,11 @@
 					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
 				},
 				{
-					"id": "9fb7b1fb7968638904600622d129dda9e240bc8e",
-					"kind": "catch_clause",
-					"line": 4507,
-					"column": 6,
-					"endLine": 4511,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "6c8798075442081f5cc38441def783a0d90182ee",
-					"kind": "catch_clause",
-					"line": 4601,
-					"column": 6,
-					"endLine": 4605,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "c4596e2be8241b08541ac16d08bdb3fa721945c6",
-					"kind": "catch_clause",
-					"line": 4701,
-					"column": 3,
-					"endLine": 4701,
-					"endColumn": 113,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "runManagedAssetsLifecycle",
-						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
-				},
-				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 4905,
+					"line": 4582,
 					"column": 6,
-					"endLine": 4907,
+					"endLine": 4584,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10475,9 +10411,9 @@
 				{
 					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
 					"kind": "catch_clause",
-					"line": 5223,
+					"line": 4900,
 					"column": 5,
-					"endLine": 5226,
+					"endLine": 4903,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10489,9 +10425,9 @@
 				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 5349,
+					"line": 5026,
 					"column": 17,
-					"endLine": 5349,
+					"endLine": 5026,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10506,9 +10442,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 5349,
+					"line": 5026,
 					"column": 17,
-					"endLine": 5349,
+					"endLine": 5026,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10523,9 +10459,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 5350,
+					"line": 5027,
 					"column": 20,
-					"endLine": 5350,
+					"endLine": 5027,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10540,9 +10476,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 5350,
+					"line": 5027,
 					"column": 20,
-					"endLine": 5350,
+					"endLine": 5027,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10557,9 +10493,9 @@
 				{
 					"id": "bd67adc222fe844d703c05617b4d192198d7fbc3",
 					"kind": "catch_clause",
-					"line": 5416,
+					"line": 5080,
 					"column": 5,
-					"endLine": 5416,
+					"endLine": 5080,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10573,9 +10509,9 @@
 				{
 					"id": "ff338dcbd125c5fa78e00e2af469ff2fcecb89db",
 					"kind": "catch_clause",
-					"line": 5446,
+					"line": 5110,
 					"column": 5,
-					"endLine": 5446,
+					"endLine": 5110,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -19612,6 +19548,76 @@
 						"justification": "In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session."
 					},
 					"reason": "Allowlisted catch_clause: In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session. Verified recovery: \"local_recovery\" in \"persistFarmingSessionContext\"."
+				}
+			]
+		},
+		"src/runtime/managed-assets-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "d9afce825e72cefbbfb66fefa43caf30eae32681",
+					"kind": "catch_clause",
+					"line": 122,
+					"column": 6,
+					"endLine": 124,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "bceef1978ef6645a1fcc0725d58ef3fe75c2040f",
+					"kind": "catch_clause",
+					"line": 270,
+					"column": 6,
+					"endLine": 274,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "a5471271a269744f0e9034bae07ffaaa44906b46",
+					"kind": "catch_clause",
+					"line": 364,
+					"column": 6,
+					"endLine": 368,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "096098af524e3ce1faefc5000bf9d471551f71e4",
+					"kind": "catch_clause",
+					"line": 464,
+					"column": 3,
+					"endLine": 464,
+					"endColumn": 113,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "runManagedAssetsLifecycle",
+						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
 				}
 			]
 		}
