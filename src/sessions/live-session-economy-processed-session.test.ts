@@ -16,15 +16,14 @@ function harness() {
 		getSessionFormat: () => ({ noteVersion: 1, priceBasis: 'instant_sell_net' }),
 	};
 	const economy = new LiveSessionEconomy({
-		lifecycle: lifecycle as never, gateway: { requestDetailed: vi.fn(async () => ({ status: 200, headers: {}, body: [] })) } as never,
+		lifecycle: lifecycle as never, gateway: { requestDetailed: vi.fn(async () => ({ status: 200, headers: {}, body: [] })) },
 		rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now, catalog: async () => ({}), cachedItems: async () => ({}),
 		currencies: async () => ({ currencies: {}, coverage: {} }), cachedCurrencies: async () => ({}), canEmit: () => true,
 		// A slow channel (a webhook): session B starts while the delivery is awaited.
 		emit: async () => { running.sessionId = 'session-B'; await slow; return { delivered: [], failed: [], rejected: false }; }, onError: vi.fn(), onChange: vi.fn(),
 	});
 	const entry = { sessionId: 'session-A', observations: [{ id: 'o1', kind: 'item', idNumber: 1 }],
-		outbox: [{ outboxId: 'ob1', observationId: 'o1', state: 'ready' }] } as unknown as LiveJournalEntryV1;
-	return { economy, updateAlert, entry, release };
+		outbox: [{ outboxId: 'ob1', observationId: 'o1', state: 'ready' }] } as unknown as LiveJournalEntryV1;	return { economy, updateAlert, entry, release };
 }
 
 describe('LiveSessionEconomy processed write', () => {

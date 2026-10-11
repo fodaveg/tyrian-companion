@@ -588,8 +588,9 @@ export class LiveSessionLifecycle {
 	isCharacterListCapped(): boolean { return this.summaryState?.capped === true; }
 	/** The summary note of the session in `complete` was already written: nothing to do at load. */
 	isSummaryWritten(): boolean { return this.summaryState?.summaryWritten === true && this.summaryState.sessionId === this.record?.sessionId; }
-	async markSummaryWritten(): Promise<void> {
-		if (this.summaryState === null || this.summaryState.sessionId !== this.record?.sessionId) return;
+	/** Marks the summary of `sessionId`; nothing happens when the persisted state belongs to another session (a later one started while the summary was written). */
+	async markSummaryWritten(sessionId: string): Promise<void> {
+		if (this.summaryState === null || this.summaryState.sessionId !== sessionId || this.record?.sessionId !== sessionId) return;
 		this.summaryState = { ...this.summaryState, summaryWritten: true };
 		await this.options.persistence.saveSummaryState?.(this.summaryState);
 	}

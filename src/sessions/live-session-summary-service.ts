@@ -48,7 +48,8 @@ interface LiveSessionSummaryServiceOptions {
 	charactersCapped(): boolean;
 	/** The persisted «summary already written for this session» mark. With it set nothing is read, asked or written. */
 	isWritten(): boolean;
-	markWritten(): Promise<void>;
+	/** Marks the summary of THAT session as written; a no-op when the persisted mark belongs to another session (a later one may have started). */
+	markWritten(sessionId: string): Promise<void>;
 	/** Flags and types of the given items from the catalog CACHE only; never the network. */
 	itemMeta(itemIds: readonly number[]): Promise<SummaryItemMetaMap>;
 	/** Map names by decimal id: the cache, and the public API only when `network` is true. The service bounds the wait. */
@@ -70,6 +71,16 @@ interface LiveSessionSummaryServiceOptions {
 
 interface Progress { sessionId: string; attempts: number; lastAttemptAt: number; done: boolean; running: boolean }
 
+/** Everything one summary is worked out from, copied before the first await: the next session may replace all of it while the summary is written. */
+interface Subject {
+	record: LiveSessionRuntimeRecord; receipt: NonNullable<LiveSessionRuntimeRecord['summaryReceipt']>;
+	journal: readonly LiveJournalEntryV1[]; format: LiveSessionFormat;
+	characters: readonly LiveSessionCharacterV1[]; charactersCapped: boolean;
+}
+
+/** Progress kept for this many sessions: a summary that failed for the session before the current one can still be retried. */
+const PROGRESS_KEPT = 4;
+
 /**
  * Writes the summary note of the closed session AFTER its full note is saved and acknowledged:
  * `observe()` does nothing until the runtime is `complete` and carries its `summaryReceipt`.
@@ -84,7 +95,10 @@ interface Progress { sessionId: string; attempts: number; lastAttemptAt: number;
  * network: one still unnamed is left out, and the note writes its fallback («Objeto <id>»).
  */
 export class LiveSessionSummaryService {
-	private progress: Progress | null = null;
+	private readonly progress = new Map<string, Progress>();
+	/** The subject of the last attempt that failed with attempts left; it is retried even after another session has started. */
+	private stranded: Subject | null = null;
+	private lastAttempt = 0;
 	private readonly writer: LiveSessionSummaryWriter;
 	private cancelWait: (() => void) | null = null;
 	private disposed = false;
@@ -101,7 +115,7 @@ export class LiveSessionSummaryService {
 
 	async observe(): Promise<void> {
 		try { await this.attempt(); } catch (error) {
-			this.report({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: this.progress?.attempts ?? 0 });
+			this.report({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: this.lastAttempt });
 		}
 	}
 
@@ -113,19 +127,38 @@ export class LiveSessionSummaryService {
 
 	private async attempt(): Promise<void> {
 		if (!this.live()) return;
-		const record = this.options.runtime();
-		const receipt = record?.summaryReceipt ?? null;
-		if (record === null || record.phase !== 'complete' || receipt === null || receipt.sessionId !== record.sessionId) return;
-		if (this.options.isWritten()) return;
-		if (this.progress?.sessionId !== record.sessionId) this.progress = { sessionId: record.sessionId, attempts: 0, lastAttemptAt: 0, done: false, running: false };
-		const progress = this.progress;
+		const current = this.options.runtime();
+		const currentReceipt = current?.summaryReceipt ?? null;
+		const currentReady = current !== null && current.phase === 'complete' && currentReceipt !== null && currentReceipt.sessionId === current.sessionId;
+		// A summary that failed for a session that is no longer the current one is retried from what was copied then; the current
+		// session (when it is the same one) is read live, as always. If the older one is waiting out its retry gap, the current one goes first.
+		const candidates: Subject[] = [];
+		if (this.stranded !== null && !(currentReady && current.sessionId === this.stranded.record.sessionId)) candidates.push(this.stranded);
+		if (currentReady && !this.options.isWritten()) {
+			candidates.push({ record: current, receipt: currentReceipt, journal: this.options.journal(), format: this.options.format(),
+				characters: this.options.characters(), charactersCapped: this.options.charactersCapped() });
+		}
 		const now = this.options.now();
-		if (progress.done || progress.running || progress.attempts >= LIVE_SUMMARY_MAX_ATTEMPTS
-			|| progress.attempts > 0 && now - progress.lastAttemptAt < LIVE_SUMMARY_RETRY_MS) return;
-		progress.running = true; progress.attempts += 1; progress.lastAttemptAt = now;
+		for (const subject of candidates) {
+			let progress = this.progress.get(subject.record.sessionId);
+			if (progress === undefined) {
+				progress = { sessionId: subject.record.sessionId, attempts: 0, lastAttemptAt: 0, done: false, running: false };
+				this.progress.set(subject.record.sessionId, progress);
+				for (const key of this.progress.keys()) { if (this.progress.size <= PROGRESS_KEPT) break; this.progress.delete(key); }
+			}
+			if (progress.done || progress.running || progress.attempts >= LIVE_SUMMARY_MAX_ATTEMPTS
+				|| progress.attempts > 0 && now - progress.lastAttemptAt < LIVE_SUMMARY_RETRY_MS) continue;
+			progress.running = true; progress.attempts += 1; progress.lastAttemptAt = now; this.lastAttempt = progress.attempts;
+			await this.write(subject, progress);
+			return;
+		}
+	}
+
+	private async write(subject: Subject, progress: Progress): Promise<void> {
+		const { record, receipt } = subject;
 		try {
 			const locale = this.options.locale(); const outputFolder = this.options.outputFolder();
-			const session = await prepareLiveSessionPayload({ record, journal: this.options.journal(), format: this.options.format(), locale, outputFolder });
+			const session = await prepareLiveSessionPayload({ record, journal: subject.journal, format: subject.format, locale, outputFolder });
 			if (session === null) { progress.done = true; this.report({ status: 'invalid', reason: 'invalid_live_evidence', attempt: progress.attempts }); return; }
 			const itemIds = session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => row.idNumber);
 			const mapIds = [...new Set(session.mapIntervals.flatMap((interval) => interval.mapId === null ? [] : [interval.mapId]))];
@@ -144,10 +177,10 @@ export class LiveSessionSummaryService {
 			if (!this.live()) return;
 			const result: LiveSessionSummaryWriteResult = await this.writer.write({ session, locale, outputFolder, fullNotePath: receipt.path,
 				fullNoteLinkTarget: this.options.vault.linkTarget?.(receipt.path) ?? null,
-				displayNames, characters: this.options.characters(), charactersCapped: this.options.charactersCapped(),
+				displayNames, characters: subject.characters, charactersCapped: subject.charactersCapped,
 				itemMeta, mapNames, comparablePerHour: comparable.perHour, inlineIcons: this.options.inlineIcons?.() === true, ...(comparable.capped === true ? { comparablesCapped: true } : {}) });
 			if (result.status === 'written' || result.status === 'unchanged' || result.status === 'kept') {
-				progress.done = true; await this.options.markWritten();
+				progress.done = true; await this.options.markWritten(record.sessionId);
 				// The link back goes in right after the summary exists and is marked, because a host that names notes by id knows its id only
 				// now. It is for the full note this session just saved (its receipt): no earlier note is looked up or rewritten. A failure
 				// costs the link and nothing else (the summary is done): `observe` reports it as any unexpected one.
@@ -158,7 +191,12 @@ export class LiveSessionSummaryService {
 			if (result.status === 'invalid' || result.status === 'conflict') progress.done = true;
 			this.report({ status: result.status, attempt: progress.attempts,
 				reason: 'reason' in result ? result.reason : 'errorName' in result ? result.errorName ?? null : null });
-		} finally { progress.running = false; }
+		} finally {
+			progress.running = false;
+			// Kept for a retry only while it has attempts left; never two subjects at once (the newer failure replaces the older).
+			if (progress.done || progress.attempts >= LIVE_SUMMARY_MAX_ATTEMPTS) { if (this.stranded?.record.sessionId === record.sessionId) this.stranded = null; }
+			else this.stranded = subject;
+		}
 	}
 
 	/** Never longer than `mapWaitMs`: a slow API costs the name, not the summary. */

@@ -11856,11 +11856,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "f6570bb69d7e6f0f6649ce858e97629c0ca1df8e",
+					"id": "eef0078978903c4e58b734c5c9dd9a0da7d91d46",
 					"kind": "catch_clause",
-					"line": 103,
+					"line": 117,
 					"column": 33,
-					"endLine": 105,
+					"endLine": 119,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11874,9 +11874,9 @@
 				{
 					"id": "e642139ff285f92278167951f07ae5c094545a17",
 					"kind": "catch_clause",
-					"line": 109,
+					"line": 123,
 					"column": 44,
-					"endLine": 109,
+					"endLine": 123,
 					"endColumn": 128,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11890,9 +11890,9 @@
 				{
 					"id": "e5488525f5cc8126c68971360a36932d1c9c0a8d",
 					"kind": "catch_clause",
-					"line": 192,
+					"line": 230,
 					"column": 32,
-					"endLine": 195,
+					"endLine": 233,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
