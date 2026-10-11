@@ -23,6 +23,12 @@
   `plugins.activated` y `plugins.load-failed`, juzga la última sesión `principal`; `editor`, `otra` y valores
   desconocidos no eligen sesión. Sin el campo (rpm 0.2.0-22 o anterior), la heurística de la 0.6.46. Contrato de salida
   sin cambios (v2). [QA-HEBRA](QA-HEBRA.md) lo recoge.
+- Candado de vida en macOS (RT-14, DU-12; medido en el Mac el 11 oct, sin tocar la Hebra de David): los Web Locks de
+  WKWebView no cruzan procesos, igual que en Linux (MEDIDO con una sonda propia). Hebra de macOS sí tiene `flock` de
+  instancia (`macos_single_instance.rs`, desde `475f21a1`; LEÍDO, y la build 150 lo tiene abierto);
+  `api.has('instance.lock')` es `false` fuera de Linux porque no está garantizado, no porque falte. Tras SIGKILL, el
+  candado está libre en cuanto el proceso nuevo lo pide (0-1 ms de espera). No se arrancaron dos Hebras reales en Mac.
+  Windows (HP-14), sin medir ([2026-10-11-hebra-candado-macos](evidencia/2026-10-11-hebra-candado-macos.md)).
 - Pendiente: verla en hosts reales.
 
 ## Canal 0.6.46 publicado: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
