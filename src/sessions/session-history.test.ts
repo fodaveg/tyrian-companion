@@ -76,6 +76,40 @@ describe('durable session history', () => {
 		expect(canScrubSessionHistory({ ...scrubGate, detectorStatus: 'start_proposed' })).toBe(false);
 	});
 
+	it('opens the scrub gate for a sealed finished session only when the authority can retire it (Z2-3)', async () => {
+		const sealed = { ...scrubGate, sessionStatus: 'complete', sealedRetirable: true } as const;
+		expect(canScrubSessionHistory(sealed)).toBe(true);
+		expect(canScrubSessionHistory({ ...sealed, sealedRetirable: false })).toBe(false);
+		expect(canScrubSessionHistory({ ...sealed, sessionStatus: 'active' })).toBe(false);
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		let retired = false;
+		const retire = vi.fn(async () => { retired = true; return true; });
+		const authority = new SessionHistoryRuntimeAuthority(() => retired ? scrubGate : sealed, retire);
+		const history = new SessionHistoryService(vault);
+		const preview = await history.previewScrub(authority);
+		expect(preview.status).toBe('ready');
+		expect(retire, 'previewing changes nothing').not.toHaveBeenCalled();
+		if (preview.status !== 'ready') throw new Error('Expected a ready preview.');
+		await expect(history.scrub(preview.token, authority)).resolves.toMatchObject({ status: 'erased', erased: 1 });
+		expect(retire).toHaveBeenCalledOnce();
+		// A refusal to retire leaves every note as it was.
+		const refused = new MemoryVault();
+		refused.contents.set('Sessions/one.md', await note());
+		const refusing = new SessionHistoryRuntimeAuthority(() => sealed, async () => false);
+		const refusedHistory = new SessionHistoryService(refused);
+		const refusedPreview = await refusedHistory.previewScrub(refusing);
+		if (refusedPreview.status !== 'ready') throw new Error('Expected a ready preview.');
+		await expect(refusedHistory.scrub(refusedPreview.token, refusing)).resolves.toMatchObject({ status: 'blocked', erased: 0 });
+		expect(refused.contents.get('Sessions/one.md')).toBe(await note());
+		// Without a way to retire it, the sealed session keeps blocking.
+		const unwired = new SessionHistoryRuntimeAuthority(() => sealed);
+		const unwiredHistory = new SessionHistoryService(refused);
+		const unwiredPreview = await unwiredHistory.previewScrub(unwired);
+		if (unwiredPreview.status !== 'ready') throw new Error('Expected a ready preview.');
+		await expect(unwiredHistory.scrub(unwiredPreview.token, unwired)).resolves.toMatchObject({ status: 'blocked', erased: 0 });
+	});
+
 	it('shares mutual exclusion between runtime transitions and a scrub lease', () => {
 		const authority = idleAuthority();
 		const runtime = authority.acquireRuntimeMutation();

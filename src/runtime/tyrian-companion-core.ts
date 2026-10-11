@@ -652,7 +652,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
 	private managedAssetsView: ManagedAssetsView =
 		{ status: 'idle', message: 'not_inspected', plan: null };
-	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
+	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate(), () => this.retireSealedLiveSession());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
 	/**
@@ -2869,11 +2869,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	private sessionHistoryScrubGate(): SessionHistoryScrubGate {
+		const live = this.liveSessions?.getRuntime() ?? null;
 		return {
-			sessionStatus: this.liveSessions?.getRuntime()?.phase ?? this.sessions.getState().status,
+			sessionStatus: live?.phase ?? this.sessions.getState().status,
+			sealedRetirable: live?.phase === 'complete' && live.summaryReceipt !== null,
 			recoveryStatus: this.sessions.getRecoveryState().status,
 			detectorStatus: this.assistedDetection.getState().status,
 		};
+	}
+
+	/**
+	 * The history scrub's way past a finished live session (Z2-3): its record is let go so the next load does not write the scrubbed
+	 * note back, and what the panel kept of its summary goes with it.
+	 */
+	private async retireSealedLiveSession(): Promise<boolean> {
+		if (this.liveSessions === null) return true;
+		if (!await this.liveSessions.retireSealed()) return false;
+		this.sessionSummarySaveState = 'unknown'; this.savedSessionNotePath = null;
+		this.renderViews();
+		return true;
 	}
 
 	/**
