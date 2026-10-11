@@ -12316,9 +12316,9 @@
 				{
 					"id": "0edcd688c740c961d0ec39d952871234449444fa",
 					"kind": "void_expression",
-					"line": 75,
+					"line": 78,
 					"column": 56,
-					"endLine": 75,
+					"endLine": 78,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12332,9 +12332,9 @@
 				{
 					"id": "4faa0efb611553ed22c6cd91c804ae7921f3cb23",
 					"kind": "callback_registration",
-					"line": 80,
+					"line": 83,
 					"column": 18,
-					"endLine": 82,
+					"endLine": 85,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12349,9 +12349,9 @@
 				{
 					"id": "dae6078e977075362e41f61e344facfa6a35303c",
 					"kind": "void_expression",
-					"line": 97,
+					"line": 100,
 					"column": 5,
-					"endLine": 97,
+					"endLine": 100,
 					"endColumn": 35,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12365,9 +12365,9 @@
 				{
 					"id": "12d93d7d1b0d3c7570b09f4c1d0b86194a82336b",
 					"kind": "catch_clause",
-					"line": 108,
+					"line": 111,
 					"column": 5,
-					"endLine": 112,
+					"endLine": 115,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12381,9 +12381,9 @@
 				{
 					"id": "7aa4c45ed9d74d0fd5a2e3c98a5c917d2b04ac9d",
 					"kind": "catch_clause",
-					"line": 139,
+					"line": 142,
 					"column": 5,
-					"endLine": 145,
+					"endLine": 148,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {

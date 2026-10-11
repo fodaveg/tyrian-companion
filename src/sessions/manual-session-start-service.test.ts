@@ -1824,9 +1824,40 @@ describe('dispose while an automatic reclaim is in flight (DE-07)', () => {
 		held.tick(10_000);
 		await held.settle();
 
+		expect([...held.intervals.values()].map((entry) => entry.periodMs)).toEqual([]);
 		expect(held.renew).toHaveBeenCalledTimes(held.renewsBefore);
 		expect(held.onAutoRecovered).not.toHaveBeenCalled();
 		expect([...held.intervals.values()].map((entry) => entry.periodMs)).not.toContain(API_SETTLEMENT_TICK_MS);
+	});
+
+	it('arms no heartbeat for a start whose lease arrives after dispose', async () => {
+		clock = Date.parse('2026-08-13T07:59:59.500Z');
+		const intervals = new Map<number, number>();
+		let nextHandle = 1;
+		let grant!: () => void;
+		const granted = new Promise<void>((resolve) => { grant = resolve; });
+		const acquire = vi.fn(async () => {
+			await granted;
+			return { status: 'acquired' as const, handle };
+		});
+		const service = new ManualSessionStartService(coordinator({ acquire }), {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		}, serviceOptions({
+			setInterval: vi.fn((_callback: () => void, periodMs: number) => {
+				const id = nextHandle++;
+				intervals.set(id, periodMs);
+				return id;
+			}),
+			clearInterval: vi.fn((id: unknown) => { intervals.delete(id as number); }),
+		}));
+		const started = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce());
+		await service.dispose();
+		grant();
+		await started;
+
+		expect([...intervals.values()]).toEqual([]);
 	});
 });
 

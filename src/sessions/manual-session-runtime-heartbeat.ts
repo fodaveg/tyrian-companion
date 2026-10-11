@@ -67,6 +67,9 @@ export class ManualSessionHeartbeat {
 	startHeartbeat(handle: ActiveSessionLeaseHandle): void {
 		this.currentHandle = handle;
 		this.stopHeartbeat();
+		// Every caller (start, recover, the startup finalize, reclaim) reaches here after an await
+		// that `dispose()` may have outlived: a disposed service never registers the interval again.
+		if (this.disposed) return;
 		const ttl = handle.expiresAt - handle.renewedAt;
 		// No upper cap here: a 10 s ceiling on a 300 s lease (H14.22) would still renew every
 		// 10 s and lose the whole point of the longer TTL. `ttl / 3` alone still guarantees at
