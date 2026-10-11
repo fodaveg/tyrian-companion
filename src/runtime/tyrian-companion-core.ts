@@ -149,20 +149,18 @@ import { assemblePriceHistory } from './assemble-price-history';
 import {
 	advisorActionOutcome,
 	detectionActionOutcome,
-	inventoryOneClickSyncOutcome,
 	vaultSyncActionOutcome,
-	vaultSyncFailureOutcome,
 } from './core-outcomes';
 import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
-	liveRulesExpiredAtMsFromLoad,
 	resolveSaleSeasonalInputFor,
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
+import { InventoryRuntime, type InventoryRuntimePort } from './inventory-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
@@ -181,7 +179,6 @@ import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
 import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock } from '../ui/price-history-note-block-controller';
-import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
 import {
 	assembleAdvisor,
@@ -193,13 +190,7 @@ import type {
 	InventoryPreferencesEditorSession,
 	InventoryPreferencesEditorState,
 } from '../advisor/inventory-preferences-runtime';
-import {
-	inventoryPreferencesBackupWritableOver,
-	sameInventoryPreferencesBackup,
-	type InventoryPreferencesBackup,
-	type InventoryPreferencesBackupV1,
-	type InventoryPreferencesBackupWriteOutcome,
-} from '../advisor/inventory-preferences-backup';
+import type { InventoryPreferencesBackup } from '../advisor/inventory-preferences-backup';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from '../economy/legendary-materials';
@@ -216,7 +207,6 @@ import {
 	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
-	type InventoryVaultSyncLastRun,
 	type SettingsPatchOverBase,
 	type TyrianSettings,
 } from '../core/settings';
@@ -306,8 +296,6 @@ import {
 import { TyrianCompanionSettingTab } from '../ui/settings-tab';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import {
-	applyLiveInventoryAdvisorRulesExpiry,
-	buildInventoryAdvisorViewModel,
 	type InventoryAdvisorViewModel,
 } from '../ui/inventory-advisor-view-model';
 import {
@@ -327,19 +315,14 @@ import {
 } from '../inventory/inventory-vault-sync';
 import {
 	InventoryAnalysisService,
-	inventoryAnalysisMissingCause,
-	inventoryAnalysisNotReadyCause,
 	inventoryVaultSyncInputFromAnalysis,
 } from '../inventory/inventory-analysis';
-import type { InventoryAdvisorContextualPresentationSource } from '../advisor/inventory-advisor-presentation';
-import type { InventoryObjectResultsV1 } from '../advisor/inventory-object-result';
 import {
 	InventoryVaultSyncController,
 	type InventoryVaultSyncDisabledReason,
 } from '../ui/inventory-vault-sync-controller';
 import {
 	InventoryVaultOneClickSyncController,
-	type InventoryVaultSyncCaptureProgress,
 	type InventoryVaultSyncRunState,
 } from '../ui/inventory-vault-sync-run-controller';
 import {
@@ -613,6 +596,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * the core keeps the mounted controllers, which its registration and unload also walk.
 	 */
 	private readonly liveView: LiveViewRuntime = new LiveViewRuntime(TyrianCompanionCore.liveViewRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the inventory (the advisor's refresh and view model, the preferences, the
+	 * inventory and wallet syncs). It reads the core's fields through `inventoryRuntimePort`; the core
+	 * keeps building the controllers it drives and the settings write chain.
+	 */
+	private readonly inventory: InventoryRuntime = new InventoryRuntime(TyrianCompanionCore.inventoryRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -1255,7 +1244,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			},
 		});
 		const previewInventorySync = async (): Promise<InventoryVaultSyncPlan> => {
-			const analysis = await this.inventoryAnalysisForNotes();
+			const analysis = await this.inventory.inventoryAnalysisForNotes();
 			const input = await inventoryVaultSyncInputFromAnalysis(analysis.source, analysis.objects);
 			return await inventoryVaultWriter.preview(this.configuredNotesRoot(), input);
 		};
@@ -1272,7 +1261,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.inventoryVaultSyncRun = new InventoryVaultOneClickSyncController(
 			{
 				disabledReason: inventorySyncDisabledReason,
-				refreshAdvisor: (onPhase, onCaptureProgress) => this.refreshInventoryAdvisorForSync(onPhase, onCaptureProgress),
+				refreshAdvisor: (onPhase, onCaptureProgress) => this.inventory.refreshInventoryAdvisorForSync(onPhase, onCaptureProgress),
 				previewSync: previewInventorySync,
 				applySync: async (plan, onStep) => await inventoryVaultWriter.apply(plan, onStep),
 			},
@@ -1280,7 +1269,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			(state) => this.renderInventorySyncRunChange(state),
 			(outcome) => { fireAndForgetLocal(this.localDebugActions,
 				{ component: 'settings', action: 'settings_save', state: 'inventory_sync_outcome' },
-				() => this.recordInventorySyncOutcome(outcome)); },
+				() => this.inventory.recordInventorySyncOutcome(outcome)); },
 		);
 		const walletVaultWriter = new WalletVaultSyncService(
 			labelledVault(host.vault, 'Wallet note'), host.vault.configDir,
@@ -1318,7 +1307,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			personalValuation: () => this.settings.halloweenPersonalValuation,
 			materialStorageCapacity: () => resolveMaterialStorageCapacity(this.settings.materialStorageCapacity),
 			equipmentSalvagePreferences: () => resolveEquipmentSalvagePreferences(this.settings),
-			writeCaptureReceipt: (receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
+			writeCaptureReceipt: (receipt) => this.inventory.writeInventoryAdvisorCaptureReceipt(receipt),
 			phaseListener: this.inventoryAdvisorPhaseListener,
 			captureProgressListener: this.inventoryAdvisorCaptureProgressListener,
 			catalogPersistence: catalogDiagnostics,
@@ -1338,7 +1327,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			preferencesBackup: {
 				settings: {
 					read: () => this.settings.inventoryPreferencesBackup,
-					write: async (backup, final) => await this.writeInventoryPreferencesBackup(backup, final),
+					write: async (backup, final) => await this.inventory.writeInventoryPreferencesBackup(backup, final),
 				},
 				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
 				cancel: (handle) => { window.clearTimeout(handle as number); },
@@ -2341,17 +2330,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.settings.language;
 	}
 
-	/**
-	 * H18.35: the cached `InventoryAdvisorPresentationController` result only updates on an explicit
-	 * refresh, so without this the Asesor tab could keep showing `ready`/`limited` well after the
-	 * curated builtin bundle's own `validUntil`, exactly the silent staleness H18.34 already fixed for
-	 * the Venta tab's `SaleViewModel.rulesExpiredAtMs`. Checked fresh on every read, never on the
-	 * cached model's own `status`.
-	 */
-	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
-		if (!this.runtimeReady) return buildInventoryAdvisorViewModel(null);
-		return applyLiveInventoryAdvisorRulesExpiry(this.inventoryAdvisor.open(), liveRulesExpiredAtMs(Date.now()));
-	}
+	/** The Asesor view model, with the rules expiry checked fresh on every read (`InventoryRuntime`). */
+	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel { return this.inventory.getInventoryAdvisorViewModel(); }
 
 	/**
 	 * What `SaleRuntime` reads from this core and asks of it (DE-01, step 2). Getters over the
@@ -2590,139 +2570,21 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 	}
 
-	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {
-		return this.runtimeReady ? this.inventoryPreferences.current() : structuredClone(IDLE_PREFERENCES_STATE);
-	}
+	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState { return this.inventory.getInventoryPreferencesEditorState(); }
 
-	/** Gives each ItemView an opaque CAS revision without placing it in its DOM. */
-	createInventoryPreferencesEditorSession(): InventoryPreferencesEditorSession {
-		if (!this.runtimeReady) return idleInventoryPreferencesEditorSession(() => this.notifyRuntimeStarting());
-		const session = this.inventoryPreferences.createEditorSession();
-		const after = async (
-			state: InventoryPreferencesEditorState, reclassifyReady = true,
-		): Promise<InventoryPreferencesEditorState> => {
-			let settled = state;
-			// Preferences that answer again also lift the block an earlier storage failure left on the
-			// advisor: without this the tab kept saying they were unavailable until a restart.
-			if (state.status === 'ready' && (reclassifyReady || this.inventoryAdvisor.blockedOnPreferences())) {
-				await this.inventoryAdvisor.reclassify();
-				// That reclassification reloads the preferences, which expires every editor session, this
-				// one included. Only the session that caused it is read again here (a plain read: it never
-				// reclassifies); another leaf's session stays expired and must reload before it may write.
-				if (session.current().status !== 'ready') settled = await session.load();
-			}
-			if (settled.status === 'blocked' || settled.status === 'conflict') this.inventoryAdvisor.block();
-			this.renderInventoryAdvisorViews();
-			return settled;
-		};
-		return Object.freeze({
-			// A load changes nothing by itself: it reclassifies only when the loaded revision is not the one
-			// the analysis in force used (another window or device wrote since). Writes always reclassify.
-			// Either way the session that asked ends ready on the revision in force (see `after`).
-			current: () => session.current(),
-			load: async () => await after(await session.load(), this.inventoryPreferences.differsFromAnalysis()),
-			upsertGoal: async (goal: ReservationGoal) => await after(await session.upsertGoal(goal)),
-			removeGoal: async (goalId: string) => await after(await session.removeGoal(goalId)),
-			upsertKeepException: async (keepException: KeepExceptionV1) => await after(await session.upsertKeepException(keepException)),
-			removeKeepException: async (exceptionId: string) => await after(await session.removeKeepException(exceptionId)),
-		});
-	}
+	/** Gives each ItemView an opaque CAS revision without placing it in its DOM (`InventoryRuntime`). */
+	createInventoryPreferencesEditorSession(): InventoryPreferencesEditorSession { return this.inventory.createInventoryPreferencesEditorSession(); }
 
-	async refreshInventoryAdvisor(): Promise<void> {
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const operation = this.inventoryAdvisor.refresh({}, context);
-		this.renderInventoryAdvisorViews();
-		const model = await operation; if (model.status === 'blocked' && model.blockedReason === 'credential_unavailable') this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'advisor.view.blockedReason.credential_unavailable'), 'inventory_advisor_missing_key');
-		// The Sale tab's hero card rides the same refresh: its verdict needs the freshest owned
-		// quantity and today's bid, both of which this analysis just settled.
-		await this.sale.refreshSaleHeroTiming();
-		this.renderInventoryAdvisorViews();
-		};
-		// No deferred seed pass starts here: the action that left one starts it itself, when it ends
-		// (`startPriceSeedDeferredPass`), so an "Analizar" never starts another action's downloads.
-		await (this.localDebugActions?.run(
-			{ component: 'inventory', action: 'inventory_refresh' }, perform,
-		) ?? perform());
-	}
+	refreshInventoryAdvisor(): Promise<void> { return this.inventory.refreshInventoryAdvisor(); }
 
-	/**
-	 * Runs the ordinary advisor refresh while reporting its real capture/preferences/
-	 * classification phases, plus the real request counters inside the capture phase.
-	 * Both listeners are purely in-memory and cleared as soon as the refresh settles.
-	 * It is also the one analysis the inventory notes are then written from (H18.16).
-	 */
-	private async refreshInventoryAdvisorForSync(
-		onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
-		onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
-	): Promise<void> {
-		this.inventoryAdvisorPhaseListener.current = onPhase;
-		this.inventoryAdvisorCaptureProgressListener.current = onCaptureProgress;
-		this.inventoryAnalysisForSync = true;
-		try { await this.refreshInventoryAdvisor(); }
-		finally {
-			this.inventoryAnalysisForSync = false;
-			this.inventoryAdvisorPhaseListener.current = null;
-			this.inventoryAdvisorCaptureProgressListener.current = null;
-		}
-	}
+	/** Live/persisted state of the single-button view sync (`InventoryRuntime`). */
+	getInventoryVaultSyncRunState(): InventoryVaultSyncRunState { return this.inventory.getInventoryVaultSyncRunState(); }
 
-	/**
-	 * H18.16: the analysis the inventory notes are written from, which is always the one the
-	 * advisor view is showing. When that analysis cannot rewrite the notes (no analysis yet, a
-	 * snapshot that is not stable and complete in every store, or one older than the advisor's
-	 * snapshot policy), ONE more analysis runs, and the view shows that one too: a recovery read,
-	 * never a second private capture that could contradict what the view says.
-	 */
-	private async inventoryAnalysisForNotes(): Promise<{
-		source: InventoryAdvisorContextualPresentationSource;
-		objects: InventoryObjectResultsV1;
-	}> {
-		const check = (): {
-			ready: { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 } | null;
-			cause: string | null;
-		} => {
-			const analysis = this.inventoryAdvisor.analysis();
-			if (analysis === null) return { ready: null, cause: inventoryAnalysisMissingCause(this.inventoryAdvisor.current()) };
-			const cause = inventoryAnalysisNotReadyCause(analysis.source, analysis.objects, Date.now());
-			return cause === null && analysis.objects !== null
-				? { ready: { source: analysis.source, objects: analysis.objects }, cause: null }
-				: { ready: null, cause: cause ?? 'objects_null' };
-		};
-		const current = check();
-		if (current.ready !== null) return current.ready;
-		this.inventoryAnalysisForSync = true;
-		try { await this.refreshInventoryAdvisor(); }
-		finally { this.inventoryAnalysisForSync = false; }
-		const recovered = check();
-		// The code names the condition that failed after the recovery read (safe: a closed list).
-		if (recovered.ready === null) throw new Error(recovered.cause ?? 'inventory_capture_incomplete');
-		return recovered.ready;
-	}
+	/** The one-click flow: refresh, preview, and (unless it must pause) apply (`InventoryRuntime`). */
+	runInventoryVaultSync(): Promise<void> { return this.inventory.runInventoryVaultSync(); }
 
-	/** Live/persisted state of the single-button view sync. It never starts work by itself. */
-	getInventoryVaultSyncRunState(): InventoryVaultSyncRunState {
-		return this.inventoryVaultSyncRun.current();
-	}
-
-	/**
-	 * The one-click flow: refresh, preview, and (unless it must pause) apply. The stale price seeds
-	 * its analyses left are refreshed once all of it has ended (`runPriceSeedSyncAction`).
-	 */
-	async runInventoryVaultSync(): Promise<void> {
-		await this.sale.runPriceSeedSyncAction(async () => {
-			const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.run());
-			await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
-			await this.updateManagedAssetsAfterInventorySync();
-		});
-	}
-
-	/** Writes a plan that paused for confirmation because it would deactivate rows. */
-	async confirmInventoryVaultSync(): Promise<void> {
-		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.confirm());
-		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
-		await this.updateManagedAssetsAfterInventorySync();
-	}
+	/** Writes a plan that paused for confirmation because it would deactivate rows (`InventoryRuntime`). */
+	confirmInventoryVaultSync(): Promise<void> { return this.inventory.confirmInventoryVaultSync(); }
 
 	/**
 	 * H18.18: the Bases follow a newer plugin on their own, but only behind the explicit inventory
@@ -2842,46 +2704,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return said;
 	}
 
-	/** Discards a pending destructive plan without writing anything. */
-	cancelInventoryVaultSync(): void {
-		if (this.localDebugActions) this.localDebugActions.runSync(
-			{ component: 'inventory', action: 'inventory_sync' }, () => this.inventoryVaultSyncRun.cancel(),
-		);
-		else this.inventoryVaultSyncRun.cancel();
-	}
-
-	private async recordInventorySyncOutcome(outcome: InventoryVaultSyncLastRun): Promise<void> {
-		await this.serializeSettingsWrite(async () => {
-			const base = await this.loadSettingsBase();
-			// DU-04: with settings from a newer release the receipt lives in memory only, for this run.
-			if (base !== null) await this.host.settings.save({ ...base, inventorySyncLastRun: outcome });
-			// Memory takes only the key this method owns. What another device changed stays unpublished,
-			// so the next `updateSettings` still sees it as a difference and reacts to it.
-			this.settings = { ...this.settings, inventorySyncLastRun: outcome };
-		});
-	}
-
-	/**
-	 * DU-13: writes the copy of the inventory preferences into the host's settings, over the settings as they are now
-	 * (`loadSettingsBase`), in the same write chain as every other save. A copy equal to the stored one is not written
-	 * again. Nothing is written with settings from a newer release (DU-04), over a stored copy of a version this release
-	 * does not know (only the newer release can read it), or once the plugin is unloaded, except the `final` write the
-	 * copy starts as it is disposed. A failed save rejects, for the copy to record.
-	 */
-	private async writeInventoryPreferencesBackup(backup: InventoryPreferencesBackupV1, final: boolean): Promise<InventoryPreferencesBackupWriteOutcome> {
-		if (this.unloaded && !final) return 'unloaded';
-		return await this.serializeSettingsWrite(async () => {
-			if (this.unloaded && !final) return 'unloaded';
-			const base = await this.loadSettingsBase();
-			if (base === null) return 'read_only';
-			if (!inventoryPreferencesBackupWritableOver(base.inventoryPreferencesBackup)) return 'future_kept';
-			if (sameInventoryPreferencesBackup(base.inventoryPreferencesBackup, backup)) return 'unchanged';
-			await this.host.settings.save({ ...base, inventoryPreferencesBackup: backup });
-			// Memory takes only the key this method owns, as `recordInventorySyncOutcome` does.
-			this.settings = { ...this.settings, inventoryPreferencesBackup: structuredClone(backup) };
-			return 'saved';
-		});
-	}
+	/** Discards a pending destructive plan without writing anything (`InventoryRuntime`). */
+	cancelInventoryVaultSync(): void { this.inventory.cancelInventoryVaultSync(); }
 
 	/** Tail of the settings write chain; every read-merge-save-publish runs after the previous one settled. */
 	private settingsWriteChain: Promise<void> = Promise.resolve();
@@ -2926,136 +2750,33 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return migrateSettings(persisted, this.host.vault.configDir, this.host.locale());
 	}
 
-	/**
-	 * The manual preview. Its recovery read (`inventoryAnalysisForNotes`) can run a sync's analysis
-	 * outside `runInventoryVaultSync`: that seed pass requests the missing seeds and leaves the stale
-	 * copies for the next sync or Sale refresh (see `refreshPriceSeedsForSync`).
-	 */
-	async previewInventoryVaultSync(openView = false): Promise<void> {
-		const perform = async (): Promise<void> => {
-		if (openView) await this.activateInventoryAdvisorView();
-		const operation = this.inventoryVaultSync.preview();
-		this.renderInventoryAdvisorViews();
-		await operation;
-		this.renderInventoryAdvisorViews();
-		};
-		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_preview' }, perform) ?? perform());
-	}
+	/** The manual preview (`InventoryRuntime`). */
+	previewInventoryVaultSync(openView = false): Promise<void> { return this.inventory.previewInventoryVaultSync(openView); }
 
-	async applyInventoryVaultSync(): Promise<void> {
-		const perform = async () => {
-			const operation = this.inventoryVaultSync.apply();
-			this.renderInventoryAdvisorViews();
-			await operation;
-			this.renderInventoryAdvisorViews();
-			return vaultSyncFailureOutcome(this.inventoryVaultSync.current());
-		};
-		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
-	}
+	applyInventoryVaultSync(): Promise<void> { return this.inventory.applyInventoryVaultSync(); }
 
 	/** Every note this plugin writes follows the explicit output folder, never the managed-assets pointer. */
 	private configuredNotesRoot(): string {
 		return this.settings.outputFolder;
 	}
 
-	getWalletVaultSyncState(): WalletVaultSyncViewState {
-		return this.walletVaultSync.current();
-	}
+	getWalletVaultSyncState(): WalletVaultSyncViewState { return this.inventory.getWalletVaultSyncState(); }
 
-	canApplyWalletVaultSync(): boolean {
-		return this.walletVaultSync.canApply();
-	}
+	canApplyWalletVaultSync(): boolean { return this.inventory.canApplyWalletVaultSync(); }
 
-	async previewWalletVaultSync(): Promise<void> {
-		const perform = async (): Promise<void> => {
-		const state = await this.walletVaultSync.preview();
-		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
-		};
-		await (this.localDebugActions?.run({ component: 'wallet', action: 'wallet_preview' }, perform) ?? perform());
-	}
+	previewWalletVaultSync(): Promise<void> { return this.inventory.previewWalletVaultSync(); }
 
-	async applyWalletVaultSync(): Promise<void> {
-		const perform = async () => {
-			const state = await this.walletVaultSync.apply();
-			this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
-			return vaultSyncFailureOutcome(state);
-		};
-		await (this.localDebugActions?.run({ component: 'wallet', action: 'wallet_sync' }, perform) ?? perform());
-	}
+	applyWalletVaultSync(): Promise<void> { return this.inventory.applyWalletVaultSync(); }
 
-	private walletVaultSyncNoticeText(state: WalletVaultSyncViewState): string {
-		const translator = createTranslator(this.settings.language);
-		switch (state.status) {
-			case 'disabled':
-				return translateRuntime(translator, state.reason === 'missing_key' ? 'notices.walletVaultMissingKey' : 'notices.walletVaultLegacyRoot');
-			case 'preview':
-				return translateRuntime(translator, 'notices.walletVaultPreviewReady', {
-					create: state.summary.create, update: state.summary.update,
-					deactivate: state.summary.deactivate, unchanged: state.summary.unchanged,
-				});
-			case 'success':
-				return state.result.status === 'applied'
-					? translateRuntime(translator, 'notices.walletVaultApplied', {
-						created: state.result.created, updated: state.result.updated, deactivated: state.result.deactivated,
-					})
-					: translateRuntime(translator, 'notices.walletVaultUnchanged');
-			case 'conflict':
-				return translateRuntime(translator, 'notices.walletVaultConflict');
-			case 'idle':
-			case 'loading':
-			case 'applying':
-			case 'error':
-				return translateRuntime(translator, 'notices.walletVaultError');
-		}
-	}
+	loadInventoryPreferences(): Promise<void> { return this.inventory.loadInventoryPreferences(); }
 
-	private async writeInventoryAdvisorCaptureReceipt(
-		receipt: InventoryAdvisorCaptureReceiptV1,
-	): Promise<void> {
-		const path = `${this.host.vault.configDir}/plugins/${this.host.environment.pluginId}/inventory-advisor-capture-receipt.json`;
-		await this.host.vault.adapter.write(path, `${JSON.stringify(receipt, null, '\t')}\n`);
-	}
+	upsertInventoryGoal(goal: ReservationGoal): Promise<void> { return this.inventory.upsertInventoryGoal(goal); }
 
-	async loadInventoryPreferences(): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const state = await this.inventoryPreferences.loadCached();
-		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
-		// The same as an editor session's load: a block left by a storage failure does not outlive it.
-		else if (state.status === 'ready' && this.inventoryAdvisor.blockedOnPreferences()) await this.inventoryAdvisor.reclassify();
-		this.renderInventoryAdvisorViews();
-	}
+	removeInventoryGoal(goalId: string): Promise<void> { return this.inventory.removeInventoryGoal(goalId); }
 
-	async upsertInventoryGoal(goal: ReservationGoal): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const state = await this.inventoryPreferences.upsertGoal(goal);
-		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
-		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
-		this.renderInventoryAdvisorViews();
-	}
+	upsertInventoryKeepException(keepException: KeepExceptionV1): Promise<void> { return this.inventory.upsertInventoryKeepException(keepException); }
 
-	async removeInventoryGoal(goalId: string): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const state = await this.inventoryPreferences.removeGoal(goalId);
-		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
-		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
-		this.renderInventoryAdvisorViews();
-	}
-
-	async upsertInventoryKeepException(keepException: KeepExceptionV1): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const state = await this.inventoryPreferences.upsertKeepException(keepException);
-		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
-		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
-		this.renderInventoryAdvisorViews();
-	}
-
-	async removeInventoryKeepException(exceptionId: string): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const state = await this.inventoryPreferences.removeKeepException(exceptionId);
-		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
-		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
-		this.renderInventoryAdvisorViews();
-	}
+	removeInventoryKeepException(exceptionId: string): Promise<void> { return this.inventory.removeInventoryKeepException(exceptionId); }
 
 	getAssistedDetectionState(): AssistedDetectionState {
 		return this.live.getAssistedDetectionState();
@@ -3118,6 +2839,40 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get productActions() { return core.productActions; },
 			get commands() { return core.commands; },
 			get liveSessionLoot() { return core.liveSessionLoot; },
+		};
+	}
+
+	/**
+	 * What `InventoryRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the
+	 * core's own fields, read as they stand: the controllers are built in `initializeRuntime`, after
+	 * the port. The settings and the sync-analysis flag are setters too, because the moved code
+	 * publishes into them.
+	 */
+	private static inventoryRuntimePort(core: TyrianCompanionCore): InventoryRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			set settings(value) { core.settings = value; },
+			get runtimeReady() { return core.runtimeReady; },
+			get unloaded() { return core.unloaded; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get inventoryAdvisor() { return core.inventoryAdvisor; },
+			get inventoryPreferences() { return core.inventoryPreferences; },
+			get inventoryVaultSync() { return core.inventoryVaultSync; },
+			get inventoryVaultSyncRun() { return core.inventoryVaultSyncRun; },
+			get walletVaultSync() { return core.walletVaultSync; },
+			get inventoryAdvisorPhaseListener() { return core.inventoryAdvisorPhaseListener; },
+			get inventoryAdvisorCaptureProgressListener() { return core.inventoryAdvisorCaptureProgressListener; },
+			get inventoryAnalysisForSync() { return core.inventoryAnalysisForSync; },
+			set inventoryAnalysisForSync(value) { core.inventoryAnalysisForSync = value; },
+			get sale() { return core.sale; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			renderInventoryAdvisorViews: () => { core.renderInventoryAdvisorViews(); },
+			activateInventoryAdvisorView: () => core.activateInventoryAdvisorView(),
+			updateManagedAssetsAfterInventorySync: () => core.updateManagedAssetsAfterInventorySync(),
+			serializeSettingsWrite: (section) => core.serializeSettingsWrite(section),
+			loadSettingsBase: () => core.loadSettingsBase(),
 		};
 	}
 
@@ -4998,11 +4753,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Every state the one-click sync reports (`LiveViewRuntime`). */
 	private renderInventorySyncRunChange(state: InventoryVaultSyncRunState): void { this.liveView.renderInventorySyncRunChange(state); }
 
-	private invalidateInventoryAdvisor(): void {
-		this.inventoryAdvisor.invalidate();
-		this.inventoryPreferences.invalidate();
-		this.renderInventoryAdvisorViews();
-	}
+	private invalidateInventoryAdvisor(): void { this.inventory.invalidateInventoryAdvisor(); }
 
 	private refreshBackgroundIndicators(): void { this.liveView.refreshBackgroundIndicators(); }
 
@@ -5261,11 +5012,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 }
 
-/** `liveRulesExpiredAtMsFromLoad` from a bare instant, for callers that have not already loaded the bundle themselves. */
-function liveRulesExpiredAtMs(nowMs: number): number | null {
-	return liveRulesExpiredAtMsFromLoad(inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString()));
-}
-
 /** H18.26: per-vault local storage key of the link between the in-game presence and its session. */
 const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
 
@@ -5320,25 +5066,6 @@ function halloweenPriceAlertSettingsFrom(settings: TyrianSettings, nowMs: number
 		minimumAboveP90Bps: settings.halloweenPriceAlertMinimumAboveP90Bps,
 		cooldownHours: settings.halloweenPriceAlertCooldownHours,
 	};
-}
-
-/** Identical to a brand-new editor session before its first `load()`. */
-const IDLE_PREFERENCES_STATE: InventoryPreferencesEditorState = { status: 'not_loaded', goals: [], keepExceptions: [] };
-
-/** Every action resolves without mutating anything and tells the caller the boot is still running. */
-function idleInventoryPreferencesEditorSession(notifyRuntimeStarting: () => void): InventoryPreferencesEditorSession {
-	const blocked = async (): Promise<InventoryPreferencesEditorState> => {
-		notifyRuntimeStarting();
-		return structuredClone(IDLE_PREFERENCES_STATE);
-	};
-	return Object.freeze({
-		current: () => structuredClone(IDLE_PREFERENCES_STATE),
-		load: blocked,
-		upsertGoal: blocked,
-		removeGoal: blocked,
-		upsertKeepException: blocked,
-		removeKeepException: blocked,
-	});
 }
 
 /** Test seed (DE-09): the command wiring is exercised by `inventory-advisor-integration-architecture.test.ts` only. */

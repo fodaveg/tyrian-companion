@@ -19614,6 +19614,11 @@
 					"reason": "Allowlisted catch_clause: In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session. Verified recovery: \"local_recovery\" in \"persistFarmingSessionContext\"."
 				}
 			]
+		},
+		"src/runtime/inventory-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		}
 	}
 }

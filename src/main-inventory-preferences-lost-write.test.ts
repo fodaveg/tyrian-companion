@@ -8,7 +8,7 @@ vi.mock('./advisor/inventory-advisor-classifier', async (importOriginal) => {
 	return { ...original, classifyInventoryAdvisorDiagnosed: vi.fn(original.classifyInventoryAdvisorDiagnosed) };
 });
 
-import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { InventoryRuntime } from './runtime/inventory-runtime';
 import { classifyInventoryAdvisorDiagnosed, sha256InventoryKnowledgePack } from './advisor/inventory-advisor-classifier';
 import { InventoryAdvisorWorkflow, type InventoryAdvisorRules } from './advisor/inventory-advisor-workflow';
 import { InventoryPreferencesRuntime, type InventoryPreferencesEditorSession } from './advisor/inventory-preferences-runtime';
@@ -87,7 +87,7 @@ async function analysedAdvisor(alreadyStored: KeepExceptionV1[] = []) {
 	const classifications = vi.mocked(classifyInventoryAdvisorDiagnosed);
 	classifications.mockClear();
 	const newSession = (): InventoryPreferencesEditorSession =>
-		TyrianCompanionCore.prototype.createInventoryPreferencesEditorSession.call(harness as never);
+		new InventoryRuntime(harness as never).createInventoryPreferencesEditorSession();
 	/** One leaf of the Inventory tab, with its own editor session, as the host mounts it. */
 	const openView = async (): Promise<{ view: InventoryAdvisorItemView; root: FakeElement }> => {
 		const view = new InventoryAdvisorItemView(new FakeElement('div', activeDocument) as unknown as HTMLElement,

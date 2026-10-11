@@ -17,6 +17,7 @@ import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
+import { InventoryRuntime, type InventoryRuntimePort } from './runtime/inventory-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -65,16 +66,6 @@ interface StartIntentHarness {
 	liveSessions: null;
 }
 
-interface InventoryVaultIntentHarness {
-	inventoryVaultSync: {
-		preview(): Promise<unknown>;
-		apply(): Promise<unknown>;
-		current(): { status: string };
-	};
-	activateInventoryAdvisorView(): Promise<unknown>;
-	renderInventoryAdvisorViews(): void;
-}
-
 /**
  * DE-01, steps 3c and 3d: the start, the stop, the finalization, the assisted detection and the
  * pending proposals are `LiveSessionRuntime`'s. The cases below
@@ -114,6 +105,20 @@ function notesOver(harness: object): SessionNoteRuntime {
 		sessionNoteRuntimePort(this: void, core: object): SessionNoteRuntimePort;
 	}).sessionNoteRuntimePort;
 	return new SessionNoteRuntime(portOf(harness));
+}
+
+/**
+ * DE-01, step 3g: the inventory (the advisor's refresh, the syncs, the outcome of the one-click one) is
+ * `InventoryRuntime`'s. The cases below that drove it as methods of `TyrianCompanionCore` on a plain
+ * object run it on a runtime built over that same object through the core's own port
+ * (`inventoryRuntimePort`), so the object's fields and the core's methods it lends are read exactly as
+ * the moved code reads them in production.
+ */
+function inventoryOver(harness: object): InventoryRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		inventoryRuntimePort(this: void, core: object): InventoryRuntimePort;
+	}).inventoryRuntimePort;
+	return new InventoryRuntime(portOf(harness));
 }
 
 describe('connection diagnostics composition', () => {
@@ -967,12 +972,8 @@ describe('durable inventory Vault commands', () => {
 			inventoryVaultSync: { preview, apply: vi.fn(), current: () => ({ status: 'idle' }) },
 			activateInventoryAdvisorView: activate, renderInventoryAdvisorViews: render,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const invoke = (TyrianCompanionCore.prototype as unknown as {
-			previewInventoryVaultSync(this: InventoryVaultIntentHarness, openView?: boolean): Promise<void>;
-		}).previewInventoryVaultSync;
 		expect(preview).not.toHaveBeenCalled();
-		const operation = invoke.call(plugin, false);
+		const operation = inventoryOver(plugin).previewInventoryVaultSync(false);
 		expect(preview).toHaveBeenCalledOnce();
 		expect(activate).not.toHaveBeenCalled();
 		expect(render).toHaveBeenCalledOnce();
@@ -992,14 +993,11 @@ describe('durable inventory Vault commands', () => {
 			activateInventoryAdvisorView: vi.fn(async () => { order.push('open'); }),
 			renderInventoryAdvisorViews: vi.fn(() => { order.push('render'); }),
 		};
-		const prototype = TyrianCompanionCore.prototype as unknown as {
-			previewInventoryVaultSync(this: InventoryVaultIntentHarness, openView?: boolean): Promise<void>;
-			applyInventoryVaultSync(this: InventoryVaultIntentHarness): Promise<void>;
-		};
-		await prototype.previewInventoryVaultSync.call(plugin, true);
+		const inventory = inventoryOver(plugin);
+		await inventory.previewInventoryVaultSync(true);
 		expect(order.slice(0, 2)).toEqual(['open', 'preview']);
 		order.length = 0;
-		await prototype.applyInventoryVaultSync.call(plugin);
+		await inventory.applyInventoryVaultSync();
 		expect(plugin.inventoryVaultSync.preview).toHaveBeenCalledOnce();
 		expect(plugin.inventoryVaultSync.apply).toHaveBeenCalledOnce();
 		expect(order).toEqual(['apply', 'render', 'render']);
@@ -1021,12 +1019,7 @@ describe('durable inventory Vault commands', () => {
 			renderInventoryAdvisorViews: vi.fn(),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'inventory-sync-storage-failure' }),
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const invoke = (TyrianCompanionCore.prototype as unknown as {
-			applyInventoryVaultSync(this: typeof plugin): Promise<void>;
-		}).applyInventoryVaultSync;
-
-		await invoke.call(plugin);
+		await inventoryOver(plugin).applyInventoryVaultSync();
 
 		const failure = record.mock.calls.map(([input]) => input).find(
 			(input) => input.component === 'inventory' && input.action === 'inventory_sync' && input.phase === 'failure',
@@ -1059,12 +1052,7 @@ describe('inventory analysis-only action', () => {
 			sale: { refreshSaleHeroTiming: vi.fn(async () => undefined) },
 			emitNotice,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const invoke = (TyrianCompanionCore.prototype as unknown as {
-			refreshInventoryAdvisor(this: typeof plugin): Promise<void>;
-		}).refreshInventoryAdvisor;
-
-		await invoke.call(plugin);
+		await inventoryOver(plugin).refreshInventoryAdvisor();
 
 		expect(emitNotice).toHaveBeenCalledOnce();
 		expect(emitNotice).toHaveBeenCalledWith(
@@ -1084,11 +1072,7 @@ describe('inventory analysis-only action', () => {
 			notifyRuntimeStarting: vi.fn(),
 			sale: { refreshSaleHeroTiming: vi.fn(async () => undefined) },
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const invoke = (TyrianCompanionCore.prototype as unknown as {
-			refreshInventoryAdvisor(this: typeof plugin): Promise<void>;
-		}).refreshInventoryAdvisor;
-		const operation = invoke.call(plugin);
+		const operation = inventoryOver(plugin).refreshInventoryAdvisor();
 		expect(refresh).toHaveBeenCalledOnce();
 		expect(render).toHaveBeenCalledOnce();
 		pending.resolve({ status: 'empty', title: 'Inventory advisor', detail: 'Empty.', groups: [] });
@@ -1110,15 +1094,7 @@ describe('one-click inventory sync outcome persistence', () => {
 			status: 'success' as const, finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
 			summary: { positions: 2909, create: 1616, update: 1167, unchanged: 79, deactivate: 0, conflicts: 0 }, error: null,
 		};
-		interface OutcomeHarness {
-			settings: { apiKeySecret: string; language: string; inventorySyncLastRun: typeof outcome | null };
-			saveData(data: unknown): Promise<void>;
-		}
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const record = (TyrianCompanionCore.prototype as unknown as {
-			recordInventorySyncOutcome(this: OutcomeHarness, next: typeof outcome): Promise<void>;
-		}).recordInventorySyncOutcome;
-		await record.call(plugin, outcome);
+		await inventoryOver(plugin).recordInventorySyncOutcome(outcome);
 		expect(plugin.settings).toEqual({ apiKeySecret: 'gw2-primary', language: 'es', inventorySyncLastRun: outcome });
 		expect(saved).toEqual([plugin.settings]);
 	});

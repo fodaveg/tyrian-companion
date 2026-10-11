@@ -8,7 +8,7 @@ vi.mock('./advisor/inventory-advisor-classifier', async (importOriginal) => {
 	return { ...original, classifyInventoryAdvisorDiagnosed: vi.fn(original.classifyInventoryAdvisorDiagnosed) };
 });
 
-import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { InventoryRuntime } from './runtime/inventory-runtime';
 import { classifyInventoryAdvisorDiagnosed, sha256InventoryKnowledgePack } from './advisor/inventory-advisor-classifier';
 import { InventoryAdvisorWorkflow, type InventoryAdvisorRules } from './advisor/inventory-advisor-workflow';
 import { InventoryPreferencesRuntime } from './advisor/inventory-preferences-runtime';
@@ -56,7 +56,7 @@ async function analysedAdvisor() {
 	await controller.refresh();
 	const classifications = vi.mocked(classifyInventoryAdvisorDiagnosed);
 	classifications.mockClear();
-	const newSession = () => TyrianCompanionCore.prototype.createInventoryPreferencesEditorSession.call(harness as never);
+	const newSession = () => new InventoryRuntime(harness as never).createInventoryPreferencesEditorSession();
 	return { fixture, store, runtime, controller, classifications, newSession };
 }
 

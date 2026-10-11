@@ -4,13 +4,13 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { storageDeltaSnapshot, looseHolding } from './account/__fixtures__/storage-delta';
 import {
-	TyrianCompanionCore,
 	resolveSaleCalendarCandidateSpan,
 	resolveSaleSeasonalInputFor,
 	saleOpenVsSellCopper,
 	saleSourceRowFromAdvisorRow,
 	saleBagSlotsUsed,
 } from './runtime/tyrian-companion-core';
+import { InventoryRuntime, type InventoryRuntimePort } from './runtime/inventory-runtime';
 import type { FestivalCalendarCandidateV1 } from './economy/seasonal-window';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
 import { buildSaleViewModel } from './ui/sale-view-model';
@@ -131,10 +131,8 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 			runtimeReady: boolean;
 			inventoryAdvisor: { open(): InventoryAdvisorViewModel };
 		}): InventoryAdvisorViewModel {
-			const proto = TyrianCompanionCore.prototype as unknown as {
-				getInventoryAdvisorViewModel(this: typeof harness): InventoryAdvisorViewModel;
-			};
-			return proto.getInventoryAdvisorViewModel.call(harness);
+			// DE-01 step 3g: the view model is `InventoryRuntime`'s; the harness stands in for the port.
+			return new InventoryRuntime(harness as unknown as InventoryRuntimePort).getInventoryAdvisorViewModel();
 		}
 
 		/**

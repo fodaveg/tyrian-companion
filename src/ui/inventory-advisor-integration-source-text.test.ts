@@ -100,8 +100,10 @@ describe('H5.11 Inventory Advisor runtime integration (source text)', () => {
 	// Split out of 'overwrites one local sanitized capture receipt...' (GR-04): the write itself is checked
 	// by behaviour in the architecture file; only this last assertion reads source text.
 	it('keeps the capture receipt writer off plugin settings storage', () => {
-		const mainSource = readModuleSource('src/runtime/tyrian-companion-core.ts');
-		const writer = classMethodBody(mainSource, 'TyrianCompanionCore', 'writeInventoryAdvisorCaptureReceipt');
+		// DE-01 step 3g: the writer moved into `InventoryRuntime`; the core only hands its call over.
+		const inventorySource = readModuleSource('src/runtime/inventory-runtime.ts');
+		const writer = classMethodBody(inventorySource, 'InventoryRuntime', 'writeInventoryAdvisorCaptureReceipt');
+		expect(writer).toContain('adapter.write');
 		expect(writer).not.toContain('saveData');
 	});
 });
