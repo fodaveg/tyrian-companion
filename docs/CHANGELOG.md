@@ -21,6 +21,9 @@ usuario; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
   el token anterior y se vacía el portapapeles.
 - Hebra, candado de vida. Se queda activo en Linux: Hebra 0.2.0-21 no deja dos procesos sobre la misma biblioteca, y
   tras matar al proceso que lo tiene, el siguiente lo toma en menos de un segundo.
+- Hebra, avisos del sistema. Con una Hebra que tenga la API 1.5 (rpm 0.2.0-22), los avisos piden urgencia crítica en
+  Linux, para que GNOME los enseñe encima del juego a pantalla completa, y silencio en todas las plataformas, porque el
+  sonido ya lo pone el plugin; igual que en Obsidian. Con una Hebra anterior, el aviso sale como hasta ahora.
 - Interno: la sesión del juego y la nota y exportación de la sesión salen del núcleo a piezas propias (el núcleo baja
   de 3.940 a 3.596 líneas), la vista previa del borrado del historial dice «arrancando» antes del arranque en vez de
   fallar, se quita un test duplicado, y `hebra:verify-install` lee ahora los eventos `plugins.*` del registro de

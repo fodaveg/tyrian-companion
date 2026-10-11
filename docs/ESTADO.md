@@ -39,6 +39,11 @@
   0,6 s. Riesgo residual: si el `flock` no se puede usar, o con Hebras de Linux anteriores a `4ffba0d5`, dos procesos no se
   ven los candados. Windows y la toma del arriendo de sesión con clave, sin medir
   ([2026-10-11-hebra-candado-linux](evidencia/2026-10-11-hebra-candado-linux.md)).
+- HP-01: `hebra-plugin-api` pasa a `#v1.5.0` y `hebraSystemNotifyInput` (`src/host/hebra/hebra-host.ts`) manda a
+  `api.notify.system` las mismas opciones que el aviso de Obsidian (`systemNotificationOptions`: `silent: true` siempre,
+  `urgency: 'critical'` en Linux) cuando `api.has('notify.urgency')`; sin esa capacidad, solo título y cuerpo, como
+  antes. Probado con los dobles de la API 1.5.0, no en un Hebra 0.2.0-22 real ni con GW2 a pantalla completa en GNOME.
+  En macOS e iOS el crítico no atraviesa el modo concentración y en Windows se ignora (tipos de la API 1.5.0).
 - GR-18: borrado `src/main-render-coalescing.test.ts`, duplicado.
 - DE-01 olas 9 y 10: la sesión in-game pasa a `src/runtime/ingame-session-runtime.ts` (el secreto del puente se queda en el
   núcleo) y la nota y la exportación de la sesión a `src/runtime/session-note-runtime.ts` y `src/runtime/session-facade.ts`.
