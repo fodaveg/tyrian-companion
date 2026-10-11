@@ -378,6 +378,91 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			// At most one connection per session database: the silence did not leave an extra one open.
 			expect(sessionConnections(tracked).length).toBeLessThanOrEqual(2);
 		});
+
+		/**
+		 * RT-17 (11 Oct 2026, a real Obsidian 1.14.4 with 0.6.45): on a consult device nothing asked the session store again. The
+		 * heartbeat above is only armed where sessions run, and the saved sessions are read again only by a start (Z2-2), which a
+		 * consult device never makes: «Error de sesión» 166 s after the store came back, until the plugin was reloaded.
+		 */
+		describe('on a consult device', () => {
+			/** A consult device whose session databases answer nothing, booted until `initializeRuntime` settles (nothing drained after). */
+			async function consultBootWithSessionStoreSilent(mode: 'consult' | 'collector' = 'consult') {
+				const tracked = sessionEngineThatDoesNotAnswer();
+				const plugin = runtimeBootPlugin(tracked.factory);
+				// The seed of a device that never stored a mode: stored as is, and read back as the mode it boots in.
+				(plugin as unknown as { collectorMode: string }).collectorMode = mode;
+				const opens: number[] = []; const open = tracked.factory.open.bind(tracked.factory);
+				const timers = manualWindowTimers();
+				tracked.factory.open = (name: string, version?: number) => {
+					if (name.includes('session-runtime')) opens.push(timers.elapsedMs);
+					return open(name, version);
+				};
+				let settled = false;
+				void plugin.initializeRuntime().then(() => { settled = true; }, () => { settled = true; });
+				/**
+				 * Runs the clock, one timer at a time, while `going()` holds and up to `untilMs` of virtual time. With no timer to run it
+				 * gives work outside the engine (the vault id's digest) a moment of real time before it says there is nothing left.
+				 */
+				const drive = async (going: () => boolean, untilMs: number): Promise<void> => {
+					let progressAt = Date.now();
+					while (going() && timers.elapsedMs < untilMs) {
+						await engineIdle(tracked);
+						if (!going()) return;
+						if (timers.pending > 0) { timers.step(); progressAt = Date.now(); }
+						else if (Date.now() - progressAt > 500) return;
+					}
+				};
+				await drive(() => !settled, 60_000);
+				expect(settled).toBe(true);
+				return { tracked, plugin, timers, opens, drive };
+			}
+			const recovery = (plugin: RuntimeBootHarness) =>
+				(plugin as unknown as { getSessionRecoveryState(): { status: string; code?: string } }).getSessionRecoveryState();
+
+			it('leaves «error» by itself once the engine answers again, asking with waits that grow instead of every beat', async () => {
+				const { tracked, plugin, timers, opens, drive } = await consultBootWithSessionStoreSilent();
+				expect(plugin.runtimeReady).toBe(true);
+				expect((plugin as unknown as { getCollectorMode(): string }).getCollectorMode()).toBe('consult');
+				expect(phase(plugin)).toBe('error');
+				expect(recovery(plugin)).toMatchObject({ status: 'error', code: 'unavailable' });
+
+				// Ten silent minutes: asked again, but not in a loop (a five-second beat would be 120 attempts).
+				const quietFrom = timers.elapsedMs; const before = opens.length;
+				await drive(() => true, quietFrom + 600_000);
+				expect(phase(plugin)).toBe('error');
+				expect(opens.length - before).toBeLessThan(30);
+
+				resumeStorage(tracked);
+				const resumedAt = timers.elapsedMs;
+				await drive(() => phase(plugin) === 'error' || recovery(plugin).status !== 'none', resumedAt + 600_000);
+				expect(phase(plugin)).toBe('idle');
+				expect(recovery(plugin)).toEqual({ status: 'none' });
+				// The next wait is at most the five-minute cap, plus the ten seconds an attempt already in course may still take.
+				expect(timers.elapsedMs - resumedAt).toBeLessThanOrEqual(310_000);
+			});
+
+			it('a collector switched to consult while the store is silent is asked for again too: its heartbeat no longer reads there', async () => {
+				const { tracked, plugin, timers, drive } = await consultBootWithSessionStoreSilent('collector');
+				expect(phase(plugin)).toBe('error');
+				Object.assign(plugin, { settingTab: { refreshForSettingsChange: vi.fn() } });
+				await (plugin as unknown as { updateCollectorMode(mode: string): Promise<unknown> }).updateCollectorMode('consult');
+				expect((plugin as unknown as { getCollectorMode(): string }).getCollectorMode()).toBe('consult');
+				resumeStorage(tracked);
+				await drive(() => phase(plugin) === 'error', timers.elapsedMs + 600_000);
+				expect(phase(plugin)).toBe('idle');
+			});
+
+			it('stops asking when the plugin is unloaded', async () => {
+				const { plugin, timers, drive } = await consultBootWithSessionStoreSilent();
+				expect(phase(plugin)).toBe('error');
+				// The services closed by the unload would answer at once without reading: what is counted is being asked at all.
+				const services = plugin as unknown as { sessions: { initialize(): Promise<void> }; liveSessions: { initialize(): Promise<void> } };
+				const asked = [vi.spyOn(services.sessions, 'initialize'), vi.spyOn(services.liveSessions, 'initialize')];
+				(plugin as unknown as { onunload(): void }).onunload();
+				await drive(() => true, timers.elapsedMs + 600_000);
+				expect(asked.map((spy) => spy.mock.calls.length)).toEqual([0, 0]);
+			});
+		});
 	});
 
 	it('keeps runtime initialization alive and attributes the historical projection TypeError once', async () => {
