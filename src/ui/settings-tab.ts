@@ -16,8 +16,10 @@ import {
 } from '../assets/managed-assets-ui';
 import {
 	alertWebhookDestination,
+	isSettingsPatchOverBase,
 	resolveVaultFolderInput,
 	type CollectorMode,
+	type SettingsPatchOverBase,
 	type TyrianSettings,
 } from '../core/settings';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
@@ -47,7 +49,7 @@ type SettingSaveState = 'saving' | 'saved' | 'error';
  * routes it to `updateCollectorMode` and it never reaches data.json. `viewPlacement` is this
  * device's too and goes to `updateViewPlacement`. A row saves one of the three.
  */
-type SettingsRowUpdate = Partial<TyrianSettings> & {
+type SettingsRowUpdate = (Partial<TyrianSettings> | SettingsPatchOverBase) & {
 	readonly collectorMode?: CollectorMode;
 	readonly viewPlacement?: ViewPlacement;
 };
@@ -117,6 +119,7 @@ export class TyrianCompanionSettingTab {
 	private maintenanceOpen = false;
 	/** Saves what the alert-threshold field holds, if it is a new valid value; null before the row renders. */
 	private commitThreshold: (() => void) | null = null;
+	private commitOutputFolder: (() => void) | null = null;
 	private readonly saveStates = new Map<number, SettingSaveState>();
 	private readonly saveRevisions = new Map<number, number>();
 	private readonly settingsWrites = new SettingsWriteQueue();
@@ -225,6 +228,8 @@ export class TyrianCompanionSettingTab {
 	unmount(): void {
 		this.commitThreshold?.();
 		this.commitThreshold = null;
+		this.commitOutputFolder?.();
+		this.commitOutputFolder = null;
 		this.clearCountdown();
 		this.connectionSetting = null;
 		this.connectionStatusEl = null;
@@ -308,6 +313,8 @@ export class TyrianCompanionSettingTab {
 	 * the plugin to `updateViewPlacement`, the rest to `updateSettings`.
 	 */
 	private async writeSettings(update: SettingsRowUpdate): Promise<SettingsUpdateResult> {
+		// A patch over the base is computed inside the core's serialized write: it goes through whole.
+		if (isSettingsPatchOverBase(update)) return await this.plugin.updateSettings(update);
 		const { collectorMode, viewPlacement, ...settings } = update;
 		if (collectorMode !== undefined) return await this.plugin.updateCollectorMode(collectorMode);
 		if (viewPlacement !== undefined) return await this.plugin.updateViewPlacement(viewPlacement);
@@ -417,23 +424,44 @@ export class TyrianCompanionSettingTab {
 					refreshExcludeHint();
 					// A rejected value is never silently swapped for the default: the field keeps
 					// what the user typed and the previously saved folder stays in effect.
-					const applyOutputFolder = async (outputFolder: string) => {
-						const resolved = resolveVaultFolderInput(outputFolder, this.host.vault.configDir);
+					// Typing only validates; the folder is saved when the field is left or confirmed
+					// (`change`, `blur`), when a suggestion is picked or when the tab closes. Saving per
+					// keystroke made every prefix of "GW2/Tyrian" the output folder and moved the managed
+					// assets to each one (Z7-2).
+					let typed = this.plugin.settings.outputFolder;
+					let committed = this.plugin.settings.outputFolder;
+					const validate = (): ReturnType<typeof resolveVaultFolderInput> => {
+						const resolved = resolveVaultFolderInput(typed, this.host.vault.configDir);
 						if (resolved.status === 'invalid') {
 							error.setText(this.t('settings.output.invalid'));
 							error.setAttr('title', this.t('settings.output.invalid.tooltip'));
-							return;
+						} else {
+							error.setText('');
 						}
-						error.setText('');
-						await save({ outputFolder: resolved.value });
+						return resolved;
+					};
+					// Saved once per value: `change`, `blur`, a suggestion and closing the tab can all report the same one.
+					const commit = async (): Promise<void> => {
+						const resolved = validate();
+						if (resolved.status === 'invalid' || resolved.value === committed) return;
+						const previous = committed;
+						committed = resolved.value;
+						const result = await save({ outputFolder: resolved.value });
+						// A refused write leaves the saved folder in effect: the same value can be tried again.
+						if (result?.status !== 'saved') committed = previous;
 						refreshExcludeHint();
 					};
+					// Closing the tab can remove the focused field before the browser fires `change`.
+					const commitOnEvent = (): void => { void commit(); };
+					this.commitOutputFolder = commitOnEvent;
 					setting.addText((text) => {
 						text
 							.setPlaceholder(this.t('settings.output.placeholder'))
 							.setValue(this.plugin.settings.outputFolder)
-							.onChange(applyOutputFolder);
-						this.host.ui.pickFolder(text.inputEl, applyOutputFolder);
+							.onChange((value) => { typed = value; validate(); });
+						text.inputEl.addEventListener('change', commitOnEvent);
+						text.inputEl.addEventListener('blur', commitOnEvent);
+						this.host.ui.pickFolder(text.inputEl, async (path) => { typed = path; await commit(); });
 					});
 				},
 			},
@@ -565,9 +593,17 @@ export class TyrianCompanionSettingTab {
 						// `void` review below points at, and it is the operation that owns `save`'s
 						// rejection (there is none to own here; `save` never throws, see `SettingsWriteQueue`).
 						const applyLegendaryTargetChange = async (checkbox: HTMLInputElement, itemId: number): Promise<void> => {
-							const next = new Set(this.plugin.settings.legendaryTargetItemIds);
-							if (checkbox.checked) next.add(itemId); else next.delete(itemId);
-							await save({ legendaryTargetItemIds: [...next].sort((left, right) => left - right) });
+							// Computed over what is really saved, inside the serialized write: a second tick before
+							// the first save lands would otherwise start from the list without the first one.
+							const selecting = checkbox.checked;
+							await save({
+								keys: ['legendaryTargetItemIds'],
+								compute: (base) => {
+									const next = new Set(base.legendaryTargetItemIds);
+									if (selecting) next.add(itemId); else next.delete(itemId);
+									return { legendaryTargetItemIds: [...next].sort((left, right) => left - right) };
+								},
+							});
 							renderList();
 						};
 						for (const option of this.legendaryArmoryOptions) {

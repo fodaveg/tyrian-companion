@@ -2,7 +2,7 @@ import type { ConnectionState } from '../account/connection-service';
 import type { ManagedAssetsLifecycleResult } from '../assets/managed-assets-lifecycle';
 import type { ManagedAssetsView, ManagedAssetsWriteOptions } from '../assets/managed-assets-ui';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
-import type { CollectorMode, TyrianSettings } from '../core/settings';
+import type { CollectorMode, SettingsPatchOverBase, TyrianSettings } from '../core/settings';
 import type { ViewPlacement } from '../runtime/view-placement';
 import type { PilotMetricsExportPreview, PilotMetricsExportResult } from '../sessions/pilot-metrics-export';
 import type { PilotEnvironmentV1, PilotPlatform, PilotSilentLossReview } from '../sessions/pilot-metrics-model';
@@ -69,7 +69,7 @@ export type AlertIngameSecretCopyOutcome = 'copied' | 'generated' | 'shown';
 /** Every member of the core the settings panel reads or calls, and nothing else. */
 export interface SettingsPanelActions {
 	readonly settings: TyrianSettings;
-	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
+	updateSettings(settings: Partial<TyrianSettings> | SettingsPatchOverBase): Promise<SettingsUpdateResult>;
 	getCollectorMode(): CollectorMode;
 	updateCollectorMode(mode: CollectorMode): Promise<SettingsUpdateResult>;
 	/** DU-02, optional: whether the vault changed path and the user has not chosen what to do with the old data. */
