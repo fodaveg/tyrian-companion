@@ -8826,9 +8826,9 @@
 				{
 					"id": "6f32c70ec88db45ad5c4a1129dc28c5a5b5e04e1",
 					"kind": "catch_clause",
-					"line": 345,
+					"line": 346,
 					"column": 6,
-					"endLine": 353,
+					"endLine": 354,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -8840,9 +8840,9 @@
 				{
 					"id": "92eaba793657bff38e305a6d913e1b02c443f527",
 					"kind": "callback_registration",
-					"line": 378,
+					"line": 379,
 					"column": 25,
-					"endLine": 380,
+					"endLine": 381,
 					"endColumn": 43,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -8857,9 +8857,9 @@
 				{
 					"id": "4c080c81c73420d487ede7b0bcba3e612bfb277f",
 					"kind": "void_expression",
-					"line": 427,
+					"line": 428,
 					"column": 29,
-					"endLine": 430,
+					"endLine": 431,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8873,9 +8873,9 @@
 				{
 					"id": "c03f17aa522d63001003d23e7d35721a55429f2f",
 					"kind": "catch_clause",
-					"line": 434,
+					"line": 435,
 					"column": 5,
-					"endLine": 440,
+					"endLine": 441,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8889,9 +8889,9 @@
 				{
 					"id": "9d5a66a847b47ddb776f9e26d7291f20976b213a",
 					"kind": "void_expression",
-					"line": 435,
+					"line": 436,
 					"column": 55,
-					"endLine": 438,
+					"endLine": 439,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8905,9 +8905,9 @@
 				{
 					"id": "4fe7287226146631e5cafd82c506fb0d34472541",
 					"kind": "void_expression",
-					"line": 475,
+					"line": 476,
 					"column": 3,
-					"endLine": 475,
+					"endLine": 476,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8921,9 +8921,9 @@
 				{
 					"id": "c0ec2fa58fbe0610d4e63597b86b7ea38b5a1d99",
 					"kind": "callback_registration",
-					"line": 535,
+					"line": 536,
 					"column": 25,
-					"endLine": 535,
+					"endLine": 536,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -8938,9 +8938,9 @@
 				{
 					"id": "fb28ef7d37acdb717396a7c04e0b78b8c45b7a98",
 					"kind": "void_expression",
-					"line": 542,
+					"line": 543,
 					"column": 5,
-					"endLine": 542,
+					"endLine": 543,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8954,9 +8954,9 @@
 				{
 					"id": "a24e81f84acaa6534f4f085ae7eece51c14f0bf1",
 					"kind": "void_expression",
-					"line": 563,
+					"line": 564,
 					"column": 29,
-					"endLine": 566,
+					"endLine": 567,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8970,9 +8970,9 @@
 				{
 					"id": "d10cf517dbc28ed7c562a10aae144ded31ff9b23",
 					"kind": "catch_clause",
-					"line": 571,
+					"line": 572,
 					"column": 7,
-					"endLine": 571,
+					"endLine": 572,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8986,9 +8986,9 @@
 				{
 					"id": "ce12e22d0265a0b760ad5cd3229926d9ab130846",
 					"kind": "catch_clause",
-					"line": 575,
+					"line": 576,
 					"column": 5,
-					"endLine": 581,
+					"endLine": 582,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9002,9 +9002,9 @@
 				{
 					"id": "0ea039e8342681c5e3d74e68b275fde10069be16",
 					"kind": "void_expression",
-					"line": 576,
+					"line": 577,
 					"column": 55,
-					"endLine": 579,
+					"endLine": 580,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9018,9 +9018,9 @@
 				{
 					"id": "53708328d2ea1cf6f88e210a968771a812ab9a56",
 					"kind": "void_expression",
-					"line": 643,
+					"line": 644,
 					"column": 3,
-					"endLine": 643,
+					"endLine": 644,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9034,9 +9034,9 @@
 				{
 					"id": "73b3575e15ef0581d8812209944cb65a3d42ec9a",
 					"kind": "callback_registration",
-					"line": 654,
+					"line": 655,
 					"column": 24,
-					"endLine": 654,
+					"endLine": 655,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9051,9 +9051,9 @@
 				{
 					"id": "617522da4e0aeb27a105aaaf2d787c3cd61db913",
 					"kind": "void_expression",
-					"line": 684,
+					"line": 685,
 					"column": 19,
-					"endLine": 684,
+					"endLine": 685,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9067,9 +9067,9 @@
 				{
 					"id": "5f5da49cd974cd0ce6645add2626c1609fe73761",
 					"kind": "callback_registration",
-					"line": 687,
+					"line": 688,
 					"column": 24,
-					"endLine": 687,
+					"endLine": 688,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9084,9 +9084,9 @@
 				{
 					"id": "7da456e358ef38213519e0b5afa1a7c7f801ea07",
 					"kind": "catch_clause",
-					"line": 688,
+					"line": 689,
 					"column": 3,
-					"endLine": 691,
+					"endLine": 692,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9100,9 +9100,9 @@
 				{
 					"id": "6f90c7cd79581a5d0abb87b054d22ee4a4af0bdf",
 					"kind": "void_expression",
-					"line": 689,
+					"line": 690,
 					"column": 20,
-					"endLine": 689,
+					"endLine": 690,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9116,9 +9116,9 @@
 				{
 					"id": "d575e280e31f3f3ef69a75c91bed9bc3f0b8a291",
 					"kind": "void_expression",
-					"line": 694,
+					"line": 695,
 					"column": 20,
-					"endLine": 694,
+					"endLine": 695,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9132,9 +9132,9 @@
 				{
 					"id": "ae1572126f2282275c0bfb9d27abcf9b1b116301",
 					"kind": "void_expression",
-					"line": 699,
+					"line": 700,
 					"column": 19,
-					"endLine": 699,
+					"endLine": 700,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9148,9 +9148,9 @@
 				{
 					"id": "c96bcce28d829622559b291c21ad221da1412faf",
 					"kind": "void_expression",
-					"line": 720,
+					"line": 721,
 					"column": 19,
-					"endLine": 720,
+					"endLine": 721,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9164,9 +9164,9 @@
 				{
 					"id": "7309badd4c4c89e81ba66ba49d75f469411498d7",
 					"kind": "callback_registration",
-					"line": 723,
+					"line": 724,
 					"column": 24,
-					"endLine": 723,
+					"endLine": 724,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9181,9 +9181,9 @@
 				{
 					"id": "3d3e26847b332887740a13b7c78de1684b2a354b",
 					"kind": "catch_clause",
-					"line": 724,
+					"line": 725,
 					"column": 3,
-					"endLine": 727,
+					"endLine": 728,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9197,9 +9197,9 @@
 				{
 					"id": "84015b40d941cc3215b1f46682e87d68b61f5794",
 					"kind": "void_expression",
-					"line": 725,
+					"line": 726,
 					"column": 20,
-					"endLine": 725,
+					"endLine": 726,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9213,9 +9213,9 @@
 				{
 					"id": "656260b0aac2b208c1b647ffb5da173880c13393",
 					"kind": "void_expression",
-					"line": 730,
+					"line": 731,
 					"column": 20,
-					"endLine": 730,
+					"endLine": 731,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9229,9 +9229,9 @@
 				{
 					"id": "30d13e399dbac6b6d5d1d8123ef04b59eb9b646b",
 					"kind": "void_expression",
-					"line": 733,
+					"line": 734,
 					"column": 19,
-					"endLine": 733,
+					"endLine": 734,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9245,9 +9245,9 @@
 				{
 					"id": "acaa3b9be7b197c0d064ae05f0be92b295c9ad6f",
 					"kind": "void_expression",
-					"line": 782,
+					"line": 783,
 					"column": 3,
-					"endLine": 787,
+					"endLine": 788,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9261,9 +9261,9 @@
 				{
 					"id": "24d64d67cd98cba23a3e38326c8314cc8c0a9316",
 					"kind": "catch_clause",
-					"line": 804,
+					"line": 805,
 					"column": 5,
-					"endLine": 817,
+					"endLine": 818,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9275,9 +9275,9 @@
 				{
 					"id": "e8a7ddab117193f1111528cf57ec0dbba32991a9",
 					"kind": "void_expression",
-					"line": 838,
+					"line": 839,
 					"column": 4,
-					"endLine": 841,
+					"endLine": 842,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9291,9 +9291,9 @@
 				{
 					"id": "7b8b80ab4a732645c811ecfec5e2fb8df96ebd19",
 					"kind": "void_expression",
-					"line": 911,
+					"line": 912,
 					"column": 3,
-					"endLine": 911,
+					"endLine": 912,
 					"endColumn": 42,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9307,9 +9307,9 @@
 				{
 					"id": "c01369820e001fe921d1b1de97b5825ad5517c9d",
 					"kind": "promise_catch",
-					"line": 921,
+					"line": 922,
 					"column": 11,
-					"endLine": 921,
+					"endLine": 922,
 					"endColumn": 110,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9324,9 +9324,9 @@
 				{
 					"id": "56126b7c18521305141d048c89b9c389dd325f75",
 					"kind": "catch_clause",
-					"line": 922,
+					"line": 923,
 					"column": 5,
-					"endLine": 924,
+					"endLine": 925,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9340,9 +9340,9 @@
 				{
 					"id": "1ce42ecd9ca9cd02f43a0f2c3c9ae06d31273791",
 					"kind": "void_expression",
-					"line": 931,
+					"line": 932,
 					"column": 3,
-					"endLine": 940,
+					"endLine": 941,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9356,9 +9356,9 @@
 				{
 					"id": "7cb2f0dc549909833a281e7ffa9b355e69994c74",
 					"kind": "void_expression",
-					"line": 971,
+					"line": 972,
 					"column": 19,
-					"endLine": 973,
+					"endLine": 974,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12400,6 +12400,122 @@
 				}
 			]
 		},
+		"src/sessions/manual-session-runtime-transitions.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "7af40efcd31879edec21ed24e6e4daed7324b595",
+					"kind": "catch_clause",
+					"line": 440,
+					"column": 5,
+					"endLine": 443,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "startInternal",
+						"justification": "The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"startInternal\"."
+				},
+				{
+					"id": "6b87a90698a25d99071522c2a621ccf33cfb72f7",
+					"kind": "catch_clause",
+					"line": 491,
+					"column": 5,
+					"endLine": 495,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "startInternal",
+						"justification": "The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"startInternal\"."
+				},
+				{
+					"id": "160cba519fd17f80a207218f479c903f7ff3e02b",
+					"kind": "catch_clause",
+					"line": 593,
+					"column": 6,
+					"endLine": 605,
+					"endColumn": 5,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.diagnostics.event"
+					},
+					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "63f7f8118afb44013f97532bdc0ccb5238f9a224",
+					"kind": "catch_clause",
+					"line": 634,
+					"column": 5,
+					"endLine": 652,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "stopInternal",
+						"justification": "The \"stopInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"stopInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"stopInternal\"."
+				},
+				{
+					"id": "22d437d2ee8f01c5862914014994d3feb9127aef",
+					"kind": "catch_clause",
+					"line": 649,
+					"column": 7,
+					"endLine": 649,
+					"endColumn": 91,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "stopInternal",
+						"justification": "The \"stopInternal\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"stopInternal\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"stopInternal\"."
+				},
+				{
+					"id": "c787c03d2a5db715c5a84d715891547824a4e82d",
+					"kind": "catch_clause",
+					"line": 879,
+					"column": 5,
+					"endLine": 879,
+					"endColumn": 71,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "cleanupFailedStart",
+						"justification": "The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"cleanupFailedStart\"."
+				},
+				{
+					"id": "623d53ba2c637fe1b5484223eb411805015d4eb7",
+					"kind": "catch_clause",
+					"line": 888,
+					"column": 5,
+					"endLine": 888,
+					"endColumn": 58,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "cleanupFailedStart",
+						"justification": "The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"cleanupFailedStart\"."
+				}
+			]
+		},
 		"src/sessions/manual-session-start-failure.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -12417,9 +12533,9 @@
 				{
 					"id": "4975a591f4832757e7b7daa5ef764ffbbcb96e3b",
 					"kind": "void_expression",
-					"line": 165,
+					"line": 156,
 					"column": 62,
-					"endLine": 165,
+					"endLine": 156,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12433,9 +12549,9 @@
 				{
 					"id": "ea83f70e7f572ea899e26ca6453cf1fc91e4d538",
 					"kind": "catch_clause",
-					"line": 290,
+					"line": 341,
 					"column": 61,
-					"endLine": 290,
+					"endLine": 341,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12449,9 +12565,9 @@
 				{
 					"id": "5652a96c5b1d1d031a9d99672e92877abc5b7ca3",
 					"kind": "void_expression",
-					"line": 336,
+					"line": 387,
 					"column": 27,
-					"endLine": 336,
+					"endLine": 387,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12465,9 +12581,9 @@
 				{
 					"id": "ece7f301135473e1747af10a53bac87e604c67b8",
 					"kind": "callback_registration",
-					"line": 359,
+					"line": 410,
 					"column": 18,
-					"endLine": 361,
+					"endLine": 412,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12482,9 +12598,9 @@
 				{
 					"id": "11d0928664608b8f20f5b2e108bfc213effd5529",
 					"kind": "callback_registration",
-					"line": 379,
+					"line": 430,
 					"column": 18,
-					"endLine": 381,
+					"endLine": 432,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12499,9 +12615,9 @@
 				{
 					"id": "c215646a3b0e1b7f87d8b3a6498a6969539e0ece",
 					"kind": "catch_clause",
-					"line": 419,
+					"line": 470,
 					"column": 5,
-					"endLine": 421,
+					"endLine": 472,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12515,9 +12631,9 @@
 				{
 					"id": "4b288698335298af4f43c393bea4783172383775",
 					"kind": "callback_registration",
-					"line": 432,
+					"line": 483,
 					"column": 18,
-					"endLine": 434,
+					"endLine": 485,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12532,9 +12648,9 @@
 				{
 					"id": "cc7bd25234879018f8fb89045ee882df9ab46914",
 					"kind": "callback_registration",
-					"line": 478,
+					"line": 529,
 					"column": 18,
-					"endLine": 480,
+					"endLine": 531,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12549,9 +12665,9 @@
 				{
 					"id": "c9c6564b96cb7cd0a60db8f01c32045bf79dddeb",
 					"kind": "callback_registration",
-					"line": 518,
+					"line": 569,
 					"column": 18,
-					"endLine": 520,
+					"endLine": 571,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12566,9 +12682,9 @@
 				{
 					"id": "5c64f4e01bb401e8baa1bf031334c033893bc99a",
 					"kind": "catch_clause",
-					"line": 594,
+					"line": 645,
 					"column": 52,
-					"endLine": 594,
+					"endLine": 645,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12582,9 +12698,9 @@
 				{
 					"id": "06ea0a798d7dc463ffabfe02c269c0ae87e843b9",
 					"kind": "catch_clause",
-					"line": 606,
+					"line": 657,
 					"column": 4,
-					"endLine": 617,
+					"endLine": 668,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12598,9 +12714,9 @@
 				{
 					"id": "ed98ff87dacffeb1e44809b46b2f45acf8007ada",
 					"kind": "callback_registration",
-					"line": 756,
+					"line": 730,
 					"column": 18,
-					"endLine": 758,
+					"endLine": 732,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12613,89 +12729,11 @@
 					"reason": "Allowlisted callback_registration: The \"runRecovery\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"runRecovery\"."
 				},
 				{
-					"id": "ccd6a889042fa85fa4b9a4870259410419cbcec4",
-					"kind": "catch_clause",
-					"line": 980,
-					"column": 5,
-					"endLine": 983,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "startInternal",
-						"justification": "The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"startInternal\"."
-				},
-				{
-					"id": "fb7e7f4691f05d0462e736da2b7a7504a545fcde",
-					"kind": "catch_clause",
-					"line": 1031,
-					"column": 5,
-					"endLine": 1035,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "startInternal",
-						"justification": "The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"startInternal\"."
-				},
-				{
-					"id": "c3ed97e76d43be26bfb009db898d98fd333b3b94",
-					"kind": "catch_clause",
-					"line": 1133,
-					"column": 6,
-					"endLine": 1145,
-					"endColumn": 5,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.diagnostics.event"
-					},
-					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "1ecfc5f2c0a8de798a59ad30337a338aeca5965d",
-					"kind": "catch_clause",
-					"line": 1174,
-					"column": 5,
-					"endLine": 1192,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "stopInternal",
-						"justification": "The \"stopInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"stopInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"stopInternal\"."
-				},
-				{
-					"id": "d9b07796f4adb8f5cde284ff618cd10964f333a7",
-					"kind": "catch_clause",
-					"line": 1189,
-					"column": 7,
-					"endLine": 1189,
-					"endColumn": 91,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "stopInternal",
-						"justification": "The \"stopInternal\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"stopInternal\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"stopInternal\"."
-				},
-				{
 					"id": "2f7a91f51e101efba27e637e8a30d2843a9e5842",
 					"kind": "catch_clause",
-					"line": 1290,
+					"line": 895,
 					"column": 5,
-					"endLine": 1292,
+					"endLine": 897,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12709,9 +12747,9 @@
 				{
 					"id": "e813f9a75d1ea7c82817777c76c228f4b6fedca8",
 					"kind": "void_expression",
-					"line": 1380,
+					"line": 985,
 					"column": 4,
-					"endLine": 1380,
+					"endLine": 985,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12725,9 +12763,9 @@
 				{
 					"id": "be8ef9e94e36dd77b03b5ebe973e77f58c8f648a",
 					"kind": "promise_catch",
-					"line": 1380,
+					"line": 985,
 					"column": 9,
-					"endLine": 1380,
+					"endLine": 985,
 					"endColumn": 58,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -12742,9 +12780,9 @@
 				{
 					"id": "70a537878b3202797185e681ca881c3772dff1d0",
 					"kind": "catch_clause",
-					"line": 1384,
+					"line": 989,
 					"column": 5,
-					"endLine": 1384,
+					"endLine": 989,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12758,9 +12796,9 @@
 				{
 					"id": "a74b8a10cc69291ef1cc618abd071674d703c6c7",
 					"kind": "callback_registration",
-					"line": 1408,
+					"line": 1013,
 					"column": 18,
-					"endLine": 1410,
+					"endLine": 1015,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12773,43 +12811,11 @@
 					"reason": "Allowlisted callback_registration: The \"reclaim\" owner registers \"finally\" only to release its single in-flight reclaim slot; it clears one field, performs no I/O and cannot reject. Verified registration: \"finally\" in \"reclaim\"."
 				},
 				{
-					"id": "823819fb29f080f24b88993f2c9faabc0b02df60",
-					"kind": "catch_clause",
-					"line": 1639,
-					"column": 5,
-					"endLine": 1639,
-					"endColumn": 71,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "cleanupFailedStart",
-						"justification": "The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"cleanupFailedStart\"."
-				},
-				{
-					"id": "4875e885d3e9147fb0429f1113fbf326799594cc",
-					"kind": "catch_clause",
-					"line": 1648,
-					"column": 5,
-					"endLine": 1648,
-					"endColumn": 58,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "cleanupFailedStart",
-						"justification": "The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"cleanupFailedStart\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"cleanupFailedStart\"."
-				},
-				{
 					"id": "f7d959371b5c71afafb84bdbea0ee390f819089c",
 					"kind": "catch_clause",
-					"line": 1696,
+					"line": 1033,
 					"column": 34,
-					"endLine": 1696,
+					"endLine": 1033,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12823,9 +12829,9 @@
 				{
 					"id": "a35bb57cf78b7d9cbc1bc79554ca9de0848b62ba",
 					"kind": "catch_clause",
-					"line": 1700,
+					"line": 1037,
 					"column": 50,
-					"endLine": 1702,
+					"endLine": 1039,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12839,9 +12845,9 @@
 				{
 					"id": "88bcc48dd42e18c052403d5cc21911384100e5aa",
 					"kind": "catch_clause",
-					"line": 1713,
+					"line": 1050,
 					"column": 61,
-					"endLine": 1713,
+					"endLine": 1050,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12855,9 +12861,9 @@
 				{
 					"id": "44717ecdead23eb3317c04301854643e6ecd0ae6",
 					"kind": "catch_clause",
-					"line": 1784,
+					"line": 1095,
 					"column": 62,
-					"endLine": 1784,
+					"endLine": 1095,
 					"endColumn": 120,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12871,9 +12877,9 @@
 				{
 					"id": "c254da1e12c35c1b99a40fd8d17f34a890bea42d",
 					"kind": "catch_clause",
-					"line": 1788,
+					"line": 1099,
 					"column": 58,
-					"endLine": 1788,
+					"endLine": 1099,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {

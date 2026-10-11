@@ -207,6 +207,9 @@ describe('H6.7 credential boundary', () => {
 			// DE-07: the heartbeat re-saves the active SessionRuntimeRecord (`saveActiveEvidence`), so its
 			// name keeps it inside the persistence guard; a rename that leaves the guard turns this red.
 			'src/sessions/manual-session-runtime-heartbeat.ts',
+			// DE-07: the start, stop, recovery and reclaim save, recover and clear SessionRuntimeRecords
+			// (`runtimeStore.save`/`clear`), so the same guard holds their module by name.
+			'src/sessions/manual-session-runtime-transitions.ts',
 			'src/sessions/pending-proposal-store.ts',
 			'src/sessions/session-detection-quality-store.ts',
 			'src/sessions/session-note-model.ts',
