@@ -1,8 +1,10 @@
 # Estado
 
-## Candidato 0.6.43: núcleo partido en siete fachadas más y raíces de panel sin `createElement` (11 oct 2026)
+## Canal 0.6.43 publicado: núcleo partido en siete fachadas más y raíces de panel sin `createElement` (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.43` sobre el canal 0.6.42 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.43` = `6643b413` (atestación; candidato `ff8ac705`,
+árbol `c3cbb278`). Gate local verde (check 9/9 con 7363 tests, guardrails 25/25, BRAT PASS); CI 38117843940 y Release
+38118311262 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.43` sobre el canal 0.6.42 publicado
 (`bb42702c`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
