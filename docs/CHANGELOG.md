@@ -1,5 +1,17 @@
 # Changelog
 
+## Release beta 0.6.47 - La sesión se recupera al pasar a recolector con el almacén mudo
+
+Se actualiza desde la 0.6.46 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales de un
+usuario; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión. Si en modo consulta el almacén de sesiones no contestaba al arrancar y el dispositivo pasaba a recolector
+  antes de que contestara, la sesión no se volvía a leer hasta iniciar otra. Ahora la lee sola el primer latido tras el
+  cambio, y en modo consulta ese latido no lee ni escribe nada.
+- Interno: `hebra:verify-install` usa el campo `window` que Hebra añade a sus eventos de carga desde el rpm 0.2.0-23 y
+  juzga el último arranque de la ventana principal; con una Hebra anterior sigue usando la última sesión con eventos
+  `plugins.*`.
+
 ## Release beta 0.6.46 - La sección Sesión vuelve en Hebra de Linux y el almacén mudo se recupera en consulta
 
 Se actualiza desde la 0.6.45 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales de un
