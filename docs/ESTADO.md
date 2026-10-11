@@ -1,5 +1,32 @@
 # Estado
 
+## Candidato 0.6.42: reserva devuelta al cerrar, delta acotado y dos fachadas más del núcleo (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.42` sobre el canal 0.6.41 publicado
+(`b0ae2112`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.42 se ha visto en un Obsidian ni en un Hebra reales.
+- Lease tras cerrar: `ManualSessionStartService.dispose()` (`src/sessions/manual-session-start-service.ts`) espera las
+  adquisiciones en vuelo, con tope `DISPOSE_ACQUIRE_WAIT_MS` (3 s), antes de cerrar el coordinador; las que llegan tarde
+  se devuelven antes del cierre. `acquireAndReturnIfLate` rechaza con `disposed` sin tocar el coordinador si el servicio
+  ya está cerrado, y un segundo `dispose()` devuelve la misma promesa. Quedan a la regla de silencio (15 s) solo las que
+  superan el tope, la de `performLegacyMigration` y las de `LiveSessionLifecycle`. Probado con el coordinador real sobre
+  `fake-indexeddb`.
+- Z33: `compositionChanges` del delta (`src/account/storage-delta.ts`) se acota a `COMPOSITION_CHANGES_LIMIT` (8);
+  medido con 1 000 pilas de banco reordenadas, el delta baja de 403 284 a 3 696 bytes y el registro de sesión de
+  ~852 kB a ~453 kB ([medición](audit/z33-delta/2026-10-11-medicion.md)). `checkSessionRuntimeRecordV3` y
+  `validateIdentity` acotan los dos lados al comparar, así que un registro con la lista completa se sigue leyendo; una
+  versión anterior rechazaría un registro nuevo con más de 8 cambios de composición (solo al volver atrás).
+- DE-01: `LiveViewRuntime` (`src/runtime/live-view-runtime.ts`) recoge el pintado y la apertura de las vistas, y
+  `FarmingSessionRuntime` (`src/runtime/farming-session-runtime.ts`) el contexto de farming de la sesión, sus
+  recordatorios y proyecciones; `loadSessionHistory` pasa a `SessionRuntime`. El núcleo baja de 5.660 a 5.554 líneas;
+  congelados de texto fuente: 16.
+- DE-20: [revisión del catálogo](audit/de20-catalogo/2026-10-11-revision-del-catalogo.md). Las reglas del bot no son
+  públicas; con su preset de lint salen 68 avisos (63 en tests) y 4 en código de producto. La única medición real es el
+  «preview scan» del dashboard, con la cuenta de David.
+- Pendiente: verla en hosts reales.
+
 ## Canal 0.6.41 publicado: una reserva concedida después de cerrar se rechaza (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.41` = `4c5a2047` (atestación; candidato `fa6e5f64`,

@@ -1,5 +1,17 @@
 # Changelog
 
+## Release beta 0.6.42 - La reserva de una sesión se devuelve al cerrar y el registro de sesión pesa menos
+
+Se actualiza desde la 0.6.41 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión. Al cerrar el plugin con una reserva de sesión a medio conceder, el cierre espera hasta 3 s a que llegue y la
+  devuelve en el momento, en vez de dejarla ocupada 15 s. Ninguna reserva nueva empieza después de cerrar.
+- Sesión. Si durante una sesión se reordena el banco, el registro guardado ya no copia cada pila movida: con 1 000 pilas
+  pasa de unos 850 kB a unos 450 kB. Los registros guardados por versiones anteriores se siguen leyendo. Al volver a la
+  0.6.41 con una sesión abierta en la que se movieron más de 8 pilas, esa versión rechazaría el registro de la sesión.
+- Orden interno, sin cambio visible: la vista en vivo y el contexto de farming de la sesión salen del núcleo del plugin.
+
 ## Release beta 0.6.41 - Una sesión concedida después de cerrar ya no hace nada
 
 Se actualiza desde la 0.6.40 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
