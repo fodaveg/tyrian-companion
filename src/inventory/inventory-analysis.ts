@@ -365,13 +365,20 @@ export class InventoryAnalysisService {
 			const covered = [...new Set(positionsByRef.get(decision.explanationRef) ?? [])];
 			let quantity = 0;
 			let copper: number | null = covered.length === 0 ? null : 0;
+			let splitsPosition = false;
 			for (const positionId of covered) {
 				const core = coreById.get(positionId)!;
 				const slices = slicesByPosition.get(positionId) ?? [];
 				quantity += core.quantity;
+				if (slices.length !== 1 || slices[0]!.quantity !== core.quantity) splitsPosition = true;
 				if (slices.length !== 1 || slices[0]!.quantity !== core.quantity || core.totalSellCopper === null) copper = null;
 				else if (copper !== null) copper += core.totalSellCopper;
 			}
+			// F1 (QA 0.6.47): the slice of a split position (partial reservation or deposit) is worth its
+			// own units, not the whole position's total; leaving the key out lets the presentation value
+			// exactly `decision.quantity` from the capture's depth, the same figure the card shows. A
+			// protective `keep` row keeps withholding it: it would otherwise show the whole position.
+			if (splitsPosition && decision.action !== 'keep') continue;
 			valuationByDecision[decision.explanationRef] = quantity === decision.quantity && Number.isSafeInteger(copper) ? copper : null;
 		}
 
