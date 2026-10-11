@@ -162,6 +162,7 @@ import {
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
+import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
@@ -280,7 +281,6 @@ import type { SessionState } from '../sessions/session';
 import { assembleSessions } from './assemble-sessions';
 import {
 	COMPANION_VIEW_SLOT,
-	COMPANION_VIEW_TYPE,
 	companionSection,
 	TyrianCompanionView,
 } from '../ui/companion-view';
@@ -303,7 +303,6 @@ import {
 	type ProductActionId,
 	type ProductActionOutcome,
 } from '../ui/product-action-controller';
-import { refreshBackgroundStatus } from '../ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from '../ui/settings-tab';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
 import {
@@ -313,13 +312,12 @@ import {
 } from '../ui/inventory-advisor-view-model';
 import {
 	INVENTORY_ADVISOR_VIEW_SLOT,
-	INVENTORY_ADVISOR_VIEW_TYPE,
 	InventoryAdvisorItemView,
 	inventoryAdvisorSection,
 } from '../ui/inventory-advisor-item-view';
-import { MountedViews, sectionsViewRegistration, sectionViewRegistration, type TyrianSectionId } from '../ui/mounted-views';
-import { SALE_VIEW_SLOT, SALE_VIEW_TYPE, SaleItemView, saleSection } from '../ui/sale-item-view';
-import { ACHIEVEMENTS_VIEW_SLOT, ACHIEVEMENTS_VIEW_TYPE, AchievementsItemView, achievementsSection } from '../ui/achievements-item-view';
+import { MountedViews, sectionsViewRegistration, sectionViewRegistration } from '../ui/mounted-views';
+import { SALE_VIEW_SLOT, SaleItemView, saleSection } from '../ui/sale-item-view';
+import { ACHIEVEMENTS_VIEW_SLOT, AchievementsItemView, achievementsSection } from '../ui/achievements-item-view';
 import type { AchievementsViewServices, TrackedAchievementToggleResult } from '../ui/achievements-view';
 import { assembleAchievements, type AchievementsAssembly } from './assemble-achievements';
 import type { SaleViewModel } from '../ui/sale-view-model';
@@ -419,8 +417,8 @@ export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
 export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 /** Palette command that refreshes the Leyspring Hollows achievements note; manual, also in consult mode. */
 export const UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID = 'update-leyspring-achievements';
-/** The ONE view of a host's main screen that lists the four sections (`TyrianUiPort.registerSectionsView`). */
-export const TYRIAN_MAIN_VIEW_TYPE = 'tyrian-main-view';
+/** The ONE view of a host's main screen that lists the four sections (`live-view-runtime.ts`). */
+export { TYRIAN_MAIN_VIEW_TYPE };
 
 /** The clock reading when this module finished evaluating: the `module` phase of the boot timings. */
 export const CORE_MODULE_EVALUATED_MS = bootNow();
@@ -463,13 +461,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * R1c: the view controllers the host has mounted, one set per view type, which the repaints
 	 * walk (they used to walk `workspace.getLeavesOfType`). Built on first use, like `host`.
 	 */
-	private viewControllers: {
-		readonly companion: MountedViews<TyrianCompanionView>;
-		readonly inventoryAdvisor: MountedViews<InventoryAdvisorItemView>;
-		readonly sale: MountedViews<SaleItemView>;
-		readonly achievements: MountedViews<AchievementsItemView>;
-	} | null = null;
-	private get mountedViews(): NonNullable<TyrianCompanionCore['viewControllers']> {
+	private viewControllers: LiveViewControllers | null = null;
+	private get mountedViews(): LiveViewControllers {
 		this.viewControllers ??= {
 			companion: new MountedViews((container) => new TyrianCompanionView(container, this.host.ui, this)),
 			inventoryAdvisor: new MountedViews((container) => new InventoryAdvisorItemView(container, this.host.ui, this)),
@@ -608,6 +601,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * the core's own, which `live` also writes; the core keeps the note's input and its economy.
 	 */
 	private readonly notes: SessionNoteRuntime = new SessionNoteRuntime(TyrianCompanionCore.sessionNoteRuntimePort(this));
+	/**
+	 * DE-01, step 3f: the live view (the repaints of the mounted views, opening or focusing a
+	 * section, the loot the views read). It reads the core's fields through `liveViewRuntimePort`;
+	 * the core keeps the mounted controllers, which its registration and unload also walk.
+	 */
+	private readonly liveView: LiveViewRuntime = new LiveViewRuntime(TyrianCompanionCore.liveViewRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -3100,6 +3099,23 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `LiveViewRuntime` reads from this core (DE-01, step 3f). Getters over the core's own
+	 * fields, read as they stand: the controllers, the placement and the product actions are built
+	 * after the port.
+	 */
+	private static liveViewRuntimePort(core: TyrianCompanionCore): LiveViewRuntimePort {
+		return {
+			get runtimeReady() { return core.runtimeReady; },
+			get host() { return core.host; },
+			get mountedViews() { return core.mountedViews; },
+			get registeredPlacement() { return core.registeredPlacement; },
+			get productActions() { return core.productActions; },
+			get commands() { return core.commands; },
+			get liveSessionLoot() { return core.liveSessionLoot; },
+		};
+	}
+
+	/**
 	 * What `SessionCommandRuntime` reads from this core and asks of it (DE-01, step 3d). Getters over
 	 * the core's own fields, read as they stand; the modals, the controller, its dispatch and the
 	 * ribbon are setters too, so the commands write the core's own fields, which its unload, its
@@ -3453,12 +3469,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			quote: this.liveEconomy?.rawQuote(HALLOWEEN_TOT_BAG_ITEM_ID) ?? null, now: Date.now() });
 	}
 
-	getLiveSessionLoot(): LiveSessionLootState {
-		// H checkpoint 16 (Hebra): `liveSessionLoot` is assigned inside `initializeRuntime`, but a
-		// saved-tab view can mount and read this before that finishes. Answer with the same `idle`
-		// state the tracker itself starts in, instead of throwing on the still-unassigned field.
-		return this.runtimeReady ? this.liveSessionLoot.getState() : { status: 'idle' };
-	}
+	getLiveSessionLoot(): LiveSessionLootState { return this.liveView.getLiveSessionLoot(); }
 
 	/** The selected saved session's alerts, or the live one's (`SessionRuntime`). */
 	getLiveSessionAlerts(): readonly LiveSessionAlertViewV1[] { return this.session.getLiveSessionAlerts(); }
@@ -5002,47 +5013,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return result!;
 	}
 
-	/** Set the instant a caller marks a repaint due; cleared once `flushRenderViews` has run. */
-	private renderViewsDirty = false;
-	/** True between the first `renderViews()` of a batch and the microtask that flushes it. */
-	private renderViewsFlushScheduled = false;
+	/** Coalesced to one repaint per microtask (`LiveViewRuntime`). */
+	private renderViews(): void { this.liveView.renderViews(); }
 
-	/**
-	 * Marks the Companion surface dirty and coalesces every call in the same microtask tick into
-	 * one repaint. A single detection poll chains up to four of these (loot tracker, both
-	 * Halloween callbacks, session state), and `TyrianCompanionView.render()` empties and rebuilds
-	 * the whole panel (`companion-view.ts`'s `surface.empty()`): four synchronous calls used to
-	 * mean four full rebuilds of a screen that only needed to change once.
-	 */
-	private renderViews(): void {
-		this.renderViewsDirty = true;
-		if (this.renderViewsFlushScheduled) return;
-		this.renderViewsFlushScheduled = true;
-		queueMicrotask(() => {
-			this.renderViewsFlushScheduled = false;
-			if (!this.renderViewsDirty) return;
-			this.renderViewsDirty = false;
-			this.flushRenderViews();
-		});
-	}
+	private renderInventoryAdvisorViews(): void { this.liveView.renderInventoryAdvisorViews(); }
 
-	private flushRenderViews(): void {
-		this.productActions?.refresh();
-		this.commands.refreshSessionRibbon();
-		for (const view of this.mountedViews.companion.current()) view.render();
-	}
-
-	private renderInventoryAdvisorViews(): void {
-		this.productActions?.refresh();
-		for (const view of this.mountedViews.inventoryAdvisor.current()) view.render();
-		// The Sale tab reads the SAME advisor model, so every refresh that moves it also
-		// moves the Sale tab's own hero card, calendar and grouped list.
-		for (const view of this.mountedViews.sale.current()) view.render();
-	}
-
-	private renderAchievementsViews(): void {
-		for (const view of this.mountedViews.achievements.current()) view.render();
-	}
+	private renderAchievementsViews(): void { this.liveView.renderAchievementsViews(); }
 
 	/**
 	 * The API key changed: the kept progress of the «Logros» section may be of another account, so it
@@ -5059,28 +5035,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 	}
 
-	/** True while the one-click sync's last reported state was `running`. */
-	private inventorySyncRunInFlight = false;
-
-	/**
-	 * Every state the one-click sync reports. A run in flight reports once per note written, each an
-	 * `await` apart, and none of those reports changes what the Sale tab shows: only the Inventory
-	 * tab carries the progress, and it repaints on its own next frame (`renderProgress`). Any other
-	 * state (the outcome, a conflict, a disabled reason) is content and repaints both tabs at once.
-	 */
-	private renderInventorySyncRunChange(state: InventoryVaultSyncRunState): void {
-		if (state.status !== 'running') {
-			this.inventorySyncRunInFlight = false;
-			this.renderInventoryAdvisorViews();
-			return;
-		}
-		// The shared actions only read whether a run is in flight, not how far along it is.
-		if (!this.inventorySyncRunInFlight) {
-			this.inventorySyncRunInFlight = true;
-			this.productActions?.refresh();
-		}
-		for (const view of this.mountedViews.inventoryAdvisor.current()) view.renderProgress();
-	}
+	/** Every state the one-click sync reports (`LiveViewRuntime`). */
+	private renderInventorySyncRunChange(state: InventoryVaultSyncRunState): void { this.liveView.renderInventorySyncRunChange(state); }
 
 	private invalidateInventoryAdvisor(): void {
 		this.inventoryAdvisor.invalidate();
@@ -5088,10 +5044,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.renderInventoryAdvisorViews();
 	}
 
-	private refreshBackgroundIndicators(): void {
-		this.commands.refreshSessionRibbon();
-		refreshBackgroundStatus(this.mountedViews.companion.current());
-	}
+	private refreshBackgroundIndicators(): void { this.liveView.refreshBackgroundIndicators(); }
 
 	private setupProductActions(): void {
 		this.productActions = new ProductActionController({
@@ -5337,33 +5290,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		else span.success(result.status);
 	}
 
-	/** Opens the Companion, or focuses it where it is already open (`host.ui.revealView`). */
-	private async activateView(): Promise<void> {
-		await this.revealSection('session', COMPANION_VIEW_TYPE);
-	}
+	/** Opens the Companion, or focuses it where it is already open (`LiveViewRuntime`). */
+	private activateView(): Promise<void> { return this.liveView.activateView(); }
 
-	private async activateInventoryAdvisorView(): Promise<void> {
-		await this.revealSection('inventory', INVENTORY_ADVISOR_VIEW_TYPE);
-	}
+	private activateInventoryAdvisorView(): Promise<void> { return this.liveView.activateInventoryAdvisorView(); }
 
-	private async activateSaleView(): Promise<void> {
-		await this.revealSection('sale', SALE_VIEW_TYPE);
-	}
+	private activateSaleView(): Promise<void> { return this.liveView.activateSaleView(); }
 
-	private async activateAchievementsView(): Promise<void> {
-		await this.revealSection('achievements', ACHIEVEMENTS_VIEW_TYPE);
-	}
-
-	/**
-	 * Everything that opens a section from outside it (a command, the ribbon menu, a notice, the
-	 * end of a sync) comes here: on the host's main screen it enters that section of the one view;
-	 * otherwise it opens the section's own view.
-	 */
-	private async revealSection(section: TyrianSectionId, viewType: string): Promise<void> {
-		const reveal = this.registeredPlacement === 'main' ? this.host.ui.revealSection?.(TYRIAN_MAIN_VIEW_TYPE, section) : undefined;
-		if (reveal !== undefined) await reveal;
-		else await this.host.ui.revealView(viewType);
-	}
+	private activateAchievementsView(): Promise<void> { return this.liveView.activateAchievementsView(); }
 
 }
 
