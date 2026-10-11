@@ -72,7 +72,7 @@ import {
 import { failure, ManualSessionStartError, SessionTransitionRejectedError } from './manual-session-start-failure';
 import { lastSavedEvidenceAt, snapshotReference, stopFailureFloor, uncoveredStretches } from './manual-session-evidence';
 import { ManualSessionWatch } from './manual-session-watch';
-import { ManualSessionHeartbeat } from './manual-session-heartbeat';
+import { ManualSessionHeartbeat } from './manual-session-runtime-heartbeat';
 
 // DE-07: the vocabulary moved to `manual-session-start-model.ts`; its consumers keep importing it from here.
 export {

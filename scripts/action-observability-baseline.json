@@ -12309,12 +12309,12 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
-		"src/sessions/manual-session-heartbeat.ts": {
+		"src/sessions/manual-session-runtime-heartbeat.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "ae3dc6b3b11dae921292a82196c189ca8511ca83",
+					"id": "0edcd688c740c961d0ec39d952871234449444fa",
 					"kind": "void_expression",
 					"line": 75,
 					"column": 56,
@@ -12330,7 +12330,7 @@
 					"reason": "Allowlisted void_expression: The \"startHeartbeat\" owner deliberately detaches \"this.runHeartbeat\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.runHeartbeat\" in \"startHeartbeat\"."
 				},
 				{
-					"id": "b2aad18325905cef171470dedadfd47e2a82a6bd",
+					"id": "4faa0efb611553ed22c6cd91c804ae7921f3cb23",
 					"kind": "callback_registration",
 					"line": 80,
 					"column": 18,
@@ -12347,7 +12347,7 @@
 					"reason": "Allowlisted callback_registration: The \"runHeartbeat\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"runHeartbeat\"."
 				},
 				{
-					"id": "89377bda30fec26a3ad5ecba3741cd4855cdfb80",
+					"id": "dae6078e977075362e41f61e344facfa6a35303c",
 					"kind": "void_expression",
 					"line": 97,
 					"column": 5,
@@ -12363,7 +12363,7 @@
 					"reason": "Allowlisted void_expression: The \"heartbeat\" owner deliberately detaches \"this.saveActiveEvidence\" so an IndexedDB write never delays or fails the lease renewal; that named operation catches every failure and records it through this.diagnostics.event, so a lost evidence save is never silent. Verified target: \"this.saveActiveEvidence\" in \"heartbeat\"."
 				},
 				{
-					"id": "2895e4a72bee2c86ac5233f71d53f6a1573982b7",
+					"id": "12d93d7d1b0d3c7570b09f4c1d0b86194a82336b",
 					"kind": "catch_clause",
 					"line": 108,
 					"column": 5,
@@ -12379,7 +12379,7 @@
 					"reason": "Allowlisted catch_clause: The \"heartbeat\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"heartbeat\"."
 				},
 				{
-					"id": "cd8c1e4c8066d4da9a8098c3136120614652e14c",
+					"id": "7aa4c45ed9d74d0fd5a2e3c98a5c917d2b04ac9d",
 					"kind": "catch_clause",
 					"line": 139,
 					"column": 5,
