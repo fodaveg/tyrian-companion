@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { Window } from 'happy-dom';
 import { formatCopperVisual } from '../core/copper-format';
@@ -976,6 +978,38 @@ describe('previous sessions block', () => {
 		open(bare.panel);
 		await vi.waitFor(() => expect(rowsOf(bare.panel)).toHaveLength(1));
 		expect(rowsOf(bare.panel)[0]!.querySelector('button')).toBeNull();
+	});
+
+	it('lays out a linked date and hours like an unlinked row: same parts, and a text link with the line\'s own gap', async () => {
+		const linked = harness(idleView(), control(), 'en', vi.fn(async () => [entry(0, { summaryPath: 'a.md' })]), undefined, { openSessionSummaryNote: vi.fn() });
+		const plain = harness(idleView(), control(), 'en', vi.fn(async () => [entry(0)]));
+		open(linked.panel); open(plain.panel);
+		await vi.waitFor(() => { expect(rowsOf(linked.panel)).toHaveLength(1); expect(rowsOf(plain.panel)).toHaveLength(1); });
+		const linkedLine = rowsOf(linked.panel)[0]!.querySelector('.tyrian-live-session__previous-line')!;
+		const plainLine = rowsOf(plain.panel)[0]!.querySelector('.tyrian-live-session__previous-line')!;
+		const link = linkedLine.querySelector<HTMLButtonElement>('button.tyrian-live-session__summary-link')!;
+		const parts = (parent: Element): string[] => Array.from(parent.children, (part) => `${part.tagName}|${part.textContent ?? ''}`);
+		// The link wraps the very elements an unlinked line holds, and nothing else; the gap between them is CSS on both sides.
+		expect(Array.from(linkedLine.children)).toEqual([link]);
+		expect(parts(link)).toEqual(parts(plainLine));
+		expect(link.textContent).toBe(plainLine.textContent);
+		// A happy-dom test cannot lay out a stylesheet, so the CSS text is what is under test (a `.css` is the contract itself).
+		const css = readFileSync(join(process.cwd(), 'styles.css'), 'utf8');
+		const ruleOf = (selector: string): string => {
+			const start = css.indexOf(`\n${selector} {`);
+			expect(start, selector).toBeGreaterThanOrEqual(0);
+			return css.slice(start, css.indexOf('}', start));
+		};
+		const lineGap = /column-gap: ([^;]+);/u.exec(ruleOf('.tyrian-live-session__previous-line'))![1];
+		const rule = ruleOf('.tyrian-live-session button.tyrian-live-session__summary-link');
+		expect(rule).toContain(`column-gap: ${lineGap ?? ''};`);
+		for (const declaration of ['display: inline-flex;', 'flex-wrap: wrap;', 'align-items: baseline;', 'height: auto;', 'min-height: 0;',
+			'padding: 0;', 'border: 0;', 'background: none;', 'box-shadow: none;', 'color: var(--link-color, var(--text-accent));', 'cursor: pointer;']) {
+			expect(rule).toContain(declaration);
+		}
+		expect(css).toMatch(/\.tyrian-live-session button\.tyrian-live-session__summary-link:hover,[^{]*\{[^}]*text-decoration: underline;/u);
+		expect(css).toMatch(/\.tyrian-live-session button\.tyrian-live-session__summary-link:focus-visible \{[^}]*outline: 2px solid/u);
+		expect(css).not.toMatch(/tyrian-live-session__summary-link[^{]*\{[^}]*!important/u);
 	});
 
 	it('lists each session in order with day, hours, duration, saved value and objects', async () => {

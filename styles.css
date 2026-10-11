@@ -3402,10 +3402,41 @@
 	.tyrian-achievements * { transition: none !important; animation: none !important; }
 }
 
-/* The summary link of a previous-sessions row: a text button, never a boxed control. */
-.tyrian-live-session__summary-link {
-	min-height: 24px;
+/* The summary link of a previous-sessions row: text in the theme's link colour, never a boxed control.
+   `.tyrian-live-session button.…` (0,2,1) and not the bare class: Obsidian boxes every
+   `button:not(.clickable-icon)` (0,1,1) with a fill, a shadow and `--input-height`, and Hebra's host
+   sheet gives `button` a border, a padding and `--hit-pointer`; a class alone lost to the first, and
+   the row grew to the button's height. It lays out its date and hours like the `previous-line` it
+   sits in (same column gap, wrapping), so a row with a link reads and measures like one without. */
+.tyrian-live-session button.tyrian-live-session__summary-link {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: var(--size-4-2);
+	min-width: 0;
+	height: auto;
+	min-height: 0;
+	margin: 0;
 	padding: 0;
-	text-align: start;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--link-color, var(--text-accent));
 	font: inherit;
+	line-height: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+.tyrian-live-session button.tyrian-live-session__summary-link time { color: inherit; }
+.tyrian-live-session button.tyrian-live-session__summary-link:hover,
+.tyrian-live-session button.tyrian-live-session__summary-link:active {
+	background: none;
+	box-shadow: none;
+	text-decoration: underline;
+}
+.tyrian-live-session button.tyrian-live-session__summary-link:focus-visible {
+	box-shadow: none;
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
