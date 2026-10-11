@@ -1,5 +1,24 @@
 # Estado
 
+## Candidato 0.6.44: arreglos del audit de bugs del 11 oct (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.44` sobre el canal 0.6.43 publicado
+(`bbc1ddae`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.44 se ha visto en un Obsidian ni en un Hebra reales.
+- Audit de bugs sobre `ff8ac705` en siete zonas (Z1-Z7), revisado hallazgo a hallazgo por Codex: 41 hallazgos, 34
+  confirmados (3 de ellos nuevos de Codex), 6 refutados y 1 no concluyente. Se arreglan 33, cada uno con un test que
+  falla sin el arreglo; Z3-6 (el gráfico «Todo» de un objeto sembrado enseña 400 días hasta 24 h) se queda como está
+  porque arreglarlo rompe la regla de una petición por objeto cada 24 h (H18.17). Los refutados y el no concluyente no
+  se tocan. Cada lote pasó una revisión independiente y sus correcciones antes de integrarse.
+- Fuera de este candidato, por decisión: el reintento de 401/403 en las órdenes del Mercado de Comercio
+  (`src/account/trading-post-evidence.ts`) y el coste de tres pasadas cuando la lista de personajes da 206 de forma
+  persistente.
+- Límites conocidos: el reintento del resumen de una sesión tras el relevo vive solo en memoria; tras un fallo al
+  vaciar el puente con el juego se conservan sus servicios, pero nadie los reintenta.
+- Pendiente: verla en hosts reales.
+
 ## Canal 0.6.43 publicado: núcleo partido en siete fachadas más y raíces de panel sin `createElement` (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.43` = `6643b413` (atestación; candidato `ff8ac705`,

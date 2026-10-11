@@ -1,5 +1,35 @@
 # Changelog
 
+## Release beta 0.6.44 - Arreglos del audit de bugs del 11 oct
+
+Se actualiza desde la 0.6.43 publicada. Arregla 33 fallos de un audit revisado por Codex. Nada de esto se ha visto
+todavía en un Obsidian ni en un Hebra reales; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión en vivo. Si una sesión termina y empieza otra antes de escribir su resumen, el resumen sale con los personajes
+  de la sesión que terminó, no marca como escrito el de la siguiente y se reintenta si falló. El estado final de un
+  aviso se guarda en la sesión que lo lanzó.
+- Sesión. Si el almacén de sesiones no responde al arrancar, se vuelve a leer antes de iniciar una sesión desde el
+  addon o de borrar el historial. La nota de logros ya no cuenta como una sesión con conflicto. Borrar el historial
+  ya no deja que la sesión terminada vuelva a escribir su nota al recargar; también quita la tarjeta de su resumen.
+- Precios. Un fallo pasajero del almacén ya no para el histórico hasta reiniciar: se vuelve a abrir con espera
+  creciente. El aviso de precio de Halloween se activa solo al empezar la temporada con Obsidian abierto. La lista de
+  vigilancia guarda sitio para los objetos de más capital y para los que se acaban de ver.
+- Cuenta e inventario. Si la lista de personajes llega incompleta, la captura no se da por estable. El asesor
+  reintenta un 401 o 403 pasajero y, al cambiar de clave, descarta la captura que iba con la clave anterior. Las
+  posiciones se ordenan siempre igual: las reservas se toman primero del inventario compartido, luego del banco, del
+  almacén de materiales y de las bolsas, lo que puede cambiar una vez el reparto que se ve.
+- Avisos y red. Un 502 o 503 con una página de error se reintenta y conserva su código. Una espera de Retry-After de
+  más de 60 s ya no deja la operación colgada. Al cerrar el plugin con el puerto del juego ocupado ya no se esperan
+  los reintentos. El registro local dice qué canal de aviso falló. «Repetible · hecho 1 vez» en singular.
+- Arranque y cierre. Cerrar el plugin mientras arranca ya no deja servicios vivos. Un fallo al vaciar el puente con el
+  juego ya no impide liberar lo demás. En Hebra, los oyentes de errores y de conexión se quitan al cerrar, «Quitar»
+  los assets gestionados ya no se deshace con el siguiente cambio de ajustes, un cierre de puerto fallido se reintenta
+  y un guardado fallido de ajustes no se toma como guardado.
+- Interfaz. «Carpeta de salida» se guarda al salir del campo, no en cada tecla. Marcar dos legendarios seguidos guarda
+  los dos. Venta ya no dice «en curso» fuera de Halloween y escribe «falta 1 día». La gráfica de precios, «Actualizar»
+  en Logros y en Venta conservan el foco del teclado; «Actualizar» ocupado se ve atenuado en vez de desactivado. La
+  próxima captura de mañana muestra la hora. El aviso de una sesión terminada se quita cuando deja de ser cierto.
+
 ## Release beta 0.6.43 - Orden interno: el núcleo del plugin, partido en siete fachadas más
 
 Se actualiza desde la 0.6.42 publicada. No cambia nada visible. Nada de esto se ha visto todavía en un Obsidian ni en
