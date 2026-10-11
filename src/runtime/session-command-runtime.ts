@@ -11,9 +11,9 @@
  * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views see and keeps the
  * fields these write (the modals, the controller, its dispatch and the ribbon): the core closes the
  * modals and disposes the controller at unload, the product actions get the controller from it, and
- * `LiveSessionRuntime` runs its commands through it. The core also keeps the two standalone export
- * commands of the palette (`registerSessionExportCommands`), registered with its other standalone
- * commands. It hands all of that through `SessionCommandRuntimePort`; the getters below carry the
+ * `LiveSessionRuntime` runs its commands through it. The two standalone export commands of the
+ * palette (`registerSessionExportCommands`) are `SessionRuntime`'s (DE-01, tenth wave), registered by
+ * the core's `onload` with its other standalone commands. It hands all of that through `SessionCommandRuntimePort`; the getters below carry the
  * names of the core's own fields, so the moved code reads as it did there.
  *
  * Its name does not hold `session-runtime`, and it is not a persisted-session boundary: it reaches

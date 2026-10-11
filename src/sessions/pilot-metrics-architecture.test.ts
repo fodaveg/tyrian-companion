@@ -52,8 +52,10 @@ describe('pilot metrics architecture', () => {
 		// ('stop workflow outcome in the receipt and the pilot (H18.4)') (DE-01). `proposalPresented` is
 		// read from a pending card and an assisted proposal that are journaled, in `src/main.test.ts`
 		// ('journals a materialized pending-proposal card...') and
-		// `src/main-assisted-proposal-semantics.test.ts` (DE-01).
-		for (const hook of ['recoveryPresented', 'proposalExcluded']) expect(main).toContain(hook);
+		// `src/main-assisted-proposal-semantics.test.ts` (DE-01). `recoveryPresented` left the core with
+		// `PilotRecoveryRuntime` (DE-01, group F): that the boot records the recovery on screen through
+		// the recorder it built runs over the real core in `src/main-pilot-recovery-runtime-wiring.test.ts`.
+		expect(main).toContain('proposalExcluded');
 	});
 
 	it('attempts review-presented when a card materializes without delaying any product action', () => {

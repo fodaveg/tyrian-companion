@@ -421,8 +421,14 @@ export function renderActionBadge(action: SaleDisplayAction, translator: Transla
 function renderIcon(name: string, icon: string | null): HTMLElement {
 	if (icon !== null) {
 		const img = createEl('img', { cls: 'tyrian-inventory-advisor__item-icon', attr: { src: icon, alt: '' } });
+		// A load that fails shows the initials, the same fallback as a missing icon.
+		img.addEventListener('error', () => { img.replaceWith(initialsIcon(name)); });
 		return img;
 	}
+	return initialsIcon(name);
+}
+
+function initialsIcon(name: string): HTMLElement {
 	const fallback = createSpan({ cls: 'tyrian-inventory__icon', text: initialsFor(name) });
 	fallback.setAttribute('aria-hidden', 'true');
 	return fallback;

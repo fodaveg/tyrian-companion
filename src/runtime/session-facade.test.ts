@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { PilotRecoveryRuntime } from './pilot-recovery-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
-import { TyrianCompanionCore } from './tyrian-companion-core';
 import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import type { LocalDebugLogger } from '../core/local-debug-logger';
@@ -55,8 +55,11 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		localDebugActions: null,
 		host: {
 			environment: { hostVersion: '1.9.0', pluginVersion: 'test' },
-			vault: { file: unused('host.vault.file') },
-			ui: { openNote: unused('host.ui.openNote') },
+			vault: {
+				file: unused('host.vault.file'), read: unused('host.vault.read'), create: unused('host.vault.create'),
+				exists: unused('host.vault.exists'), createFolder: unused('host.vault.createFolder'),
+			},
+			ui: { openNote: unused('host.ui.openNote'), registerCommand: unused('host.ui.registerCommand') },
 		},
 		settingTab: { refreshSessionHistoryRow: () => undefined },
 		sessionHistory: {
@@ -80,16 +83,26 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 			recoveryClassified: unused('pilotMetrics.recoveryClassified'),
 		},
 		pilotMetricsExporter: { preview: unused('pilotMetricsExporter.preview'), export: unused('pilotMetricsExporter.export') },
-		measuredPilotRecoveries: new Set<string>(),
-		pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
+		pilotRecovery: {
+			measuredPilotRecoveries: new Set<string>(),
+			pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
+			pilotRecoveryIdentity: () => null,
+			ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
+		},
 		liveSessions: null,
 		liveHistory: null,
+		sessions: {
+			getState: unused('sessions.getState'),
+			getRecoveryState: unused('sessions.getRecoveryState'),
+			initialize: unused('sessions.initialize'),
+			getPreservedLegacyRuntime: unused('sessions.getPreservedLegacyRuntime'),
+			readPreservedLegacyRuntime: unused('sessions.readPreservedLegacyRuntime'),
+		},
+		assistedDetection: { getState: unused('assistedDetection.getState') },
 		notifyConsultMode: unused('notifyConsultMode'),
 		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		emitNotice: unused('emitNotice'),
 		renderViews: () => undefined,
-		pilotRecoveryIdentity: () => null,
-		ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
 		updateSettings: unused('updateSettings'),
 		...overrides,
 	} satisfies SessionRuntimePort;
@@ -113,33 +126,26 @@ describe('persisted pilot recovery classification', () => {
 	it('hydrates a reloaded classification and rejects an alternative without touching the journal', async () => {
 		const recoveryClassified = vi.fn(async () => false);
 		const recoveryId = 'session-a:7';
-		// The reload's hydration is the core's own `ensurePilotRecoveryPresented` (it stays with the
-		// recovery it measures); the classification it guards is `SessionRuntime`'s.
-		const core = {
+		// The reload's hydration is `PilotRecoveryRuntime.ensurePilotRecoveryPresented` (it stays with
+		// the recovery it measures); the classification it guards is `SessionRuntime`'s.
+		const pilotRecovery = new PilotRecoveryRuntime({
+			sessions: { getRecoveryState: unused('sessions.getRecoveryState') },
 			pilotMetrics: {
 				recoveryPresented: vi.fn(async () => true),
 				recoveryKind: vi.fn(async () => 'forced_restart' as const),
 			},
-			measuredPilotRecoveries: new Set<string>(),
-			pilotRecoveryKinds: new Map<string, PilotRecoveryKind>(),
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
-		const ensure = (TyrianCompanionCore.prototype as unknown as {
-			ensurePilotRecoveryPresented(this: typeof core, id: string): Promise<boolean>;
-		}).ensurePilotRecoveryPresented;
+		});
+		vi.spyOn(pilotRecovery, 'pilotRecoveryIdentity').mockReturnValue(recoveryId);
 		const runtime = new SessionRuntime(port({
 			pilotMetrics: { ...port().pilotMetrics, recoveryClassified },
-			measuredPilotRecoveries: core.measuredPilotRecoveries,
-			pilotRecoveryKinds: core.pilotRecoveryKinds,
-			pilotRecoveryIdentity: () => recoveryId,
-			ensurePilotRecoveryPresented: async (id) => await ensure.call(core, id),
+			pilotRecovery,
 		}));
 
-		await expect(ensure.call(core, recoveryId)).resolves.toBe(true);
-		expect(core.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
+		await expect(pilotRecovery.ensurePilotRecoveryPresented(recoveryId)).resolves.toBe(true);
+		expect(pilotRecovery.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
 		await expect(runtime.classifyPilotRecovery('organic')).resolves.toBe(false);
 		expect(recoveryClassified).not.toHaveBeenCalled();
-		expect(core.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
+		expect(pilotRecovery.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
 	});
 });
 
@@ -187,8 +193,8 @@ describe('openSessionHistoryNote (history row link)', () => {
 			settings: { ...SETTINGS, language },
 			host: {
 				...port().host,
-				vault: { file: (path) => existing.includes(path) ? { path } : null },
-				ui: { openNote },
+				vault: { ...port().host.vault, file: (path) => existing.includes(path) ? { path } : null },
+				ui: { ...port().host.ui, openNote },
 			},
 			emitNotice,
 		}));
@@ -252,6 +258,44 @@ describe('the session history scrub and export through SessionRuntime', () => {
 			status: 'unavailable', erased: 0, alreadyAbsent: 0, message: 'History scrub could not be completed safely.',
 		});
 		expect(runtime.getSessionHistoryView()).toEqual({ status: 'scrub_unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 });
+	});
+
+	it('the settings panel\'s preview before the runtime is ready says it is still starting, without asking the saved sessions again', async () => {
+		const notifyRuntimeStarting = vi.fn();
+		// `sessions` is the port's `unused` stub: reading it before the boot built it throws, as the core's own undefined field did.
+		const runtime = new SessionRuntime(port({ runtimeReady: false, notifyRuntimeStarting }));
+
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toEqual({
+			status: 'unavailable', message: 'Tyrian Companion is still starting.',
+		});
+		expect(notifyRuntimeStarting).toHaveBeenCalledOnce();
+	});
+
+	it('the settings panel\'s preview on a consult device is refused once, without asking the saved sessions again', async () => {
+		const notifyConsultMode = vi.fn();
+		const runtime = new SessionRuntime(port({ collectorMode: 'consult', notifyConsultMode }));
+
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toEqual({
+			status: 'unavailable', message: 'This installation is in consult mode.',
+		});
+		expect(notifyConsultMode).toHaveBeenCalledOnce();
+	});
+
+	it('the settings panel\'s preview on a ready collector asks saved sessions that did not answer again before the preview (Z2-2)', async () => {
+		const order: string[] = [];
+		const previewScrub = vi.fn(async (): Promise<SessionHistoryScrubPreview> => { order.push('preview'); return { status: 'blocked', message: 'not idle' }; });
+		const runtime = new SessionRuntime(port({
+			sessionHistory: { ...port().sessionHistory, previewScrub },
+			sessions: {
+				...port().sessions,
+				getRecoveryState: () => ({ status: 'error', code: 'unavailable' }) as ReturnType<SessionRuntimePort['sessions']['getRecoveryState']>,
+				initialize: async () => { order.push('initialize'); },
+			},
+		}));
+
+		await runtime.previewSessionHistoryScrubAfterRecovery();
+
+		expect(order).toEqual(['initialize', 'preview']);
 	});
 
 	it('refuses the scrub on a consult device and says so once, without reaching the history', async () => {

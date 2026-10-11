@@ -4,11 +4,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+import type { PilotRecoveryRuntime } from './runtime/pilot-recovery-runtime';
 import { SessionRuntime } from './runtime/session-facade';
+import { SessionNoteRuntime } from './runtime/session-note-runtime';
 import type { TyrianCompanionCore } from './runtime/tyrian-companion-core';
+import { AssistedDetectionService } from './sessions/assisted-detection-service';
 import { DEFAULT_FARMING_PREPARATION } from './sessions/farming-goal-preparation';
 import { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
+import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import type { PilotMetricsRecorder } from './sessions/pilot-metrics-recorder';
+import type { SessionHistoryRuntimeAuthority } from './sessions/session-history';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 
 /**
@@ -63,6 +68,7 @@ const FACADE: Readonly<Record<FacadeMethod, readonly [call: (core: TyrianCompani
 	getLiveSessionSetAside: [(core) => core.getLiveSessionSetAside(), []],
 	selectLiveSessionHistory: [async (core) => { await core.selectLiveSessionHistory(null); }, [null]],
 	exportLiveSession: [async (core) => { await core.exportLiveSession('summary', 'json'); }, ['summary', 'json']],
+	exportPreservedLegacySession: [async (core) => { await core.exportPreservedLegacySession(); }, []],
 };
 
 /** The rows of `FACADE` for `it.each`; `Object.keys` types its keys as plain strings. */
@@ -194,15 +200,11 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 			expect(runtime.core.getPilotMetricsState()).toEqual({ status: 'ready', observations: 3, limit: 10_000 });
 		});
 
-		it('measuredPilotRecoveries and pilotRecoveryKinds: what the core\'s recovery hooks fill is what the runtime reads', async () => {
+		it('pilotRecovery: what the core\'s `PilotRecoveryRuntime` fills is what the runtime reads', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
-			// The core's own recovery identity and sets: privates of the core, never of `SessionRuntime`.
-			const own = runtime.core as unknown as {
-				pilotRecoveryIdentity(): string | null;
-				measuredPilotRecoveries: Set<string>;
-				pilotRecoveryKinds: Map<string, 'forced_restart' | 'organic'>;
-			};
+			// The core's own `PilotRecoveryRuntime`: a private of the core, never of `SessionRuntime`.
+			const own = pilotOf(runtime.core);
 			vi.spyOn(own, 'pilotRecoveryIdentity').mockReturnValue('session-a:7');
 			own.measuredPilotRecoveries.add('session-a:7');
 			own.pilotRecoveryKinds.set('session-a:7', 'organic');
@@ -213,41 +215,115 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 			}).toEqual({ required: true, kind: 'organic' });
 		});
 
-		/** The core's own recovery hooks, sets and recorder: privates of the core, never of `SessionRuntime`. */
-		function pilotOf(core: TyrianCompanionCore) {
-			return core as unknown as {
-				pilotRecoveryIdentity(): string | null;
-				ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
-				measuredPilotRecoveries: Set<string>;
-				pilotRecoveryKinds: Map<string, 'forced_restart' | 'organic'>;
-				pilotMetrics: PilotMetricsRecorder;
-			};
+		/** The core's own `PilotRecoveryRuntime` (DE-01, group F): a private of the core, never of `SessionRuntime`. */
+		function pilotOf(core: TyrianCompanionCore): PilotRecoveryRuntime {
+			return (core as unknown as { pilotRecovery: PilotRecoveryRuntime }).pilotRecovery;
+		}
+		/** The core's own recorder: a private of the core, never of `SessionRuntime`. */
+		function recorderOf(core: TyrianCompanionCore): PilotMetricsRecorder {
+			return (core as unknown as { pilotMetrics: PilotMetricsRecorder }).pilotMetrics;
 		}
 
-		it('measuredPilotRecoveries and pilotRecoveryKinds: clearing the journal through the core empties the core\'s own sets', async () => {
+		it('pilotRecovery: clearing the journal through the core empties the core\'s own collections', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
 			const own = pilotOf(runtime.core);
 			own.measuredPilotRecoveries.add('session-a:7');
 			own.pilotRecoveryKinds.set('session-a:7', 'organic');
-			vi.spyOn(own.pilotMetrics, 'clear').mockResolvedValue(0);
+			vi.spyOn(recorderOf(runtime.core), 'clear').mockResolvedValue(0);
 
 			await runtime.core.clearPilotMetrics();
 
 			expect({ measured: [...own.measuredPilotRecoveries], kinds: [...own.pilotRecoveryKinds] }).toEqual({ measured: [], kinds: [] });
 		});
 
-		it('pilotRecoveryKinds: a recovery classified through the core keeps its kind in the core\'s own map', async () => {
+		it('pilotRecovery: a recovery classified through the core keeps its kind in the core\'s own map', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
 			const own = pilotOf(runtime.core);
 			vi.spyOn(own, 'pilotRecoveryIdentity').mockReturnValue('session-a:7');
 			vi.spyOn(own, 'ensurePilotRecoveryPresented').mockResolvedValue(true);
-			vi.spyOn(own.pilotMetrics, 'recoveryClassified').mockResolvedValue(true);
+			vi.spyOn(recorderOf(runtime.core), 'recoveryClassified').mockResolvedValue(true);
 
 			await expect(runtime.core.classifyPilotRecovery('forced_restart')).resolves.toBe(true);
 
 			expect(own.pilotRecoveryKinds.get('session-a:7')).toBe('forced_restart');
+		});
+	});
+
+	/**
+	 * DE-01, tenth wave: the history's gate, the Z2-2 preview and the export commands moved here. The core's
+	 * preview is a delegate under another name, and the history's runtime authority reads its gate here and
+	 * lets a finished live session go in `SessionNoteRuntime`. The commands' registration from `onload` is
+	 * run in `src/runtime/tyrian-companion-core.test.ts`, over a neutral host.
+	 */
+	describe('the history\'s gate, the Z2-2 preview and the export (DE-01, tenth wave)', () => {
+		/** The core's own authority: a private of the core, built with it. */
+		const authorityOf = (core: TyrianCompanionCore): SessionHistoryRuntimeAuthority =>
+			(core as unknown as { sessionHistoryRuntimeAuthority: SessionHistoryRuntimeAuthority }).sessionHistoryRuntimeAuthority;
+
+		it('previewSessionHistoryScrub reaches SessionRuntime.previewSessionHistoryScrubAfterRecovery once and answers what it answers', async () => {
+			const runtime = core();
+			const answer = { status: 'unavailable', message: 'from the runtime' } as const;
+			const reached = vi.spyOn(SessionRuntime.prototype, 'previewSessionHistoryScrubAfterRecovery').mockResolvedValue(answer);
+
+			await expect(runtime.core.previewSessionHistoryScrub()).resolves.toBe(answer);
+			expect(reached).toHaveBeenCalledExactlyOnceWith();
+		});
+
+		it('the history\'s runtime authority reads its gate from SessionRuntime.sessionHistoryScrubGate', () => {
+			const runtime = core();
+			const gate = { sessionStatus: 'idle', recoveryStatus: 'none', detectorStatus: 'disarmed', sealedRetirable: false } as const;
+			const reached = vi.spyOn(SessionRuntime.prototype, 'sessionHistoryScrubGate').mockReturnValue(gate);
+
+			expect(authorityOf(runtime.core).readGate()).toBe(gate);
+			expect(reached).toHaveBeenCalledExactlyOnceWith();
+		});
+
+		it('the history\'s runtime authority lets a finished live session go through SessionNoteRuntime.retireSealedLiveSession', async () => {
+			const runtime = core();
+			const reached = vi.spyOn(SessionNoteRuntime.prototype, 'retireSealedLiveSession').mockResolvedValue(false);
+
+			await expect(authorityOf(runtime.core).retireSealedRuntime()).resolves.toBe(false);
+			expect(reached).toHaveBeenCalledExactlyOnceWith();
+		});
+
+		it('sessions and assistedDetection: the gate reads the session, its recovery and the detector the boot built', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			vi.spyOn(ManualSessionStartService.prototype, 'getRecoveryState').mockReturnValue({ status: 'none' });
+			vi.spyOn(AssistedDetectionService.prototype, 'getState').mockReturnValue({ status: 'armed' } as ReturnType<AssistedDetectionService['getState']>);
+
+			expect(authorityOf(runtime.core).readGate()).toEqual({
+				sessionStatus: runtime.core.getLiveSessionView().phase, sealedRetirable: false, recoveryStatus: 'none', detectorStatus: 'armed',
+			});
+		});
+
+		it('runtimeReady: a preview pressed before the boot built the saved sessions says the plugin is still starting, without reading them', async () => {
+			const runtime = core();
+			const notices = vi.spyOn(runtime.core as unknown as { emitNotice(message: string, source: string): void }, 'emitNotice')
+				.mockImplementation(() => undefined);
+
+			await expect(runtime.core.previewSessionHistoryScrub()).resolves.toEqual({
+				status: 'unavailable', message: 'Tyrian Companion is still starting.',
+			});
+			expect(notices.mock.calls.map(([, source]) => source)).toEqual(['plugin_starting']);
+		});
+
+		it('sessions: a preview over saved sessions that did not answer at boot asks the boot\'s service again first (Z2-2)', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			const order: string[] = [];
+			vi.spyOn(ManualSessionStartService.prototype, 'getRecoveryState')
+				.mockReturnValue({ status: 'error', code: 'unavailable' } as ReturnType<ManualSessionStartService['getRecoveryState']>);
+			vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockImplementation(async () => { order.push('initialize'); });
+			vi.spyOn(SessionRuntime.prototype, 'previewSessionHistoryScrub').mockImplementation(async () => {
+				order.push('preview'); return { status: 'blocked', message: 'not idle' } as never;
+			});
+
+			await runtime.core.previewSessionHistoryScrub();
+
+			expect(order).toEqual(['initialize', 'preview']);
 		});
 	});
 });

@@ -27,10 +27,12 @@ import type { AlertV1 } from './alerts/alert-contract';
 /** The moved alert/bridge internals: `AlertRuntime` owns them now (DE-01, step 3g). */
 interface AlertsAccess {liveIngamePort():LiveIngamePort;alertIngameServer:AlertIngameServerHandle|null;alertIngameServerPort:number|null;
 	ensureAlertIngameServer():Promise<AlertIngameServerHandle|null>;ingamePresenceTracker():IngamePresenceTracker;
-	onIngameConnectionEvent(event:IngameConnectionEvent):void}
+	onIngameConnectionEvent(event:IngameConnectionEvent):void;
+	/** DE-01, tenth wave: the live economy `SessionNoteRuntime` wires emits here, with no delegate left in the core. */
+	emitLiveSessionAlert(intent:unknown):Promise<unknown>}
 interface RuntimeAccess {host:TyrianHost;alerts:AlertsAccess;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;
 	ingameSessionMarker:IngameSessionMarker;commands:Pick<SessionCommandRuntime,'setupSessionCommands'>;setupProductActions():void;productActions:ProductActionController;
-	sessionCommands:SessionCommandController;collectorMode:'collector'|'consult';liveEconomy:LiveSessionEconomy;emitLiveSessionAlert(intent:unknown):Promise<unknown>}
+	sessionCommands:SessionCommandController;collectorMode:'collector'|'consult';liveEconomy:LiveSessionEconomy}
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ'; const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
 let active: RuntimeHarness|null = null;
@@ -215,7 +217,7 @@ describe('real passive Nexus composition', () => {
 		const options=(f.access.liveEconomy as unknown as {options:{catalog():Promise<Record<string,CatalogItem>>;gateway:PublicCatalogGateway}}).options;
 		options.catalog=async () => await new Promise((resolve) => {release=resolve;});
 		options.gateway={requestDetailed:vi.fn(async () => ({status:200,headers:{},body:[{id:36038,whitelisted:true,buys:{unit_price:100000,quantity:100},sells:{unit_price:120000,quantity:100}}]}))};
-		const emit=vi.spyOn(f.access,'emitLiveSessionAlert'); const claim=vi.spyOn(f.access.liveSessions,'updateAlert');
+		const emit=vi.spyOn(f.alerts,'emitLiveSessionAlert'); const claim=vi.spyOn(f.access.liveSessions,'updateAlert');
 		f.setNow(AT+1000); await f.port.commit(f.sample(1,4)); await vi.waitFor(() => {expect(release).not.toBeNull();});
 		f.access.collectorMode='consult'; release!({}); await f.access.liveEconomy.drain();
 		expect(claim).not.toHaveBeenCalled(); expect(emit).not.toHaveBeenCalled(); expect(f.h.core.getLiveSessionAlerts()[0]?.state).toBe('awaiting_price'); expect(f.h.core.getEmittedAlerts()).toEqual([]);
@@ -227,7 +229,7 @@ describe('real passive Nexus composition', () => {
 		await f.access.liveSessions.updateAlert(intent.outboxId,(prior) => decideLiveAlert(prior,entry.observations[0]!,100000,'Bag',new Date(AT+1000).toISOString(),false));
 		const claimed=await f.access.liveSessions.updateAlert(intent.outboxId,(prior) => ({...prior,state:'dispatching',claimedAt:new Date(AT+1000).toISOString()}));
 		const notice=vi.spyOn(f.access.host.ui,'notice'); const system=vi.spyOn(f.access.host.notify,'system');
-		await f.access.emitLiveSessionAlert(claimed);
+		await f.alerts.emitLiveSessionAlert(claimed);
 		expect(notice).toHaveBeenCalledOnce(); const text=notice.mock.calls[0]?.[0];
 		expect(text).toContain('+4'); expect(text).not.toMatch(/API|5.*10|drop|found|hallazgo/iu);
 		expect(system.mock.calls[0]?.[0]).toMatchObject({title:locale==='es' ? 'Aumento observado' : 'Observed increase',body:text});

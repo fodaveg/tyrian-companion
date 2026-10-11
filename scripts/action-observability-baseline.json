@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 620,
 		"promise_catch": 61,
-		"void_expression": 147,
-		"callback_registration": 255
+		"void_expression": 146,
+		"callback_registration": 259
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -8696,6 +8696,125 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/alert-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "b5c9fa57b219ff52873e09771ef34a0113a06feb",
+					"kind": "callback_registration",
+					"line": 446,
+					"column": 18,
+					"endLine": 479,
+					"endColumn": 6,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "ensureAlertIngameServer",
+						"justification": "The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
+					},
+					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
+				},
+				{
+					"id": "75c694088885e9d0eed46de68d698ff6c242e2a5",
+					"kind": "promise_catch",
+					"line": 446,
+					"column": 18,
+					"endLine": 495,
+					"endColumn": 6,
+					"registration": "catch",
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
+					},
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
+				},
+				{
+					"id": "7cf8b69e63a1d827614c596b98b09b231d495a1c",
+					"kind": "callback_registration",
+					"line": 446,
+					"column": 18,
+					"endLine": 499,
+					"endColumn": 6,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "ensureAlertIngameServer",
+						"justification": "The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
+					},
+					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"finally\" in \"ensureAlertIngameServer\"."
+				},
+				{
+					"id": "9f18056334cfe7d6a3ea25f653a0d2c03df39637",
+					"kind": "catch_clause",
+					"line": 655,
+					"column": 5,
+					"endLine": 657,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.emitNotice"
+					},
+					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
+					"kind": "void_expression",
+					"line": 664,
+					"column": 22,
+					"endLine": 664,
+					"endColumn": 66,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.copyAlertIngameSecretFromCommand",
+						"scope": "callback",
+						"justification": "The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice."
+					},
+					"reason": "Allowlisted void_expression: The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice. Verified target: \"this.copyAlertIngameSecretFromCommand\" in \"callback\"."
+				},
+				{
+					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
+					"kind": "callback_registration",
+					"line": 683,
+					"column": 18,
+					"endLine": 686,
+					"endColumn": 4,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "resolveAlertAccountRef",
+						"justification": "The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration."
+					},
+					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration. Verified registration: \"then\" in \"resolveAlertAccountRef\"."
+				},
+				{
+					"id": "378194b415575bb405c10210312836c46456263c",
+					"kind": "callback_registration",
+					"line": 683,
+					"column": 18,
+					"endLine": 686,
+					"endColumn": 91,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "resolveAlertAccountRef",
+						"justification": "The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own."
+					},
+					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
+				}
+			]
+		},
 		"src/runtime/assemble-achievements.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -8863,7 +8982,89 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/farming-session-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "506e1deeafc4fac3e503e2ac27a4bd25ef4517f4",
+					"kind": "catch_clause",
+					"line": 101,
+					"column": 5,
+					"endLine": 101,
+					"endColumn": 62,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "currentFarmingSessionContext",
+						"justification": "In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session."
+					},
+					"reason": "Allowlisted catch_clause: In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session. Verified recovery: \"local_recovery\" in \"currentFarmingSessionContext\"."
+				},
+				{
+					"id": "80257ea2929440561746e09bcdfc231866471af0",
+					"kind": "catch_clause",
+					"line": 108,
+					"column": 3,
+					"endLine": 108,
+					"endColumn": 60,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "persistFarmingSessionContext",
+						"justification": "In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session."
+					},
+					"reason": "Allowlisted catch_clause: In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session. Verified recovery: \"local_recovery\" in \"persistFarmingSessionContext\"."
+				}
+			]
+		},
+		"src/runtime/halloween-observation-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "87c3a0f437996350a4c46ad05977fcc08e050a25",
+					"kind": "void_expression",
+					"line": 147,
+					"column": 3,
+					"endLine": 147,
+					"endColumn": 62,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.halloween.activate().catch",
+						"scope": "switchHalloweenAccount",
+						"justification": "The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything."
+					},
+					"reason": "Allowlisted void_expression: The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything. Verified target: \"this.halloween.activate().catch\" in \"switchHalloweenAccount\"."
+				},
+				{
+					"id": "d3fce5748c86e663f8ace672ed450d37eab3aaa6",
+					"kind": "promise_catch",
+					"line": 147,
+					"column": 8,
+					"endLine": 147,
+					"endColumn": 62,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "switchHalloweenAccount",
+						"justification": "The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state."
+					},
+					"reason": "Allowlisted promise_catch: The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state. Verified recovery: \"intentional_noop\" in \"switchHalloweenAccount\"."
+				}
+			]
+		},
 		"src/runtime/index.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/runtime/inventory-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
@@ -9443,6 +9644,187 @@
 				}
 			]
 		},
+		"src/runtime/local-debug-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "ac4ddd0827980bf5fbed4dd4ae2b8d9170bdf134",
+					"kind": "catch_clause",
+					"line": 206,
+					"column": 5,
+					"endLine": 208,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.emitNotice"
+					},
+					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "59ed5c2c98f3597c29bd1f190fee1f21d05c38a1",
+					"kind": "catch_clause",
+					"line": 221,
+					"column": 5,
+					"endLine": 221,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "safeLocalDebugJsonl",
+						"justification": "The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"safeLocalDebugJsonl\"."
+				},
+				{
+					"id": "a87cb85f05b7c4ebba523c56351878ecad84cc86",
+					"kind": "catch_clause",
+					"line": 251,
+					"column": 5,
+					"endLine": 251,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "safeLocalDebugSupportJsonl",
+						"justification": "The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line."
+					},
+					"reason": "Allowlisted catch_clause: The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line. Verified recovery: \"intentional_noop\" in \"safeLocalDebugSupportJsonl\"."
+				}
+			]
+		},
+		"src/runtime/managed-assets-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "d9afce825e72cefbbfb66fefa43caf30eae32681",
+					"kind": "catch_clause",
+					"line": 122,
+					"column": 6,
+					"endLine": 124,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "bceef1978ef6645a1fcc0725d58ef3fe75c2040f",
+					"kind": "catch_clause",
+					"line": 270,
+					"column": 6,
+					"endLine": 274,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "a5471271a269744f0e9034bae07ffaaa44906b46",
+					"kind": "catch_clause",
+					"line": 364,
+					"column": 6,
+					"endLine": 368,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "perform",
+						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself. Verified recovery: \"fallback_return\" in \"perform\"."
+				},
+				{
+					"id": "096098af524e3ce1faefc5000bf9d471551f71e4",
+					"kind": "catch_clause",
+					"line": 464,
+					"column": 3,
+					"endLine": 464,
+					"endColumn": 113,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "runManagedAssetsLifecycle",
+						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
+				}
+			]
+		},
+		"src/runtime/pilot-recovery-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "4a304d0627ece6325f00e4f7c3d5c39696de6cd6",
+					"kind": "void_expression",
+					"line": 71,
+					"column": 19,
+					"endLine": 71,
+					"endColumn": 96,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.ensurePilotRecoveryPresented().then",
+						"scope": "presentPilotRecovery",
+						"justification": "The \"presentPilotRecovery\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"presentPilotRecovery\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"presentPilotRecovery\"."
+				},
+				{
+					"id": "c6bf2458e3bf0069eb0601f4e37b08a5a7386ed6",
+					"kind": "callback_registration",
+					"line": 71,
+					"column": 24,
+					"endLine": 71,
+					"endColumn": 96,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "presentPilotRecovery",
+						"justification": "The \"presentPilotRecovery\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"presentPilotRecovery\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"presentPilotRecovery\"."
+				}
+			]
+		},
+		"src/runtime/price-history-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "925e402fa437c83b595ab18e1c5f5bbce5b88829",
+					"kind": "catch_clause",
+					"line": 195,
+					"column": 5,
+					"endLine": 198,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				}
+			]
+		},
 		"src/runtime/sale-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -9553,9 +9935,9 @@
 				{
 					"id": "e2677db7ee9ffb05a0cfe653251c22b5859ecf60",
 					"kind": "catch_clause",
-					"line": 326,
+					"line": 348,
 					"column": 5,
-					"endLine": 326,
+					"endLine": 348,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9567,11 +9949,44 @@
 					"reason": "Allowlisted catch_clause: In \"loadLiveComparisonNotes\", \"local_recovery\" exposes unavailable state to the retained comparison panel; captured notes remain intact and explicit retry is possible without authenticated queries. Verified recovery: \"local_recovery\" in \"loadLiveComparisonNotes\"."
 				},
 				{
+					"id": "a740dfa9f43588903c41994f6ea83a903e53e853",
+					"kind": "void_expression",
+					"line": 405,
+					"column": 7,
+					"endLine": 408,
+					"endColumn": 8,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "spec.run().then",
+						"scope": "checkCallback",
+						"justification": "In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made."
+					},
+					"reason": "Allowlisted void_expression: In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made. Verified target: \"spec.run().then\" in \"checkCallback\"."
+				},
+				{
+					"id": "58428adf61711c54ffd28e6aee64f209fe77da87",
+					"kind": "callback_registration",
+					"line": 405,
+					"column": 12,
+					"endLine": 408,
+					"endColumn": 8,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "checkCallback",
+						"justification": "In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state."
+					},
+					"reason": "Allowlisted callback_registration: In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state. Verified registration: \"then\" in \"checkCallback\"."
+				},
+				{
 					"id": "7fd9797abc04d64b45bec03cf4331ffc950b3198",
 					"kind": "catch_clause",
-					"line": 378,
+					"line": 452,
 					"column": 5,
-					"endLine": 380,
+					"endLine": 454,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9585,9 +10000,9 @@
 				{
 					"id": "483ff675cc19c1d3654a9ad25e93e0cb5a23cda2",
 					"kind": "callback_registration",
-					"line": 395,
+					"line": 490,
 					"column": 18,
-					"endLine": 399,
+					"endLine": 494,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9602,9 +10017,9 @@
 				{
 					"id": "0e0e21d3664b5c025c35a8aac9c61d5c864a9e94",
 					"kind": "promise_catch",
-					"line": 395,
+					"line": 490,
 					"column": 18,
-					"endLine": 404,
+					"endLine": 499,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9619,9 +10034,9 @@
 				{
 					"id": "ea755acba0cb7d892da98e98a2082873f5a179ae",
 					"kind": "callback_registration",
-					"line": 395,
+					"line": 490,
 					"column": 18,
-					"endLine": 408,
+					"endLine": 503,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9636,9 +10051,9 @@
 				{
 					"id": "254ed92e0b04ee2b9deccc5b7a97d045d96b4edb",
 					"kind": "callback_registration",
-					"line": 440,
+					"line": 535,
 					"column": 18,
-					"endLine": 444,
+					"endLine": 539,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9653,9 +10068,9 @@
 				{
 					"id": "1c9e9f7942d97b2f4f562fe299333c4c42229e1f",
 					"kind": "promise_catch",
-					"line": 440,
+					"line": 535,
 					"column": 18,
-					"endLine": 452,
+					"endLine": 547,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9670,9 +10085,9 @@
 				{
 					"id": "df6af941d19a62ca62fd63564e53b6d7eee46721",
 					"kind": "callback_registration",
-					"line": 440,
+					"line": 535,
 					"column": 18,
-					"endLine": 456,
+					"endLine": 551,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9693,9 +10108,9 @@
 				{
 					"id": "9a04ee82e89d51b956e3f2bd6cb751fbfb0a3236",
 					"kind": "catch_clause",
-					"line": 257,
+					"line": 315,
 					"column": 3,
-					"endLine": 257,
+					"endLine": 315,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9709,9 +10124,9 @@
 				{
 					"id": "09b68f795f462d5ad7cf8051e8db247c5e26d31b",
 					"kind": "catch_clause",
-					"line": 287,
+					"line": 345,
 					"column": 5,
-					"endLine": 294,
+					"endLine": 352,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9719,6 +10134,20 @@
 						"callee": "this.emitNotice"
 					},
 					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "d7b089acfd20d81344d3694195f34ef6ac3d4d3e",
+					"kind": "catch_clause",
+					"line": 506,
+					"column": 5,
+					"endLine": 509,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				}
 			]
 		},
@@ -9729,9 +10158,9 @@
 				{
 					"id": "eef5936ccfaeb30d3e3fafb8cac4d2d759abd631",
 					"kind": "promise_catch",
-					"line": 823,
+					"line": 808,
 					"column": 11,
-					"endLine": 828,
+					"endLine": 813,
 					"endColumn": 7,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9746,9 +10175,9 @@
 				{
 					"id": "6ea242cbc2846a2d7b4957f09fba6bcf86833734",
 					"kind": "void_expression",
-					"line": 890,
+					"line": 875,
 					"column": 3,
-					"endLine": 890,
+					"endLine": 875,
 					"endColumn": 109,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9762,9 +10191,9 @@
 				{
 					"id": "c3e4fa40f86b6e8c74c825df57303c4b7f831995",
 					"kind": "catch_clause",
-					"line": 922,
+					"line": 907,
 					"column": 5,
-					"endLine": 931,
+					"endLine": 916,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -9776,9 +10205,9 @@
 				{
 					"id": "b9dd4a4555940f117aa91f79474e06fbe62fc849",
 					"kind": "catch_clause",
-					"line": 1039,
+					"line": 1024,
 					"column": 7,
-					"endLine": 1041,
+					"endLine": 1026,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9792,9 +10221,9 @@
 				{
 					"id": "9ab67d14d649c97b4e5cba6cccb4052e0240d583",
 					"kind": "catch_clause",
-					"line": 1193,
+					"line": 1178,
 					"column": 7,
-					"endLine": 1199,
+					"endLine": 1184,
 					"endColumn": 6,
 					"classification": "observed",
 					"evidence": {
@@ -9806,9 +10235,9 @@
 				{
 					"id": "ec5f92ef8f7fca865d94cb22b85c586504f84bce",
 					"kind": "catch_clause",
-					"line": 1239,
+					"line": 1224,
 					"column": 7,
-					"endLine": 1241,
+					"endLine": 1226,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9822,9 +10251,9 @@
 				{
 					"id": "362e4edcf0f3f4ddd7d85101fc3ee63850ddad9d",
 					"kind": "void_expression",
-					"line": 1339,
+					"line": 1324,
 					"column": 3,
-					"endLine": 1339,
+					"endLine": 1324,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9836,44 +10265,11 @@
 					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"advisorServices.preferencesBackup.restore\" so the start never waits for IndexedDB; that named operation never rejects, because restoreOnce catches every failure and records each outcome (restored, not needed, absent, invalid, failed) on its own advisor span. Verified target: \"advisorServices.preferencesBackup.restore\" in \"initializeRuntime\"."
 				},
 				{
-					"id": "c0d6ddc51b54af6b566015a85e2cbaec880e82a7",
-					"kind": "void_expression",
-					"line": 1359,
-					"column": 21,
-					"endLine": 1359,
-					"endColumn": 102,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.ensurePilotRecoveryPresented().then",
-						"scope": "onSessionStateChange",
-						"justification": "The \"onSessionStateChange\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"onSessionStateChange\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"onSessionStateChange\"."
-				},
-				{
-					"id": "bf7d358684d6e3ff708aa412d55f84c1cacf49fa",
-					"kind": "callback_registration",
-					"line": 1359,
-					"column": 26,
-					"endLine": 1359,
-					"endColumn": 102,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "onSessionStateChange",
-						"justification": "The \"onSessionStateChange\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onSessionStateChange\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"onSessionStateChange\"."
-				},
-				{
 					"id": "fe70eae3373782f57876d29a32ea21742964a4bb",
 					"kind": "void_expression",
-					"line": 1365,
+					"line": 1349,
 					"column": 35,
-					"endLine": 1365,
+					"endLine": 1349,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9887,9 +10283,9 @@
 				{
 					"id": "cc21861f11fbd1dace6ac8801eb6f7c22a82ca82",
 					"kind": "void_expression",
-					"line": 1382,
+					"line": 1366,
 					"column": 5,
-					"endLine": 1382,
+					"endLine": 1366,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9901,44 +10297,11 @@
 					"reason": "Allowlisted void_expression: The \"onProposalExcluded\" owner deliberately detaches \"this.pilotMetrics.proposalExcluded\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalExcluded\" in \"onProposalExcluded\"."
 				},
 				{
-					"id": "09863725c53254997fa42639e8c1ed30f985f871",
-					"kind": "void_expression",
-					"line": 1434,
-					"column": 19,
-					"endLine": 1434,
-					"endColumn": 100,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.ensurePilotRecoveryPresented().then",
-						"scope": "initializeRuntime",
-						"justification": "The \"initializeRuntime\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"initializeRuntime\"."
-				},
-				{
-					"id": "f05ee0a2b576e9d91cbb9e7ec23113009e009f5c",
-					"kind": "callback_registration",
-					"line": 1434,
-					"column": 24,
-					"endLine": 1434,
-					"endColumn": 100,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "initializeRuntime",
-						"justification": "The \"initializeRuntime\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"initializeRuntime\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"initializeRuntime\"."
-				},
-				{
 					"id": "7597fd7197fd4f3df5915492a396e8b2f6fa4a2e",
 					"kind": "void_expression",
-					"line": 1447,
+					"line": 1430,
 					"column": 83,
-					"endLine": 1447,
+					"endLine": 1430,
 					"endColumn": 125,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9952,9 +10315,9 @@
 				{
 					"id": "8bacfe4308bba0f0ba9dae50ef780cc2d0f15ae7",
 					"kind": "void_expression",
-					"line": 1447,
+					"line": 1430,
 					"column": 127,
-					"endLine": 1447,
+					"endLine": 1430,
 					"endColumn": 161,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9968,9 +10331,9 @@
 				{
 					"id": "d4fd3c7c921b4aedcfafe128fd5f0840cd1027cc",
 					"kind": "catch_clause",
-					"line": 1575,
+					"line": 1558,
 					"column": 6,
-					"endLine": 1581,
+					"endLine": 1564,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -9982,9 +10345,9 @@
 				{
 					"id": "bb8997c73de5e090bd20278441918defef583ebd",
 					"kind": "callback_registration",
-					"line": 1696,
+					"line": 1679,
 					"column": 10,
-					"endLine": 1696,
+					"endLine": 1679,
 					"endColumn": 111,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9999,9 +10362,9 @@
 				{
 					"id": "1f40e4851a1e017ed7b9a6ecdd8416721c4466b6",
 					"kind": "promise_catch",
-					"line": 1703,
+					"line": 1686,
 					"column": 3,
-					"endLine": 1703,
+					"endLine": 1686,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10016,9 +10379,9 @@
 				{
 					"id": "159de0a0475f31bec1cbaaf7c6d79c578bb9f6c7",
 					"kind": "catch_clause",
-					"line": 1740,
+					"line": 1723,
 					"column": 46,
-					"endLine": 1740,
+					"endLine": 1723,
 					"endColumn": 131,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10032,9 +10395,9 @@
 				{
 					"id": "9f0b4cfe335a6092baf0070b38ed7e7c4872a370",
 					"kind": "catch_clause",
-					"line": 1749,
+					"line": 1732,
 					"column": 5,
-					"endLine": 1751,
+					"endLine": 1734,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10048,9 +10411,9 @@
 				{
 					"id": "a0b4d649e014951a88d491bd9b0d8e7a8e327132",
 					"kind": "void_expression",
-					"line": 1806,
+					"line": 1789,
 					"column": 30,
-					"endLine": 1806,
+					"endLine": 1789,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10064,9 +10427,9 @@
 				{
 					"id": "39b977f7aee04b8faa42b51990318eb60078f1f7",
 					"kind": "callback_registration",
-					"line": 1806,
+					"line": 1789,
 					"column": 35,
-					"endLine": 1806,
+					"endLine": 1789,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10081,9 +10444,9 @@
 				{
 					"id": "5975d1589f5e6b0e0fa022521b5f7dcf7e106db8",
 					"kind": "void_expression",
-					"line": 1859,
+					"line": 1842,
 					"column": 4,
-					"endLine": 1859,
+					"endLine": 1842,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10097,9 +10460,9 @@
 				{
 					"id": "343676b02d39fb16ceeed226aa9ceb8e4ef7461a",
 					"kind": "catch_clause",
-					"line": 1936,
+					"line": 1919,
 					"column": 5,
-					"endLine": 1939,
+					"endLine": 1922,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10111,11 +10474,11 @@
 					"reason": "Allowlisted catch_clause: The \"toggleTrackedAchievement\" owner answers refused with a \"fallback_return\" when the settings save threw; that failure was already recorded by updateSettings under settings_save, and the section says it in its live region. Verified recovery: \"fallback_return\" in \"toggleTrackedAchievement\"."
 				},
 				{
-					"id": "d8fcad351b0e3fabc77a7144ea5146c2e4c808a7",
+					"id": "0fbf65c82bf814c2fa9dbf942f9a2220f2a8bcf5",
 					"kind": "catch_clause",
-					"line": 3052,
+					"line": 3001,
 					"column": 6,
-					"endLine": 3064,
+					"endLine": 3008,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -10125,60 +10488,27 @@
 					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "9481a982452a2b01ac678cef2ebacfe400c2cc02",
+					"id": "d2c8ea96af56c33d263788aa085d0c32ccae2a8e",
 					"kind": "catch_clause",
-					"line": 3084,
+					"line": 3047,
 					"column": 6,
-					"endLine": 3087,
+					"endLine": 3050,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "run",
-						"justification": "The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first puts the previous value of the token entry back, so a failed replacement does not lose the working token, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run."
+						"justification": "The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first withdraws the token (HP-15), putting the previous value of the token entry back so a failed replacement does not lose the working token and overwriting a clipboard copy that already landed, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run."
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first puts the previous value of the token entry back, so a failed replacement does not lose the working token, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run. Verified recovery: \"rethrow\" in \"run\"."
-				},
-				{
-					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
-					"kind": "void_expression",
-					"line": 3126,
-					"column": 7,
-					"endLine": 3129,
-					"endColumn": 8,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "spec.run().then",
-						"scope": "checkCallback",
-						"justification": "In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made."
-					},
-					"reason": "Allowlisted void_expression: In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made. Verified target: \"spec.run().then\" in \"checkCallback\"."
-				},
-				{
-					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
-					"kind": "callback_registration",
-					"line": 3126,
-					"column": 12,
-					"endLine": 3129,
-					"endColumn": 8,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "checkCallback",
-						"justification": "In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state."
-					},
-					"reason": "Allowlisted callback_registration: In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state. Verified registration: \"then\" in \"checkCallback\"."
+					"reason": "Allowlisted catch_clause: The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first withdraws the token (HP-15), putting the previous value of the token entry back so a failed replacement does not lose the working token and overwriting a clipboard copy that already landed, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run. Verified recovery: \"rethrow\" in \"run\"."
 				},
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 3147,
+					"line": 3074,
 					"column": 22,
-					"endLine": 3147,
+					"endLine": 3074,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10192,9 +10522,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 3147,
+					"line": 3074,
 					"column": 27,
-					"endLine": 3147,
+					"endLine": 3074,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10207,91 +10537,11 @@
 					"reason": "Allowlisted promise_catch: The palette \"callback\" applies an \"intentional_noop\" catch because updateLeyspringAchievements already records its failure in the diagnostic action and the notice. Verified recovery: \"intentional_noop\" in \"callback\"."
 				},
 				{
-					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
-					"kind": "void_expression",
-					"line": 3204,
-					"column": 4,
-					"endLine": 3204,
-					"endColumn": 29,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "marker.handle",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.handle\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
-					"kind": "void_expression",
-					"line": 3205,
-					"column": 4,
-					"endLine": 3206,
-					"endColumn": 104,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.liveSessions.presence",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store. Verified target: \"this.liveSessions.presence\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
-					"kind": "void_expression",
-					"line": 3208,
-					"column": 3,
-					"endLine": 3208,
-					"endColumn": 26,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "marker.reconcile",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.reconcile\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
-					"kind": "catch_clause",
-					"line": 3293,
-					"column": 5,
-					"endLine": 3296,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "readIngameSessionLink",
-						"justification": "The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own."
-					},
-					"reason": "Allowlisted catch_clause: The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own. Verified recovery: \"fallback_return\" in \"readIngameSessionLink\"."
-				},
-				{
-					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
-					"kind": "catch_clause",
-					"line": 3304,
-					"column": 5,
-					"endLine": 3306,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "writeIngameSessionLink",
-						"justification": "The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner."
-					},
-					"reason": "Allowlisted catch_clause: The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner. Verified recovery: \"local_recovery\" in \"writeIngameSessionLink\"."
-				},
-				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 3559,
+					"line": 3353,
 					"column": 6,
-					"endLine": 3561,
+					"endLine": 3355,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10303,25 +10553,11 @@
 					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"perform\"."
 				},
 				{
-					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
-					"kind": "catch_clause",
-					"line": 3861,
-					"column": 5,
-					"endLine": 3864,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "span.failure"
-					},
-					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
-				},
-				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 3935,
+					"line": 3581,
 					"column": 17,
-					"endLine": 3935,
+					"endLine": 3581,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10336,9 +10572,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 3935,
+					"line": 3581,
 					"column": 17,
-					"endLine": 3935,
+					"endLine": 3581,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10353,9 +10589,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 3936,
+					"line": 3582,
 					"column": 20,
-					"endLine": 3936,
+					"endLine": 3582,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10370,9 +10606,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 3936,
+					"line": 3582,
 					"column": 20,
-					"endLine": 3936,
+					"endLine": 3582,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10432,6 +10668,42 @@
 						"justification": "The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending."
 					},
 					"reason": "Allowlisted catch_clause: The \"settleVaultRelocation\" owner explicitly handles \"rethrow\": it removes the mode the attempt just wrote, then rethrows the local storage error so the answer fails and stays pending. Verified recovery: \"rethrow\" in \"settleVaultRelocation\"."
+				}
+			]
+		},
+		"src/runtime/vault-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "784d74be829530e012321f38a90443b49ea6e904",
+					"kind": "catch_clause",
+					"line": 314,
+					"column": 5,
+					"endLine": 321,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
+					},
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "26daf16ac95b4041d941cc92a375bad979d58a40",
+					"kind": "catch_clause",
+					"line": 354,
+					"column": 4,
+					"endLine": 354,
+					"endColumn": 114,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "perform",
+						"justification": "The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector."
+					},
+					"reason": "Allowlisted catch_clause: The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector. Verified recovery: \"rethrow\" in \"perform\"."
 				}
 			]
 		},
@@ -14807,6 +15079,11 @@
 				}
 			]
 		},
+		"src/test/inventory-over.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/test/json-round-trip-corpus.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -15020,6 +15297,23 @@
 						"justification": "The \"loadTracked\" owner deliberately detaches \"this.loadNames\": it never rejects (the public name lists answer closed results and a failed page only leaves the ids on screen) and repaints the followed list itself; nothing is left unobserved."
 					},
 					"reason": "Allowlisted void_expression: The \"loadTracked\" owner deliberately detaches \"this.loadNames\": it never rejects (the public name lists answer closed results and a failed page only leaves the ids on screen) and repaints the followed list itself; nothing is left unobserved. Verified target: \"this.loadNames\" in \"loadTracked\"."
+				},
+				{
+					"id": "db8251f25fdf65684f04ef554886fe4b4174e1fd",
+					"kind": "callback_registration",
+					"line": 493,
+					"column": 3,
+					"endLine": 493,
+					"endColumn": 91,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "applyIcon",
+						"justification": "In \"applyIcon\", the \"addEventListener\" callback removes a followed-achievement icon that failed to load, so the slot stays empty like a missing icon; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"applyIcon\", the \"addEventListener\" callback removes a followed-achievement icon that failed to load, so the slot stays empty like a missing icon; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"applyIcon\"."
 				},
 				{
 					"id": "757e2a0cf8e7851fdab354bd7141ead8e2c48c9d",
@@ -17372,6 +17666,23 @@
 					"reason": "Allowlisted callback_registration: The \"keepControl\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"keepControl\"."
 				},
 				{
+					"id": "3d6fd72bf8cd0c4e96b80d913cfe7810b22a865c",
+					"kind": "callback_registration",
+					"line": 1518,
+					"column": 3,
+					"endLine": 1518,
+					"endColumn": 88,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "appendItemIdentity",
+						"justification": "In \"appendItemIdentity\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"appendItemIdentity\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"appendItemIdentity\"."
+				},
+				{
 					"id": "5ba5e329d1d55dd055320079a7cd2e88112c25d2",
 					"kind": "catch_clause",
 					"line": 1587,
@@ -18036,6 +18347,23 @@
 					"reason": "Allowlisted catch_clause: a pointer that is no longer active cannot be captured (NotFoundError); the cursor keeps following it without capture; \"onPlotPointer\" owns it as \"intentional_noop\" Verified recovery: \"intentional_noop\" in \"onPlotPointer\"."
 				},
 				{
+					"id": "ae19921f1c15f44d7daa4ad598cd65a350beff32",
+					"kind": "callback_registration",
+					"line": 953,
+					"column": 6,
+					"endLine": 953,
+					"endColumn": 87,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "icon",
+						"justification": "In \"icon\", the \"addEventListener\" callback swaps an item icon that failed to load for the \"?\" marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"icon\", the \"addEventListener\" callback swaps an item icon that failed to load for the \"?\" marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"icon\"."
+				},
+				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
 					"line": 956,
@@ -18173,6 +18501,23 @@
 						"justification": "The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics."
 					},
 					"reason": "Allowlisted void_expression: The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onEnable\" in \"renderPriceHistoryPanel\"."
+				},
+				{
+					"id": "37a8aaf14343ba3e5003d9b1aa61dcd4e623950a",
+					"kind": "callback_registration",
+					"line": 187,
+					"column": 4,
+					"endLine": 190,
+					"endColumn": 6,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderPriceHistoryPanel",
+						"justification": "In \"renderPriceHistoryPanel\", the \"addEventListener\" callback removes the selected item's icon when it failed to load, as for an unresolved id; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"renderPriceHistoryPanel\", the \"addEventListener\" callback removes the selected item's icon when it failed to load, as for an unresolved id; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"renderPriceHistoryPanel\"."
 				},
 				{
 					"id": "05b3c54e1f3dac0ae068136b92a9bf438cd13922",
@@ -18525,6 +18870,23 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
+				{
+					"id": "2ca4dd2709ab50bfa73cd25c37975a8a6238a93d",
+					"kind": "callback_registration",
+					"line": 425,
+					"column": 3,
+					"endLine": 425,
+					"endColumn": 80,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderIcon",
+						"justification": "In \"renderIcon\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"renderIcon\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"renderIcon\"."
+				},
 				{
 					"id": "fc9306caaa918ec531833e1981dd478ddd0664a4",
 					"kind": "callback_registration",
@@ -19417,389 +19779,91 @@
 				}
 			]
 		},
-		"src/runtime/farming-session-runtime.ts": {
+		"src/runtime/ingame-session-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "506e1deeafc4fac3e503e2ac27a4bd25ef4517f4",
-					"kind": "catch_clause",
-					"line": 101,
-					"column": 5,
-					"endLine": 101,
-					"endColumn": 62,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "currentFarmingSessionContext",
-						"justification": "In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session."
-					},
-					"reason": "Allowlisted catch_clause: In \"currentFarmingSessionContext\", \"local_recovery\": Malformed or unavailable local storage leaves captured intent unknown and records a sanitized failure through recordIngameSessionFailure; never adopts current defaults for a restored session. Verified recovery: \"local_recovery\" in \"currentFarmingSessionContext\"."
-				},
-				{
-					"id": "80257ea2929440561746e09bcdfc231866471af0",
-					"kind": "catch_clause",
-					"line": 108,
-					"column": 3,
-					"endLine": 108,
-					"endColumn": 60,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "persistFarmingSessionContext",
-						"justification": "In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session."
-					},
-					"reason": "Allowlisted catch_clause: In \"persistFarmingSessionContext\", \"local_recovery\": A host storage failure records sanitized recordIngameSessionFailure while retaining in-memory context for this live session. Verified recovery: \"local_recovery\" in \"persistFarmingSessionContext\"."
-				}
-			]
-		},
-		"src/runtime/managed-assets-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "d9afce825e72cefbbfb66fefa43caf30eae32681",
-					"kind": "catch_clause",
-					"line": 122,
-					"column": 6,
-					"endLine": 124,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "bceef1978ef6645a1fcc0725d58ef3fe75c2040f",
-					"kind": "catch_clause",
-					"line": 270,
-					"column": 6,
-					"endLine": 274,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "a5471271a269744f0e9034bae07ffaaa44906b46",
-					"kind": "catch_clause",
-					"line": 364,
-					"column": 6,
-					"endLine": 368,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "perform",
-						"justification": "The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself."
-					},
-					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"fallback_return\" as local recovery: it fixes the view and returns a closed failure outcome for the enclosing run() to log instead of owning the diagnostic itself. Verified recovery: \"fallback_return\" in \"perform\"."
-				},
-				{
-					"id": "096098af524e3ce1faefc5000bf9d471551f71e4",
-					"kind": "catch_clause",
-					"line": 464,
-					"column": 3,
-					"endLine": 464,
-					"endColumn": 113,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "runManagedAssetsLifecycle",
-						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
-				}
-			]
-		},
-		"src/runtime/halloween-observation-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "87c3a0f437996350a4c46ad05977fcc08e050a25",
+					"id": "c14294a6f761c399d4b6aacf0e5e9569a8f4255a",
 					"kind": "void_expression",
-					"line": 147,
-					"column": 3,
-					"endLine": 147,
-					"endColumn": 62,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.halloween.activate().catch",
-						"scope": "switchHalloweenAccount",
-						"justification": "The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything."
-					},
-					"reason": "Allowlisted void_expression: The \"switchHalloweenAccount\" owner deliberately detaches \"this.halloween.activate().catch\": Z21 moved the Halloween session-note walk out of the connection check; HalloweenRuntime.activate reports store failures through its own state, and observeDelta awaits that activation before it counts anything. Verified target: \"this.halloween.activate().catch\" in \"switchHalloweenAccount\"."
-				},
-				{
-					"id": "d3fce5748c86e663f8ace672ed450d37eab3aaa6",
-					"kind": "promise_catch",
-					"line": 147,
-					"column": 8,
-					"endLine": 147,
-					"endColumn": 62,
-					"registration": "catch",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "switchHalloweenAccount",
-						"justification": "The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state."
-					},
-					"reason": "Allowlisted promise_catch: The \"switchHalloweenAccount\" owner swallows (\"intentional_noop\") only the rejection of a disposed Halloween runtime on the detached activate; every store failure is already a runtime state. Verified recovery: \"intentional_noop\" in \"switchHalloweenAccount\"."
-				}
-			]
-		},
-		"src/runtime/price-history-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "925e402fa437c83b595ab18e1c5f5bbce5b88829",
-					"kind": "catch_clause",
-					"line": 195,
-					"column": 5,
-					"endLine": 198,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "span.failure"
-					},
-					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
-				}
-			]
-		},
-		"src/runtime/alert-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "b5c9fa57b219ff52873e09771ef34a0113a06feb",
-					"kind": "callback_registration",
-					"line": 446,
-					"column": 18,
-					"endLine": 479,
-					"endColumn": 6,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
-					},
-					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
-				},
-				{
-					"id": "75c694088885e9d0eed46de68d698ff6c242e2a5",
-					"kind": "promise_catch",
-					"line": 446,
-					"column": 18,
-					"endLine": 495,
-					"endColumn": 6,
-					"registration": "catch",
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.localDebugActions.event"
-					},
-					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
-				},
-				{
-					"id": "7cf8b69e63a1d827614c596b98b09b231d495a1c",
-					"kind": "callback_registration",
-					"line": 446,
-					"column": 18,
-					"endLine": 499,
-					"endColumn": 6,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first."
-					},
-					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"finally\" boundary retains the single server-start flight, captures a classified bind failure (a start cancelled by closing the bridge is not reported) and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"finally\" in \"ensureAlertIngameServer\"."
-				},
-				{
-					"id": "9f18056334cfe7d6a3ea25f653a0d2c03df39637",
-					"kind": "catch_clause",
-					"line": 655,
-					"column": 5,
-					"endLine": 657,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.emitNotice"
-					},
-					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
-					"kind": "void_expression",
-					"line": 664,
-					"column": 22,
-					"endLine": 664,
-					"endColumn": 66,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.copyAlertIngameSecretFromCommand",
-						"scope": "callback",
-						"justification": "The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice."
-					},
-					"reason": "Allowlisted void_expression: The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice. Verified target: \"this.copyAlertIngameSecretFromCommand\" in \"callback\"."
-				},
-				{
-					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
-					"kind": "callback_registration",
-					"line": 683,
-					"column": 18,
-					"endLine": 686,
-					"endColumn": 4,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "resolveAlertAccountRef",
-						"justification": "The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration."
-					},
-					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration. Verified registration: \"then\" in \"resolveAlertAccountRef\"."
-				},
-				{
-					"id": "378194b415575bb405c10210312836c46456263c",
-					"kind": "callback_registration",
-					"line": 683,
-					"column": 18,
-					"endLine": 686,
-					"endColumn": 91,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "resolveAlertAccountRef",
-						"justification": "The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own."
-					},
-					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
-				}
-			]
-		},
-		"src/runtime/inventory-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
-		"src/runtime/vault-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "784d74be829530e012321f38a90443b49ea6e904",
-					"kind": "catch_clause",
-					"line": 314,
-					"column": 5,
-					"endLine": 321,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.localDebugActions.event"
-					},
-					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "26daf16ac95b4041d941cc92a375bad979d58a40",
-					"kind": "catch_clause",
-					"line": 354,
+					"line": 102,
 					"column": 4,
-					"endLine": 354,
-					"endColumn": 114,
+					"endLine": 102,
+					"endColumn": 29,
 					"classification": "allowlisted",
 					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "perform",
-						"justification": "The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector."
+						"type": "reviewed_detached_execution",
+						"target": "marker.handle",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
 					},
-					"reason": "Allowlisted catch_clause: The \"perform\" catch is a \"rethrow\": it only takes back the mark of the Settings choice and the pending late mode when the durable write failed, then rethrows the same error to the action runner that reports it as the failure of the selector. Verified recovery: \"rethrow\" in \"perform\"."
-				}
-			]
-		},
-		"src/runtime/local-debug-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.handle\" in \"startIngameSessionMarking\"."
+				},
 				{
-					"id": "ac4ddd0827980bf5fbed4dd4ae2b8d9170bdf134",
+					"id": "8a3f1c01cd601fc7e3aa605f377dd99016293ef7",
+					"kind": "void_expression",
+					"line": 103,
+					"column": 4,
+					"endLine": 104,
+					"endColumn": 104,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.liveSessions.presence",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store. Verified target: \"this.liveSessions.presence\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "e3141c9ac8ed8f43d1e1377ef72b1f31490756f0",
+					"kind": "void_expression",
+					"line": 106,
+					"column": 3,
+					"endLine": 106,
+					"endColumn": 26,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "marker.reconcile",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.reconcile\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "7caf4b09e28778840190f4aa69918394e5a2616c",
 					"kind": "catch_clause",
-					"line": 206,
+					"line": 193,
 					"column": 5,
-					"endLine": 208,
+					"endLine": 196,
 					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.emitNotice"
-					},
-					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
-				},
-				{
-					"id": "59ed5c2c98f3597c29bd1f190fee1f21d05c38a1",
-					"kind": "catch_clause",
-					"line": 221,
-					"column": 5,
-					"endLine": 221,
-					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "safeLocalDebugJsonl",
-						"justification": "The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+						"behavior": "fallback_return",
+						"scope": "readIngameSessionLink",
+						"justification": "The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own."
 					},
-					"reason": "Allowlisted catch_clause: The \"safeLocalDebugJsonl\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"safeLocalDebugJsonl\"."
+					"reason": "Allowlisted catch_clause: The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own. Verified recovery: \"fallback_return\" in \"readIngameSessionLink\"."
 				},
 				{
-					"id": "a87cb85f05b7c4ebba523c56351878ecad84cc86",
+					"id": "7de265dcfdf9b8fc2f8ba90addcfe7bca2dfac88",
 					"kind": "catch_clause",
-					"line": 251,
+					"line": 204,
 					"column": 5,
-					"endLine": 251,
-					"endColumn": 84,
+					"endLine": 206,
+					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "safeLocalDebugSupportJsonl",
-						"justification": "The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line."
+						"behavior": "local_recovery",
+						"scope": "writeIngameSessionLink",
+						"justification": "The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner."
 					},
-					"reason": "Allowlisted catch_clause: The \"safeLocalDebugSupportJsonl\" owner uses \"intentional_noop\" only after the core export boundary has rejected an invalid retained line. Verified recovery: \"intentional_noop\" in \"safeLocalDebugSupportJsonl\"."
+					"reason": "Allowlisted catch_clause: The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner. Verified recovery: \"local_recovery\" in \"writeIngameSessionLink\"."
 				}
 			]
-		},
-		"src/test/inventory-over.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
 		},
 		"src/runtime/session-store-retry.ts": {
 			"classification": "production_source",

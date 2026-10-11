@@ -31,6 +31,7 @@ import { PRODUCT_ACTION_IDS } from '../ui/product-action-controller';
 import { SALE_VIEW_TYPE } from '../ui/sale-item-view';
 import { ACHIEVEMENTS_VIEW_TYPE } from '../ui/achievements-item-view';
 import { createTyrianRuntime } from './index';
+import { SessionRuntime } from './session-facade';
 import {
 	ALERT_INGAME_SECRET_COMMAND_ID,
 	CORE_MODULE_EVALUATED_MS,
@@ -183,14 +184,19 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 	it('offers the two export commands only while there is something to export, and answers with a notice', async () => {
 		const { host, registered } = neutralHost();
 		const runtime = createTyrianRuntime(host);
+		// DE-01, tenth wave: `onload` hands the two commands' registration to the core's `SessionRuntime`, which runs them.
+		const registration = vi.spyOn(SessionRuntime.prototype, 'registerSessionExportCommands');
 		await runtime.start();
+		expect(registration).toHaveBeenCalledExactlyOnceWith();
+		registration.mockRestore();
 		const command = (id: string) => registered.commands.find((candidate) => candidate.id === id)!;
 		const live = command(EXPORT_LIVE_SESSION_COMMAND_ID), legacy = command(EXPORT_LEGACY_SESSION_COMMAND_ID);
 		expect(live.name).toBe('Export the current session (CSV)');
 		expect(legacy.name).toBe('Export the saved old session');
 		const core = runtime as unknown as Record<string, unknown>;
-		const exportLive = vi.spyOn(runtime, 'exportLiveSession').mockResolvedValue();
-		const exportLegacy = vi.spyOn(runtime, 'exportPreservedLegacySession').mockResolvedValue();
+		const session = core.session as SessionRuntime;
+		const exportLive = vi.spyOn(session, 'exportLiveSession').mockResolvedValue();
+		const exportLegacy = vi.spyOn(session, 'exportPreservedLegacySession').mockResolvedValue();
 
 		// Nothing to export yet: unavailable, and a press does nothing.
 		expect(live.checkCallback?.(true)).toBe(false); expect(legacy.checkCallback?.(true)).toBe(false);

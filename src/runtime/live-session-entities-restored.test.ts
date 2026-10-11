@@ -105,13 +105,15 @@ async function restoredPlugin(finish: boolean, options: { cached?: readonly numb
 	const restored = lifecycleOver(store);
 	await restored.initialize(); // what `onload` does after a plugin reload: nothing is observed again
 	const core = new TyrianCompanionCore({} as TyrianHost);
+	// DE-01, tenth wave: the core's `SessionNoteRuntime` wires the economy, over the core's own fields.
 	const internals = core as unknown as { liveSessions: LiveSessionLifecycle; liveEconomy: unknown; sessionCatalogFactory: () => Promise<PublicCatalogService>;
-		createLiveEconomy(lifecycle: LiveSessionLifecycle, gateway: PublicCatalogGateway, rateLimit: RateLimitCoordinator): unknown; mountedViews: { companion: { byContainer: Map<HTMLElement, unknown> } } };
+		notes: { createLiveEconomy(lifecycle: LiveSessionLifecycle, gateway: PublicCatalogGateway, rateLimit: RateLimitCoordinator): unknown };
+		mountedViews: { companion: { byContainer: Map<HTMLElement, unknown> } } };
 	internals.liveSessions = restored;
 	const cache = await cacheWith(options.cached ?? [], core.settings.language, options.cachedCurrencies ?? []);
 	if (options.consult) (core as unknown as { collectorMode: string }).collectorMode = 'consult';
 	internals.sessionCatalogFactory = async () => new PublicCatalogService(catalog.gateway, cache);
-	internals.liveEconomy = internals.createLiveEconomy(restored, catalog.gateway, new RateLimitCoordinator());
+	internals.liveEconomy = internals.notes.createLiveEconomy(restored, catalog.gateway, new RateLimitCoordinator());
 	const content = document.createElementNS('http://www.w3.org/1999/xhtml', 'div'); document.body.append(content);
 	const actions = {
 		getProductActionController: () => ({ refresh: vi.fn(), run: vi.fn(async () => 'completed'), describe: (id: string) => ({ id, available: false, state: 'idle' }) } as unknown as ProductActionController),
