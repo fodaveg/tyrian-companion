@@ -1,8 +1,9 @@
 /**
  * RT-17 (11 Oct 2026, measured in a real Obsidian 1.14.4 with 0.6.45): a session store that did not answer at boot left a
  * consult device in «Session error» after the store came back, until the plugin was reloaded. On a collector the live
- * lifecycle's heartbeat reads the saved session again, but that heartbeat is only armed where sessions run; and the saved
- * API sessions are read again only by a start (Z2-2), which a consult device never makes. Nothing else asked.
+ * lifecycle's heartbeat reads the saved session again, but that heartbeat only reads where sessions run; and the saved
+ * API sessions are read again only by a start (Z2-2), which a consult device never makes. Nothing else asked. Once the
+ * device collects this stops asking, and the heartbeat (armed in consult too, A-1 neighbour case) asks instead.
  *
  * This asks again, on a consult device only, with the waits the price history's store retry uses (Z3-1): five seconds,
  * doubling, never more than five minutes apart, one attempt at a time, and nothing once the plugin is unloaded. Only a store

@@ -1017,6 +1017,66 @@ describe('passive live session lifecycle', () => {
 			await second.service.dispose();
 		});
 	});
+	describe('a store that did not answer while the device was in consult, once the device becomes a collector (A-1, neighbour case)', () => {
+		/**
+		 * A first host that left an active session, and a second one over the same store that boots in consult with the store
+		 * silent (`loadLive` answers `unavailable` while `mute`) until `collect()`. Every write the store or the coordinator could
+		 * take is watched from before that boot, and so is every read of the saved session.
+		 */
+		async function unreadInConsult() {
+			const f = fixture();
+			const id = (await f.service.start('Test'))!; await f.service.open(f.source);
+			await f.service.commit(f.sample(0,0)); f.setNow(AT+1000); await f.service.commit(f.sample(1,3));
+			await f.service.dispose();
+			let collector = false; let mute = true; let interval: (() => void) | null = null;
+			const load = f.store.loadLive.bind(f.store);
+			const reads = vi.spyOn(f.store,'loadLive').mockImplementation(async () => mute ? { status: 'error', code: 'unavailable' } : await load());
+			const acquire = vi.spyOn(f.options.coordinator,'acquire'); acquire.mockClear();
+			const service = new LiveSessionLifecycle({ ...f.options, enabled: () => collector,
+				setInterval: (callback: () => void) => { interval = callback; return 3; }, clearInterval: () => { interval = null; } });
+			const writes: Record<string, { mock: { calls: unknown[] } }> = { saveLive: vi.spyOn(f.store,'saveLive'), clear: vi.spyOn(f.store,'clear'),
+				replaceLiveJournal: vi.spyOn(f.store,'replaceLiveJournal'), pruneLiveJournal: vi.spyOn(f.store,'pruneLiveJournal'),
+				savePruneQueue: vi.spyOn(f.store,'savePruneQueue'), saveSummaryState: vi.spyOn(f.store,'saveSummaryState'), acquire };
+			f.setNow(AT+60_000); await service.initialize();
+			return { id, service, source: f.source, sample: f.sample, acquire, reads,
+				armed: () => interval !== null,
+				written: () => Object.entries(writes).filter(([, spy]) => spy.mock.calls.length > 0).map(([name]) => name),
+				beat: async () => { interval?.(); await service.capture(); },
+				collect: () => { collector = true; }, answer: () => { mute = false; } };
+		}
+		it('is read by the heartbeat once the device collects and the store answers, and leaves «error» without a start', async () => {
+			const { id, service, source, sample, acquire, beat, collect, answer } = await unreadInConsult();
+			expect(service.getView().phase).toBe('error'); expect(service.isStuck(), 'an error in course, not a stuck one').toBe(false);
+			// The device collects before the store answers: the retry of a consult device (RT-17) stops asking here.
+			collect(); await beat();
+			expect(service.getView().phase, 'still silent').toBe('error');
+			answer(); await beat();
+			expect(acquire.mock.calls.map(([sessionId]) => sessionId), 'the beat reads the session and reclaims it').toEqual([id]);
+			expect(service.getView()).toMatchObject({ sessionId: id, phase: 'active' });
+			expect(service.getRuntime()?.gaps.map((gap) => gap.reason), 'as after a restart').toContain('host_restart');
+			const epoch = 'AwMDAwMDAwMDAwMDAwMDAw';
+			await expect(service.open({ ...source, epoch })).resolves.toBe('ready');
+			await expect(service.commit(sample(0,3,{ epoch }))).resolves.toBe('stored');
+			await service.dispose();
+		});
+		it('in consult the armed beat neither reads nor writes: asking again there is the consult retry\'s alone', async () => {
+			const { service, reads, armed, written, beat, answer } = await unreadInConsult();
+			expect(armed(), 'the beat is armed in consult too').toBe(true);
+			const readsAtBoot = reads.mock.calls.length;
+			await beat(); await beat(); await beat();
+			expect(reads.mock.calls.length, 'no read of the saved session from the beat').toBe(readsAtBoot);
+			// The store answers in consult: still nothing from the beat, and nothing written.
+			answer(); await beat();
+			expect(reads.mock.calls.length).toBe(readsAtBoot);
+			expect(written(), 'nothing written in consult').toEqual([]);
+			expect(service.getView().phase, 'read only by the consult retry, which asks through initialize').toBe('error');
+			await service.initialize();
+			expect(service.getView().phase).toBe('active');
+			await beat();
+			expect(written(), 'nothing written in consult after the read either').toEqual([]);
+			await service.dispose();
+		});
+	});
 	describe('discarding only what this host may', () => {
 		/** A second host over the same store whose coordinator says the session is somebody else\'s. */
 		async function otherHost(f: ReturnType<typeof fixture>, acquire: unknown) {
