@@ -724,7 +724,13 @@ describe('inventory value and character scope', () => {
 		const kept = rowFor(result.rows, 20, 'keep');
 		expect(kept.value).toEqual({ status: 'available', route: 'instant_sell', copper: result.input.positions.find((p) => p.itemId === 20)!.totalSellCopper });
 		expect(rowFor(result.rows, 21, 'keep').value).toMatchObject({ status: 'unavailable' });
-		expect(rowFor(result.rows, 21, 'sell').value).toMatchObject({ status: 'unavailable' });
+	});
+	it('values the free slice of a partly reserved position instead of withholding it (F1)', async () => {
+		const result = await analyse([bank(21, 5, 1)], { goals: [goal('build-21', 'Build', 21, 3)] });
+		const sell = rowFor(result.rows, 21, 'sell');
+		expect(sell.quantity).toBe(2);
+		expect(sell.value).toMatchObject({ status: 'available', route: 'instant_sell' });
+		expect((sell.value as { copper: number }).copper).toBeGreaterThan(0);
 	});
 	it('never sums inactive characters or invents an active character', async () => {
 		const freeSlots: StorageFreeSlots = { bank: { total: 20, free: 4 }, sharedInventory: null, characterBags: [

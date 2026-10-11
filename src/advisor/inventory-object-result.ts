@@ -93,7 +93,8 @@ export interface InventoryObjectResultsV1 {
 	positions: Record<string, InventoryObjectPositionResultV1>;
 	uncertainItemIds: number[];
 	/** Exact instant-sale totals from the same position cores as the Base, independent of the recommendation.
-  * Null when a decision splits a position, any covered position lacks depth, or quantities differ.
+  * Null when a keep decision splits a position, any covered position lacks depth, or quantities differ.
+  * A non-keep decision over a split position has no entry: the presentation values its own units.
   */
 	valuationByDecision?: Record<string, number | null>;
 	/** H18.15: the storage space this analysis saw. Absent on results built before H18.15. */

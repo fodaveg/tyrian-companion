@@ -138,7 +138,7 @@ export function buildInventoryAdvisorPresentation(
 				protectionReasons: protectionByRef.get(decision.explanationRef) ?? [],
 				coverage: { ...line.coverage },
 				group: groupFor(presentationAction),
-				value: valuationByDecision === undefined
+				value: valuationByDecision === undefined || !(decision.explanationRef in valuationByDecision)
 					? valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity, marketDepth)
 					: valuationByDecision[decision.explanationRef] == null
 						? { status: 'unavailable', route: null }
