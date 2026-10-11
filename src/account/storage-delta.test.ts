@@ -13,8 +13,8 @@ import {
 	walletCurrency,
 	withoutDelivery,
 } from './__fixtures__/storage-delta';
-import type { ItemHolding, StorageSnapshot } from './storage-snapshot-model';
-import { boundCompositionChanges, compareStorageSnapshots } from './storage-delta';
+import type { ItemHolding, SourceCoverage, StorageSnapshot } from './storage-snapshot-model';
+import { boundCompositionChanges, compareStorageSnapshots, isComparableStorageSnapshot } from './storage-delta';
 import { COMPOSITION_CHANGES_LIMIT } from './storage-delta-model';
 
 describe('compareStorageSnapshots net algebra', () => {
@@ -300,6 +300,24 @@ describe('comparable surfaces', () => {
 
 		expect(result).toMatchObject({ status: 'limited', itemChanges: [], compositionChanges: [] });
 		expect(result.warnings).toContainEqual({ code: 'character_unobserved' });
+	});
+
+	it('refuses a stable closing pass whose roster read was partial, even when a character also failed (Z4-1)', () => {
+		const rosterPartial: SourceCoverage = {
+			status: 'partial', reason: 'partial_response', origin: 'roster',
+			diagnostic: { kind: 'http', status: 206, retryAfterMs: null },
+		};
+		const after = unobservedCharacterSnapshot({
+			quality: 'stable',
+			coverage: {
+				...unobservedCharacterSnapshot().coverage,
+				sources: { ...unobservedCharacterSnapshot().coverage.sources, characters: rosterPartial },
+			},
+		});
+		expect(isComparableStorageSnapshot(after)).toBe(false);
+		const result = compareStorageSnapshots(twoCharacterSnapshot(), after);
+		expect(result.status).toBe('invalid');
+		expect(result.itemChanges).toEqual([]);
 	});
 
 	/**

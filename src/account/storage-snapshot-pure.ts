@@ -91,7 +91,8 @@ function locationKey(location: ItemLocation): [number, string, number, number, n
 }
 
 /**
- * Z4-2: stable, deterministic order (source, character, container, bag, slot). Entries of one
+ * Z4-2: stable, deterministic order (source, character, container, bag, slot). That order fixes
+ * where reserves and keep exceptions are taken first (shared inventory, bank, materials, bags). Entries of one
  * request keep their relative order on ties. Only the order of newly captured holdings changes:
  * the placement fingerprint already sorts arrays and stored snapshots are read as they were saved.
  */

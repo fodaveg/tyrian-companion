@@ -417,7 +417,8 @@ export class StorageSnapshotService {
 			false,
 			true,
 		);
-		coverage.sources.characters = rosterResult.coverage;
+		coverage.sources.characters = rosterResult.coverage.status === 'partial'
+			? { ...rosterResult.coverage, origin: 'roster' } : rosterResult.coverage;
 		const characterActivity = rosterResult.value ?? [];
 		const roster = characterActivity.map((entry) => entry.character);
 		const lastPlayedCharacter = rosterResult.coverage.status === 'complete'
@@ -734,12 +735,10 @@ function hasTransientCoverageFailure(coverage: SnapshotCoverage): boolean {
  * hole (any reason, including a persisted transient one that survived the one retry above) never
  * counts here: `hasTransientCoverageFailure` below still catches it on the old fallback path when
  * the anchor is unavailable, exactly as before this method existed. Only a gap in an
- * account-wide source, or the roster read itself coming back empty, disqualifies the fast path.
+ * account-wide source disqualifies the fast path (a partial roster read is refused by the caller,
+ * which knows the roster status of the pass).
  */
 function hasAccountWideCoverageGap(coverage: SnapshotCoverage): boolean {
-	const rosterFetchFailed = coverage.sources.characters.status === 'partial'
-		&& Object.keys(coverage.characters).length === 0;
-	if (rosterFetchFailed) return true;
 	return (['shared_inventory', 'bank', 'materials', 'wallet', 'commerce_delivery'] as const)
 		.some((source) => coverage.sources[source].status === 'partial');
 }

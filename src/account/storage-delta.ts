@@ -290,6 +290,7 @@ function validateCoverage(
 		// copies; a roster read that came back partial on its own may be missing characters.
 		if (
 			allowUnobservedCharacters && source === 'characters' && unobserved(coverage.sources[source])
+			&& coverage.sources[source].origin !== 'roster'
 			&& roster.some((character) => unobserved(coverage.characters[character]))
 		) {
 			continue;
