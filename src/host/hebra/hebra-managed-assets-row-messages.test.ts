@@ -17,7 +17,6 @@ interface RowCore {
 	previewManagedAssets(): Promise<void>;
 	removeManagedAssets(): Promise<void>;
 	relocateManagedAssets(): Promise<unknown>;
-	/** Private: the automatic apply on load (`true`) and after an inventory sync (`false`). */
 	/** DE-01, step 3g: the automatic apply is `ManagedAssetsRuntime`'s, which the core holds as `assetsRuntime`. */
 	assetsRuntime: { applyManagedAssetsIfStillDue(requireReady: boolean): Promise<unknown> };
 }

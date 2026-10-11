@@ -3844,7 +3844,7 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 
 /**
  * Whether the host can show the plugin on its main screen: only when it declared
- * `capabilities.mainView: true`. The reverse default of `hostSupportsManagedAssets`: a host that
+ * `capabilities.mainView: true`. The reverse default of `capabilities.managedAssets` (`hostSupportsManagedAssets` in `managed-assets-runtime.ts`): a host that
  * says nothing does not have it.
  */
 function hostSupportsMainView(host: TyrianHost | undefined): boolean {

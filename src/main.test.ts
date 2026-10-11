@@ -30,7 +30,7 @@ import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
 import { RETIRED_MANAGED_ASSETS } from './assets/retired-assets';
 import { genericManagedAssets, legacyRetiredBases } from './test/managed-asset-fixture';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
-import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './assets/managed-assets-lifecycle';
+import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { managedAssetMarker, type ManagedAssetsInspection, type PackagedAsset } from './assets/managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
@@ -72,13 +72,6 @@ interface StartIntentHarness {
 }
 
 /**
- * DE-01, steps 3c and 3d: the start, the stop, the finalization, the assisted detection and the
- * pending proposals are `LiveSessionRuntime`'s. The cases below
- * that drove them as methods of `TyrianCompanionCore` on a plain object run them on a runtime built
- * over that same object through the core's own port (`liveSessionRuntimePort`), so the object's
- * fields and the core's methods it lends are read exactly as the moved code reads them in production.
- */
-/**
  * DE-01, step 3g: the managed assets are `ManagedAssetsRuntime`'s. The cases below that ran them as
  * methods of `TyrianCompanionCore` on a plain object run them on a runtime built over that same object
  * through the core's own port (`managedAssetsRuntimePort`), so the row's view is written to the
@@ -98,6 +91,13 @@ function assetsOver(harness: object): ManagedAssetsRuntime {
 	return runtime;
 }
 
+/**
+ * DE-01, steps 3c and 3d: the start, the stop, the finalization, the assisted detection and the
+ * pending proposals are `LiveSessionRuntime`'s. The cases below
+ * that drove them as methods of `TyrianCompanionCore` on a plain object run them on a runtime built
+ * over that same object through the core's own port (`liveSessionRuntimePort`), so the object's
+ * fields and the core's methods it lends are read exactly as the moved code reads them in production.
+ */
 function liveOver(harness: object): LiveSessionRuntime {
 	const portOf = (TyrianCompanionCore as unknown as {
 		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
@@ -2667,21 +2667,18 @@ interface ManagedAssetsRootHarness {
 	renderInventoryAdvisorViews(): void;
 	emitNotice(message: string, source: string): void;
 	applyManagedAssets(guard?: (inspection: ManagedAssetsInspection) => boolean): Promise<void>;
-	applyManagedAssetsIfStillDue(requireReady: boolean): Promise<ManagedAssetsInspection | null>;
-	announceManagedAssetsFollowed(applied: ManagedAssetsInspection): boolean;
 	updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	relocateManagedAssets(): Promise<unknown>;
 	reconcileManagedAssetsRoot(): Promise<void>;
-	ensureManagedAssetsAuthority(): Promise<boolean>;
-	runManagedAssetsLifecycle(operation: () => Promise<unknown>): Promise<unknown>;
 }
 
 /**
  * Wires the real `ManagedAssetsRuntime` (over the core's own port) and the core's `updateSettings` that implement folder-change
- * reconciliation to an isolated harness object instead of a full plugin instance, following
- * this file's established `.call(harness, …)` pattern. Every method the exercised methods call
- * on `this` is either a real bound method (so recursive calls stay real) or a narrow stub for a
- * leaf I/O effect (saveData, render, sync invalidation) that reconciliation does not assert on.
+ * reconciliation to an isolated harness object instead of a full plugin instance. The harness
+ * carries only the entry points the cases press (`applyManagedAssets`, `relocateManagedAssets`,
+ * `reconcileManagedAssetsRoot`, which go through one `ManagedAssetsRuntime` per object) and the
+ * core's `updateSettings`; the runtime reaches its own methods itself. The rest are narrow stubs for
+ * leaf I/O effects (saveData, render, sync invalidation) that reconciliation does not assert on.
  */
 function buildManagedAssetsRootHarness(
 	manager: ManagedAssetsManager,
@@ -2706,13 +2703,9 @@ function buildManagedAssetsRootHarness(
 		renderInventoryAdvisorViews: () => undefined,
 		emitNotice: () => undefined,
 		applyManagedAssets: (guard) => assetsOver(harness).applyManagedAssets(guard),
-		applyManagedAssetsIfStillDue: (requireReady) => assetsOver(harness).applyManagedAssetsIfStillDue(requireReady),
-		announceManagedAssetsFollowed: (applied) => assetsOver(harness).announceManagedAssetsFollowed(applied),
 		updateSettings: (update) => proto.updateSettings.call(harness, update),
 		relocateManagedAssets: () => assetsOver(harness).relocateManagedAssets(),
 		reconcileManagedAssetsRoot: () => assetsOver(harness).reconcileManagedAssetsRoot(),
-		ensureManagedAssetsAuthority: () => assetsOver(harness).ensureManagedAssetsAuthority(),
-		runManagedAssetsLifecycle: (operation) => assetsOver(harness).runManagedAssetsLifecycle(operation as () => Promise<ManagedAssetsLifecycleResult>),
 	} satisfies ManagedAssetsRootHarness);
 	return harness;
 }
