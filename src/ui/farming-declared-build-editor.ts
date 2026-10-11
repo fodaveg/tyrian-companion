@@ -1,5 +1,6 @@
 import { MAX_DECLARED_BUILD_LABEL_LENGTH, readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import { MAX_BUILD_TEMPLATE_CODE_LENGTH } from '../sessions/build-template-parser';
+import { createOwnedRoot } from './owned-root';
 
 export interface FarmingDeclaredBuildActions {
 	getLocale(): 'es' | 'en';
@@ -35,8 +36,8 @@ export class FarmingDeclaredBuildEditor {
 
 	constructor(document: Document, private readonly actions: FarmingDeclaredBuildActions) {
 		const copy = COPY[actions.getLocale()];
-		// The root has no parent yet (the caller places it), so only it comes from `document`.
-		this.element = document.createElement('fieldset'); this.element.className = 'tyrian-farming__editor tyrian-declared-build';
+		// The root has no parent yet (the caller places it), so only it comes from `document` (`createOwnedRoot` keeps that owner).
+		this.element = createOwnedRoot(document, 'fieldset'); this.element.className = 'tyrian-farming__editor tyrian-declared-build';
 		this.element.createEl('legend', { text: copy.title });
 		this.element.createEl('p', { text: copy.limit });
 		const codeLabel = this.element.createEl('label', { text: copy.code });

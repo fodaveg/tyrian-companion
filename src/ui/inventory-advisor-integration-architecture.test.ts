@@ -4,7 +4,8 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
-import { TyrianCompanionCore, createInventoryAdvisorCommandCallbacks } from '../runtime/tyrian-companion-core';
+import { createInventoryAdvisorCommandCallbacks } from '../runtime/tyrian-companion-core';
+import { InventoryRuntime, type InventoryRuntimePort } from '../runtime/inventory-runtime';
 import {
 	inventoryAdvisorWorkflowFailureReceipt,
 	inventoryAdvisorWorkflowReceipt,
@@ -46,12 +47,9 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			timings: null,
 			snapshot: null,
 		};
-		const writeReceipt = (TyrianCompanionCore.prototype as unknown as {
-			writeInventoryAdvisorCaptureReceipt(
-				this: CaptureReceiptHarness,
-				receipt: InventoryAdvisorCaptureReceiptV1,
-			): Promise<void>;
-		}).writeInventoryAdvisorCaptureReceipt.bind(harness);
+		// DE-01 step 3g: the writer is `InventoryRuntime`'s; the harness stands in for the port, which only reads `host`.
+		const inventory = new InventoryRuntime(harness as unknown as InventoryRuntimePort);
+		const writeReceipt = (written: InventoryAdvisorCaptureReceiptV1): Promise<void> => inventory.writeInventoryAdvisorCaptureReceipt(written);
 
 		await writeReceipt(receipt);
 

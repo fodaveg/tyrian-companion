@@ -18,7 +18,8 @@ interface RowCore {
 	removeManagedAssets(): Promise<void>;
 	relocateManagedAssets(): Promise<unknown>;
 	/** Private: the automatic apply on load (`true`) and after an inventory sync (`false`). */
-	applyManagedAssetsIfStillDue(requireReady: boolean): Promise<unknown>;
+	/** DE-01, step 3g: the automatic apply is `ManagedAssetsRuntime`'s, which the core holds as `assetsRuntime`. */
+	assetsRuntime: { applyManagedAssetsIfStillDue(requireReady: boolean): Promise<unknown> };
 }
 
 const UNOWNED = 'filters:\n  and:\n    - file.hasTag("x")\nviews:\n  - type: table\n    name: Mine\n';
@@ -205,7 +206,7 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 	])('the automatic apply %s never creates a missing output folder', async (_case, requireReady) => {
 		const test = hebra({ outputFolder: 'Nope', managedAssetsRoot: 'Nope' });
 		const { core, cleanup } = await start(test);
-		await core.applyManagedAssetsIfStillDue(requireReady);
+		await core.assetsRuntime.applyManagedAssetsIfStillDue(requireReady);
 		await settle(100);
 		expect(test.library.writes.filter((write) => write.startsWith('folderCreate'))).toEqual([]);
 		expect(test.library.folders.some((folder) => folder.name === 'Nope')).toBe(false);

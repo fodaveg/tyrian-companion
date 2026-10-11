@@ -356,7 +356,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			const saves = store.saves;
 			// Another device changed a setting after this one started.
 			store.value = { ...(store.value as Record<string, unknown>), valuableLootThresholdCopper: 12_345 };
-			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const write = (runtime as unknown as { inventory: { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> } }).inventory.writeInventoryPreferencesBackup.bind((runtime as unknown as { inventory: object }).inventory);
 
 			await expect(write(copy, false)).resolves.toBe('saved');
 			expect(store.value).toMatchObject({ inventoryPreferencesBackup: copy, valuableLootThresholdCopper: 12_345 });
@@ -368,7 +368,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 
 		it('writes nothing over settings from a newer release (DU-04)', async () => {
 			const { runtime, store } = await startWith({ ...base, schemaVersion: SETTINGS_SCHEMA_VERSION + 1 }, false);
-			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const write = (runtime as unknown as { inventory: { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> } }).inventory.writeInventoryPreferencesBackup.bind((runtime as unknown as { inventory: object }).inventory);
 			await expect(write(copy, false)).resolves.toBe('read_only');
 			expect(store.saves).toBe(0);
 			await runtime.stop();
@@ -377,7 +377,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		it('keeps a stored copy of a future version, which only the newer release can read, and writes over a corrupt one', async () => {
 			const future = { version: 9, accounts: 'whatever release 9 keeps here' };
 			const { runtime, store } = await startWith({ ...base, inventoryPreferencesBackup: future });
-			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const write = (runtime as unknown as { inventory: { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> } }).inventory.writeInventoryPreferencesBackup.bind((runtime as unknown as { inventory: object }).inventory);
 			const saves = store.saves;
 			await expect(write(copy, false)).resolves.toBe('future_kept');
 			expect(store.saves).toBe(saves);
@@ -391,7 +391,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 
 		it('writes nothing once the plugin is unloaded, except the final write of a burst left waiting', async () => {
 			const { runtime, store } = await startWith({ ...base });
-			const write = (runtime as unknown as { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> }).writeInventoryPreferencesBackup.bind(runtime);
+			const write = (runtime as unknown as { inventory: { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> } }).inventory.writeInventoryPreferencesBackup.bind((runtime as unknown as { inventory: object }).inventory);
 			await runtime.stop();
 			const saves = store.saves;
 			await expect(write(copy, false)).resolves.toBe('unloaded');
@@ -1110,7 +1110,7 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 		store.value = { ...store.value, preferredCharacter: 'Kasmeer' };
 		const receipt = { at: 1 } as never;
 
-		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome(receipt);
+		await (runtime as unknown as { inventory: { recordInventorySyncOutcome(o: never): Promise<void> } }).inventory.recordInventorySyncOutcome(receipt);
 
 		expect(saves.at(-1)).toMatchObject({ preferredCharacter: 'Kasmeer', inventorySyncLastRun: receipt });
 	});
@@ -1120,7 +1120,7 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 		store.value = { ...store.value, language: 'es' };
 		const receipt = { at: 1 } as never;
 
-		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome(receipt);
+		await (runtime as unknown as { inventory: { recordInventorySyncOutcome(o: never): Promise<void> } }).inventory.recordInventorySyncOutcome(receipt);
 		expect(saves.at(-1)).toMatchObject({ language: 'es', inventorySyncLastRun: receipt });
 		expect(runtime.settings.language).toBe('en');
 		expect(patched).toEqual([]);
@@ -1180,7 +1180,7 @@ describe('saving settings re-reads the store first', { timeout: 20_000 }, () => 
 
 		await Promise.all([
 			runtime.updateSettings({ valuableLootThresholdCopper: 20_000 }),
-			(runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome(receipt),
+			(runtime as unknown as { inventory: { recordInventorySyncOutcome(o: never): Promise<void> } }).inventory.recordInventorySyncOutcome(receipt),
 			runtime.updateSettings({ preferredCharacter: 'Kasmeer' }),
 		]);
 
@@ -1230,7 +1230,7 @@ describe('a data.json written by a newer release (DU-04)', { timeout: 20_000 }, 
 		expect(notices.filter((notice) => notice === warning())).toHaveLength(1);
 
 		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).resolves.toEqual({ status: 'blocked', reason: 'settings_read_only' });
-		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome({ at: 1 } as never);
+		await (runtime as unknown as { inventory: { recordInventorySyncOutcome(o: never): Promise<void> } }).inventory.recordInventorySyncOutcome({ at: 1 } as never);
 
 		expect(saves).toEqual([]);
 		expect(store.value).toEqual(untouched);
@@ -1246,7 +1246,7 @@ describe('a data.json written by a newer release (DU-04)', { timeout: 20_000 }, 
 		const untouched = structuredClone(store.value);
 
 		await expect(runtime.updateSettings({ valuableLootThresholdCopper: 20_000 })).resolves.toEqual({ status: 'blocked', reason: 'settings_read_only' });
-		await (runtime as unknown as { recordInventorySyncOutcome(o: never): Promise<void> }).recordInventorySyncOutcome({ at: 1 } as never);
+		await (runtime as unknown as { inventory: { recordInventorySyncOutcome(o: never): Promise<void> } }).inventory.recordInventorySyncOutcome({ at: 1 } as never);
 
 		expect(saves).toEqual([]);
 		expect(store.value).toEqual(untouched);

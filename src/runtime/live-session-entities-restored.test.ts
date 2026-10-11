@@ -29,6 +29,8 @@ function appendElement(parent: HTMLElement, tag: string, options: { text?: strin
 	parent.append(el); return el;
 }
 const original = new Map<string, PropertyDescriptor | undefined>();
+/** Obsidian declares the `create*` helpers on `Node`, so fragments get them too; the rest stay on elements. */
+const ownerOf = (name: string): object => (name.startsWith('create') ? Node.prototype : HTMLElement.prototype);
 /** Only the Obsidian DOM conveniences the view calls, added to the isolated happy-dom fixture. */
 beforeEach(() => {
 	const methods = {
@@ -40,10 +42,10 @@ beforeEach(() => {
 		createDiv(this: HTMLElement, options: { text?: string; cls?: string } = {}) { return appendElement(this, 'div', options); },
 		createSpan(this: HTMLElement, options: { text?: string; cls?: string } = {}) { return appendElement(this, 'span', options); },
 	};
-	for (const [name, value] of Object.entries(methods)) { original.set(name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)); Object.defineProperty(HTMLElement.prototype, name, { value, configurable: true }); }
+	for (const [name, value] of Object.entries(methods)) { original.set(name, Object.getOwnPropertyDescriptor(ownerOf(name), name)); Object.defineProperty(ownerOf(name), name, { value, configurable: true }); }
 	for (const [name, value] of [['doc', document], ['win', window]] as const) { original.set(name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)); Object.defineProperty(HTMLElement.prototype, name, { value, configurable: true }); }
 });
-afterEach(() => { for (const [name, descriptor] of original) { if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor); else Reflect.deleteProperty(HTMLElement.prototype, name); } original.clear(); });
+afterEach(() => { for (const [name, descriptor] of original) { if (descriptor) Object.defineProperty(ownerOf(name), name, descriptor); else Reflect.deleteProperty(ownerOf(name), name); } original.clear(); });
 
 /** A session with the three objects of the 6 Oct report, persisted by one lifecycle and stopped or left running. */
 async function persistedSession(store: MemorySessionRuntimeStore, finish: boolean): Promise<LiveSessionLifecycle> {

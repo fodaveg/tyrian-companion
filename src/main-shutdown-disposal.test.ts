@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import type { LiveSessionRuntime } from './runtime/live-session-runtime';
+import { AlertRuntime, type AlertRuntimePort } from './runtime/alert-runtime';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**
@@ -26,13 +27,12 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		const alertIngameServerClose = vi.fn(() => new Promise<void>((resolve) => {
 			setTimeout(() => { closeResolved = true; resolve(); }, 0);
 		}));
+		// The in-game server lives in `AlertRuntime` now (DE-01, step 3g): a real one holding the fake handle.
+		const alerts = Object.assign(new AlertRuntime({} as AlertRuntimePort), { alertIngameServer: { close: alertIngameServerClose } });
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionCatalog: { dispose: sessionCatalogDispose },
-			ingameReceipts: { dispose: vi.fn() },
 			productActions: { dispose: productActionsDispose },
-			alertIngameServer: { close: alertIngameServerClose },
-			alertIngameServerFlight: null,
-			alertIngameCloseFlight: null,
+			alerts,
 			// No assisted proposal is live: the live session runtime closes none (DE-01, step 3d).
 			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
 		});
@@ -51,6 +51,6 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		expect(alertIngameServerClose).toHaveBeenCalledOnce();
 		expect(closeResolved).toBe(true);
 		expect((harness as { sessionCatalog: unknown }).sessionCatalog).toBeNull();
-		expect((harness as { alertIngameServer: unknown }).alertIngameServer).toBeNull();
+		expect((alerts as unknown as { alertIngameServer: unknown }).alertIngameServer).toBeNull();
 	});
 });
