@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { MissingApiKeyError } from '../account/guild-wars-2-client';
+import { HttpTransportError } from '../core/http';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import { MemoryCatalogCache } from '../catalog/public-catalog-cache';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
@@ -613,6 +614,26 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(catalog.resolve).not.toHaveBeenCalled();
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Vitest mock assertion.
 		expect(gateway.requestDetailed).not.toHaveBeenCalled();
+	});
+
+	it('retries a passing 401/403 on its authenticated reads instead of dropping the capture (Z4-4)', async () => {
+		const snapshot = snapshotFixture([10]);
+		const base = clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }).beginOperation();
+		const refusedOnce = new Set<string>();
+		const operation = {
+			request: base.request,
+			// Mirrors the real client: the first answer is a 403 unless the caller asked to retry that status.
+			requestDetailed: async (path: string, retryStatuses: ReadonlySet<number> = new Set()) => {
+				const key = path.split('?')[0]!;
+				if (!refusedOnce.has(key) && !retryStatuses.has(403)) { refusedOnce.add(key); throw new HttpTransportError('http', 403, null, 'Forbidden.'); }
+				return base.requestDetailed(path);
+			},
+		};
+		const service = new InventoryAdvisorEvidenceService({ beginOperation: () => operation }, snapshotCapture(snapshot),
+			{ resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW);
+		const result = await service.capture('es');
+		expect(result.status).toBe('complete');
+		expect(result.evidence?.accountSignals).toMatchObject({ unlockCoverage: 'complete' });
 	});
 });
 

@@ -9,7 +9,7 @@ import {
 } from '../account/storage-snapshot-model';
 import { parseAccountProfile, parseTokenInfo, type TokenInfo } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
-import { readAccountAchievements } from '../account/account-achievements';
+import { AUTH_RETRY_STATUSES, readAccountAchievements } from '../account/account-achievements';
 import { captureActiveTradingPostOrders } from '../account/trading-post-evidence';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
@@ -515,7 +515,7 @@ function hasUnexpectedPriceId(body: unknown, requested: ReadonlySet<number>): bo
 }
 function endpointEvidence(status: EndpointCoverage, capturedAt: string | null, reason: EndpointEvidence['reason']): EndpointEvidence { return { status, capturedAt, reason }; }
 async function requestBody(operation: GuildWars2Operation, path: string): Promise<unknown> {
-	const response = await operation.requestDetailed(path);
+	const response = await operation.requestDetailed(path, AUTH_RETRY_STATUSES);
 	if (response.status !== 200) throw new Error(`Unexpected status ${response.status}.`);
 	return response.body;
 }
