@@ -51,9 +51,6 @@ import type {
 } from './manual-session-start-model';
 import { failure, ManualSessionStartError } from './manual-session-start-failure';
 import { lastSavedEvidenceAt, snapshotReference, stopFailureFloor, uncoveredStretches } from './manual-session-evidence';
-// The two failure mappers stay in the service: they read `HttpTransportError`, and only the reviewed
-// service may import `core/http` (security-boundary). They are called, never evaluated at load.
-import { mapFailure, mapStopFailure } from './manual-session-start-service';
 
 /**
  * What the start, stop, recovery and reclaim of a manual session read, write and call on the
@@ -121,6 +118,12 @@ export interface ManualSessionTransitionsPort {
 	continueRecoveredSession(deferred: boolean): void;
 	logUnmappedFailure(action: 'session_start' | 'session_finish', error: unknown): void;
 	logAuthorityFailure(action: 'session_heartbeat' | 'session_finish', reason: 'lease_lost' | 'clock_anomaly' | 'coordination_unavailable'): void;
+	/**
+	 * The service's failure mappers. They stay in the service because they read `HttpTransportError`
+	 * and only the reviewed service may import `core/http` (security-boundary).
+	 */
+	mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStartFailure;
+	mapStopFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStopFailure;
 }
 
 /**
@@ -132,7 +135,7 @@ export interface ManualSessionTransitionsPort {
  * written through the port. Its members keep the names and bodies they had on the service.
  */
 export class ManualSessionTransitions {
-	lastFailure: SessionStartFailure | null = null;
+	private lastFailure: SessionStartFailure | null = null;
 	/** Last evidence saved before the failure the latest reclaim recovered from; see `lastSavedEvidenceAt`. */
 	private reclaimedEvidenceAt: number | null = null;
 
@@ -197,6 +200,11 @@ export class ManualSessionTransitions {
 	private continueRecoveredSession(deferred: boolean): void { this.port.continueRecoveredSession(deferred); }
 	private logUnmappedFailure(action: 'session_start' | 'session_finish', error: unknown): void { this.port.logUnmappedFailure(action, error); }
 	private logAuthorityFailure(action: 'session_heartbeat' | 'session_finish', reason: 'lease_lost' | 'clock_anomaly' | 'coordination_unavailable'): void { this.port.logAuthorityFailure(action, reason); }
+	private mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStartFailure { return this.port.mapFailure(error, onUnclassified); }
+	private mapStopFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStopFailure { return this.port.mapStopFailure(error, onUnclassified); }
+
+	/** The last start that failed; only these transitions write it. */
+	get lastStartFailure(): SessionStartFailure | null { return this.lastFailure; }
 
 	async autoFinalizeProvisionalRecord(record: SessionRuntimeRecord): Promise<void> {
 		if (record.state.status === 'complete') return;
@@ -438,7 +446,7 @@ export class ManualSessionTransitions {
 		try {
 			normalizedInput = normalizeSessionStartInput(input);
 		} catch (error) {
-			const mapped = mapFailure(error);
+			const mapped = this.mapFailure(error);
 			return this.failWithoutLease(mapped.code, mapped.message);
 		}
 
@@ -489,7 +497,7 @@ export class ManualSessionTransitions {
 			await this.persistCurrentState(true);
 			return { status: 'started', state: this.getState() as Extract<SessionState, { status: 'active' }> };
 		} catch (error) {
-			const mapped = mapFailure(error, (raw) => { this.logUnmappedFailure('session_start', raw); });
+			const mapped = this.mapFailure(error, (raw) => { this.logUnmappedFailure('session_start', raw); });
 			await this.cleanupFailedStart(mapped, authority);
 			return { status: 'failed', failure: mapped };
 		}
@@ -632,7 +640,7 @@ export class ManualSessionTransitions {
 				delta: structuredClone(delta),
 			};
 		} catch (error) {
-			const mapped = mapStopFailure(error, (raw) => { this.logUnmappedFailure('session_finish', raw); });
+			const mapped = this.mapStopFailure(error, (raw) => { this.logUnmappedFailure('session_finish', raw); });
 			if (mapped.code === 'lease_lost' || mapped.code === 'coordination_unavailable') {
 				this.stopHeartbeat();
 				try {

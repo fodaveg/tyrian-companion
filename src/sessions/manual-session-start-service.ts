@@ -82,7 +82,7 @@ export {
 export class ManualSessionStartService {
 	private state: SessionState = initialSessionState();
 	/** The last start that failed, kept by `ManualSessionTransitions` (its only writer). */
-	private get lastFailure(): SessionStartFailure | null { return this.transitions.lastFailure; }
+	private get lastFailure(): SessionStartFailure | null { return this.transitions.lastStartFailure; }
 	private currentHandle: ActiveSessionLeaseHandle | null = null;
 	/** The renewal in flight, kept by `ManualSessionHeartbeat`; awaited before a session changes hands. */
 	private get heartbeatFlight(): Promise<void> | null { return this.leaseHeartbeat.heartbeatFlight; }
@@ -257,6 +257,8 @@ export class ManualSessionStartService {
 			continueRecoveredSession: (deferred) => { this.continueRecoveredSession(deferred); },
 			logUnmappedFailure: (action, error) => { this.logUnmappedFailure(action, error); },
 			logAuthorityFailure: (action, reason) => { this.logAuthorityFailure(action, reason); },
+			mapFailure: (error, onUnclassified) => mapFailure(error, onUnclassified),
+			mapStopFailure: (error, onUnclassified) => mapStopFailure(error, onUnclassified),
 		});
 	}
 
@@ -1100,7 +1102,7 @@ export class ManualSessionStartService {
 	}
 }
 
-export function mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStartFailure {
+function mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStartFailure {
 	if (error instanceof ManualSessionStartError) return error.failure;
 	if (error instanceof SessionStartCaptureError) {
 		if (error.code === 'invalid_input') return failure('invalid_input', error.message);
@@ -1126,7 +1128,7 @@ export function mapFailure(error: unknown, onUnclassified?: (error: unknown) => 
 	return failure('unexpected', 'The farming session could not be started.');
 }
 
-export function mapStopFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStopFailure {
+function mapStopFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStopFailure {
 	if (error instanceof ManualSessionStartError) {
 		if (error.failure.code === 'lease_lost') return { code: 'lease_lost', message: error.message };
 		if (error.failure.code === 'coordination_unavailable') {
