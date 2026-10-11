@@ -206,5 +206,20 @@ Al terminar, si no necesitas el registro, desactívalo y usa **Limpiar registros
   plugin en `plugins/tyrian-companion/<versión>/`; comparar sus hashes con los de `gh release view` es la
   comprobación de instalación que se puede automatizar. RT-09 (herramienta de runtime para Hebra) la trae
   en esta release como `npm run hebra:verify-install` (`scripts/verify-hebra-install.mjs`): compara los
-  ficheros instalados en Hebra con la release y NO comprueba la carga. Ver la matriz de
+  ficheros instalados en Hebra con la release (nivel 1, bytes). Ver la matriz de
   [QA-MVP](QA-MVP.md). Las rutas exactas dependen del sistema y no las verifica este documento.
+- **Carga (RT-09 nivel 2).** El mismo comando añade un veredicto aparte, `carga=`, leyendo los eventos
+  `plugins.activated` y `plugins.load-failed` (id `tyrian-companion`) que Hebra escribe en su
+  `diagnostico.jsonl`. Decide la ÚLTIMA línea de esas dos de la sesión más reciente (la de la última línea
+  del fichero): `loaded` (activada, con su versión), `failed` (con stage, code, incompatibility y errorName),
+  `version-mismatch` (activada otra versión que la instalada) y `no-data`. Salen con código 1 `failed` y
+  `version-mismatch`; `no-data` es un aviso y sale 0. Solo lee el `session` de cada línea y los campos de las
+  líneas de tyrian-companion; salta las líneas mal formadas contándolas y lee como mucho los últimos 4 MiB.
+  - **Límite: el registro de Hebra está APAGADO por defecto.** Sin líneas `plugins.*`, `no-data` significa
+    «sin datos», no «no cargó»: hay que encender el registro de diagnóstico en los ajustes de Hebra (el rpm
+    0.2.0-22 trae el interruptor), reiniciar Hebra y repetir el comando.
+  - **Ruta.** Por defecto solo en Linux y solo con el directorio de plugins por defecto:
+    `~/.local/share/net.fodaveg.hebra/diagnostico.jsonl`. En macOS y Windows, o con otro `--plugins-dir`,
+    pasa `--diagnostics-file <ruta>`; sin ruta el veredicto es `no-data (path-unknown)`.
+  - La salida pasó a `hebra install v2` (contrato 2): la línea termina en `carga=…` en vez de
+    `carga: no comprobada`.
