@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.50: cada sesión anterior enlaza a su nota resumen (11 oct 2026)
+## Canal 0.6.50 publicado: cada sesión anterior enlaza a su nota resumen (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `fix/0650-enlace-resumen` sobre el canal 0.6.49
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.50` = `aceaa3eb` (atestación; candidato `49eb2798`,
+árbol `05a8ddec`). Gate local verde (check con 7585 tests, guardrails 25/25, BRAT PASS); CI 38141415824 y Release
+38141417610 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `fix/0650-enlace-resumen` sobre el canal 0.6.49
 publicado (`fdc095c8`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
 `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
@@ -18,7 +21,7 @@ publicado (`fdc095c8`); añade los metadatos de versión (`manifest.json`, `pack
 - Sin verificar: no se ha visto en un Obsidian ni en un Hebra reales. En Hebra, la apertura por ruta se resuelve a id en
   `hebra-host.ts` (leído en el código, no probado). El aviso de nota borrada reutiliza el texto del historial antiguo,
   que dice «Actualiza el historial»; en este panel se recarga cerrando y abriendo el bloque.
-- Pendiente: gate, publicación y verlo en hosts reales.
+- Pendiente: verlo en hosts reales.
 
 ## Canal 0.6.49 publicado: arreglos de la QA de año normal (11 oct 2026)
 
