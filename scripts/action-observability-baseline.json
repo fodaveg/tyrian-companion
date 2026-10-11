@@ -12513,9 +12513,9 @@
 				{
 					"id": "4975a591f4832757e7b7daa5ef764ffbbcb96e3b",
 					"kind": "void_expression",
-					"line": 165,
+					"line": 166,
 					"column": 62,
-					"endLine": 165,
+					"endLine": 166,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12529,9 +12529,9 @@
 				{
 					"id": "ea83f70e7f572ea899e26ca6453cf1fc91e4d538",
 					"kind": "catch_clause",
-					"line": 352,
+					"line": 353,
 					"column": 61,
-					"endLine": 352,
+					"endLine": 353,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12545,9 +12545,9 @@
 				{
 					"id": "5652a96c5b1d1d031a9d99672e92877abc5b7ca3",
 					"kind": "void_expression",
-					"line": 398,
+					"line": 399,
 					"column": 27,
-					"endLine": 398,
+					"endLine": 399,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12561,9 +12561,9 @@
 				{
 					"id": "ece7f301135473e1747af10a53bac87e604c67b8",
 					"kind": "callback_registration",
-					"line": 421,
+					"line": 422,
 					"column": 18,
-					"endLine": 423,
+					"endLine": 424,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12578,9 +12578,9 @@
 				{
 					"id": "11d0928664608b8f20f5b2e108bfc213effd5529",
 					"kind": "callback_registration",
-					"line": 441,
+					"line": 442,
 					"column": 18,
-					"endLine": 443,
+					"endLine": 444,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12595,9 +12595,9 @@
 				{
 					"id": "c215646a3b0e1b7f87d8b3a6498a6969539e0ece",
 					"kind": "catch_clause",
-					"line": 481,
+					"line": 482,
 					"column": 5,
-					"endLine": 483,
+					"endLine": 484,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12611,9 +12611,9 @@
 				{
 					"id": "4b288698335298af4f43c393bea4783172383775",
 					"kind": "callback_registration",
-					"line": 494,
+					"line": 495,
 					"column": 18,
-					"endLine": 496,
+					"endLine": 497,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12628,9 +12628,9 @@
 				{
 					"id": "cc7bd25234879018f8fb89045ee882df9ab46914",
 					"kind": "callback_registration",
-					"line": 540,
+					"line": 541,
 					"column": 18,
-					"endLine": 542,
+					"endLine": 543,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12645,9 +12645,9 @@
 				{
 					"id": "c9c6564b96cb7cd0a60db8f01c32045bf79dddeb",
 					"kind": "callback_registration",
-					"line": 580,
+					"line": 581,
 					"column": 18,
-					"endLine": 582,
+					"endLine": 583,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12660,27 +12660,27 @@
 					"reason": "Allowlisted callback_registration: The \"abandon\" owner registers \"finally\" only to release its single in-flight abandon slot; it clears one field, performs no I/O and cannot reject. Verified registration: \"finally\" in \"abandon\"."
 				},
 				{
-					"id": "5c64f4e01bb401e8baa1bf031334c033893bc99a",
+					"id": "296691f15b1ba020f787f512f4d746904b38b870",
 					"kind": "catch_clause",
-					"line": 656,
+					"line": 662,
 					"column": 52,
-					"endLine": 656,
+					"endLine": 662,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
-						"scope": "dispose",
-						"justification": "The \"dispose\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "disposeOnce",
+						"justification": "The \"disposeOnce\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
-					"reason": "Allowlisted catch_clause: The \"dispose\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"dispose\"."
+					"reason": "Allowlisted catch_clause: The \"disposeOnce\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"disposeOnce\"."
 				},
 				{
 					"id": "06ea0a798d7dc463ffabfe02c269c0ae87e843b9",
 					"kind": "catch_clause",
-					"line": 682,
+					"line": 688,
 					"column": 4,
-					"endLine": 693,
+					"endLine": 699,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12694,9 +12694,9 @@
 				{
 					"id": "ed98ff87dacffeb1e44809b46b2f45acf8007ada",
 					"kind": "callback_registration",
-					"line": 755,
+					"line": 761,
 					"column": 18,
-					"endLine": 757,
+					"endLine": 763,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12711,9 +12711,9 @@
 				{
 					"id": "2f7a91f51e101efba27e637e8a30d2843a9e5842",
 					"kind": "catch_clause",
-					"line": 920,
+					"line": 926,
 					"column": 5,
-					"endLine": 922,
+					"endLine": 928,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12727,9 +12727,9 @@
 				{
 					"id": "e813f9a75d1ea7c82817777c76c228f4b6fedca8",
 					"kind": "void_expression",
-					"line": 1010,
+					"line": 1016,
 					"column": 4,
-					"endLine": 1010,
+					"endLine": 1016,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12743,9 +12743,9 @@
 				{
 					"id": "be8ef9e94e36dd77b03b5ebe973e77f58c8f648a",
 					"kind": "promise_catch",
-					"line": 1010,
+					"line": 1016,
 					"column": 9,
-					"endLine": 1010,
+					"endLine": 1016,
 					"endColumn": 58,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -12760,9 +12760,9 @@
 				{
 					"id": "70a537878b3202797185e681ca881c3772dff1d0",
 					"kind": "catch_clause",
-					"line": 1014,
+					"line": 1020,
 					"column": 5,
-					"endLine": 1014,
+					"endLine": 1020,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12776,9 +12776,9 @@
 				{
 					"id": "a74b8a10cc69291ef1cc618abd071674d703c6c7",
 					"kind": "callback_registration",
-					"line": 1038,
+					"line": 1044,
 					"column": 18,
-					"endLine": 1040,
+					"endLine": 1046,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12793,9 +12793,9 @@
 				{
 					"id": "f7d959371b5c71afafb84bdbea0ee390f819089c",
 					"kind": "catch_clause",
-					"line": 1058,
+					"line": 1064,
 					"column": 34,
-					"endLine": 1058,
+					"endLine": 1064,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12809,9 +12809,9 @@
 				{
 					"id": "a35bb57cf78b7d9cbc1bc79554ca9de0848b62ba",
 					"kind": "catch_clause",
-					"line": 1062,
+					"line": 1068,
 					"column": 50,
-					"endLine": 1064,
+					"endLine": 1070,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12825,9 +12825,9 @@
 				{
 					"id": "8aee938dd1a42c03b9ed3d1d6c7bd5186fb658cf",
 					"kind": "callback_registration",
-					"line": 1086,
+					"line": 1094,
 					"column": 10,
-					"endLine": 1086,
+					"endLine": 1094,
 					"endColumn": 73,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -12842,9 +12842,9 @@
 				{
 					"id": "9c464a424bd32229679aa95fe21d498b502840d5",
 					"kind": "catch_clause",
-					"line": 1091,
+					"line": 1102,
 					"column": 63,
-					"endLine": 1091,
+					"endLine": 1102,
 					"endColumn": 121,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12858,9 +12858,9 @@
 				{
 					"id": "44717ecdead23eb3317c04301854643e6ecd0ae6",
 					"kind": "catch_clause",
-					"line": 1141,
+					"line": 1152,
 					"column": 62,
-					"endLine": 1141,
+					"endLine": 1152,
 					"endColumn": 120,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12874,9 +12874,9 @@
 				{
 					"id": "c254da1e12c35c1b99a40fd8d17f34a890bea42d",
 					"kind": "catch_clause",
-					"line": 1145,
+					"line": 1156,
 					"column": 58,
-					"endLine": 1145,
+					"endLine": 1156,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
