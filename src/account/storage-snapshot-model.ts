@@ -18,6 +18,10 @@ export type CoverageStatus = 'complete' | 'partial' | 'skipped';
 
 export interface SourceCoverage {
 	status: CoverageStatus;
+	/** Z4-1: set on the aggregate `characters` entry when the roster read itself came back partial
+	 * (it may be missing characters). Absent on the mirror of one character's own failure and on
+	 * snapshots stored before this field existed. */
+	origin?: 'roster';
 	reason?:
 		| 'missing_scope'
 		| 'url_restricted'

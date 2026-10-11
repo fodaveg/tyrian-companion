@@ -1,6 +1,7 @@
 import {
 	PINNED_SCHEMA,
 	type CurrencyTotal,
+	type ItemLocation,
 	type LastPlayedCharacterChoice,
 	type SnapshotCoverage,
 	type SnapshotQuality,
@@ -42,6 +43,9 @@ export function buildStorageSnapshotPass(
 	freeSlots: StorageFreeSlots = EMPTY_FREE_SLOTS,
 	lastPlayedCharacter: LastPlayedCharacterChoice | null = null,
 ): StorageSnapshotPass {
+	// Z4-2: requests answer in network order; a canonical order keeps every consumer that walks
+	// the holdings in sequence (advisor reserves, keep exceptions) independent of which one won.
+	holdings = canonicalHoldingOrder(holdings);
 	const availableByItem: Record<string, number> = {};
 	const ownedByItem: Record<string, number> = {};
 	const currencyById: Record<string, CurrencyTotal> = {};
@@ -68,6 +72,44 @@ export function buildStorageSnapshotPass(
 		freeSlots,
 		lastPlayedCharacter,
 	};
+}
+
+const SOURCE_RANK: Record<ItemLocation['source'], number> = {
+	shared_inventory: 0, bank: 1, materials: 2, commerce_delivery: 3, character: 4,
+};
+
+function locationKey(location: ItemLocation): [number, string, number, number, number] {
+	switch (location.source) {
+		case 'character':
+			return [SOURCE_RANK.character, location.character, location.container === 'equipped_bag' ? 0 : 1,
+				location.bagIndex, location.container === 'bag' ? location.slot : -1];
+		case 'materials':
+			return [SOURCE_RANK.materials, '', 0, 0, location.category];
+		default:
+			return [SOURCE_RANK[location.source], '', 0, 0, location.slot];
+	}
+}
+
+/**
+ * Z4-2: stable, deterministic order (source, character, container, bag, slot). That order fixes
+ * where reserves and keep exceptions are taken first (shared inventory, bank, materials, bags). Entries of one
+ * request keep their relative order on ties. Only the order of newly captured holdings changes:
+ * the placement fingerprint already sorts arrays and stored snapshots are read as they were saved.
+ */
+export function canonicalHoldingOrder(holdings: StorageSnapshotPass['holdings']): StorageSnapshotPass['holdings'] {
+	return holdings
+		.map((holding, index) => ({ holding, index, key: locationKey(holding.location) }))
+		.sort((left, right) => {
+			for (let i = 0; i < 5; i += 1) {
+				const a = left.key[i]!;
+				const b = right.key[i]!;
+				if (a === b) continue;
+				if (typeof a === 'string') return a < (b as string) ? -1 : 1;
+				return (a) - (b as number);
+			}
+			return left.index - right.index;
+		})
+		.map((entry) => entry.holding);
 }
 
 /** Applies the exact two-pass decision used by StorageSnapshotService. */
