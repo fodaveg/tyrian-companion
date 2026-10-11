@@ -9,7 +9,8 @@ import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { indexedDbPriceHistoryPort } from '../host/indexed-db-price-history';
 import { PriceHistoryRuntime } from './price-history-runtime';
 import { PRICE_HISTORY_DB_NAME, type PriceHistoryDailyV1, type PriceHistorySettings } from './price-history-model';
-import { IndexedDbPriceHistoryStore } from './price-history-store';
+import { IndexedDbPriceHistoryStore, PriceHistoryStoreError, type PriceHistoryStoreFailure } from './price-history-store';
+import { ApiPollScheduler as RealApiPollScheduler } from '../sessions/api-poll-scheduler';
 
 const ENABLED: PriceHistorySettings = { enabled: true, intervalMinutes: 15, rawRetentionDays: 7, dailyRetentionDays: 180 };
 
@@ -369,6 +370,49 @@ function createRuntime(
 		},
 	});
 }
+
+describe('PriceHistoryRuntime capture failures keep the scheduler alive when recoverable (Z3-1)', () => {
+	async function failOneClaim(failure: PriceHistoryStoreFailure): Promise<{ scheduler: RealApiPollScheduler; timers: Array<() => void>; runtime: PriceHistoryRuntime }> {
+		let now = 1_800_001;
+		const timers: Array<() => void> = [];
+		let scheduler!: RealApiPollScheduler;
+		const runtime = new PriceHistoryRuntime({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }), vaultId: 'vault',
+			gateway: { requestDetailed: vi.fn(async (path: string) => response(path)) },
+			rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,
+			scheduler: (poll, onStateChange) => {
+				scheduler = new RealApiPollScheduler({
+					poll, onStateChange, wallNow: () => now, monotonicNow: () => now,
+					scheduleTimeout: (callback) => { timers.push(callback); return timers.length; }, cancelTimeout: () => undefined,
+				});
+				return scheduler;
+			},
+		});
+		await runtime.activate(ENABLED);
+		const claim = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'claimSlot')
+			.mockRejectedValueOnce(new PriceHistoryStoreError(failure));
+		now += 900_000;
+		timers.shift()!();
+		await vi.waitFor(() => expect(claim).toHaveBeenCalled());
+		await vi.waitFor(() => expect(scheduler.getState().status).not.toBe('polling'));
+		claim.mockRestore();
+		return { scheduler, timers, runtime };
+	}
+
+	it('retries with backoff after a single unavailable IndexedDB transaction', async () => {
+		const { scheduler, timers, runtime } = await failOneClaim('unavailable');
+		await vi.waitFor(() => expect(scheduler.getState().status).toBe('backoff'));
+		expect(timers).toHaveLength(1);
+		runtime.dispose();
+	});
+
+	it('still parks the scheduler on corruption, which a retry cannot fix', async () => {
+		const { scheduler, timers, runtime } = await failOneClaim('corrupt');
+		await vi.waitFor(() => expect(scheduler.getState().status).toBe('fatal'));
+		expect(timers).toHaveLength(0);
+		runtime.dispose();
+	});
+});
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;

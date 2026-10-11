@@ -362,6 +362,11 @@ export class PriceHistoryRuntime {
 		if (result.status === 'invalid_payload' || result.status === 'http_rejected' || result.status === 'store_unavailable') {
 			this.setState({ status: result.status });
 			span.failure(new Error(`price_history_${result.status}`), result.status === 'store_unavailable' ? 'storage_failure' : result.status === 'http_rejected' ? 'network_failure' : 'validation_failed', result.status);
+			// A passing IndexedDB failure (unavailable/blocked) must not park the scheduler for good:
+			// retry with backoff. Corruption, quota and a newer schema stay fatal.
+			if (result.status === 'store_unavailable' && (result.failure === 'unavailable' || result.failure === 'blocked')) {
+				return { kind: 'transient_failure' };
+			}
 			return { kind: 'fatal' };
 		}
 		if (result.status === 'busy') { span.skip('skipped', 'collecting'); return { kind: 'success' }; }

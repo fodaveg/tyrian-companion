@@ -4343,9 +4343,9 @@
 				{
 					"id": "57d1c09be575630758bda0458b951cb1a802a8d8",
 					"kind": "callback_registration",
-					"line": 47,
+					"line": 48,
 					"column": 18,
-					"endLine": 48,
+					"endLine": 49,
 					"endColumn": 87,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4360,9 +4360,9 @@
 				{
 					"id": "b924022abf44d5adb3be779f8445cff2128e159f",
 					"kind": "catch_clause",
-					"line": 76,
+					"line": 77,
 					"column": 7,
-					"endLine": 96,
+					"endLine": 97,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4374,20 +4374,20 @@
 					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for a failed gateway request as a typed result instead of a throw: 429 records the rate limit (\"rate_limited\"), 404 marks the batch missing and continues, a transient error is \"transient_failure\", another HTTP status is \"http_rejected\", the rest \"invalid_payload\". The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				},
 				{
-					"id": "8fd1d21b5bc909ad4c90c836199eb04bffe2b21a",
+					"id": "56c382579496161a3cfe16d9f7a2687e1ed76a3a",
 					"kind": "catch_clause",
-					"line": 122,
+					"line": 123,
 					"column": 5,
-					"endLine": 124,
+					"endLine": 127,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "captureInternal",
-						"justification": "The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged."
+						"justification": "The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" carrying the storage cause for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged."
 					},
-					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
+					"reason": "Allowlisted catch_clause: The \"captureInternal\" owner handles \"fallback_return\" for any failure of the claim, watch list, parse or commit as a typed result: \"store_unavailable\" carrying the storage cause for a PriceHistoryStoreError, \"invalid_payload\" otherwise. The caller gets that result; the error is not logged. Verified recovery: \"fallback_return\" in \"captureInternal\"."
 				}
 			]
 		},
