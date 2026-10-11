@@ -462,6 +462,11 @@ export interface TyrianTestApiOptions {
 	 * 1.4.0), whose `has` answers false to that name. Default: what the package's fake answers (true).
 	 */
 	remoteImages?: boolean;
+	/**
+	 * False: a Hebra before 1.5.0, whose `has` answers false to `notify.urgency` (and to
+	 * `instance.lock`) and ignores `urgency` and `silent`. Default: what the package's fake answers (true).
+	 */
+	notifyUrgency?: boolean;
 }
 
 /**
@@ -553,7 +558,9 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 	const api: HebraPluginApi = {
 		...hebra,
 		has: (capability) => (capability === 'secrets' ? secretsAvailable
-			: capability === 'markdown.image.remote' && options.remoteImages === false ? false : hebra.has(capability)),
+			: capability === 'markdown.image.remote' && options.remoteImages === false ? false
+				: (capability === 'notify.urgency' || capability === 'instance.lock') && options.notifyUrgency === false ? false
+					: hebra.has(capability)),
 		vault: library,
 		storage: createHebraStorage(local, 'tyrian-companion', library.libraryId()),
 		secrets: keychain === null ? fake.api.secrets : createFakeSecrets(keychain),
