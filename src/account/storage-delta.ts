@@ -8,6 +8,7 @@ import {
 } from './storage-snapshot-model';
 import {
 	COMPARABLE_SNAPSHOT_QUALITIES,
+	COMPOSITION_CHANGES_LIMIT,
 	STORAGE_DELTA_VERSION,
 	type CompositionChange,
 	type CurrencyCompositionPart,
@@ -341,8 +342,10 @@ function project(
 		const part: ItemCompositionPart = {
 			quantity: holding.quantity,
 			state: holding.state,
-			location: structuredClone(holding.location),
-			metadata: structuredClone(holding.metadata),
+			// Shared with the snapshot on purpose: `compareComposition` clones only the few parts
+			// that survive into the delta, so the snapshot is never aliased by what it returns.
+			location: holding.location,
+			metadata: holding.metadata,
 			...(holding.parentItemId === undefined ? {} : { parentItemId: holding.parentItemId }),
 			...(holding.embeddedKind === undefined ? {} : { embeddedKind: holding.embeddedKind }),
 		};
@@ -386,9 +389,23 @@ function compareComposition(
 			}
 		}
 	}
-	return changes.sort((left, right) =>
+	changes.sort((left, right) =>
 		left.kind.localeCompare(right.kind) || left.id - right.id,
 	);
+	return structuredClone(changes.slice(0, COMPOSITION_CHANGES_LIMIT));
+}
+
+/**
+ * Z33: the delta with `compositionChanges` cut to `COMPOSITION_CHANGES_LIMIT`. Records saved before
+ * the limit carry every changed stack, and a delta recomputed today carries only the first few;
+ * comparing both through this makes them equal, so a stored session keeps validating. Idempotent,
+ * and it never mutates its input.
+ */
+export function boundCompositionChanges(delta: StorageDelta): StorageDelta {
+	// Callers also pass stored values that are not yet validated: anything else goes through untouched.
+	return !Array.isArray(delta?.compositionChanges) || delta.compositionChanges.length <= COMPOSITION_CHANGES_LIMIT
+		? delta
+		: { ...delta, compositionChanges: delta.compositionChanges.slice(0, COMPOSITION_CHANGES_LIMIT) };
 }
 
 function validateHoldings(holdings: ItemHolding[]): void {

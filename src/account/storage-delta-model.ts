@@ -2,6 +2,15 @@ import type { ItemLocation, ItemMetadata, SnapshotQuality } from './storage-snap
 
 export const STORAGE_DELTA_VERSION = 1 as const;
 
+/**
+ * How many `compositionChanges` entries a delta keeps (Z33). The field answers "did anything change
+ * place without changing ownership?" and the only reader that matters (the loot warning) asks
+ * `length > 0`; a reordered bank of ~1 000 piles used to put ~400 kB of per-pile detail into every
+ * persisted session record. The kept entries are the first ones in canonical order, so the list stays
+ * a valid prefix of the full one and stays non-empty whenever anything moved.
+ */
+export const COMPOSITION_CHANGES_LIMIT = 8;
+
 export type StorageDeltaStatus = 'comparable' | 'limited' | 'invalid';
 
 export type StorageDeltaReasonCode =
