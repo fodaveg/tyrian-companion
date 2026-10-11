@@ -183,7 +183,7 @@ describe('SaleItemView wiring', () => {
 		expect(find(root, 'p').some((p) => p.attributes.get('role') === 'alert')).toBe(true);
 		expect(find(root, 'span').some((el) => el.className.includes('tyrian-sale__spinner'))).toBe(false);
 		const button = find(root, 'button').find((el) => text(el).includes('Actualizar'))!;
-		expect(button.disabled).toBe(false);
+		expect(button.attributes.get('aria-disabled')).toBe('false');
 		button.dispatch('click');
 		expect(refreshCalls).toBe(2);
 	});
@@ -202,7 +202,7 @@ describe('SaleItemView wiring', () => {
 		expect(find(root, 'span').filter((el) => el.className.includes('tyrian-sale__spinner'))).toHaveLength(1);
 		expect(find(root, 'div').some((el) => el.className.includes('tyrian-sale') && el.attributes.get('aria-busy') === 'true')).toBe(true);
 		expect(find(root, 'p').filter((p) => p.attributes.get('role') === 'status')).toHaveLength(1);
-		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(true);
+		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.attributes.get('aria-disabled')).toBe('true');
 		resolveRefresh();
 		await flush();
 	});
@@ -240,7 +240,7 @@ describe('SaleItemView wiring', () => {
 			expect(text(root)).toContain('tardan demasiado');
 			expect(text(root)).not.toContain('Leyendo precios del bazar');
 			const button = find(root, 'button').find((el) => text(el).includes('Actualizar'))!;
-			expect(button.disabled).toBe(false);
+			expect(button.attributes.get('aria-disabled')).toBe('false');
 			button.dispatch('click');
 			// The first call is still in flight: the retry waits for it, it does not start a second one.
 			expect(calls).toBe(1);
@@ -322,10 +322,10 @@ describe('SaleItemView wiring', () => {
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
 		find(root, 'button').find((el) => text(el).includes('Actualizar'))!.dispatch('click');
-		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(true);
+		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.attributes.get('aria-disabled')).toBe('true');
 		await view.onClose();
 		await view.onOpen();
-		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.disabled).toBe(false);
+		expect(find(root, 'button').find((el) => text(el).includes('Actualizar'))!.attributes.get('aria-disabled')).toBe('false');
 	});
 
 });

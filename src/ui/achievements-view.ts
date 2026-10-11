@@ -27,6 +27,7 @@ import type {
 import { formatCopperVisual } from '../core/copper-format';
 import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
 import { MAX_TRACKED_ACHIEVEMENT_IDS } from '../core/settings';
+import { keepFocusOnRebuild } from './keep-focus';
 import { relativeTimeLabel } from './inventory-advisor-view';
 import { safePublicRenderIconUrl } from './price-history-panel-view';
 
@@ -675,6 +676,11 @@ export class AchievementsView {
 	}
 
 	private renderBar(): void {
+		// The bar is rebuilt when the refresh starts and ends: the button keeps the focus it had (Z7-4).
+		keepFocusOnRebuild(this.bar, '.tyrian-achievements__refresh', () => { this.buildBar(); });
+	}
+
+	private buildBar(): void {
 		const t = this.t;
 		this.bar.empty();
 		const running = this.refreshState.status === 'running';
@@ -683,7 +689,9 @@ export class AchievementsView {
 			text: running ? t.t('achievements.view.refreshing') : t.t('achievements.view.refresh'),
 			attr: { type: 'button' },
 		});
-		button.disabled = running || !this.actions.hasConfiguredApiKey() || this.actions.getAchievementsServices() === null;
+		// Running is `aria-disabled`, not `disabled`: a disabled button cannot hold the focus, and `runRefresh` ignores a second press.
+		button.disabled = !this.actions.hasConfiguredApiKey() || this.actions.getAchievementsServices() === null;
+		button.setAttr('aria-disabled', running ? 'true' : 'false');
 		button.setAttr('aria-busy', running ? 'true' : 'false');
 		button.addEventListener('click', () => { void this.runRefresh(); });
 		const reading = this.tracked.status === 'ready' ? this.tracked.reading : null;

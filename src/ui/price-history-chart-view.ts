@@ -151,6 +151,9 @@ export function mountPriceHistoryChart(
 	if (geometry.compact && !container.className.split(/\s+/u).includes('tyrian-price-chart--compact')) container.className += ' tyrian-price-chart--compact';
 
 	const paint = (): void => {
+		// A repaint replaces every control, so the one holding the focus is found again afterwards
+		// (Z7-5): without it a keyboard step on a slider or a window button dropped the focus to <body>.
+		const focusKey = focusedControlKey(container);
 		container.replaceChildren();
 		const range = state.windowId === 'custom'
 			? (state.customRange ?? PRICE_HISTORY_CHART_ALL_RANGE)
@@ -166,9 +169,26 @@ export function mountPriceHistoryChart(
 		container.append(buildSummary(translator, filtered));
 		const aggregationNote = buildAggregationNote(translator, unit);
 		if (aggregationNote !== null) container.append(aggregationNote);
+		if (focusKey !== null) restoreControlFocus(container, focusKey);
 	};
 
 	paint();
+}
+
+const FOCUS_KEY_ATTRIBUTE = 'data-tyrian-chart-control';
+/** Where the focus goes when the control that held it no longer exists (the reset button after pressing it). */
+const FOCUS_FALLBACK_KEY = 'window:all';
+
+/** The stable name of the chart control holding the focus, or null when the focus is elsewhere. */
+function focusedControlKey(container: HTMLElement): string | null {
+	const active = container.ownerDocument.activeElement;
+	if (!active || typeof container.contains !== 'function' || !container.contains(active)) return null;
+	return active.getAttribute(FOCUS_KEY_ATTRIBUTE);
+}
+
+function restoreControlFocus(container: HTMLElement, key: string): void {
+	const select = (name: string): HTMLElement | null => container.querySelector<HTMLElement>(`[${FOCUS_KEY_ATTRIBUTE}="${name}"]`);
+	(select(key) ?? select(FOCUS_FALLBACK_KEY))?.focus();
 }
 
 function initialChartZoom(
@@ -206,6 +226,7 @@ function buildToolbar(
 		windowButton.type = 'button';
 		windowButton.textContent = translator.t(`priceHistory.chart.window.${window.id}`);
 		windowButton.setAttribute('aria-pressed', String(active));
+		windowButton.setAttribute(FOCUS_KEY_ATTRIBUTE, `window:${window.id}`);
 		const selectWindow = (): void => {
 			state.windowId = window.id;
 			state.customRange = null;
@@ -220,6 +241,7 @@ function buildToolbar(
 		reset.type = 'button';
 		reset.className = 'tyrian-price-chart__reset';
 		reset.textContent = translator.t('priceHistory.chart.reset');
+		reset.setAttribute(FOCUS_KEY_ATTRIBUTE, 'reset');
 		const resetZoom = (): void => {
 			state.windowId = 'all';
 			state.customRange = null;
@@ -445,6 +467,8 @@ function buildRangeControls(
 	const endIndex = endIndexFound < 0 ? merged.length - 1 : endIndexFound;
 	const from = buildRangeField(translator.t('priceHistory.chart.rangeFrom'), merged.length, Math.max(0, startIndex));
 	const to = buildRangeField(translator.t('priceHistory.chart.rangeTo'), merged.length, endIndex);
+	from.input.setAttribute(FOCUS_KEY_ATTRIBUTE, 'range:from');
+	to.input.setAttribute(FOCUS_KEY_ATTRIBUTE, 'range:to');
 	const applyCustomRange = (): void => {
 		const fromIndex = clampIndex(Number(from.input.value), merged.length);
 		const toIndex = clampIndex(Number(to.input.value), merged.length);
