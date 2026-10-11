@@ -126,6 +126,20 @@ describe('the core\'s assisted detection and pending proposals, run instead of m
 		expect({ reviewed, presented: presented.mock.calls.length }).toEqual({ reviewed: false, presented: 0 });
 	});
 
+	it('never journals a pending proposal as presented when its review is accepted and opens the Companion', async () => {
+		const runtime = await booted();
+		vi.spyOn(PendingProposalService.prototype, 'acknowledge').mockResolvedValue(true);
+		// The card the review opens is the queue's next proposal, the one reviewed: a journal entry
+		// written from the queue (`recordPendingProposalPresented`) would find it.
+		vi.spyOn(PendingProposalService.prototype, 'getState').mockReturnValue({ status: 'ready', pendingCount: 1, next: queued() });
+		vi.spyOn(runtime.core as unknown as { activateView(): Promise<void> }, 'activateView').mockResolvedValue(undefined);
+		const presented = vi.spyOn(PilotMetricsRecorder.prototype, 'proposalPresented').mockResolvedValue(true);
+
+		const reviewed = await runtime.core.reviewPendingProposal(proposalIntent(queued()));
+
+		expect({ reviewed, presented: presented.mock.calls.length }).toEqual({ reviewed: true, presented: 0 });
+	});
+
 	it('closes a live assisted proposal as invalidated before the user\'s disarm, and disarms as the user', async () => {
 		const runtime = await booted();
 		const events: string[] = [];
