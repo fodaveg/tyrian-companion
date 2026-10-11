@@ -206,6 +206,9 @@ describe('H6.7 credential boundary', () => {
 			// DE-01, step 3f: it saves the captured farming context in the device's local storage, so its name
 			// keeps it inside the persistence guard like its sibling; a rename that leaves the guard turns this red.
 			'src/runtime/farming-session-runtime.ts',
+			// DE-01, ninth wave: it saves the in-game session's link in the device's local storage and never sees
+			// the bridge's secret, which stays in the core; a rename that leaves the guard turns this red.
+			'src/runtime/ingame-session-runtime.ts',
 			// DE-01, step 3e: it writes the session's notes and the summary's saved proof, so its name
 			// keeps it inside the persistence guard; a rename that leaves the guard turns this red.
 			'src/runtime/session-note-runtime.ts',

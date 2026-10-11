@@ -138,6 +138,7 @@ import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming
 import { VaultRuntime, type VaultRuntimePort } from './vault-runtime';
 import { LocalDebugRuntime, type LocalDebugRuntimePort } from './local-debug-runtime';
 import { PilotRecoveryRuntime, type PilotRecoveryRuntimePort } from './pilot-recovery-runtime';
+import { IngameSessionRuntime, type IngameSessionRuntimePort } from './ingame-session-runtime';
 import { InventoryRuntime, type InventoryRuntimePort } from './inventory-runtime';
 import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './price-history-runtime';
 import { HalloweenObservationRuntime, halloweenPriceAlertSettingsFrom, type HalloweenObservationRuntimePort } from './halloween-observation-runtime';
@@ -216,7 +217,6 @@ import {
 import {
 	prepareSessionNote,
 	sessionNoteEventDeclarationFromDetectionSummary,
-	type SessionNoteEventDeclaration,
 	type SessionNoteInput,
 } from '../sessions/session-note-model';
 import {
@@ -238,11 +238,7 @@ import type {
 	SessionStopFailure,
 } from '../sessions/manual-session-start-service';
 import type { SessionSettlementWait } from '../sessions/session-api-settlement';
-import {
-	IngameSessionMarker,
-	type IngameSessionLink,
-	type IngameSessionView,
-} from '../sessions/ingame-session-marker';
+import type { IngameSessionMarker } from '../sessions/ingame-session-marker';
 import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
 import type { SessionState } from '../sessions/session';
 import { assembleSessions } from './assemble-sessions';
@@ -549,7 +545,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * DE-01, step 3f: the farming session's context and its saved copy, the reminders and the three
 	 * projections (goal progress, preparation context, in-game state). It reads the core's fields
 	 * through `farmingSessionRuntimePort`, under their own names; the core keeps the group context
-	 * and the reminders a start and the live session write, and `recordIngameSessionFailure`.
+	 * and the reminders a start and the live session write; its failures go to `ingame`.
 	 */
 	private readonly farming: FarmingSessionRuntime = new FarmingSessionRuntime(TyrianCompanionCore.farmingSessionRuntimePort(this));
 	/**
@@ -630,8 +626,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * credential-touching pieces (the bridge token, the webhook's transport).
 	 */
 	private readonly alerts: AlertRuntime = new AlertRuntime(TyrianCompanionCore.alertRuntimePort(this));
-	/** H18.26: turns that presence into the session lifecycle; built once the runtime is ready. */
+	/** H18.26: turns that presence into the session lifecycle; built once the runtime is ready (`ingame`). */
 	private ingameSessionMarker: IngameSessionMarker | null = null;
+	/**
+	 * DE-01, ninth wave: the in-game session (the marker's start and the passive start it asks for, the
+	 * session it sees, its link in local storage, its diagnostic). It reads the core's fields through
+	 * `ingameSessionRuntimePort` and writes the marker back to the core's own field; the bridge's secret stays here.
+	 */
+	private readonly ingame: IngameSessionRuntime = new IngameSessionRuntime(TyrianCompanionCore.ingameSessionRuntimePort(this));
 	/** R1b: the collector's footprint in the status note. Running only while this installation collects. */
 	private collectorHeartbeat: CollectorHeartbeat | null = null;
 	/**
@@ -1313,7 +1315,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			objects: {
 				derivedGoals: async () => await inventoryAnalysis.derivedGoals(),
 				evaluate: async (source, uncertainItemIds) => await inventoryAnalysis.evaluate(
-					source, uncertainItemIds, { refreshSeeds: this.inventoryAnalysisForSync, storageCharacter: this.storageCharacterFromIngame() },
+					source, uncertainItemIds, { refreshSeeds: this.inventoryAnalysisForSync, storageCharacter: this.ingame.storageCharacterFromIngame() },
 				),
 			},
 			// One macrotask between the classifier and the discard allowlist (each a whole-account
@@ -1441,7 +1443,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// A state change is the only word the lifecycle gives when a write storage had refused finally lands, so the alerts a
 			// refused claim left `ready` are looked at again here (nothing happens while none is owed) instead of waiting for a mode switch.
 			onStateChange: () => { this.adoptLateCollectorMode(false); this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); },
-			onError: (error) => { this.recordIngameSessionFailure(error); },
+			onError: (error) => { this.ingame.recordIngameSessionFailure(error); },
 			preparation: () => this.settings.farmingPreparation,
 			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
 				return declaration.status === 'valid' ? declaration.value : null; },
@@ -1489,7 +1491,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.bootTrace.mark('ready');
 		this.settleRuntimeReadyWaiters();
 		if (this.lateCollectorMode !== null) this.adoptLateCollectorMode();
-		this.startIngameSessionMarking();
+		this.ingame.startIngameSessionMarking();
 		this.syncAlertIngameServer();
 		// Z20: the panel leaves «starting» now, not after the price history below has opened its store. What it reads from the
 		// price history and the Halloween price alert arrives with their own repaints and the final one. Halloween's runtime is
@@ -2023,13 +2025,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.sale.getSaleViewModel();
 	}
 
-	/** Authenticated current gameplay only: a lost connection is not a character selector. */
-	private storageCharacterFromIngame(): string | null {
-		const presence = this.getIngamePresence();
-		return presence.status === 'present' && presence.context?.state === 'gameplay'
-			? presence.context.character : null;
-	}
-
 	/**
 	 * Explicit Sale refresh (`SaleRuntime.refreshSale`): the calendar's missing seeds, then the
 	 * advisor refresh, then the stale copies it left.
@@ -2245,6 +2240,28 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `IngameSessionRuntime` reads from this core and asks of it (DE-01, ninth wave). Getters over the
+	 * core's own fields, read as they stand; the marker is a setter too, as the core owns it.
+	 */
+	private static ingameSessionRuntimePort(core: TyrianCompanionCore): IngameSessionRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get collectorMode() { return core.collectorMode; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get sessionHistoryRuntimeAuthority() { return core.sessionHistoryRuntimeAuthority; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			set ingameSessionMarker(value) { core.ingameSessionMarker = value; },
+			getIngamePresence: () => core.getIngamePresence(),
+			onIngamePresence: (listener) => core.onIngamePresence(listener),
+			renderViews: () => { core.renderViews(); },
+		};
+	}
+
+	/**
 	 * What `AlertRuntime` reads from this core and asks of it (DE-01, step 3g). Getters over the
 	 * core's own fields, so the settings replaced on a save, the queue and emitter built in
 	 * `initializeRuntime` and the services built later are read as they stand. The bridge token and
@@ -2285,7 +2302,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			getFarmingIngameState: () => core.getFarmingIngameState(),
 			getBagPriceIngameState: () => core.getBagPriceIngameState(),
 			startIngameSession: (character) => core.startIngameSession(character),
-			recordIngameSessionFailure: (error) => { core.recordIngameSessionFailure(error); },
+			recordIngameSessionFailure: (error) => { core.ingame.recordIngameSessionFailure(error); },
 		};
 	}
 
@@ -2502,7 +2519,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			getSessionState: () => core.getSessionState(),
 			getIngamePresence: () => core.getIngamePresence(),
 			getLiveSessionLoot: () => core.getLiveSessionLoot(),
-			recordIngameSessionFailure: (error) => { core.recordIngameSessionFailure(error); },
+			recordIngameSessionFailure: (error) => { core.ingame.recordIngameSessionFailure(error); },
 		};
 	}
 
@@ -2550,7 +2567,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			getIngamePresence: () => core.getIngamePresence(),
 			startIngameSession: (character) => core.startIngameSession(character),
 			stopManualSession: () => core.stopManualSession(),
-			ingameSessionView: () => core.ingameSessionView(),
+			ingameSessionView: () => core.ingame.ingameSessionView(),
 			isLiveSessionStuck: () => core.isLiveSessionStuck(),
 		};
 	}
@@ -2811,7 +2828,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			cachedItems: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedItems(ids,this.settings.language); },
 			currencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveCurrencies(ids,this.settings.language); },
 			cachedCurrencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedCurrencies(ids,this.settings.language); },
-			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.recordIngameSessionFailure(error); },
+			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.ingame.recordIngameSessionFailure(error); },
 			onChange: () => { this.renderViews(); },
 		});
 	}
@@ -3157,149 +3174,16 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private registerAlertIngameSecretCommand(): void { this.alerts.registerAlertIngameSecretCommand(); }
 
-	/**
-	 * H18.26: the in-game presence marks the session. Built once the session runtime is ready, it
-	 * catches up with a presence that started earlier (`reconcile`) and then follows every event.
-	 * It does nothing unless the bridge is enabled and an API key is configured.
-	 */
-	private startIngameSessionMarking(): void {
-		if (this.ingameSessionMarker !== null) return;
-		const marker = new IngameSessionMarker({
-			presence: () => this.getIngamePresence(),
-			now: () => Date.now(),
-			port: {
-				enabled: () => this.settings.alertIngameEnabled && !consulting(this),
-				session: () => this.ingameSessionView(),
-				start: async (character) => await this.startIngameSession(character),
-				stopAt: async (sessionId, endedAtMs) => {
-					const stop = async () => { await this.liveSessions?.stop(endedAtMs,sessionId); };
-					await (this.localDebugActions?.run(
-						{ component: 'session', action: 'session_finish', state: 'ingame_presence' }, stop,
-					) ?? stop());
-				},
-				loadLink: () => this.readIngameSessionLink(),
-				saveLink: (link) => { this.writeIngameSessionLink(link); },
-				recordFailure: (error) => { this.recordIngameSessionFailure(error); },
-			},
-		});
-		this.ingameSessionMarker = marker;
-		this.onIngamePresence((event) => {
-			// The Session panel reads presence only when it paints, and an idle panel has no tick: without
-			// this repaint «Iniciar sesión» stays on «Abre Guild Wars 2…» after the addon connects.
-			this.renderViews();
-			void marker.handle(event);
-			void this.liveSessions?.presence(this.getIngamePresence().status === 'present',
-				event.kind === 'lost' ? event.lastSeenAtMs : event.kind === 'ended' ? event.endedAtMs : Date.now());
-		});
-		void marker.reconcile();
-	}
+	/** The passive start the alerts' bridge and the session commands ask for (`IngameSessionRuntime`). */
+	private startIngameSession(character: string | null): Promise<string | null> { return this.ingame.startIngameSession(character); }
 
-	/** What the marker needs to know about the session; `canStart` mirrors what `start()` accepts. */
-	private ingameSessionView(): IngameSessionView {
-		const live = this.liveSessions?.getRuntime();
-		if (live) return {
-			status: live.phase, sessionId: live.sessionId,
-			canStart: this.runtimeReady && live.phase === 'complete' && live.summaryReceipt !== null
-				&& this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed(),
-		};
-		const state = this.sessions.getState();
-		const sessionId = state.status === 'idle' ? null
-			: state.status === 'error' ? state.failedState.sessionId : state.sessionId;
-		const released = state.status === 'idle' || state.status === 'abandoned' || state.status === 'complete';
-		return {
-			status: state.status,
-			sessionId,
-			canStart: this.runtimeReady && released && this.manualRecoveryAllowsStart()
-				&& this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed(),
-		};
-	}
-
-	/**
-	 * The manual service's saved-session state lets a Nexus session start when nothing is pending or it can be taken as it is. A
-	 * store that did not answer (`unavailable`) says nothing about what is saved: it counts as startable here only because
-	 * `startIngameSession` asks the store again before it goes on (Z2-2). A record that is corrupt keeps blocking.
-	 */
-	private manualRecoveryAllowsStart(): boolean {
-		const recovery = this.sessions.getRecoveryState();
-		return recovery.status === 'none' || recovery.status === 'available' || (recovery.status === 'error' && recovery.code === 'unavailable');
-	}
-
-	/**
-	 * Starts the addon-reported connection through the shared fenced passive lifecycle.
-	 * Any saved API evidence transfers durably before the new source can establish its baseline.
-	 */
-	private async startIngameSession(character: string | null): Promise<string | null> {
-		if (!this.runtimeReady || !this.ingameSessionView().canStart) return null;
-		// Z2-2: the saved sessions were not readable at boot and nothing asks again but this. Read them before any start or migration,
-		// so pending API evidence is found and preserved below; while they still do not answer nothing is started over them.
-		if (this.sessions.getRecoveryState().status === 'error') {
-			await this.sessions.initialize();
-			if (this.sessions.getRecoveryState().status === 'error' || !this.ingameSessionView().canStart) return null;
-		}
-		// An older archive must not hide a NEWER unfinished API session: that one still needs its own transfer.
-		const recoveryPending = this.sessions.getRecoveryState().status !== 'none';
-		if ((recoveryPending || this.sessions.getState().status === 'complete') && (recoveryPending || this.sessions.getPreservedLegacyRuntime() === null)
-			&& !await this.sessions.preserveLegacyForLiveMigration()) return null;
-		return await this.liveSessions?.start(character) ?? null;
-	}
-
-	/** The Labyrinth tag the presence saw for this session, as the note's event declaration. */
-	private ingameLabyrinthDeclaration(runtime: SessionRuntimeRecord): SessionNoteEventDeclaration | null {
-		if (runtime.state.status !== 'complete') return null;
-		const observedAt = this.ingameSessionMarker?.labyrinthObservedAt(runtime.state.sessionId) ?? null;
-		if (observedAt === null || Date.parse(observedAt) > Date.parse(runtime.state.stoppedAt)) return null;
-		return { event: 'halloween', source: 'ingame_presence', observedAt };
-	}
-
-	/**
-	 * H18.36: the Sesión tab's own "Laberinto" badge and "la marcó Nexus" meta suffix (boceto
-	 * lámina 2.1) read this for the session on screen. Null with no addon marker (bridge disabled,
-	 * or the running session started before this plugin load's marker linked it).
-	 */
 	/** Last known character of the active live session: the context never empties on a loading or selection screen. */
 	getLiveSessionCharacter(): string | null {
 		return currentLiveSessionCharacter(this.liveSessions?.getRuntime() ?? null);
 	}
 
-	getIngameSessionLink(sessionId: string): { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null {
-		return this.ingameSessionMarker?.linkFor(sessionId) ?? null;
-	}
-
-	/**
-	 * The link lives in the host's per-vault local storage (`host.localStorage`, Obsidian's
-	 * `loadLocalStorage`), never in `data.json`: it names a session of THIS vault on THIS machine and
-	 * must not sync. A host without that storage keeps no link, which only means an automatic
-	 * session found after a reload is treated as one started by hand.
-	 */
-	private readIngameSessionLink(): unknown {
-		const storage = this.host.localStorage;
-		if (storage === undefined) return null;
-		try {
-			return storage.load(INGAME_SESSION_LINK_KEY);
-		} catch (error) {
-			this.recordIngameSessionFailure(error);
-			return null;
-		}
-	}
-
-	private writeIngameSessionLink(link: IngameSessionLink | null): void {
-		const storage = this.host.localStorage;
-		if (storage === undefined) return;
-		try {
-			storage.save(INGAME_SESSION_LINK_KEY, link);
-		} catch (error) {
-			this.recordIngameSessionFailure(error);
-		}
-	}
-
-	private recordIngameSessionFailure(error: unknown): void {
-		const mapped = unmappedErrorLogDetails(error);
-		this.localDebugActions?.event({
-			component: 'session', action: 'session_start', state: 'ingame_presence',
-			level: 'error', phase: 'failure', code: 'internal_failure',
-			details: { errorName: mapped.reason },
-		});
-	}
+	/** H18.36: the addon's link of the session on screen, for the Sesión tab's badge (`IngameSessionRuntime`). */
+	getIngameSessionLink(sessionId: string): ReturnType<IngameSessionRuntime['getIngameSessionLink']> { return this.ingame.getIngameSessionLink(sessionId); }
 
 	/** H18.38: what became of each alert on its way to the game, by `alertId` (`AlertRuntime`). */
 	getAlertDeliveries(): ReadonlyMap<string, AlertDeliveryRecordV1> { return this.alerts.getAlertDeliveries(); }
@@ -3764,7 +3648,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// them measured here would be an invention rather than an omission.
 			recommendation: null, envelope: null,
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId))
-				?? this.ingameLabyrinthDeclaration(runtime),
+				?? this.ingame.ingameLabyrinthDeclaration(runtime),
 			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
 			...(farmingContext === null ? {} : { farmingGoal: farmingContext.goal }),
 			...(farmingGoalResult === null ? {} : { farmingGoalResult }),
@@ -3866,9 +3750,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private activateAchievementsView(): Promise<void> { return this.liveView.activateAchievementsView(); }
 
 }
-
-/** H18.26: per-vault local storage key of the link between the in-game presence and its session. */
-const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
 
 /**
  * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session
