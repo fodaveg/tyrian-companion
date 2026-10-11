@@ -207,10 +207,13 @@ export class LiveSessionLifecycle {
 		{
 			// Storage that does not answer says nothing about what is saved. Unlike evidence that does not validate, it may
 			// answer later: the heartbeat asks again, and so does the next start. Reported once.
+			// Armed on a consult device too (A-1, neighbour case): there the beat reads nothing while `unread` (it waits for
+			// `enabled()`) and the consult retry (RT-17, `SessionStoreRetry`) asks instead. That retry stops once the device
+			// collects, and nothing else would ask before a start: the first beat after the switch reads the session.
 			const unanswered = (error: unknown): void => {
 				if (!this.unread) this.options.onError(error);
 				this.unread = true; this.failure = true;
-				if (this.options.enabled()) this.armHeartbeat();
+				this.armHeartbeat();
 			};
 			const loaded = await this.options.persistence.loadLive();
 			if (loaded.status === 'error' && loaded.code === 'unavailable') { unanswered(new Error('Live session storage is unavailable.')); return; }

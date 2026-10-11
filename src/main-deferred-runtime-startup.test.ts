@@ -452,6 +452,22 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				expect(phase(plugin)).toBe('idle');
 			});
 
+			// A-1, neighbour case: the retry above stops once the device collects, so it is the heartbeat, armed in consult too, that asks.
+			it('a consult device switched to collector while the store is silent is read by its heartbeat once the store answers', async () => {
+				const { tracked, plugin, timers, drive } = await consultBootWithSessionStoreSilent();
+				expect(phase(plugin)).toBe('error');
+				Object.assign(plugin, { settingTab: { refreshForSettingsChange: vi.fn() } });
+				await (plugin as unknown as { updateCollectorMode(mode: string): Promise<unknown> }).updateCollectorMode('collector');
+				expect((plugin as unknown as { getCollectorMode(): string }).getCollectorMode()).toBe('collector');
+				resumeStorage(tracked);
+				// What the consult retry had already scheduled runs out, and it asks no more on a collector.
+				await drive(() => true, timers.elapsedMs + 600_000);
+				expect(phase(plugin), 'nobody else reads the live session').toBe('error');
+				heartbeat()();
+				await vi.waitFor(() => { expect(phase(plugin)).not.toBe('error'); }, { timeout: 4_000 });
+				expect(phase(plugin)).toBe('idle');
+			});
+
 			it('stops asking when the plugin is unloaded', async () => {
 				const { plugin, timers, drive } = await consultBootWithSessionStoreSilent();
 				expect(phase(plugin)).toBe('error');
