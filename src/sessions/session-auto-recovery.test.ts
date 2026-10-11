@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
-import { ManualSessionStartService } from './manual-session-start-service';
+import { ManualSessionStartService, SESSION_AUTO_RETRY_DELAYS_MS } from './manual-session-start-service';
 import { API_SETTLEMENT_TICK_MS } from './session-api-settlement';
 import { IndexedDbSessionRuntimeStore } from './session-runtime-store';
 import type { SessionStartCaptureResult } from './session-start-capture';
@@ -108,6 +108,27 @@ describe('automatic recovery (H18.7, prueba 4)', () => {
 		await vi.waitFor(() => expect(window.service.getState()).toMatchObject({ status: 'active', authority: { fence: 2 } }));
 		expect(window.onAutoRecovered).toHaveBeenCalledOnce();
 		expect(window.capture.capture).toHaveBeenCalledOnce();
+	});
+
+	it('starts the backoff over after a session it took back fails again', async () => {
+		const window = openWindow(new IDBFactory(), 'window-a');
+		await start(window.service);
+
+		clock = Date.parse('2026-08-13T08:30:00.000Z');
+		window.tick(HEARTBEAT_MS);
+		await vi.waitFor(() => expect(window.service.getState()).toMatchObject({ status: 'error', code: 'lease_lost' }));
+		expect(window.service.getAutoRetryAt()).toBe(clock + SESSION_AUTO_RETRY_DELAYS_MS[0]!);
+
+		clock += AFTER_FIRST_RETRY_MS;
+		window.tick(API_SETTLEMENT_TICK_MS);
+		await vi.waitFor(() => expect(window.service.getState()).toMatchObject({ status: 'active', authority: { fence: 2 } }));
+		expect(window.service.getAutoRetryAt()).toBeNull();
+
+		// A second suspend outlives the lease taken back: its first retry waits the first delay again.
+		clock = Date.parse('2026-08-13T09:30:00.000Z');
+		window.tick(HEARTBEAT_MS);
+		await vi.waitFor(() => expect(window.service.getState()).toMatchObject({ status: 'error', code: 'lease_lost' }));
+		expect(window.service.getAutoRetryAt()).toBe(clock + SESSION_AUTO_RETRY_DELAYS_MS[0]!);
 	});
 
 	it('finishes a stop whose wait was interrupted by a suspend, without any click', async () => {
