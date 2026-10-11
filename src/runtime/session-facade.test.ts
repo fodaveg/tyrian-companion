@@ -55,8 +55,11 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		localDebugActions: null,
 		host: {
 			environment: { hostVersion: '1.9.0', pluginVersion: 'test' },
-			vault: { file: unused('host.vault.file') },
-			ui: { openNote: unused('host.ui.openNote') },
+			vault: {
+				file: unused('host.vault.file'), read: unused('host.vault.read'), create: unused('host.vault.create'),
+				exists: unused('host.vault.exists'), createFolder: unused('host.vault.createFolder'),
+			},
+			ui: { openNote: unused('host.ui.openNote'), registerCommand: unused('host.ui.registerCommand') },
 		},
 		settingTab: { refreshSessionHistoryRow: () => undefined },
 		sessionHistory: {
@@ -88,6 +91,14 @@ function port(overrides: Partial<SessionRuntimePort> = {}): SessionRuntimePort {
 		},
 		liveSessions: null,
 		liveHistory: null,
+		sessions: {
+			getState: unused('sessions.getState'),
+			getRecoveryState: unused('sessions.getRecoveryState'),
+			initialize: unused('sessions.initialize'),
+			getPreservedLegacyRuntime: unused('sessions.getPreservedLegacyRuntime'),
+			readPreservedLegacyRuntime: unused('sessions.readPreservedLegacyRuntime'),
+		},
+		assistedDetection: { getState: unused('assistedDetection.getState') },
 		notifyConsultMode: unused('notifyConsultMode'),
 		notifyRuntimeStarting: unused('notifyRuntimeStarting'),
 		emitNotice: unused('emitNotice'),
@@ -182,8 +193,8 @@ describe('openSessionHistoryNote (history row link)', () => {
 			settings: { ...SETTINGS, language },
 			host: {
 				...port().host,
-				vault: { file: (path) => existing.includes(path) ? { path } : null },
-				ui: { openNote },
+				vault: { ...port().host.vault, file: (path) => existing.includes(path) ? { path } : null },
+				ui: { ...port().host.ui, openNote },
 			},
 			emitNotice,
 		}));

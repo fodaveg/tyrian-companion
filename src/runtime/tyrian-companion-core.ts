@@ -15,7 +15,6 @@
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
-import { farmingGoalForSession } from './farming-runtime-projection';
 import { observeFarmingSessionContext, type FarmingGroupContext, type FarmingSessionContext } from './farming-session-context';
 import { type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
@@ -23,15 +22,11 @@ import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { LiveSourceConnections } from '../sessions/live-source-connections';
-import type { LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
-import { newLiveSessionFormat } from '../sessions/live-session-format';
-import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
-import { LiveSessionEconomy } from '../sessions/live-session-economy';
+import type { LiveSessionAlertViewV1, LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
+import type { LiveSessionEconomy } from '../sessions/live-session-economy';
 import { currentLiveSessionCharacter } from '../sessions/live-session-characters';
-import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
+import type { LiveSessionSummaryService } from '../sessions/live-session-summary-service';
 import { LiveSessionHistoryService, type LiveSessionSetAside, type LiveSessionHistoryEntry } from '../sessions/live-session-history';
-import { knownLiveDisplayNames } from '../sessions/live-session-note-model';
-import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 
 import { installDomHelpers } from '../host/dom-polyfill';
 import type {
@@ -69,8 +64,7 @@ import {
 } from '../account/guild-wars-2-client';
 import { StorageSnapshotService } from '../account/storage-snapshot-service';
 import { RateLimitedStorageSnapshotService } from '../account/rate-limited-storage-snapshot-service';
-import { GuildWars2PublicCatalogClient, type PublicCatalogGateway } from '../catalog/public-catalog-client';
-import type { CatalogItem } from '../catalog/public-catalog-model';
+import { GuildWars2PublicCatalogClient } from '../catalog/public-catalog-client';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
 import type { StorageDelta } from '../account/storage-delta-model';
@@ -85,7 +79,7 @@ import { HostRequestTransport, HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HostApiKeyProvider } from '../core/secret-provider';
 import { SerialTaskQueue } from '../core/serial-task-queue';
-import { createTranslator, type Translator } from '../core/i18n';
+import { createTranslator } from '../core/i18n';
 import {
 	type LocalDebugAction,
 	type LocalDebugComponent,
@@ -132,7 +126,7 @@ import {
 	resolveSaleSeasonalInputFor,
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
-import { SessionRuntime, type SessionRuntimePort } from './session-facade';
+import { EXPORT_LEGACY_SESSION_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID, SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
 import { VaultRuntime, type VaultRuntimePort } from './vault-runtime';
@@ -210,22 +204,11 @@ import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import { LootPresentationCache } from '../sessions/loot-presentation-cache';
 import { LiveSessionLootTracker, type LiveSessionLootState } from '../sessions/live-session-loot';
 import {
-	buildSessionEconomyEvidence,
-	sessionValuationItemIds,
-	type SessionEconomyEvidence,
-} from '../sessions/session-economy-evidence';
-import {
-	prepareSessionNote,
-	sessionNoteEventDeclarationFromDetectionSummary,
-	type SessionNoteInput,
-} from '../sessions/session-note-model';
-import {
 	type SessionNoteWriter,
 } from '../sessions/session-note-writer';
 import {
 	SessionHistoryRuntimeAuthority,
 	type SessionHistoryService,
-	type SessionHistoryScrubGate,
 	type SessionHistoryScrubPreview,
 	type SessionHistoryScrubResult,
 } from '../sessions/session-history';
@@ -239,7 +222,6 @@ import type {
 } from '../sessions/manual-session-start-service';
 import type { SessionSettlementWait } from '../sessions/session-api-settlement';
 import type { IngameSessionMarker } from '../sessions/ingame-session-marker';
-import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
 import type { SessionState } from '../sessions/session';
 import { assembleSessions } from './assemble-sessions';
 import {
@@ -368,9 +350,8 @@ export {
 
 /** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
 export { ALERT_INGAME_SECRET_COMMAND_ID };
-/** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
-export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
-export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
+/** Palette commands that export what the simplified Session tab no longer offers (`SessionRuntime`). */
+export { EXPORT_LEGACY_SESSION_COMMAND_ID, EXPORT_LIVE_SESSION_COMMAND_ID };
 /** Palette command that refreshes the Leyspring Hollows achievements note; manual, also in consult mode. */
 export const UPDATE_LEYSPRING_ACHIEVEMENTS_COMMAND_ID = 'update-leyspring-achievements';
 /** The ONE view of a host's main screen that lists the four sections (`live-view-runtime.ts`). */
@@ -469,8 +450,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private farmingReminders: FarmingManualReminder[] = [];
 	private sessionSummarySaveState: SessionSummarySaveState = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
-	/** Economic evidence measured for the completed session on screen, or `null` while unmeasured. */
-	private sessionEconomy: { key: string; evidence: SessionEconomyEvidence } | null = null;
 	/** Deferred so the catalog database is only opened when a session actually has to be valued. */
 	private sessionCatalogFactory: (() => Promise<PublicCatalogService>) | null = null;
 	private sessionCatalog: PublicCatalogService | null = null;
@@ -535,7 +514,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly sale: SaleRuntime = new SaleRuntime(TyrianCompanionCore.saleRuntimePort(this));
 	/**
 	 * DE-01, step 3a: the pilot metrics, the session history's export and scrub, the next session's
-	 * farming preferences and the saved live sessions. It reads the core's fields through
+	 * farming preferences and the saved live sessions; tenth wave: the history's gate, the Z2-2 preview
+	 * and the export commands. It reads the core's fields through
 	 * `sessionRuntimePort`, under their own names; the core still builds `pilotMetrics`,
 	 * `pilotMetricsExporter`, `sessionHistory`, `liveSessions` and `liveHistory`, and keeps the
 	 * history's runtime authority and the farming state a start captures (the recovery's pilot hooks: `pilotRecovery`).
@@ -553,8 +533,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * discard, clear, abandon, a stuck live session), the session state the views read, and the
 	 * assisted detection with the pending proposals. It reads the core's fields through
 	 * `liveSessionRuntimePort`, under their own names, and writes the summary fields and the farming
-	 * reminders back through it; the summary's write is `notes`', and the core keeps the note's
-	 * input, the loot projection and Halloween.
+	 * reminders back through it; the summary's write, the note's input and the loot projection are
+	 * `notes`', and the core keeps Halloween.
 	 */
 	private readonly live: LiveSessionRuntime = new LiveSessionRuntime(TyrianCompanionCore.liveSessionRuntimePort(this));
 	/**
@@ -568,7 +548,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * DE-01, step 3e: the finished session's note and summary (the live note, the summary's write and
 	 * its proof, the retry, "New session", the restore on a boot and the stored loot read back). It
 	 * reads the core's fields through `sessionNoteRuntimePort` and writes the summary fields back to
-	 * the core's own, which `live` also writes; the core keeps the note's input and its economy.
+	 * the core's own, which `live` also writes. Tenth wave: the note's input and its economy, the loot
+	 * projection and the live economy and summaries the boot builds are here too.
 	 */
 	private readonly notes: SessionNoteRuntime = new SessionNoteRuntime(TyrianCompanionCore.sessionNoteRuntimePort(this));
 	/**
@@ -663,7 +644,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
 	private managedAssetsView: ManagedAssetsView =
 		{ status: 'idle', message: 'not_inspected', plan: null };
-	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate(), () => this.retireSealedLiveSession());
+	/** Its gate is read in `session`; the way past a finished live session lets its summary go in `notes`. */
+	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.session.sessionHistoryScrubGate(), () => this.notes.retireSealedLiveSession());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
 	/**
@@ -767,7 +749,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.commands.setupSessionCommands();
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
-		this.registerSessionExportCommands();
+		this.session.registerSessionExportCommands();
 		this.registerLeyspringAchievementsCommand();
 		// `state` reads `unattributed_origin` for both listeners below, not `window_error` or
 		// `unhandled_rejection`: those names described which browser event fired, which reads
@@ -1362,7 +1344,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				// H18.26: a presence that could not open its session yet (the previous one was still
 				// finishing) opens it as soon as the session side allows, without another game event.
 				if (this.ingameSessionMarker) void this.ingameSessionMarker.reconcile();
-				if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
+				if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.notes.refreshLootPresentation());
 				if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
 					() => this.live.reconcilePendingProposals());
@@ -1434,7 +1416,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.sessionHistory = sessionServices.sessionHistory;
 		// Z24: the live list reads through the durable history's reads, so a note is read once per run for both.
 		this.liveHistory = new LiveSessionHistoryService(sessionHistoryVault(host.vault), undefined, this.sessionHistory.noteReads);
-		this.liveSummaries = this.createLiveSummaries(labelledVault(host.vault, 'Session summary note'));
+		this.liveSummaries = this.notes.createLiveSummaries(labelledVault(host.vault, 'Session summary note'));
 		this.liveSessions = new LiveSessionLifecycle({
 			coordinator, persistence: sessionServices.runtimeStore, enabled: () => !consulting(this),
 			now: () => Date.now(), sessionId: () => crypto.randomUUID(),
@@ -1456,7 +1438,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.bootTrace.mark('live');
 		if (this.unloaded) return;
 		this.liveSummaryNetwork = true;
-		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
+		this.liveEconomy = this.notes.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
 		this.pendingProposals = sessionServices.pendingProposals;
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
@@ -1479,7 +1461,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				startupFinalization.sessionId, startupFinalization.delta, startupFinalization.review,
 			);
 		} else if (restoredSession.status === 'complete') await this.notes.restoreCompletedSessionSummary();
-		await this.refreshLootPresentation();
+		await this.notes.refreshLootPresentation();
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
@@ -2226,6 +2208,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get pilotRecovery() { return core.pilotRecovery; },
 			get liveSessions() { return core.liveSessions; },
 			get liveHistory() { return core.liveHistory; },
+			get sessions() { return core.sessions; },
+			get assistedDetection() { return core.assistedDetection; },
 			notifyConsultMode: () => { core.notifyConsultMode(); },
 			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
@@ -2616,13 +2600,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			renderViews: () => { core.renderViews(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			activateView: () => core.activateView(),
-			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
+			sessionNoteInput: (runtime) => core.notes.sessionNoteInput(runtime),
 			ensureCompletedSummarySaved: () => core.notes.ensureCompletedSummarySaved(),
 			persistFarmingSessionContext: (context) => { core.persistFarmingSessionContext(context); },
 			updateSettings: (settings) => core.updateSettings(settings),
 			getIngamePresence: () => core.getIngamePresence(),
 			persistCompletedSessionSummary: (notifyFailure, existingRuntime) => core.notes.persistCompletedSessionSummary(notifyFailure, existingRuntime),
-			refreshLootPresentation: () => core.refreshLootPresentation(),
+			refreshLootPresentation: () => core.notes.refreshLootPresentation(),
 			observeHalloweenDelta: (delta, source, episodeId, classification) => core.observeHalloweenDelta(delta, source, episodeId, classification),
 		};
 	}
@@ -2632,7 +2616,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * core's own fields, so a service `initializeRuntime` builds, the detection quality's
 	 * initialization it replaces, a setting changed or a runner set later is read as it stands; the
 	 * summary fields are setters too, so the note writes the core's own state, which `live` and the
-	 * Companion snapshot read.
+	 * Companion snapshot read. The session catalog is a setter as well: the price history opens the same one.
 	 */
 	private static sessionNoteRuntimePort(core: TyrianCompanionCore): SessionNoteRuntimePort {
 		return {
@@ -2652,11 +2636,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			set storedSessionLootSummary(value) { core.storedSessionLootSummary = value; },
 			get savedSessionNotePath() { return core.savedSessionNotePath; },
 			set savedSessionNotePath(value) { core.savedSessionNotePath = value; },
+			get collectorMode() { return core.collectorMode; },
+			get unloaded() { return core.unloaded; },
+			get detectionQuality() { return core.detectionQuality; },
+			get inventoryPreferences() { return core.inventoryPreferences; },
+			get lootPresentation() { return core.lootPresentation; },
+			get sessionCatalogFactory() { return core.sessionCatalogFactory; },
+			get sessionCatalog() { return core.sessionCatalog; },
+			set sessionCatalog(value) { core.sessionCatalog = value; },
+			get liveSummaryNetwork() { return core.liveSummaryNetwork; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			get farming() { return core.farming; },
+			get halloweenObservation() { return core.halloweenObservation; },
+			get ingame() { return core.ingame; },
+			get alerts() { return core.alerts; },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			renderViews: () => { core.renderViews(); },
-			refreshLootPresentation: () => core.refreshLootPresentation(),
-			prepareSessionEconomyEvidence: (runtime, remeasure) => core.prepareSessionEconomyEvidence(runtime, remeasure),
-			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
 			getLiveSessionEntity: (kind, id) => core.getLiveSessionEntity(kind, id),
 			openManualSessionStart: () => { core.openManualSessionStart(); },
 		};
@@ -2814,59 +2809,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	getLiveSessionSetAside(): readonly LiveSessionSetAside[] { return this.session.getLiveSessionSetAside(); }
 	selectLiveSessionHistory(sessionRef: string | null): Promise<void> { return this.session.selectLiveSessionHistory(sessionRef); }
 	exportLiveSession(kind: 'timeline'|'summary', format: 'csv'|'json'): Promise<void> { return this.session.exportLiveSession(kind, format); }
-	/** Explicit local export of preserved account evidence; it never calls a capture service. */
-	async exportPreservedLegacySession():Promise<void> {
-		const preserved = await this.sessions.readPreservedLegacyRuntime();
-		if (preserved === null) throw new Error('Preserved API session evidence is unavailable.');
-		await exportLegacyRuntimeArchive(this.host.vault,this.settings.outputFolder,preserved.archive,preserved.runtime);
-	}
-	private createLiveEconomy(lifecycle: LiveSessionLifecycle, gateway: PublicCatalogGateway, rateLimit: RateLimitCoordinator): LiveSessionEconomy {
-		return new LiveSessionEconomy({
-			lifecycle, gateway, rateLimit, now: () => Date.now(),
-			canEmit: () => !consulting(this) && !this.unloaded,
-			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
-			cachedItems: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedItems(ids,this.settings.language); },
-			currencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveCurrencies(ids,this.settings.language); },
-			cachedCurrencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedCurrencies(ids,this.settings.language); },
-			emit: async (intent) => await this.emitLiveSessionAlert(intent), onError: (error) => { this.ingame.recordIngameSessionFailure(error); },
-			onChange: () => { this.renderViews(); },
-		});
-	}
-	/**
-	 * The summary note's wiring. Its names come from memory first (`getLiveSessionEntity`, empty for a
-	 * session closed before this load) and then from the catalog cache, never from the network: the
-	 * only request the summary may make is `maps`, and only once `liveSummaryNetwork` is set, which the
-	 * load never does before the lifecycle is restored. An entity nobody names gets no key, so the note
-	 * writes «Objeto <id>». Item icons come from the same cache records (`itemMeta`), never a request,
-	 * and go in the note only where the host paints a remote image (`hostPaintsRemoteImages`).
-	 */
-	private createLiveSummaries(vault: ConstructorParameters<typeof LiveSessionSummaryService>[0]['vault']): LiveSessionSummaryService {
-		return new LiveSessionSummaryService({
-			vault, runtime: () => this.liveSessions?.getRuntime() ?? null,
-			journal: () => this.liveSessions?.getJournal() ?? [], format: () => this.liveSessions?.getSessionFormat() ?? newLiveSessionFormat(),
-			characters: () => this.liveSessions?.getCharacters() ?? [],
-			charactersCapped: () => this.liveSessions?.isCharacterListCapped() ?? false, isWritten: () => this.liveSessions?.isSummaryWritten() ?? false,
-			markWritten: async (sessionId) => { await this.liveSessions?.markSummaryWritten(sessionId); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
-			inlineIcons: () => hostPaintsRemoteImages(this.host),
-			displayNames: (record) => knownLiveDisplayNames(record.totals, (kind, id) => this.getLiveSessionEntity(kind, id)?.name),
-			cachedNames: async (wanted) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await summaryCachedNames(this.sessionCatalog, wanted, this.settings.language); },
-			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
-				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type, icon: item.icon }])); },
-			mapNames: async (ids, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
-				const missing = ids.filter((id) => cached[String(id)] === undefined);
-				const fetched = missing.length === 0 || !network ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
-				return Object.fromEntries(Object.entries({ ...cached, ...fetched }).map(([id, map]) => [id, map.name])); },
-			enabled: () => !consulting(this) && !this.unloaded, now: () => Date.now(),
-			startTimer: (callback, ms) => { const handle = window.setTimeout(callback, ms); return () => { window.clearTimeout(handle); }; },
-			onFailure: (details) => { this.localDebugActions?.event({ component: 'session', action: 'session_finish', state: 'live_summary_write',
-				level: 'error', phase: 'failure', code: 'storage_failure', details }); },
-		});
-	}
+	/** Explicit local export of preserved account evidence (`SessionRuntime`); it never calls a capture service. */
+	exportPreservedLegacySession(): Promise<void> { return this.session.exportPreservedLegacySession(); }
 	getLiveSessionEntity(kind: 'item' | 'currency', id: number): {name:string;icon:string|null}|null {
 		return this.liveEconomy?.entity(kind,id) ?? null;
 	}
 	private enrichLiveSession(entry: LiveJournalEntryV1): void { if (!this.unloaded) this.liveEconomy?.observe(entry); }
-	private emitLiveSessionAlert(intent: LiveAlertOutboxV1) { return this.alerts.emitLiveSessionAlert(intent); }
 
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
 	getSellSignalState(): SellSignalRuntimeState | null {
@@ -2918,12 +2866,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.session.exportSessionHistory();
 	}
 
-	/** One preview in flight at a time, the same promise to every caller (`SessionRuntime`). */
-	async previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
-		// Z2-2: saved sessions that did not answer at boot keep the gate shut; ask again before saying the runtime is not idle.
-		if (this.sessions.getRecoveryState().status === 'error') await this.sessions.initialize();
-		return await this.session.previewSessionHistoryScrub();
-	}
+	/** Asks the saved sessions again (Z2-2), then the one preview in flight (`SessionRuntime`). */
+	previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> { return this.session.previewSessionHistoryScrubAfterRecovery(); }
 
 	cancelSessionHistoryScrubPreview(token: string): void {
 		this.session.cancelSessionHistoryScrubPreview(token);
@@ -2932,28 +2876,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** One scrub in flight at a time, the same promise to every caller (`SessionRuntime`). */
 	scrubSessionHistory(token: string): Promise<SessionHistoryScrubResult> {
 		return this.session.scrubSessionHistory(token);
-	}
-
-	private sessionHistoryScrubGate(): SessionHistoryScrubGate {
-		const live = this.liveSessions?.getRuntime() ?? null;
-		return {
-			sessionStatus: live?.phase ?? this.sessions.getState().status,
-			sealedRetirable: this.liveSessions?.canRetireSealed() ?? false,
-			recoveryStatus: this.sessions.getRecoveryState().status,
-			detectorStatus: this.assistedDetection.getState().status,
-		};
-	}
-
-	/**
-	 * The history scrub's way past a finished live session (Z2-3): its record is let go so the next load does not write the scrubbed
-	 * note back, and what the panel kept of its summary goes with it.
-	 */
-	private async retireSealedLiveSession(): Promise<boolean> {
-		if (this.liveSessions === null) return true;
-		if (!await this.liveSessions.retireSealed()) return false;
-		this.sessionSummarySaveState = 'unknown'; this.savedSessionNotePath = null;
-		this.renderViews();
-		return true;
 	}
 
 	/**
@@ -3101,42 +3023,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** The palette's "Copy in-game bridge token" (`AlertRuntime`). */
 	copyAlertIngameSecretFromCommand(): Promise<void> { return this.alerts.copyAlertIngameSecretFromCommand(); }
-
-	/**
-	 * Two commands with no interface of their own: the active live session as CSV, and the preserved
-	 * account-era session. Each is available only while there is something to export, and answers
-	 * with a notice either way; the data and the export code are the ones the Session tab used.
-	 */
-	private registerSessionExportCommands(): void {
-		const translator = (): Translator => createTranslator(this.settings.language);
-		const specs = [
-			{ id: EXPORT_LIVE_SESSION_COMMAND_ID, name: 'commands.exportLiveSession' as const,
-				unavailable: 'commands.exportLiveUnavailable' as const,
-				available: () => this.runtimeReady && this.liveSessions?.getRuntime() != null,
-				run: () => this.exportLiveSession('timeline', 'csv') },
-			{ id: EXPORT_LEGACY_SESSION_COMMAND_ID, name: 'commands.exportLegacySession' as const,
-				unavailable: 'commands.exportLegacyUnavailable' as const,
-				available: () => this.runtimeReady && this.sessions.getPreservedLegacyRuntime() !== null,
-				run: () => this.exportPreservedLegacySession() },
-		];
-		for (const spec of specs) {
-			this.host.ui.registerCommand({
-				id: spec.id,
-				name: translator().t(spec.name),
-				checkCallback: (checking) => {
-					const available = spec.available();
-					if (!checking && available) {
-						void spec.run().then(
-							() => { this.emitNotice(translateRuntime(translator(), 'notices.exportSaved'), 'session_command'); },
-							() => { this.emitNotice(translateRuntime(translator(), 'notices.exportFailed'), 'session_command'); },
-						);
-					}
-					return available;
-				},
-				unavailableReason: () => (spec.available() ? null : translateRuntime(translator(), spec.unavailable)),
-			});
-		}
-	}
 
 	/**
 	 * "Actualizar logros de Leyspring": a manual action that reads the player's achievements and
@@ -3462,7 +3348,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.walletVaultSync.invalidate();
 		}
 		if (previousLanguage !== this.settings.language || previousOutputFolder !== this.settings.outputFolder) {
-			await this.refreshLootPresentation();
+			await this.notes.refreshLootPresentation();
 		}
 		this.renderViews();
 		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
@@ -3624,122 +3510,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.live.confirmAbandonSession();
 	}
 
-	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
-		const sessionId = runtime.state.status === 'complete' ? runtime.state.sessionId : '';
-		const economy = this.sessionEconomyFor(runtime);
-		const { firstSeenItemIds, rareUnpricedOrBoundItemIds } = this.sessionHalloweenInfoItemIds(sessionId);
-		const farmingContext = this.farming.currentFarmingSessionContext(sessionId);
-		// Optional evidence must be absent rather than present with undefined: the durable
-		// note boundary accepts exact keys, including when boot restores a legacy session.
-		const liveLoot = this.liveSessionLoot.getState();
-		const matchingLoot = liveLoot.status !== 'idle' && liveLoot.sessionId === sessionId ? liveLoot : { status: 'idle' as const };
-		const projectedGoal = farmingGoalForSession(runtime.state, matchingLoot, farmingContext, Date.now());
-		// A restored tracker has no observed increments; the retained final delta still proves net.
-		const finalNetBags = runtime.delta === null || runtime.delta.status === 'invalid' ? null
-			: runtime.delta.itemChanges.find(({ id }) => id === 36038)?.delta ?? 0;
-		const farmingGoalResult = projectedGoal === null ? null : { ...projectedGoal, finalNetBags };
-		const sackObservation = this.liveSessionLoot.sackObservation(sessionId);
-		const presence = this.ingameSessionMarker?.presenceEvidenceFor(sessionId,
-			runtime.state.status === 'complete' ? Date.parse(runtime.state.stopRequestedAt) : undefined);
-		return {
-			runtime, valuation: economy.valuation, reservation: economy.reservation, hold: economy.hold,
-			// H4.12 container recommendations have no runtime producer: `recommendContainerDisposition`
-			// needs a reviewed `ContainerModelReview`, and nothing in the tree builds one. Declaring
-			// them measured here would be an invention rather than an omission.
-			recommendation: null, envelope: null,
-			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId))
-				?? this.ingame.ingameLabyrinthDeclaration(runtime),
-			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
-			...(farmingContext === null ? {} : { farmingGoal: farmingContext.goal }),
-			...(farmingGoalResult === null ? {} : { farmingGoalResult }),
-			comparisonMetadata: { groupContext: farmingContext?.groupContext ?? null,
-				...(presence == null ? {} : { presence }) },
-			...(sackObservation === null ? {} : { sackObservation }),
-			locale: this.settings.language, outputFolder: this.settings.outputFolder,
-		};
-	}
-
-	/** H14.3: the note's first-seen and rare-unpriced items (`HalloweenObservationRuntime`). */
-	private sessionHalloweenInfoItemIds(sessionId: string): { firstSeenItemIds: number[]; rareUnpricedOrBoundItemIds: number[] } {
-		return this.halloweenObservation.sessionHalloweenInfoItemIds(sessionId);
-	}
-
-	/** Only evidence measured from *this* runtime record may travel with it into the note. */
-	private sessionEconomyFor(runtime: SessionRuntimeRecord): SessionEconomyEvidence {
-		const key = sessionEconomyKey(runtime);
-		return key !== null && this.sessionEconomy?.key === key
-			? this.sessionEconomy.evidence
-			: { valuation: null, reservation: null, hold: null };
-	}
-
-	/**
-	 * Measures the completed session's economy before the note is built. This is the step whose
-	 * absence made every published note say `not_evaluated`: the ingredients were already captured
-	 * and nothing ever called the valuation with them.
-	 */
-	private async prepareSessionEconomyEvidence(runtime: SessionRuntimeRecord, remeasure = false): Promise<void> {
-		const key = sessionEconomyKey(runtime);
-		if (key === null) { this.sessionEconomy = null; return; }
-		if (!remeasure && this.sessionEconomy?.key === key) return;
-		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-			component: 'session', action: 'session_projection', state: 'session_valuation',
-		});
-		const catalogItems = await this.resolveSessionCatalogItems(sessionValuationItemIds(runtime), span.context);
-		const evidence = buildSessionEconomyEvidence({
-			runtime, catalogItems, goals: this.inventoryPreferences.current().goals,
-		});
-		this.sessionEconomy = { key, evidence };
-		span.success(evidence.valuation === null ? 'not_evaluated' : evidence.valuation.coverage);
-	}
-
-	/**
-	 * Public catalog metadata for the gained items. A catalog the plugin cannot reach leaves the
-	 * valuation with no vendor floor and no trading-post eligibility, which the kernel already
-	 * reports as `catalog_missing`; it must never abort the note.
-	 */
-	private async resolveSessionCatalogItems(
-		itemIds: number[],
-		parent?: ResolvedLocalDebugActionContext,
-	): Promise<Record<string, CatalogItem>> {
-		if (itemIds.length === 0 || this.sessionCatalogFactory === null) return {};
-		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-			component: 'session', action: 'session_projection', state: 'session_catalog',
-			...(parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } }),
-		});
-		try {
-			this.sessionCatalog ??= await this.sessionCatalogFactory();
-			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
-			span.success('resolved');
-			return items;
-		} catch (error) {
-			span.failure(error, 'network_failure', 'session_catalog_unavailable');
-			return {};
-		}
-	}
-
-	private async refreshLootPresentation(): Promise<void> {
-		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-			component: 'session', action: 'session_projection', state: 'loot_projection',
-		});
-		const result = await this.lootPresentation.refresh(
-			async () => {
-				const runtime = await this.sessions.getCompletedRuntimeRecord();
-				// The projection itself is synchronous, so the economy has to be measured while the
-				// record is still being loaded or the loot panel would render its own `not_evaluated`.
-				if (runtime !== null) await this.prepareSessionEconomyEvidence(runtime);
-				return runtime;
-			},
-			(runtime) => {
-				const prepared = prepareSessionNote(this.sessionNoteInput(runtime));
-				return prepared.status === 'ok' ? prepared.note : null;
-			},
-			span.context,
-		);
-		if (result.status === 'failed') span.failure(result.cause, result.code, result.stage);
-		else if (result.status === 'superseded') span.cancel(result.status);
-		else span.success(result.status);
-	}
-
 	/** Opens the Companion, or focuses it where it is already open (`LiveViewRuntime`). */
 	private activateView(): Promise<void> { return this.liveView.activateView(); }
 
@@ -3749,18 +3519,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private activateAchievementsView(): Promise<void> { return this.liveView.activateAchievementsView(); }
 
-}
-
-/**
- * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session
- * keeps its id while replacing its closing snapshot, and evidence measured from the older snapshot
- * would be rejected by the note as an identity mismatch instead of published.
- */
-function sessionEconomyKey(runtime: SessionRuntimeRecord): string | null {
-	const snapshotId = runtime.finalSnapshot?.snapshotId;
-	return runtime.state.status === 'complete' && snapshotId !== undefined && (runtime.delta ?? null) !== null
-		? `${runtime.state.sessionId} ${snapshotId}`
-		: null;
 }
 
 function connectionScopes(state: ConnectionState): string[] {
@@ -3796,9 +3554,4 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
  */
 function hostSupportsMainView(host: TyrianHost | undefined): boolean {
 	return host?.capabilities?.mainView === true;
-}
-
-/** Whether the host paints a remote image inside a line of a note: true unless it declared `capabilities.remoteImages: false`. */
-function hostPaintsRemoteImages(host: TyrianHost | undefined): boolean {
-	return host?.capabilities?.remoteImages !== false;
 }
