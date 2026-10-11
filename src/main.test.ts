@@ -15,6 +15,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
+import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -39,7 +40,7 @@ import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from './ui/sale-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
-import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
+import type { SessionCommandPorts } from './ui/session-command-controller';
 import type { SessionCommandContext } from './ui/session-command-model';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
 import type { SessionStartInput } from './sessions/session-start-capture';
@@ -58,6 +59,9 @@ interface StartIntentHarness {
 	startModal: ManualSessionStartModal | null;
 	// DE-01, step 3c: the start itself is `LiveSessionRuntime`'s, the core's `live`.
 	live: { startManualSession(input: SessionStartInput): Promise<void> };
+	// DE-01, step 3d: what the controller's `prepare` reads before it opens the modal.
+	sessionHistoryRuntimeAuthority: { runtimeMutationAllowed(): boolean };
+	liveSessions: null;
 }
 
 interface InventoryVaultIntentHarness {
@@ -82,6 +86,20 @@ function liveOver(harness: object): LiveSessionRuntime {
 		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
 	}).liveSessionRuntimePort;
 	return new LiveSessionRuntime(portOf(harness));
+}
+
+/**
+ * DE-01, step 3d: the session commands' intents are `SessionCommandRuntime`'s. The cases below that
+ * prepared them as methods of `TyrianCompanionCore` on a plain object prepare them through the
+ * controller's own `prepare` (`prepareSessionCommand`) on a runtime built over that same object
+ * through the core's own port (`sessionCommandRuntimePort`), so the modal is written to the object's
+ * own field, as it is to the core's in production.
+ */
+function commandsOver(harness: object): SessionCommandRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		sessionCommandRuntimePort(this: void, core: object): SessionCommandRuntimePort;
+	}).sessionCommandRuntimePort;
+	return new SessionCommandRuntime(portOf(harness));
 }
 
 describe('connection diagnostics composition', () => {
@@ -569,11 +587,10 @@ describe('manual session start command', () => {
 			settings: { language: 'en', preferredCharacter: 'Astra Uno' },
 			startModal: null,
 			live: { startManualSession },
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			liveSessions: null,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const prepareStartIntent = (TyrianCompanionCore.prototype as unknown as {
-			prepareStartIntent(this: StartIntentHarness): Promise<PreparedSessionCommand | null>;
-		}).prepareStartIntent;
+		const commands = commandsOver(plugin);
 		const notify = vi.fn();
 		const controller = new SessionCommandController({
 			getContext: () => ({
@@ -582,7 +599,7 @@ describe('manual session start command', () => {
 				connection: 'connected',
 				stopFailure: null,
 			}),
-			prepare: () => prepareStartIntent.call(plugin),
+			prepare: (id) => commands.prepareSessionCommand(id),
 			notify,
 		} satisfies SessionCommandPorts);
 
@@ -616,14 +633,14 @@ describe('abandon session command', () => {
 		const plugin = withObsidianHost({
 			app: {}, settings: { language: 'es' }, abandonModal: null as ConfirmAbandonSessionModal | null,
 			live: { performAbandonSession } satisfies Pick<LiveSessionRuntime, 'performAbandonSession'>,
+			// DE-01, step 3d: what the controller's `prepare` reads before it opens the confirmation.
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			liveSessions: null,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const prepare = (TyrianCompanionCore.prototype as unknown as {
-			prepareAbandonIntent(this: typeof plugin): Promise<PreparedSessionCommand | null>;
-		}).prepareAbandonIntent;
+		const commands = commandsOver(plugin);
 		const notify = vi.fn();
 		const controller = new SessionCommandController({
-			getContext: stoppingContext, prepare: () => prepare.call(plugin), notify,
+			getContext: stoppingContext, prepare: (id) => commands.prepareSessionCommand(id), notify,
 		} satisfies SessionCommandPorts);
 		return { plugin, performAbandonSession, controller, notify };
 	}

@@ -1,9 +1,10 @@
 /**
  * What the core and the runtimes split out of it (DE-01, step 2) ask around an action: whether this
  * device only consults, the refusal of a collector-only action in consult, the detached run of
- * a callback whose failure goes to the diagnostic log, and (step 3c) a session note's write under
- * its own journal line. Moved here unchanged from `tyrian-companion-core.ts`, so `SaleRuntime` and
- * `LiveSessionRuntime` read them without importing the core they serve.
+ * a callback whose failure goes to the diagnostic log, (step 3c) a session note's write under
+ * its own journal line and (step 3d) the consumption of a promise whose failure is already
+ * recorded. Moved here unchanged from `tyrian-companion-core.ts`, so `SaleRuntime`,
+ * `LiveSessionRuntime` and `SessionCommandRuntime` read them without importing the core they serve.
  */
 import type { LocalDebugActionContext, LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { CollectorMode } from '../core/settings';
@@ -67,4 +68,9 @@ export async function writeSessionNoteWithDiagnostics(
 	return actions
 		? await actions.run({ component: 'session', action: 'session_finish', state: 'note_write' }, action)
 		: await action();
+}
+
+/** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
+export function consumeRecorded(action: Promise<unknown>): void {
+	action.catch(() => undefined);
 }

@@ -43,7 +43,6 @@ import type {
 	TyrianCodeBlockContext,
 	TyrianDisposer,
 	TyrianHost,
-	TyrianMenuEntry,
 	TyrianRibbonHandle,
 	TyrianRuntime,
 	TyrianVaultChange,
@@ -155,7 +154,7 @@ import {
 	vaultSyncActionOutcome,
 	vaultSyncFailureOutcome,
 } from './core-outcomes';
-import { consulting, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
+import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
 	liveRulesExpiredAtMsFromLoad,
@@ -164,6 +163,7 @@ import {
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
+import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -277,7 +277,7 @@ import {
 	type IngameSessionView,
 } from '../sessions/ingame-session-marker';
 import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
-import { SESSION_STATE_VERSION, type SessionState } from '../sessions/session';
+import type { SessionState } from '../sessions/session';
 import { assembleSessions } from './assemble-sessions';
 import {
 	COMPANION_VIEW_SLOT,
@@ -285,24 +285,17 @@ import {
 	companionSection,
 	TyrianCompanionView,
 } from '../ui/companion-view';
-import {
+import type {
 	ConfirmAbandonSessionModal,
 	ConfirmDiscardLiveSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
 	ConfirmDiscardUnreadableSessionModal,
 } from '../ui/companion-modals';
-import { ManualSessionStartModal } from '../ui/manual-session-start-modal';
+import type { ManualSessionStartModal } from '../ui/manual-session-start-modal';
 import { AlertIngameSecretModal } from '../ui/alert-ingame-secret-modal';
-import {
-	SessionCommandController,
-	type PreparedSessionCommand,
-} from '../ui/session-command-controller';
-import {
-	createSessionCommandDispatch,
-	projectSessionMenu,
-	type SessionCommandDispatch,
-} from '../ui/session-command-adapter';
+import type { SessionCommandController } from '../ui/session-command-controller';
+import type { SessionCommandDispatch } from '../ui/session-command-adapter';
 import type { SessionCommandId } from '../ui/session-command-model';
 import {
 	ProductActionController,
@@ -311,7 +304,6 @@ import {
 	type ProductActionId,
 	type ProductActionOutcome,
 } from '../ui/product-action-controller';
-import { projectPendingProposalUi } from '../ui/pending-proposal-command';
 import { refreshBackgroundStatus } from '../ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from '../ui/settings-tab';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
@@ -595,13 +587,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
 	/**
-	 * DE-01, step 3c: the live session's lifecycle (start, stop, finalization, recovery, discard,
-	 * clear, abandon, a stuck live session) and the session state the views read. It reads the core's
-	 * fields through `liveSessionRuntimePort`, under their own names, and writes the summary fields
-	 * and the farming reminders back through it; the core keeps the commands, their intents and
-	 * modals, the pending queue's claim, and the note, summary, loot projection and Halloween code.
+	 * DE-01, steps 3c and 3d: the live session's lifecycle (start, stop, finalization, recovery,
+	 * discard, clear, abandon, a stuck live session), the session state the views read, and the
+	 * assisted detection with the pending proposals. It reads the core's fields through
+	 * `liveSessionRuntimePort`, under their own names, and writes the summary fields and the farming
+	 * reminders back through it; the core keeps the note, summary, loot projection and Halloween code.
 	 */
 	private readonly live: LiveSessionRuntime = new LiveSessionRuntime(TyrianCompanionCore.liveSessionRuntimePort(this));
+	/**
+	 * DE-01, step 3d: the session commands (the controller, its ribbon and menu, the intents and their
+	 * modals, the passive session's context). It reads the core's fields through
+	 * `sessionCommandRuntimePort` and writes the modals, the controller, its dispatch and the ribbon
+	 * back to the core's own fields, which the unload, the product actions and `live` read.
+	 */
+	private readonly commands: SessionCommandRuntime = new SessionCommandRuntime(TyrianCompanionCore.sessionCommandRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -779,7 +778,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			unmount: () => { settingTab.unmount(); },
 			settingDefinitions: () => settingTab.getSettingDefinitions(),
 		});
-		this.setupSessionCommands();
+		this.commands.setupSessionCommands();
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
 		this.registerSessionExportCommands();
@@ -3094,6 +3093,55 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `SessionCommandRuntime` reads from this core and asks of it (DE-01, step 3d). Getters over
+	 * the core's own fields, read as they stand; the modals, the controller, its dispatch and the
+	 * ribbon are setters too, so the commands write the core's own fields, which its unload, its
+	 * product actions and `live` read.
+	 */
+	private static sessionCommandRuntimePort(core: TyrianCompanionCore): SessionCommandRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get collectorMode() { return core.collectorMode; },
+			get unloaded() { return core.unloaded; },
+			get localDebugActions() { return core.localDebugActions; },
+			get host() { return core.host; },
+			get sessionHistoryRuntimeAuthority() { return core.sessionHistoryRuntimeAuthority; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get connection() { return core.connection; },
+			get pendingProposals() { return core.pendingProposals; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			get live() { return core.live; },
+			get startModal() { return core.startModal; },
+			set startModal(value) { core.startModal = value; },
+			get discardModal() { return core.discardModal; },
+			set discardModal(value) { core.discardModal = value; },
+			get clearModal() { return core.clearModal; },
+			set clearModal(value) { core.clearModal = value; },
+			get abandonModal() { return core.abandonModal; },
+			set abandonModal(value) { core.abandonModal = value; },
+			get discardLiveModal() { return core.discardLiveModal; },
+			set discardLiveModal(value) { core.discardLiveModal = value; },
+			get sessionCommands() { return core.sessionCommands; },
+			set sessionCommands(value) { core.sessionCommands = value; },
+			get sessionDispatch() { return core.sessionDispatch; },
+			set sessionDispatch(value) { core.sessionDispatch = value; },
+			get sessionRibbon() { return core.sessionRibbon; },
+			set sessionRibbon(value) { core.sessionRibbon = value; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			activateView: () => core.activateView(),
+			reviewPendingProposal: (intent) => core.reviewPendingProposal(intent),
+			getIngamePresence: () => core.getIngamePresence(),
+			startIngameSession: (character) => core.startIngameSession(character),
+			stopManualSession: () => core.stopManualSession(),
+			ingameSessionView: () => core.ingameSessionView(),
+			isLiveSessionStuck: () => core.isLiveSessionStuck(),
+		};
+	}
+
+	/**
 	 * What `LiveSessionRuntime` reads from this core and asks of it (DE-01, step 3c). Getters over the
 	 * core's own fields, read as they stand; the summary fields and the farming reminders are setters
 	 * too, so the session's lifecycle writes the core's own state, which its note, summary and farming
@@ -3208,27 +3256,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	openPendingSessionStart(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): void {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (intent.phase !== 'start' || this.startModal) return;
-		this.startModal = new ManualSessionStartModal(
-			this.host.ui,
-			this.settings.preferredCharacter,
-			() => this.settings.language,
-			(input) => { fireAndForgetLocal(this.localDebugActions,
-				{ component: 'session', action: 'session_start' },
-				async () => {
-					try { await this.live.startManualSession(input, intent, humanBoundaryAt); }
-					catch (error) {
-						this.emitNotice(
-							translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'),
-							'pending_start_failed',
-						);
-						throw error;
-					}
-				}); },
-			() => { this.startModal = null; },
-		);
-		this.startModal.open();
+		this.commands.openPendingSessionStart(intent, humanBoundaryAt);
 	}
 
 	stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
@@ -5128,7 +5156,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private flushRenderViews(): void {
 		this.productActions?.refresh();
-		this.refreshSessionRibbon();
+		this.commands.refreshSessionRibbon();
 		for (const view of this.mountedViews.companion.current()) view.render();
 	}
 
@@ -5189,37 +5217,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	private refreshBackgroundIndicators(): void {
-		this.refreshSessionRibbon();
+		this.commands.refreshSessionRibbon();
 		refreshBackgroundStatus(this.mountedViews.companion.current());
-	}
-
-	private setupSessionCommands(): void {
-		this.sessionCommands = new SessionCommandController({
-			getContext: () => this.runtimeReady && this.liveSessions !== null ? this.passiveSessionCommandContext() : this.runtimeReady
-				? {
-					state: this.sessions.getState(),
-					recovery: this.sessions.getRecoveryState(),
-					connection: this.connection.getState().status,
-					stopFailure: this.sessions.getLastStopFailure(),
-				}
-				: {
-					state: { version: SESSION_STATE_VERSION, status: 'idle' },
-					recovery: { status: 'none' },
-					connection: 'idle',
-					stopFailure: null,
-				},
-			getLocale: () => this.settings.language,
-			prepare: (id) => this.prepareSessionCommand(id),
-			notify: (message) => { this.emitNotice(message, 'session_command'); },
-			diagnostics: this.localDebugActions ?? undefined,
-		});
-		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
-		this.sessionRibbon = this.host.ui.ribbon({
-			icon: 'sword',
-			title: createTranslator(this.settings.language).t('commands.ribbon'),
-			onClick: (event) => { this.openSessionCommandMenu(event); },
-		});
-		this.refreshSessionRibbon();
 	}
 
 	private setupProductActions(): void {
@@ -5253,7 +5252,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			execute: (id) => this.executeProductAction(id),
 			getRecoveryState: () => this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' },
 			checkConnection: () => this.checkConnection(),
-			canStartSession: () => this.runtimeReady && this.liveSessions !== null && this.passiveSessionCommandContext().canStart,
+			canStartSession: () => this.runtimeReady && this.liveSessions !== null && this.commands.passiveSessionCommandContext().canStart,
 			isCollector: () => !consulting(this),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
@@ -5306,147 +5305,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return vaultSyncActionOutcome(this.walletVaultSync.current(), 'apply');
 	}
 
-	private openSessionCommandMenu(event: MouseEvent): void {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const menu: TyrianMenuEntry[] = [];
-		if (this.pendingProposals.getState().pendingCount > 0) {
-			const next = this.pendingProposals.getState().next;
-			menu.push({
-				kind: 'item', title: translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending'), icon: 'inbox',
-				onClick: () => { if (next) consumeRecorded(this.reviewPendingProposal(proposalIntent(next))); },
-			});
-			menu.push({ kind: 'separator' });
-		}
-		for (const entry of projectSessionMenu(this.sessionCommands.available(), this.settings.language)) {
-			if (entry.type === 'separator') menu.push({ kind: 'separator' });
-			else if (entry.type === 'open') {
-				menu.push({ kind: 'item', title: entry.title, icon: entry.icon, onClick: () => {
-					fireAndForgetLocal(this.localDebugActions,
-						{ component: 'ui', action: 'command_execute', state: 'open_companion' }, () => this.activateView());
-				} });
-			} else {
-				menu.push({ kind: 'item', title: entry.command.name, icon: entry.command.icon,
-					onClick: () => { fireAndForgetLocal(this.localDebugActions,
-						{ component: 'session', action: 'command_execute', state: entry.command.id },
-						() => this.sessionCommands.run(entry.command.id)); } });
-			}
-		}
-		this.host.ui.openMenu(menu, event);
-	}
-
-	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
-		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) return Promise.resolve(null);
-		if (this.liveSessions !== null) {
-			if (id === 'start-farming-session') return Promise.resolve(async () => {
-				const previous = this.liveSessions?.getRuntime()?.sessionId ?? null;
-				const presence = this.getIngamePresence();
-				if (presence.status !== 'present') throw new Error('The passive inventory source is unavailable.');
-				const id = await this.startIngameSession(presence.context?.character ?? null);
-				if (id === null) throw new Error('The passive session could not start.');
-				this.ingameSessionMarker?.linkReplacement(previous,id,'adopted');
-			});
-			if (id === 'finish-farming-session') return Promise.resolve(async () => { await this.stopManualSession(); });
-			if (id === 'discard-saved-session') return this.prepareDiscardLiveIntent();
-			return Promise.resolve(null);
-		}
-		if (id === 'start-farming-session') return this.prepareStartIntent();
-		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
-		if (id === 'clear-completed-session') return this.prepareClearIntent();
-		if (id === 'abandon-farming-session') return this.prepareAbandonIntent();
-		if (id === 'finish-farming-session') return Promise.resolve(() => this.live.performStopManualSession());
-		return Promise.resolve(() => this.live.performRecoverSession());
-	}
-
-	/** Every palette/ribbon action uses the same passive identity and manual-source availability. */
-	private passiveSessionCommandContext() {
-		const live = this.liveSessions?.getRuntime(); const presence = this.getIngamePresence();
-		return {source:'nexus_inventory' as const,sessionId:live?.sessionId ?? null,phase:live?.phase ?? 'idle' as const,
-			fence:live?.authority.fence ?? null,
-			canStart:!consulting(this) && !this.unloaded && this.ingameSessionView().canStart && presence.status === 'present'
-				&& (presence.context?.source === 'nexus' || live?.sourceInstance !== null && live?.sourceInstance !== undefined),
-			canFinish:!consulting(this) && !this.unloaded && live !== null && live !== undefined
-				&& (live.phase === 'active' || live.summaryReceipt === null),
-			canDiscard:!this.unloaded && !consulting(this) && this.isLiveSessionStuck()};
-	}
-
 	/** A live session that cannot get out by itself (`LiveSessionRuntime`). */
 	isLiveSessionStuck(): boolean {
 		return this.live.isLiveSessionStuck();
-	}
-
-	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.startModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let submitted = false;
-			this.startModal = new ManualSessionStartModal(
-				this.host.ui,
-				this.settings.preferredCharacter,
-				() => this.settings.language,
-				(input) => { submitted = true; resolve(() => this.live.startManualSession(input)); },
-				() => { this.startModal = null; if (!submitted) resolve(null); },
-			);
-			this.startModal.open();
-		});
-	}
-
-	private prepareDiscardIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.discardModal) return Promise.resolve(null);
-		// An unreadable saved record gets its own copy: there is nothing to recover from it, only
-		// something to erase, and the generic discard copy implies the opposite.
-		const unreadable = this.sessions.getRecoveryState().status === 'error';
-		const ModalClass = unreadable ? ConfirmDiscardUnreadableSessionModal : ConfirmDiscardSessionModal;
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.discardModal = new ModalClass(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performDiscardRecoveredSession()); return Promise.resolve(); },
-				() => { this.discardModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.discardModal.open();
-		});
-	}
-
-	private prepareDiscardLiveIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.discardLiveModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.discardLiveModal = new ConfirmDiscardLiveSessionModal(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performDiscardLiveSession()); return Promise.resolve(); },
-				() => { this.discardLiveModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.discardLiveModal.open();
-		});
-	}
-
-	private prepareClearIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.clearModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.clearModal = new ConfirmClearCompletedSessionModal(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performClearCompletedSession()); return Promise.resolve(); },
-				() => { this.clearModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.clearModal.open();
-		});
-	}
-
-	private prepareAbandonIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.abandonModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.abandonModal = new ConfirmAbandonSessionModal(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performAbandonSession()); return Promise.resolve(); },
-				() => { this.abandonModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.abandonModal.open();
-		});
 	}
 
 	/** Whether the card may offer "Abandon session" (`LiveSessionRuntime`). */
@@ -5602,21 +5463,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (result.status === 'failed') span.failure(result.cause, result.code, result.stage);
 		else if (result.status === 'superseded') span.cancel(result.status);
 		else span.success(result.status);
-	}
-
-	private refreshSessionRibbon(): void {
-		if (!this.sessionRibbon || !this.sessionCommands) return;
-		const next = this.sessionCommands.available().find((command) => !command.destructive);
-		const pending = this.pendingProposals
-			? projectPendingProposalUi(this.pendingProposals.getState(), this.settings.language)
-			: { pendingCount: 0, ribbonLabel: null };
-		const translator = createTranslator(this.settings.language);
-		const title = pending.ribbonLabel || next
-			? translator.t('commands.ribbonCurrentAction', { label: pending.ribbonLabel ?? next!.name })
-			: translator.t('commands.ribbon');
-		// The ribbon has a live title and a pending flag, no badge (`TyrianRibbonHandle`).
-		this.sessionRibbon.setTitle(title);
-		this.sessionRibbon.setPending(pending.pendingCount > 0);
 	}
 
 	/** Opens the Companion, or focuses it where it is already open (`host.ui.revealView`). */
@@ -5939,9 +5785,4 @@ function hostPaintsRemoteImages(host: TyrianHost | undefined): boolean {
  */
 function sessionInProgress(state: SessionState): boolean {
 	return state.status !== 'idle' && state.status !== 'complete' && state.status !== 'abandoned';
-}
-
-/** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
-function consumeRecorded(action: Promise<unknown>): void {
-	action.catch(() => undefined);
 }

@@ -15,9 +15,10 @@
  *   the dismissal, the stop a stop proposal confirms, the reconcile and the claim a confirmed proposal
  *   holds while its start or stop runs, renewed through the core's renewal registry).
  *
- * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views see and keeps the
- * session command controller, its intents and modals (the start modal a pending start proposal opens
- * among them). The core keeps:
+ * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views see. The session
+ * command controller, its intents and modals (the start modal a pending start proposal opens among
+ * them) are `SessionCommandRuntime`'s, over fields the core keeps; this runs its commands through the
+ * core's controller and dispatch. The core keeps:
  * - building the services (`sessions`, `liveSessions`, `liveSessionLoot`, `sessionNotes`, the
  *   in-game session marker, the detector, the detection quality, the pending queue and its renewal
  *   registry, the connection) and the history's runtime authority the leases come from;
