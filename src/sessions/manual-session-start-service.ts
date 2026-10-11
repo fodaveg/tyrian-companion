@@ -78,6 +78,9 @@ export {
 	type SessionStopFailure,
 };
 
+/** The longest `dispose()` waits for acquisitions in flight before it closes the coordinator (lot S). */
+export const DISPOSE_ACQUIRE_WAIT_MS = 3_000;
+
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
 export class ManualSessionStartService {
 	private state: SessionState = initialSessionState();
@@ -117,11 +120,15 @@ export class ManualSessionStartService {
 	/** Proof that the completed session's summary reached the vault (H18.8); see `markCompletedSummarySaved`. */
 	private summaryReceipt: SessionSummaryReceipt | null = null;
 	private disposed = false;
+	/** The acquisitions `safeAcquire` has asked the coordinator for and that have not answered yet; `dispose()` waits for them. */
+	private readonly acquiresInFlight = new Set<Promise<unknown>>();
 	private readonly automaticAccountCapture: boolean;
 	private readonly now: () => number;
 	private readonly sessionId: () => string;
 	private readonly scheduleInterval: (callback: () => void, milliseconds: number) => unknown;
 	private readonly cancelInterval: (handle: unknown) => void;
+	private readonly scheduleTimeout: (callback: () => void, milliseconds: number) => unknown;
+	private readonly cancelTimeout: (handle: unknown) => void;
 	private readonly onStateChange: () => void;
 	private readonly onSettlementDue: () => void;
 	private readonly runtimeStore: SessionRuntimeStore;
@@ -152,6 +159,8 @@ export class ManualSessionStartService {
 		this.sessionId = options.sessionId ?? (() => crypto.randomUUID());
 		this.scheduleInterval = options.setInterval ?? ((callback, milliseconds) => window.setInterval(callback, milliseconds));
 		this.cancelInterval = options.clearInterval ?? ((handle) => window.clearInterval(handle as number));
+		this.scheduleTimeout = options.setTimeout ?? ((callback, milliseconds) => window.setTimeout(callback, milliseconds));
+		this.cancelTimeout = options.clearTimeout ?? ((handle) => window.clearTimeout(handle as number));
 		this.onStateChange = options.onStateChange ?? (() => undefined);
 		this.onSettlementDue = options.onSettlementDue ?? (() => { void this.stop(); });
 		this.runtimeStore = options.runtimeStore;
@@ -646,8 +655,22 @@ export class ManualSessionStartService {
 		if (handle) {
 			try { await this.coordinator.release(handle); } catch { /* best effort during unload */ }
 		}
+		await this.settleAcquiresInFlight();
 		this.coordinator.dispose();
 		this.runtimeStore.close();
+	}
+
+	/**
+	 * An acquisition the coordinator answers after `disposed` was raised hands its lease back through
+	 * `safeAcquire`, and that release only writes while the coordinator is still open. So the coordinator
+	 * is closed after those acquisitions answer, but for at most `DISPOSE_ACQUIRE_WAIT_MS`: a store that
+	 * never answers must not hang the plugin's unload (the lease then lapses by the coordinator's silence rule).
+	 */
+	private async settleAcquiresInFlight(): Promise<void> {
+		if (this.acquiresInFlight.size === 0) return;
+		let timer: unknown;
+		const expired = new Promise<void>((resolve) => { timer = this.scheduleTimeout(resolve, DISPOSE_ACQUIRE_WAIT_MS); });
+		try { await Promise.race([Promise.allSettled([...this.acquiresInFlight]), expired]); } finally { this.cancelTimeout(timer); }
 	}
 
 	private async initializeInternal(): Promise<void> {
@@ -1051,12 +1074,19 @@ export class ManualSessionStartService {
 	/**
 	 * A lease the coordinator grants after `dispose()` (found reviewing lot Q): the acquisition answers
 	 * `disposed`, which every caller (start, recovery, startup finalization, reclaim) already treats as a
-	 * rejection with no side effects, so nothing writes state or arms a timer with it. Handing it back is
-	 * best effort: `dispose()` closes the real coordinator without waiting for acquisitions in flight, and
-	 * a closed coordinator answers `release` without writing, so in production the lease is freed by the
-	 * coordinator's own silence rule (15 s), not by this call. `safeRelease` never throws.
+	 * rejection with no side effects, so nothing writes state or arms a timer with it. The lease is handed
+	 * back in the store before `dispose()` closes the coordinator: `dispose()` waits for the acquisitions
+	 * in flight (see `settleAcquiresInFlight`, bounded by `DISPOSE_ACQUIRE_WAIT_MS`), because a closed
+	 * coordinator answers `release` without writing. Only an acquisition that outlasts that bound is left
+	 * to the coordinator's own silence rule (15 s). `safeRelease` never throws.
 	 */
-	private async safeAcquire(sessionId: string): Promise<AcquireLeaseResult> {
+	private safeAcquire(sessionId: string): Promise<AcquireLeaseResult> {
+		const flight = this.acquireAndReturnIfLate(sessionId);
+		this.acquiresInFlight.add(flight);
+		return flight.finally(() => { this.acquiresInFlight.delete(flight); });
+	}
+
+	private async acquireAndReturnIfLate(sessionId: string): Promise<AcquireLeaseResult> {
 		let result: AcquireLeaseResult;
 		try { result = await this.coordinator.acquire(sessionId); } catch { return { status: 'error', code: 'unavailable' }; }
 		if (this.disposed && (result.status === 'acquired' || result.status === 'already_owned')) {
