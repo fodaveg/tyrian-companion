@@ -647,7 +647,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			return snapshot;
 		} };
 		const service = new InventoryAdvisorEvidenceService(clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
-			snapshots as never, { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+			snapshots, { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
 			(receipt) => { receipts.push(receipt); });
 		const old = service.capture('es', [], (p) => { progress.push(p); });
 		service.invalidate();
