@@ -7,9 +7,11 @@
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
 
-- Sin verificar, y es lo primero que hay que saber: lo medido el 11 oct fue con la 0.6.45 en hosts desechables; nada de
-  la 0.6.46 se ha visto en un Obsidian ni en un Hebra reales. Ni el reintento del almacén (RT-17) ni el nivel 2 de
-  RT-09 se han probado en un Obsidian o un Hebra reales ni contra un registro real de Hebra.
+- Sin verificar, y es lo primero que hay que saber: el candidato se ha medido el 11 oct solo en un Obsidian y un Hebra
+  desechables (ver «Pruebas en hosts reales» más abajo); nada de la 0.6.46 se ha visto en el Obsidian ni en el Hebra
+  de un usuario ni a través de BRAT. RT-17 (modo consulta), RT-09 nivel 2, HP-03 y el `Notify` de HP-01 sí se probaron
+  en esos hosts; quedan sin medir RT-17 en recolector o con sesión viva, un aviso disparado por el propio plugin y los
+  arreglos del tercer audit, posteriores al candidato medido.
 - HP-03 (urgente): en Hebra de escritorio sobre Linux la sección Sesión salía vacía desde la 0.6.43. Causa: `emptyFragment`
   de `src/ui/owned-root.ts` usaba `createContextualFragment('')`, que la CSP de Hebra (`require-trusted-types-for
   'script'`, aplicada por WebKitGTK 2.54) rechaza con `This assignment requires a TrustedHTML`. Ahora es
@@ -63,7 +65,46 @@
   notas, y 1.841 ms sin índice (solo la primera vez; n = 3, tmpfs con caché caliente). Z23, cancelada.
 - Por decisión de David, DU-11: cada vault sigue con sus propios datos y no se comparten; queda documentado en
   [BETA](BETA.md).
-- Pendiente: verla en hosts reales.
+- Tercer audit de bugs (11 oct), con revisión de Codex: 4 zonas (sesiones, núcleo y fachadas, hosts y UI, economía y
+  scripts) y 7 hallazgos, todos arreglados en este candidato. Gravedades finales: A-1 alta (Codex la subió de media y
+  retuvo la publicación con el gate en verde), A-2 media, B-1 baja, C-1 media, C-2 media (Codex la subió de baja), D-1
+  media, D-2 baja. Sin fallos en economía, precios, Halloween, cuenta, asesor y avisos.
+  - A-1: `src/sessions/live-session-lifecycle.ts`, `initializeRecord` salía por `!enabled()` antes de marcar la
+    recuperación y armar el latido, así que una sesión cargada en consulta no se reclamaba al pasar a recolector y una
+    terminada no verificaba su nota antes de encolar su diario. Ahora se marca y se arma antes de salir. El arreglo
+    llega en un commit posterior al de este estado.
+  - A-2: `src/runtime/session-facade.ts`, el gate del borrado del historial leía el servicio manual cuando la sesión en
+    vivo no se había leído. Ahora un almacén sin leer mantiene el gate cerrado.
+  - B-1: `src/runtime/ingame-session-runtime.ts`, `src/runtime/core-actions.ts` y `src/runtime/tyrian-companion-core.ts`
+    mandaban la clase del error en `details.errorName`, que el sanitizador descarta; ahora va en `details.reason`.
+  - C-1: `src/ui/settings-tab.ts` descartaba lo que devuelve `pickFolder`; ahora guarda la limpieza y la ejecuta al
+    redibujar y al desmontar el panel.
+  - C-2: `src/host/hebra/hebra-runtime.ts` se saltaba `handle.flush()` si `stop()` rechazaba; ahora espera el flush
+    pase lo que pase con el cierre.
+  - D-1: `scripts/verify-hebra-install.mjs` perdía el veredicto al cambiar de sesión y leía solo el fichero vivo; ahora
+    juzga la última sesión de la ventana principal (la última con eventos `plugins.*`) y lee también
+    `diagnostico.1.jsonl`.
+  - D-2: `scripts/brat-release-contract.mjs` con `--assets-dir` ahora comprueba el `manifest.json` publicado (id y
+    versión) y que el `.zip.sha256` corresponda al zip.
+  - Decisión: `core-outcomes.ts` (inventario y cartera) sigue sin conservar `errorName`, a propósito según el
+    comentario del sanitizador, porque allí `reason` ya es el motivo de máquina.
+  - Matices de Codex que no cambian el arreglo: en A-1 el repro necesitaba reabrir la fuente tras recuperar, y en D-1
+    elegir la última sesión con eventos puede reutilizar resultados históricos.
+- Pruebas en hosts reales del candidato (11 oct), medidas sobre `3d4a653f`, anterior a los arreglos del audit; detalle
+  en [2026-10-11-candidato-0646-hosts](evidencia/2026-10-11-candidato-0646-hosts.md):
+  - Hebra 0.2.0-22 desechable en Linux: HP-03 PASA (Sesión pinta, 0 TrustedHTML); RT-09 nivel 2 PASA
+    (`carga=loaded (activada 0.6.46)` con el registro encendido; `no-data` sin él); HP-01 PARCIAL: el comando de avisos
+    de Hebra pone en el `Notify` de D-Bus `"urgency"` byte 2 y `"suppress-sound"` true (medido con `dbus-monitor` en un
+    bus privado), pero no se midió un aviso disparado por el propio plugin: no se encontró en el candidato un aviso de
+    prueba sin cuenta (en consulta `dispatchAlert` no actúa; leído) y no se probaron otros caminos. Tampoco se midió
+    que GNOME lo enseñe sobre GW2 a pantalla completa.
+  - `verify-hebra-install` nivel 2 contra la Hebra 0.2.0-22 real de David: `carga=loaded (activada 0.6.42)`; su Hebra
+    tenía Tyrian 0.6.42, así que prueba el verificador, no la carga de la 0.6.46.
+  - Obsidian 1.14.4 AppImage desechable, RT-17 en modo consulta: «Error de sesión» a ~10,4 s con el almacén mudo; tras
+    soltarlo sale solo a los 7,0 s, 15,0 s y 14,0 s (tres corridas); la 0.6.45 no se recuperaba en 166 s;
+    `verify-beta-runtime` PASS antes, después y tras reabrir (con `--no-release-check`, sin release 0.6.46 todavía).
+    No medido: modo recolector, sesión viva, mudo más de 5 min.
+- Pendiente: verla en el Obsidian y el Hebra de un usuario y por BRAT, con los arreglos del audit incluidos.
 
 ## Canal 0.6.45 publicado: estilos de Hebra con respaldo, tests del falso 1.4.0 y addon 0.8.7 (11 oct 2026)
 
