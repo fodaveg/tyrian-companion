@@ -1514,18 +1514,24 @@ function appendItemIdentity(container: HTMLElement, row: InventoryAdvisorViewRow
 		image.setAttribute('loading', 'lazy');
 		image.setAttribute('decoding', 'async');
 		image.setAttribute('referrerpolicy', 'no-referrer');
+		// A load that fails shows the same initials as a missing icon.
+		image.addEventListener('error', () => { image.replaceWith(initialsIcon(row.name)); });
 		container.append(image);
 	} else {
-		// H18.31 (boceto), same fallback Venta already uses for a missing catalog icon.
-		const fallback = createSpan();
-		fallback.className = 'tyrian-inventory__icon';
-		fallback.textContent = initialsFor(row.name);
-		fallback.setAttribute('aria-hidden', 'true');
-		container.append(fallback);
+		container.append(initialsIcon(row.name));
 	}
 	const name = createEl('strong');
 	name.textContent = row.name;
 	container.append(name);
+}
+
+/** H18.31 (boceto), same fallback Venta already uses for a missing catalog icon. */
+function initialsIcon(name: string): HTMLElement {
+	const fallback = createSpan();
+	fallback.className = 'tyrian-inventory__icon';
+	fallback.textContent = initialsFor(name);
+	fallback.setAttribute('aria-hidden', 'true');
+	return fallback;
 }
 
 /** Same rule Venta's `sale-view.ts` already uses for its icon fallback: up to two initials. */

@@ -183,6 +183,11 @@ export function renderPriceHistoryPanel(
 			icon.setAttribute('loading', 'lazy');
 			icon.setAttribute('decoding', 'async');
 			icon.setAttribute('referrerpolicy', 'no-referrer');
+			// A load that fails leaves no icon, exactly as an unresolved id does; the next paint may try again.
+			icon.addEventListener('error', () => {
+				icon.remove();
+				if (controls.icon === icon) controls.icon = null;
+			});
 			controls.itemGroup.insertBefore(icon, controls.item.label);
 			controls.icon = icon;
 		}
