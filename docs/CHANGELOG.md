@@ -1,5 +1,18 @@
 # Changelog
 
+## Release beta 0.6.45 - Estilos de Hebra con respaldo y addon que vuelve tras un cierre cancelado
+
+Se actualiza desde la 0.6.44 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Hebra. Las siete variables de estilo de Hebra que el plugin usaba sin valor de respaldo (animación, tamaño táctil,
+  texto sobre peligro, radio de píldora y aviso suave) lo llevan ahora, así que el panel se ve igual en un Hebra que
+  no las defina. El documento de variables las recoge.
+- Addon de Nexus 0.8.7. Si se cancela el cierre del juego (por ejemplo, con el diálogo de salir), el addon vuelve a
+  conectar en unos 5 s en lugar de quedarse mudo hasta recargarlo. Se actualiza solo desde Nexus.
+- Interno: tests de los ids repetidos que rechaza Hebra 1.4.0 y un test de rendimiento del asesor que ya no depende
+  del reloj.
+
 ## Release beta 0.6.44 - Arreglos del audit de bugs del 11 oct
 
 Se actualiza desde la 0.6.43 publicada. Arregla 33 fallos de un audit revisado por Codex. Nada de esto se ha visto

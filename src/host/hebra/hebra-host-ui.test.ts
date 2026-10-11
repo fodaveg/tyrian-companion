@@ -160,6 +160,35 @@ describe('commands, ribbon, code block and settings panel', () => {
 		expect([fake.recorded.views, fake.recorded.commands, fake.recorded.settingsPanels].map((list) => list.length)).toEqual([0, 0, 0]);
 		expect(fake.recorded.codeBlocks.size).toBe(0);
 	});
+
+	// The fake of hebra-plugin-api 1.4.0 refuses a repeated id as Hebra's host does (HP-16). Views
+	// are covered in `hebra-main-view.test.ts`; here the command and the code block go through
+	// Tyrian's own adapter, and the status item (which Tyrian does not use) through the fake, so
+	// that the day the plugin loads twice on one api the test fails where Hebra would.
+	it('a command or code block whose id is still registered is refused, and valid again once disposed', async () => {
+		const { ui } = await setup();
+		const disposeCommand = ui.registerCommand({ id: 'open', name: 'Open', callback: vi.fn() });
+		const disposeBlock = ui.registerCodeBlock('tyrian-price-history', vi.fn());
+
+		expect(() => ui.registerCommand({ id: 'open', name: 'Open again', callback: vi.fn() })).toThrow(/createFakePluginApi: /u);
+		expect(() => ui.registerCodeBlock('  Tyrian-Price-History ', vi.fn())).toThrow(/createFakePluginApi: /u);
+
+		disposeCommand();
+		disposeBlock();
+		expect(() => {
+			ui.registerCommand({ id: 'open', name: 'Open', callback: vi.fn() });
+			ui.registerCodeBlock('tyrian-price-history', vi.fn());
+		}).not.toThrow();
+	});
+
+	it('the 1.4.0 fake refuses a status item whose id is still registered', () => {
+		const { api } = createFakePluginApi({ id: 'tyrian-companion' });
+		const item = api.ui.registerStatusBarItem({ id: 'tyrian-status', text: 'T' });
+
+		expect(() => api.ui.registerStatusBarItem({ id: 'tyrian-status', text: 'T' })).toThrow(/createFakePluginApi: /u);
+		item.remove();
+		expect(() => api.ui.registerStatusBarItem({ id: 'tyrian-status', text: 'T' })).not.toThrow();
+	});
 });
 
 describe('modal, menu, notice and the rest', () => {

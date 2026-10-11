@@ -247,6 +247,29 @@ Para pegar en `src/app.css` de Hebra. Solo tokens de Hebra, salvo los cinco lite
 
 Los botones de esa ventana de tiempo no tienen anillo propio en `styles.css` (el de la línea 1761 es de `.tyrian-price-chart__range input`), así que el override no toca ningún foco: les queda el global de Hebra con `--focus`.
 
+### Tokens de Hebra que lee `tyrian-host.css` directamente (HP-10, 11 oct 2026)
+
+`src/host/hebra/tyrian-host.css` (la hoja que solo carga Hebra) usa, además del bloque de arriba, siete tokens de Hebra
+sin equivalente en Obsidian. Medidos en `~/code/hebra/src/app.css` y `src/lib/themes/theme-color.js` (solo lectura).
+Los de color los resuelve cada tema en ejecución (`status.warningSoft`, `status.onDanger`); los demás son literales
+globales de `app.css`. Cada uso lleva ahora un respaldo, por si una versión de Hebra renombra o retira el token.
+
+| Token de Hebra | Valor en Hebra | Respaldo en Tyrian | Uso |
+| --- | --- | --- | --- |
+| `--hit-touch-dense` | `40px` (`app.css:308`) | `40px` | `--tyrian-tile` |
+| `--radius-pill` | `999px` (`app.css:176`) | `999px` | interruptor (pista y mando) |
+| `--motion-fade-standard` | `180ms` (`app.css:455`) | `180ms` | transición de fondo del interruptor |
+| `--motion-duration-standard` | `180ms` (`app.css:451`) | `180ms` | desplazamiento del mando |
+| `--motion-ease-standard` | `cubic-bezier(0.25, 0.1, 0.25, 1)` (`app.css:462`) | el mismo | las dos transiciones |
+| `--on-danger` | por tema (`status.onDanger`, tinta por contraste sobre `--danger`) | `var(--panel)` | texto del botón `mod-warning` en modal |
+| `--warning-soft` | por tema (`status.warningSoft`) | `var(--paper)` | superficie del callout `warning` |
+
+Los dos respaldos de color son aproximados a propósito (sin literales de color): solo evitan una propiedad inválida.
+
+`--x` y `--y` (`var(--x, 0)`, `var(--y, 0)` en `styles.css`, las pone `live-session-panel.ts` en el atributo `style`) son
+variables propias de Tyrian, como `--from`, `--to` y `--at`: no se mapean a Hebra. Con ellas, `styles.css` usa 54 nombres
+frente a los 49 del inventario de §1 (medido el 28 sep).
+
 ## 6. Clases de Obsidian que usa la UI de Tyrian
 
 Medido sobre `styles.css` (selectores sin comentarios) y los literales de clase de `src/**/*.ts` sin tests (`cls:`, `addClass`, `className`, `classList`). Se cuentan también las reglas que tiene cada clase en el `app.css` de Obsidian 1.14.2, para separar las de Obsidian de las propias de Tyrian con nombre genérico.

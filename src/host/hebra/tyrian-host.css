@@ -175,7 +175,7 @@
    ganan por especificidad (hueco + clase). Táctil: dianas de 44 y un paso más de icono. */
 :is(.lv1-context-module-el, .hebra-module-view-content, .hebra-module-modal-content)
   .tyrian-live-session--panel {
-  --tyrian-tile: var(--hit-touch-dense);
+  --tyrian-tile: var(--hit-touch-dense, 40px);
   --tyrian-chart-h: calc(var(--space-8) * 3);
   --tyrian-row-icon: var(--space-5);
 }
@@ -327,7 +327,7 @@
 :where(.hebra-module-modal-content .modal-button-container .mod-warning) {
   border-color: var(--danger);
   background: var(--danger);
-  color: var(--on-danger);
+  color: var(--on-danger, var(--panel));
 }
 
 /* `modal-button-container`: la hilera de `.dialog-actions` (a la derecha, al pie). */
@@ -496,7 +496,7 @@
   )
   :where(.callout[data-callout='warning']) {
   --hebra-callout-accent: var(--warning);
-  --hebra-callout-surface: color-mix(in srgb, var(--warning-soft) 55%, transparent);
+  --hebra-callout-surface: color-mix(in srgb, var(--warning-soft, var(--paper)) 55%, transparent);
 }
 :where(
     .lv1-context-module-el,
@@ -578,9 +578,9 @@
   height: var(--space-6);
   padding: 0;
   border: 2px solid var(--muted);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-pill, 999px);
   background: transparent;
-  transition: background-color var(--motion-fade-standard) var(--motion-ease-standard);
+  transition: background-color var(--motion-fade-standard, 180ms) var(--motion-ease-standard, cubic-bezier(0.25, 0.1, 0.25, 1));
 }
 .hebra-module-setting-toggle::after {
   content: '';
@@ -589,10 +589,10 @@
   left: 2px;
   width: var(--space-4);
   height: var(--space-4);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-pill, 999px);
   background: var(--muted);
   transform: translateY(-50%);
-  transition: transform var(--motion-duration-standard) var(--motion-ease-standard);
+  transition: transform var(--motion-duration-standard, 180ms) var(--motion-ease-standard, cubic-bezier(0.25, 0.1, 0.25, 1));
 }
 .hebra-module-setting-toggle:hover:not(:disabled) {
   border-color: var(--ink);
