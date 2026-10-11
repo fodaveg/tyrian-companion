@@ -11430,59 +11430,59 @@
 					"reason": "Allowlisted catch_clause: The \"initializeRecord\" catch is a \"fallback_return\" for a session format mark storage could not read or that does not validate: it reports the error once through onError, marks the view failed, keeps nothing of the session in memory and leaves the heartbeat to ask again. Verified recovery: \"fallback_return\" in \"initializeRecord\"."
 				},
 				{
-					"id": "7ac37e16f1ba6661176e777d41a3fd9061bb7d32",
+					"id": "42fd9a6ae5e7ba795642e084c49f6c2e9308163c",
 					"kind": "catch_clause",
-					"line": 498,
+					"line": 515,
 					"column": 7,
-					"endLine": 498,
+					"endLine": 515,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
-						"scope": "discard",
-						"justification": "The \"discard\" catch is a \"local_recovery\": the best-effort stop or note of the session being discarded is reported through onError and the discard goes on to free the reservation and the runtime key, which is its whole purpose."
+						"scope": "discardInQueue",
+						"justification": "The \"discardInQueue\" catch is a \"local_recovery\": the best-effort stop or note of the session being discarded is reported through onError and the discard goes on to free the reservation and the runtime key, which is its whole purpose."
 					},
-					"reason": "Allowlisted catch_clause: The \"discard\" catch is a \"local_recovery\": the best-effort stop or note of the session being discarded is reported through onError and the discard goes on to free the reservation and the runtime key, which is its whole purpose. Verified recovery: \"local_recovery\" in \"discard\"."
+					"reason": "Allowlisted catch_clause: The \"discardInQueue\" catch is a \"local_recovery\": the best-effort stop or note of the session being discarded is reported through onError and the discard goes on to free the reservation and the runtime key, which is its whole purpose. Verified recovery: \"local_recovery\" in \"discardInQueue\"."
 				},
 				{
-					"id": "a08ad90b09bab44c0a6ff16d2102898551e3a031",
+					"id": "aa5abc84dff223c7142f2ae1e9cde4ac57cda494",
 					"kind": "catch_clause",
-					"line": 504,
+					"line": 521,
 					"column": 4,
-					"endLine": 504,
+					"endLine": 521,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
-						"scope": "discard",
-						"justification": "The \"discard\" catch is a \"fallback_return\": a clear that throws is reported through onError and the discard answers cleared:false with the reason storage_unavailable, which the command controller logs once under its own state and tells the player; the session stays as it was."
+						"scope": "discardInQueue",
+						"justification": "The \"discardInQueue\" catch is a \"fallback_return\": a clear that throws is reported through onError and the discard answers cleared:false with the reason storage_unavailable, which the command controller logs once under its own state and tells the player; the session stays as it was."
 					},
-					"reason": "Allowlisted catch_clause: The \"discard\" catch is a \"fallback_return\": a clear that throws is reported through onError and the discard answers cleared:false with the reason storage_unavailable, which the command controller logs once under its own state and tells the player; the session stays as it was. Verified recovery: \"fallback_return\" in \"discard\"."
+					"reason": "Allowlisted catch_clause: The \"discardInQueue\" catch is a \"fallback_return\": a clear that throws is reported through onError and the discard answers cleared:false with the reason storage_unavailable, which the command controller logs once under its own state and tells the player; the session stays as it was. Verified recovery: \"fallback_return\" in \"discardInQueue\"."
 				},
 				{
-					"id": "1ae2a6fa8a579a0d30ddb6c90def19093a13c8be",
+					"id": "5afe6c8284cf9e463ca52f543ef2b5fc6f6e38fb",
 					"kind": "catch_clause",
-					"line": 507,
+					"line": 524,
 					"column": 79,
-					"endLine": 507,
+					"endLine": 524,
 					"endColumn": 123,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
-						"scope": "discard",
-						"justification": "The \"discard\" catch is an \"intentional_noop\": a release the coordinator cannot answer leaves the lease to run out by itself, and the session is cleared from the runtime key all the same."
+						"scope": "discardInQueue",
+						"justification": "The \"discardInQueue\" catch is an \"intentional_noop\": a release the coordinator cannot answer leaves the lease to run out by itself, and the session is cleared from the runtime key all the same."
 					},
-					"reason": "Allowlisted catch_clause: The \"discard\" catch is an \"intentional_noop\": a release the coordinator cannot answer leaves the lease to run out by itself, and the session is cleared from the runtime key all the same. Verified recovery: \"intentional_noop\" in \"discard\"."
+					"reason": "Allowlisted catch_clause: The \"discardInQueue\" catch is an \"intentional_noop\": a release the coordinator cannot answer leaves the lease to run out by itself, and the session is cleared from the runtime key all the same. Verified recovery: \"intentional_noop\" in \"discardInQueue\"."
 				},
 				{
 					"id": "1769c2982cc7600e103c7b81c233fdff58ace7b0",
 					"kind": "catch_clause",
-					"line": 682,
+					"line": 699,
 					"column": 5,
-					"endLine": 682,
+					"endLine": 699,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11496,9 +11496,9 @@
 				{
 					"id": "8508cd8935b74c9ffd787fa7a6ef711172d4fa3b",
 					"kind": "catch_clause",
-					"line": 737,
+					"line": 754,
 					"column": 41,
-					"endLine": 737,
+					"endLine": 754,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11512,9 +11512,9 @@
 				{
 					"id": "7c035d4a49139072cc03c37a219deb6a85d1abd2",
 					"kind": "catch_clause",
-					"line": 883,
+					"line": 900,
 					"column": 5,
-					"endLine": 883,
+					"endLine": 900,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11528,9 +11528,9 @@
 				{
 					"id": "91c1d62daec6aad6537ee5cf7bc3e3a60123810c",
 					"kind": "catch_clause",
-					"line": 902,
+					"line": 919,
 					"column": 3,
-					"endLine": 902,
+					"endLine": 919,
 					"endColumn": 30,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11544,9 +11544,9 @@
 				{
 					"id": "1df169d046eca4030f9a385c2d3c395e34e85f3c",
 					"kind": "callback_registration",
-					"line": 948,
+					"line": 965,
 					"column": 16,
-					"endLine": 952,
+					"endLine": 969,
 					"endColumn": 27,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -11561,9 +11561,9 @@
 				{
 					"id": "69fe951b87925b65ce28ce50085a842348c73ad6",
 					"kind": "void_expression",
-					"line": 951,
+					"line": 968,
 					"column": 4,
-					"endLine": 951,
+					"endLine": 968,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11577,9 +11577,9 @@
 				{
 					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
 					"kind": "catch_clause",
-					"line": 982,
+					"line": 999,
 					"column": 41,
-					"endLine": 982,
+					"endLine": 999,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11593,9 +11593,9 @@
 				{
 					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
 					"kind": "catch_clause",
-					"line": 1008,
+					"line": 1025,
 					"column": 92,
-					"endLine": 1008,
+					"endLine": 1025,
 					"endColumn": 191,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11609,9 +11609,9 @@
 				{
 					"id": "3b957ea797d76ce6bf47810a3c79ca2fa61e2ede",
 					"kind": "catch_clause",
-					"line": 1024,
+					"line": 1041,
 					"column": 5,
-					"endLine": 1024,
+					"endLine": 1041,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11625,9 +11625,9 @@
 				{
 					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
 					"kind": "callback_registration",
-					"line": 1071,
+					"line": 1088,
 					"column": 16,
-					"endLine": 1071,
+					"endLine": 1088,
 					"endColumn": 147,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11642,9 +11642,9 @@
 				{
 					"id": "adf55f5bc4bd198a84023e136b829c746b3dbc28",
 					"kind": "catch_clause",
-					"line": 1152,
+					"line": 1169,
 					"column": 4,
-					"endLine": 1152,
+					"endLine": 1169,
 					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {
