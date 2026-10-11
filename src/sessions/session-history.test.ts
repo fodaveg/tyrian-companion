@@ -759,7 +759,7 @@ describe('durable session history', () => {
 			create: async (path, content) => { files.set(path, content); return { path }; },
 			process: async (file, update) => { const next = update(files.get(file.path)!); files.set(file.path, next); return next; },
 		};
-		const written = await new LeyspringNoteWriter(achievementsVault, '.obsidian').write('Tyrian Companion', {
+		const written = await new LeyspringNoteWriter(achievementsVault, 'vault-config').write('Tyrian Companion', {
 			capturedAt: '2026-10-10T08:40:12.000Z', locale: 'es', accountName: 'Tester.1234', accountRef: 'a'.repeat(24),
 			progress: new Map(), names: new Map([[LEYSPRING_MASTERY_ACHIEVEMENT_ID, 'Mastery']]), thresholds: new Map(),
 		} as never);

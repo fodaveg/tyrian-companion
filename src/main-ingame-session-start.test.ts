@@ -5,7 +5,7 @@ import type { LiveIngamePort, LiveIngameSample, LiveIngameSource } from './alert
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from './sessions/live-session-model';
 import type { LiveSessionLifecycle } from './sessions/live-session-lifecycle';
 import { ManualSessionStartService, type SessionLeaseCoordinator } from './sessions/manual-session-start-service';
-import { createSessionRuntimeRecord, type SessionRuntimeStore } from './sessions/session-runtime-store';
+import { createSessionRuntimeRecord, IndexedDbSessionRuntimeStore, type SessionRuntimeStore } from './sessions/session-runtime-store';
 import { sessionAuthorityFromLease } from './sessions/session-state-machine';
 import { storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import type { AlertIngameServerHandle } from './alerts/alert-ingame-server';
@@ -139,6 +139,54 @@ describe('real passive Nexus composition', () => {
 		await presence(f,'new-game'); await expect(f.port.open({...f.source,epoch:'BAQEBAQEBAQEBAQEBAQEBA'})).resolves.toBe('ready');
 		expect(f.h.core.getLiveSessionView().sessionId).not.toBe(restarted);
 		expect(check).not.toHaveBeenCalled(); expect(accountStart).not.toHaveBeenCalled(); expect(f.h.requests().filter((row) => /account|characters|tokeninfo/u.test(row.url))).toEqual([]);
+	});
+	it('asks the manual store again after a transient failure at boot, so the addon still starts a session without a reload (Z2-2)', async () => {
+		const load = vi.spyOn(IndexedDbSessionRuntimeStore.prototype, 'load').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+		const f = await runtime();
+		expect(load).toHaveBeenCalled();
+		expect(f.access.sessions.getRecoveryState()).toMatchObject({ status: 'error', code: 'unavailable' });
+		expect(f.h.core.getLiveSessionView().phase).toBe('idle');
+		await presence(f);
+		expect(f.access.sessions.getRecoveryState().status).toBe('none');
+		expect(f.h.core.getLiveSessionView().phase).toBe('active');
+	});
+	it('does not start a session while the manual store still cannot be read, and starts once it answers (Z2-2)', async () => {
+		const load = vi.spyOn(IndexedDbSessionRuntimeStore.prototype, 'load').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+		const f = await runtime(); load.mockResolvedValue({ status: 'error', code: 'unavailable' });
+		await presence(f);
+		expect(f.h.core.getLiveSessionView().phase).toBe('idle');
+		expect(f.access.sessions.getRecoveryState()).toMatchObject({ status: 'error', code: 'unavailable' });
+		load.mockRestore(); await presence(f, 'b');
+		expect(f.h.core.getLiveSessionView().phase).toBe('active');
+	});
+	it('asks the manual store again before the history scrub reports the runtime as not idle (Z2-2)', async () => {
+		vi.spyOn(IndexedDbSessionRuntimeStore.prototype, 'load').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+		const f = await runtime();
+		expect(f.access.sessions.getRecoveryState()).toMatchObject({ status: 'error', code: 'unavailable' });
+		(f.h.core as unknown as { settingTab: object }).settingTab = { refreshSessionHistoryRow: vi.fn() };
+		await expect(f.h.core.previewSessionHistoryScrub()).resolves.toMatchObject({ status: 'ready' });
+		expect(f.access.sessions.getRecoveryState().status).toBe('none');
+	});
+	it('lets the history scrub retire a finished session whose note is saved, and refuses one still running (Z2-3)', async () => {
+		const f = await runtime(); await presence(f); await f.port.open(f.source); await f.port.commit(f.sample(0, 0));
+		(f.h.core as unknown as { settingTab: object }).settingTab = { refreshSessionHistoryRow: vi.fn() };
+		expect(f.h.core.getLiveSessionView().phase).toBe('active');
+		await expect(f.h.core.previewSessionHistoryScrub()).resolves.toMatchObject({ status: 'blocked' });
+		await f.h.core.stopManualSession();
+		expect(f.access.liveSessions.getRuntime()).toMatchObject({ phase: 'complete' });
+		expect(f.access.liveSessions.getRuntime()?.summaryReceipt).not.toBeNull();
+		const preview = await f.h.core.previewSessionHistoryScrub();
+		if (preview.status !== 'ready') throw new Error(`Expected a ready preview, got ${preview.status}.`);
+		await f.h.core.scrubSessionHistory(preview.token);
+		expect(f.access.liveSessions.getRuntime()).toBeNull();
+		expect(f.h.core.getLiveSessionView().phase).toBe('idle');
+	});
+	it('keeps a corrupt manual record blocking the start (Z2-2)', async () => {
+		const load = vi.spyOn(IndexedDbSessionRuntimeStore.prototype, 'load').mockResolvedValueOnce({ status: 'error', code: 'corrupt' });
+		const f = await runtime(); load.mockResolvedValue({ status: 'error', code: 'corrupt' });
+		await presence(f);
+		expect(f.access.sessions.getRecoveryState()).toMatchObject({ status: 'error', code: 'corrupt' });
+		expect(f.h.core.getLiveSessionView().phase).toBe('idle');
 	});
 	it('links source rollover inside restored presence to the new session, so game_exit closes it immediately', async () => {
 		const f=await runtime(); const tracker=await presence(f); await f.port.open(f.source); const old=f.h.core.getLiveSessionView().sessionId;

@@ -2855,8 +2855,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** One preview in flight at a time, the same promise to every caller (`SessionRuntime`). */
-	previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
-		return this.session.previewSessionHistoryScrub();
+	async previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
+		// Z2-2: saved sessions that did not answer at boot keep the gate shut; ask again before saying the runtime is not idle.
+		if (this.sessions.getRecoveryState().status === 'error') await this.sessions.initialize();
+		return await this.session.previewSessionHistoryScrub();
 	}
 
 	cancelSessionHistoryScrubPreview(token: string): void {
@@ -3160,9 +3162,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return {
 			status: state.status,
 			sessionId,
-			canStart: this.runtimeReady && released && ['none','available'].includes(this.sessions.getRecoveryState().status)
+			canStart: this.runtimeReady && released && this.manualRecoveryAllowsStart()
 				&& this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed(),
 		};
+	}
+
+	/**
+	 * The manual service's saved-session state lets a Nexus session start when nothing is pending or it can be taken as it is. A
+	 * store that did not answer (`unavailable`) says nothing about what is saved: it counts as startable here only because
+	 * `startIngameSession` asks the store again before it goes on (Z2-2). A record that is corrupt keeps blocking.
+	 */
+	private manualRecoveryAllowsStart(): boolean {
+		const recovery = this.sessions.getRecoveryState();
+		return recovery.status === 'none' || recovery.status === 'available' || (recovery.status === 'error' && recovery.code === 'unavailable');
 	}
 
 	/**
@@ -3171,6 +3183,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private async startIngameSession(character: string | null): Promise<string | null> {
 		if (!this.runtimeReady || !this.ingameSessionView().canStart) return null;
+		// Z2-2: the saved sessions were not readable at boot and nothing asks again but this. Read them before any start or migration,
+		// so pending API evidence is found and preserved below; while they still do not answer nothing is started over them.
+		if (this.sessions.getRecoveryState().status === 'error') {
+			await this.sessions.initialize();
+			if (this.sessions.getRecoveryState().status === 'error' || !this.ingameSessionView().canStart) return null;
+		}
 		// An older archive must not hide a NEWER unfinished API session: that one still needs its own transfer.
 		const recoveryPending = this.sessions.getRecoveryState().status !== 'none';
 		if ((recoveryPending || this.sessions.getState().status === 'complete') && (recoveryPending || this.sessions.getPreservedLegacyRuntime() === null)
