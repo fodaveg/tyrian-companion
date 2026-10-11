@@ -64,11 +64,14 @@ function workflowHarness(phase: 'start' | 'stop', backend: 'succeeds' | 'fails' 
 		pendingClaimRenewals: { start: () => vi.fn() },
 		getPendingProposalState: queueRead,
 		assistedDetection: { getState: () => ({ status: 'armed' }), dismissProposal: vi.fn(), disarm },
-		ensureCompletedSummarySaved: vi.fn(async () => true),
+		// The summary's proof and its write are the core's `notes`' (DE-01, step 3e).
+		notes: {
+			ensureCompletedSummarySaved: vi.fn(async () => true),
+			persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+		},
 		persistFarmingSessionContext: vi.fn(),
 		// The live observation a start begins, and the summary a stop's finalization writes.
 		liveSessionLoot: { begin: vi.fn(), reconcile: vi.fn(async () => undefined) },
-		persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
 		refreshLootPresentation: vi.fn(async () => undefined),
 		observeHalloweenDelta: vi.fn(async () => undefined),
 		emitNotice: vi.fn(),

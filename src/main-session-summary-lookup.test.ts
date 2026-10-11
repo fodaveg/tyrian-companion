@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { sha256Text } from './assets/generic-assets';
+import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**
@@ -18,17 +19,32 @@ import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 const SESSION_ID = 'session-1';
 const NOTE_PATH = 'Tyrian Companion/Sessions/2026-10-11.md';
 
-/** The finished session's summary steps, as the core runs them. */
+/** The finished session's summary steps, and the harness's own summary fields they write. */
 interface SummarySteps {
 	restoreCompletedSessionSummary(): Promise<void>;
 	retrySessionSummarySave(): Promise<void>;
 	persistCompletedSessionSummary(notifyFailure: boolean): Promise<unknown>;
-	sessionSummarySaveState: string;
-	savedSessionNotePath: string | null;
+	readonly sessionSummarySaveState: string;
+	readonly savedSessionNotePath: string | null;
 }
 
+/**
+ * DE-01, step 3e: the summary is `SessionNoteRuntime`'s. It runs on a runtime built over the harness
+ * through the core's own port (`sessionNoteRuntimePort`), so it writes the harness's own fields.
+ */
 function summaryOver(harness: object): SummarySteps {
-	return harness as SummarySteps;
+	const portOf = (TyrianCompanionCore as unknown as {
+		sessionNoteRuntimePort(this: void, core: object): SessionNoteRuntimePort;
+	}).sessionNoteRuntimePort;
+	const notes = new SessionNoteRuntime(portOf(harness));
+	const own = harness as { sessionSummarySaveState: string; savedSessionNotePath: string | null };
+	return {
+		restoreCompletedSessionSummary: () => notes.restoreCompletedSessionSummary(),
+		retrySessionSummarySave: () => notes.retrySessionSummarySave(),
+		persistCompletedSessionSummary: (notifyFailure) => notes.persistCompletedSessionSummary(notifyFailure),
+		get sessionSummarySaveState() { return own.sessionSummarySaveState; },
+		get savedSessionNotePath() { return own.savedSessionNotePath; },
+	};
 }
 
 /** A finished session, its durable history and its note writer; `receipt` is the saved proof. */

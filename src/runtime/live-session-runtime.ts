@@ -27,8 +27,9 @@
  *   `savedSessionNotePath`) and the farming state a start captures (`farmingGroupContext`,
  *   `farmingReminders`), which the lifecycle writes and the core's note, summary and farming code
  *   read;
- * - the note and its summary (`sessionNoteInput`, `persistCompletedSessionSummary`,
- *   `ensureCompletedSummarySaved`), the loot projection and Halloween.
+ * - the note's input (`sessionNoteInput`), the loot projection and Halloween; the summary's write
+ *   and its proof (`persistCompletedSessionSummary`, `ensureCompletedSummarySaved`) are
+ *   `SessionNoteRuntime`'s (step 3e), reached through the core's `notes`.
  * It hands all of that through `LiveSessionRuntimePort`; the getters below carry the names of the
  * core's own fields, so the moved code reads as it did there.
  *
@@ -179,7 +180,7 @@ export interface LiveSessionRuntimePort {
 	ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
 	/** The note's input for a finished session's record (the core's). */
 	sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput;
-	/** True once a finished session's summary is proven saved, writing it first when needed (the core's). */
+	/** True once a finished session's summary is proven saved, writing it first when needed (`SessionNoteRuntime`'s, through the core). */
 	ensureCompletedSummarySaved(): Promise<boolean>;
 	/** Saves the farming context a start captured (the core's). */
 	persistFarmingSessionContext(context: FarmingSessionContext): void;
@@ -187,7 +188,7 @@ export interface LiveSessionRuntimePort {
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	/** The addon's presence, which a start needs. */
 	getIngamePresence(): IngamePresenceSnapshot;
-	/** Writes a finished session's summary note (the core's). */
+	/** Writes a finished session's summary note (`SessionNoteRuntime`'s, through the core). */
 	persistCompletedSessionSummary(notifyFailure: boolean, existingRuntime?: SessionRuntimeRecord): Promise<SessionNoteWriteResult | null>;
 	refreshLootPresentation(): Promise<void>;
 	/** Hands a finalized session's delta to Halloween (the core's). */

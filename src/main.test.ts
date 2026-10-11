@@ -16,6 +16,7 @@ import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
+import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -100,6 +101,19 @@ function commandsOver(harness: object): SessionCommandRuntime {
 		sessionCommandRuntimePort(this: void, core: object): SessionCommandRuntimePort;
 	}).sessionCommandRuntimePort;
 	return new SessionCommandRuntime(portOf(harness));
+}
+
+/**
+ * DE-01, step 3e: the finished session's note and summary are `SessionNoteRuntime`'s. The cases below
+ * that ran them as methods of `TyrianCompanionCore` on a plain object run them on a runtime built over
+ * that same object through the core's own port (`sessionNoteRuntimePort`), so the summary is written
+ * to the object's own fields, and the core's methods it lends are called, as in production.
+ */
+function notesOver(harness: object): SessionNoteRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		sessionNoteRuntimePort(this: void, core: object): SessionNoteRuntimePort;
+	}).sessionNoteRuntimePort;
+	return new SessionNoteRuntime(portOf(harness));
 }
 
 describe('connection diagnostics composition', () => {
@@ -1202,7 +1216,8 @@ describe('Halloween production gating', () => {
 			sessionSummarySaveState: 'unknown' as TyrianCompanionCore['sessionSummarySaveState'],
 			emitNotice: vi.fn(),
 			settings: { language: 'en' as const },
-			persistCompletedSessionSummary: vi.fn(async () => null),
+			// The summary's write is the core's `notes`' (DE-01, step 3e).
+			notes: { persistCompletedSessionSummary: vi.fn(async () => null) },
 			refreshLootPresentation: vi.fn(async () => undefined),
 			localDebugActions: null,
 			observeHalloweenDelta,
@@ -1265,10 +1280,8 @@ describe('non-destructive next-session rotation', () => {
 			emitNotice: vi.fn(), settings: { language: 'es' as const }, runtimeReady: true,
 			renderViews: vi.fn(), sessionSummarySaveState: 'saved', storedSessionLootSummary: null, localDebugActions: null,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit production-method harness.
-		const rotate = (TyrianCompanionCore.prototype as unknown as {
-			rotateToNewSession(this: typeof harness): Promise<void>;
-		}).rotateToNewSession;
+		// DE-01, step 3e: "New session" is `SessionNoteRuntime`'s, run over the harness through the core's port.
+		const rotate = (): Promise<void> => notesOver(harness).rotateToNewSession();
 		return { harness, rotate, readSession, scan, resetCompletedSession, openManualSessionStart };
 	}
 
@@ -1277,7 +1290,7 @@ describe('non-destructive next-session rotation', () => {
 		const { harness, rotate, readSession, scan, resetCompletedSession, openManualSessionStart } =
 			rotationHarness({ sessionId: 'session-rotation', path: 'Tyrian Companion/Sessions/old.md' }, write);
 
-		await rotate.call(harness);
+		await rotate();
 
 		expect(readSession).not.toHaveBeenCalled();
 		expect(scan).not.toHaveBeenCalled();
@@ -1291,7 +1304,7 @@ describe('non-destructive next-session rotation', () => {
 		const write = vi.fn(async () => ({ status: 'unavailable' as const, message: 'offline' }));
 		const { harness, rotate, readSession, resetCompletedSession, openManualSessionStart } = rotationHarness(null, write);
 
-		await rotate.call(harness);
+		await rotate();
 
 		expect(write).toHaveBeenCalledOnce();
 		expect(readSession).not.toHaveBeenCalled();
@@ -1303,10 +1316,7 @@ describe('non-destructive next-session rotation', () => {
 
 describe('completed-session summary persistence', () => {
 	it('keeps the durable runtime visible and exposes retry when the Vault write fails', async () => {
-		const proto = TyrianCompanionCore.prototype as unknown as {
-			retrySessionSummarySave(this: unknown): Promise<void>;
-		};
-		const harness = Object.assign(Object.create(proto) as object, {
+		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			runtimeReady: true,
 			sessionSummarySaveState: 'unknown',
 			sessions: { getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete' }, delta: null })) },
@@ -1316,7 +1326,7 @@ describe('completed-session summary persistence', () => {
 			emitNotice: vi.fn(), renderViews: vi.fn(), refreshLootPresentation: vi.fn(async () => undefined),
 		});
 
-		await proto.retrySessionSummarySave.call(harness);
+		await notesOver(harness).retrySessionSummarySave();
 
 		expect((harness as { sessionSummarySaveState: string }).sessionSummarySaveState).toBe('failed');
 		expect((harness as { emitNotice: ReturnType<typeof vi.fn> }).emitNotice).toHaveBeenCalledOnce();
@@ -1327,7 +1337,7 @@ describe('completed-session summary persistence', () => {
 		const order: string[] = [];
 		const delta = { status: 'comparable' } as StorageDelta;
 		const runtime = { state: { status: 'complete' as const, sessionId: 'session-final' } };
-		// The core's own summary write (`persistCompletedSessionSummary`), lent to the runtime by its port.
+		// The real summary write (`persistCompletedSessionSummary`, the core's `notes`), lent to the runtime by its port.
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
 			sessions: {
@@ -1346,6 +1356,8 @@ describe('completed-session summary persistence', () => {
 			sessionSummarySaveState: 'unknown', runtimeReady: false, localDebugActions: null,
 			emitNotice: vi.fn(), settings: { language: 'es' as const },
 		});
+		// DE-01, step 3e: the summary's write is the core's `notes`', built over the same harness.
+		Object.assign(harness, { notes: notesOver(harness) });
 
 		// H18.4: the result now says whether the summary is saved; the throwing enrichment does not change it.
 		await expect(liveOver(harness).finalizeAndPersistStoppedSession('session-final', delta)).resolves.toBe(true);
@@ -1413,7 +1425,7 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 				getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete', sessionId: 'session-1' } })),
 			},
 			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
-			persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+			notes: { persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })) },
 			refreshLootPresentation: vi.fn(async () => undefined),
 			observeHalloweenDelta: vi.fn(async () => undefined),
 			emitNotice: vi.fn(), settings: { language: 'en' as const },
@@ -1461,7 +1473,7 @@ describe('legacy summary reconciliation under passive sessions', () => {
 				getState: () => ({ version: SESSION_STATE_VERSION, status: 'complete' as const, sessionId: 'session-1' }),
 				getRecoveryState: () => ({ status: 'none' as const }),
 			},
-			persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+			notes: { persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })) },
 			refreshLootPresentation: vi.fn(async () => undefined),
 			observeHalloweenDelta: vi.fn(async () => undefined),
 			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
@@ -1477,7 +1489,7 @@ describe('legacy summary reconciliation under passive sessions', () => {
 			review: { classification: { status: 'exact', reasons: [] } },
 		} as unknown as Parameters<LiveSessionRuntime['finishFinalizedSession']>[2])).resolves.toBe(true);
 
-		expect(harness.persistCompletedSessionSummary).toHaveBeenCalledOnce();
+		expect(harness.notes.persistCompletedSessionSummary).toHaveBeenCalledOnce();
 		expect(arm).not.toHaveBeenCalled();
 		expect(checkConnection).not.toHaveBeenCalled();
 	});
@@ -2186,20 +2198,17 @@ describe('completed session note delivery', () => {
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		});
-		const methods = TyrianCompanionCore.prototype as unknown as {
-			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
-			getSavedSessionNotePath(this: typeof harness): string | null;
-			openSavedSessionNote(this: typeof harness): void;
-		};
+		// DE-01, step 3e: the note and its summary are `SessionNoteRuntime`'s, over the harness.
+		const notes = notesOver(harness);
 
-		methods.openSavedSessionNote.call(harness);
+		notes.openSavedSessionNote();
 		expect(openLinkText).not.toHaveBeenCalled();
 
-		await methods.persistCompletedSessionSummary.call(harness, true, { state: { status: 'complete' } });
+		await notes.persistCompletedSessionSummary(true, { state: { status: 'complete' } } as never);
 
 		expect(harness.sessionSummarySaveState).toBe('saved');
-		expect(methods.getSavedSessionNotePath.call(harness)).toBe('Tyrian Companion/Sessions/2026-08-31.md');
-		methods.openSavedSessionNote.call(harness);
+		expect(notes.getSavedSessionNotePath()).toBe('Tyrian Companion/Sessions/2026-08-31.md');
+		notes.openSavedSessionNote();
 		expect(openLinkText).toHaveBeenCalledWith('Tyrian Companion/Sessions/2026-08-31.md', '', false);
 	});
 
@@ -2217,16 +2226,13 @@ describe('completed session note delivery', () => {
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		});
-		const methods = TyrianCompanionCore.prototype as unknown as {
-			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
-			openSavedSessionNote(this: typeof harness): void;
-		};
+		const notes = notesOver(harness);
 
-		await methods.persistCompletedSessionSummary.call(harness, false, { state: { status: 'complete' } });
+		await notes.persistCompletedSessionSummary(false, { state: { status: 'complete' } } as never);
 
 		expect(harness.sessionSummarySaveState).toBe('failed');
 		expect(harness.savedSessionNotePath).toBeNull();
-		methods.openSavedSessionNote.call(harness);
+		notes.openSavedSessionNote();
 		expect(openLinkText).not.toHaveBeenCalled();
 	});
 
@@ -2248,12 +2254,7 @@ describe('completed session note delivery', () => {
 			emitNotice: vi.fn(),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'note-write' }),
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const persist = (TyrianCompanionCore.prototype as unknown as {
-			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
-		}).persistCompletedSessionSummary;
-
-		await persist.call(harness, false, { state: { status: 'complete' } });
+		await notesOver(harness).persistCompletedSessionSummary(false, { state: { status: 'complete' } } as never);
 
 		expect(harness.sessionSummarySaveState).toBe('failed');
 		const failure = record.mock.calls.map(([input]) => input).find(

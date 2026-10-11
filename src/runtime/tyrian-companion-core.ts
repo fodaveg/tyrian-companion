@@ -25,7 +25,7 @@ import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
-import type { LiveSessionViewV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
+import type { LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
 import { newLiveSessionFormat } from '../sessions/live-session-format';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE } from '../sessions/live-session-model';
 import type { LiveAlertOutboxV1, LiveSessionAlertViewV1 } from '../sessions/live-session-model';
@@ -154,7 +154,7 @@ import {
 	vaultSyncActionOutcome,
 	vaultSyncFailureOutcome,
 } from './core-outcomes';
-import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
+import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
 	liveRulesExpiredAtMsFromLoad,
@@ -163,6 +163,7 @@ import {
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
+import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
@@ -252,12 +253,10 @@ import {
 } from '../sessions/session-note-model';
 import {
 	type SessionNoteWriter,
-	type SessionNoteWriteResult,
 } from '../sessions/session-note-writer';
 import {
 	SessionHistoryRuntimeAuthority,
 	type SessionHistoryService,
-	type DurableSessionLookup,
 	type SessionHistoryScrubGate,
 	type SessionHistoryScrubPreview,
 	type SessionHistoryScrubResult,
@@ -591,7 +590,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * discard, clear, abandon, a stuck live session), the session state the views read, and the
 	 * assisted detection with the pending proposals. It reads the core's fields through
 	 * `liveSessionRuntimePort`, under their own names, and writes the summary fields and the farming
-	 * reminders back through it; the core keeps the note, summary, loot projection and Halloween code.
+	 * reminders back through it; the summary's write is `notes`', and the core keeps the note's
+	 * input, the loot projection and Halloween.
 	 */
 	private readonly live: LiveSessionRuntime = new LiveSessionRuntime(TyrianCompanionCore.liveSessionRuntimePort(this));
 	/**
@@ -601,6 +601,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * back to the core's own fields, which the unload, the product actions and `live` read.
 	 */
 	private readonly commands: SessionCommandRuntime = new SessionCommandRuntime(TyrianCompanionCore.sessionCommandRuntimePort(this));
+	/**
+	 * DE-01, step 3e: the finished session's note and summary (the live note, the summary's write and
+	 * its proof, the retry, "New session", the restore on a boot and the stored loot read back). It
+	 * reads the core's fields through `sessionNoteRuntimePort` and writes the summary fields back to
+	 * the core's own, which `live` also writes; the core keeps the note's input and its economy.
+	 */
+	private readonly notes: SessionNoteRuntime = new SessionNoteRuntime(TyrianCompanionCore.sessionNoteRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -1452,7 +1459,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			farmingGoal: () => this.settings.farmingGoal, groupContext: () => this.farmingGroupContext,
 			thresholdCopper: () => this.settings.valuableLootThresholdCopper,
 			onCommitted: (entry) => { this.enrichLiveSession(entry); },
-			onComplete: async (record, journal, format) => await this.saveLiveSessionNote(record, journal, format),
+			onComplete: async (record, journal, format) => await this.notes.saveLiveSessionNote(record, journal, format),
 		});
 		await this.liveSessions.initialize();
 		this.bootTrace.mark('live');
@@ -1479,7 +1486,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			await this.live.finishFinalizedSession(
 				startupFinalization.sessionId, startupFinalization.delta, startupFinalization.review,
 			);
-		} else if (restoredSession.status === 'complete') await this.restoreCompletedSessionSummary();
+		} else if (restoredSession.status === 'complete') await this.notes.restoreCompletedSessionSummary();
 		await this.refreshLootPresentation();
 
 		if (this.unloaded) return;
@@ -3187,13 +3194,48 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
 			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
 			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
-			ensureCompletedSummarySaved: () => core.ensureCompletedSummarySaved(),
+			ensureCompletedSummarySaved: () => core.notes.ensureCompletedSummarySaved(),
 			persistFarmingSessionContext: (context) => { core.persistFarmingSessionContext(context); },
 			updateSettings: (settings) => core.updateSettings(settings),
 			getIngamePresence: () => core.getIngamePresence(),
-			persistCompletedSessionSummary: (notifyFailure, existingRuntime) => core.persistCompletedSessionSummary(notifyFailure, existingRuntime),
+			persistCompletedSessionSummary: (notifyFailure, existingRuntime) => core.notes.persistCompletedSessionSummary(notifyFailure, existingRuntime),
 			refreshLootPresentation: () => core.refreshLootPresentation(),
 			observeHalloweenDelta: (delta, source, episodeId, classification) => core.observeHalloweenDelta(delta, source, episodeId, classification),
+		};
+	}
+
+	/**
+	 * What `SessionNoteRuntime` reads from this core and asks of it (DE-01, step 3e). Getters over the
+	 * core's own fields, so a service `initializeRuntime` builds, the detection quality's
+	 * initialization it replaces, a setting changed or a runner set later is read as it stands; the
+	 * summary fields are setters too, so the note writes the core's own state, which `live` and the
+	 * Companion snapshot read.
+	 */
+	private static sessionNoteRuntimePort(core: TyrianCompanionCore): SessionNoteRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get localDebugActions() { return core.localDebugActions; },
+			get host() { return core.host; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get liveSessionLoot() { return core.liveSessionLoot; },
+			get sessionNotes() { return core.sessionNotes; },
+			get sessionHistory() { return core.sessionHistory; },
+			get detectionQualityInitialization() { return core.detectionQualityInitialization; },
+			get sessionSummarySaveState() { return core.sessionSummarySaveState; },
+			set sessionSummarySaveState(value) { core.sessionSummarySaveState = value; },
+			get storedSessionLootSummary() { return core.storedSessionLootSummary; },
+			set storedSessionLootSummary(value) { core.storedSessionLootSummary = value; },
+			get savedSessionNotePath() { return core.savedSessionNotePath; },
+			set savedSessionNotePath(value) { core.savedSessionNotePath = value; },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			renderViews: () => { core.renderViews(); },
+			refreshLootPresentation: () => core.refreshLootPresentation(),
+			prepareSessionEconomyEvidence: (runtime, remeasure) => core.prepareSessionEconomyEvidence(runtime, remeasure),
+			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
+			getLiveSessionEntity: (kind, id) => core.getLiveSessionEntity(kind, id),
+			openManualSessionStart: () => { core.openManualSessionStart(); },
 		};
 	}
 
@@ -3486,27 +3528,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
 		return await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
 	}
-	/** `format` is the one the lifecycle hands over with the session: the note is written in the format that session started with. */
-	private async saveLiveSessionNote(record: LiveSessionRuntimeRecord, journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat): Promise<string|null> {
-		// An entity nobody has named gets no key: the note then writes «Objeto <id>» / «Moneda <id>», never the bare id.
-		const displayNames = knownLiveDisplayNames(record.totals,(kind,id) => this.getLiveSessionEntity(kind,id)?.name);
-		const result = await this.sessionNotes.writeLive({record,journal,format,locale:this.settings.language,outputFolder:this.settings.outputFolder,displayNames});
-		const saved = result.status === 'written' || result.status === 'unchanged';
-		if (this.liveSessions?.getRuntime()?.sessionId === record.sessionId) {
-			this.sessionSummarySaveState = saved ? 'saved' : 'failed';
-			if (saved) this.savedSessionNotePath = result.path;
-		}
-		if (result.status === 'written' || result.status === 'unchanged') return result.path;
-		// The writer's own answer, not a generic error: an `invalid` note (and its reason) and a
-		// vault that refuses the write read the same from outside, a finished session that never
-		// lets the next one start, and the log could not tell them apart.
-		this.localDebugActions?.event({
-			component: 'session', action: 'session_finish', state: 'live_note_write',
-			level: 'error', phase: 'failure', code: 'storage_failure',
-			details: { status: result.status, reason: 'reason' in result ? result.reason : 'errorName' in result ? result.errorName ?? null : null },
-		});
-		return null;
-	}
 
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
 	getSellSignalState(): SellSignalRuntimeState | null {
@@ -3523,24 +3544,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.reconcileManagedAssetsRoot();
 	}
 
-	getSessionSummarySaveState(): SessionSummarySaveState {
-		return this.sessionSummarySaveState;
-	}
+	getSessionSummarySaveState(): SessionSummarySaveState { return this.notes.getSessionSummarySaveState(); }
 
-	getStoredSessionLootSummary(): StoredSessionLootSummary | null {
-		return this.storedSessionLootSummary === null ? null : structuredClone(this.storedSessionLootSummary);
-	}
+	getStoredSessionLootSummary(): StoredSessionLootSummary | null { return this.notes.getStoredSessionLootSummary(); }
 
-	getSavedSessionNotePath(): string | null {
-		return this.savedSessionNotePath;
-	}
+	getSavedSessionNotePath(): string | null { return this.notes.getSavedSessionNotePath(); }
 
-	/** Opens the note the plugin just wrote; it is the only delivery of the completed summary. */
-	openSavedSessionNote(): void {
-		const path = this.savedSessionNotePath;
-		if (path === null) return;
-		this.host.ui.openNote(path);
-	}
+	/** Opens the note the plugin just wrote (`SessionNoteRuntime`). */
+	openSavedSessionNote(): void { this.notes.openSavedSessionNote(); }
 
 	/** A history row's link (`SessionRuntime`): asks the vault first, a gone note is a notice. */
 	openSessionHistoryNote(path: string): void {
@@ -3562,29 +3573,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 	}
 
-	async retrySessionSummarySave(): Promise<void> {
-		const [quality] = await Promise.allSettled([this.detectionQualityInitialization]);
-		if (quality?.status === 'rejected') {
-			this.sessionSummarySaveState = 'failed';
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
-				'session_command',
-			);
-			this.renderViews();
-			return;
-		}
-		const runtime = await this.sessions.getCompletedRuntimeRecord();
-		if (runtime !== null && runtime.state.status === 'complete' && runtime.delta !== null) {
-			if (this.liveSessionLoot.getState().status === 'idle') this.liveSessionLoot.begin(runtime.state.sessionId, true);
-			await this.liveSessionLoot.reconcile(runtime.state.sessionId, runtime.delta);
-		}
-		const note = await this.persistCompletedSessionSummary(true, runtime ?? undefined);
-		if ((note?.status === 'written' || note?.status === 'unchanged') && runtime?.state.status === 'complete') {
-			await this.readStoredSessionLoot(runtime.state.sessionId, note.path);
-		}
-		await this.refreshLootPresentation();
-		this.renderViews();
-	}
+	retrySessionSummarySave(): Promise<void> { return this.notes.retrySessionSummarySave(); }
 
 	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
 
@@ -4775,36 +4764,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.live.confirmClearCompletedSession();
 	}
 
-	/**
-	 * "New session" from a finished one (H18.8). It no longer clears anything itself, and no longer
-	 * scans every note in the vault to prove the summary exists: it only makes sure the summary is
-	 * saved (idempotent, and a no-op once it already was) and opens the ordinary start. The start
-	 * releases the finished session only once it has started, so cancelling it changes nothing.
-	 */
-	async rotateToNewSession(): Promise<void> {
-		if (this.sessions.getState().status !== 'complete') return;
-		if (!await this.ensureCompletedSummarySaved()) {
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.newSessionBlocked'),
-				'session_command',
-			);
-			return;
-		}
-		this.openManualSessionStart();
-	}
-
-	/**
-	 * True once the finished session's summary is proven to be in the vault, writing it first when
-	 * nothing proves that yet. Never rewrites a summary already proven saved, so a note the player
-	 * moved or edited since neither blocks the next session nor gets a duplicate.
-	 */
-	private async ensureCompletedSummarySaved(): Promise<boolean> {
-		if (this.sessions.getState().status !== 'complete') return true;
-		if (this.sessions.getCompletedSummaryReceipt() !== null) return true;
-		const note = await this.persistCompletedSessionSummary(true);
-		return (note?.status === 'written' || note?.status === 'unchanged')
-			&& this.sessions.getCompletedSummaryReceipt() !== null;
-	}
+	/** "New session" from a finished one (`SessionNoteRuntime`): the summary saved first, then the ordinary start. */
+	rotateToNewSession(): Promise<void> { return this.notes.rotateToNewSession(); }
 
 	resetCompletedSession(): Promise<void> {
 		return this.live.resetCompletedSession();
@@ -4852,95 +4813,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** Explicit human override: the final snapshot without waiting out the cache window (`LiveSessionRuntime`). */
 	captureSessionFinalNow(): Promise<void> {
 		return this.live.captureSessionFinalNow();
-	}
-
-	/**
-	 * Boot with a finished session (H18.8). The saved proof says where its summary went, so only
-	 * that one note is read, for its loot summary; a note moved since still counts as saved. Only a
-	 * record from before the proof existed falls back, once, to the old full lookup, and leaves the
-	 * proof behind when it finds the note.
-	 */
-	private async restoreCompletedSessionSummary(): Promise<void> {
-		const receipt = this.sessions.getCompletedSummaryReceipt();
-		if (receipt !== null) {
-			this.sessionSummarySaveState = 'saved';
-			this.savedSessionNotePath = receipt.path;
-			await this.readStoredSessionLoot(receipt.sessionId, receipt.path);
-			return;
-		}
-		const found = await this.inspectCompletedSessionSummary();
-		if (found !== null) {
-			this.savedSessionNotePath = found;
-			await this.sessions.markCompletedSummarySaved(found);
-		}
-	}
-
-	/** Reads the stored loot summary from the one note the session was written to. */
-	private async readStoredSessionLoot(sessionId: string, path: string): Promise<void> {
-		const durable = await this.sessionHistory.readSessionAt(path, await sha256Text(sessionId));
-		this.storedSessionLootSummary = durable.status === 'found' ? durable.loot : null;
-		if (this.runtimeReady) this.renderViews();
-	}
-
-	/** Legacy full lookup of the completed session's note; returns its path when found. */
-	private async inspectCompletedSessionSummary(existingRuntime?: SessionRuntimeRecord): Promise<string | null> {
-		const runtime = existingRuntime ?? await this.sessions.getCompletedRuntimeRecord();
-		if (runtime === null || runtime.state.status !== 'complete') {
-			this.sessionSummarySaveState = 'failed';
-			this.storedSessionLootSummary = null;
-			return null;
-		}
-		let durable: DurableSessionLookup;
-		try { durable = await this.sessionHistory.readSession(await sha256Text(runtime.state.sessionId)); }
-		catch { durable = { status: 'unavailable' }; }
-		this.sessionSummarySaveState = durable.status === 'found' ? 'saved' : 'failed';
-		this.storedSessionLootSummary = durable.status === 'found' ? durable.loot : null;
-		if (this.runtimeReady) this.renderViews();
-		return durable.status === 'found' ? durable.path : null;
-	}
-
-	private async persistCompletedSessionSummary(
-		notifyFailure: boolean,
-		existingRuntime?: SessionRuntimeRecord,
-	): Promise<SessionNoteWriteResult | null> {
-		this.sessionSummarySaveState = 'saving';
-		if (this.runtimeReady) this.renderViews();
-		const runtime = existingRuntime ?? await this.sessions.getCompletedRuntimeRecord();
-		if (runtime === null) {
-			this.sessionSummarySaveState = 'failed';
-			if (notifyFailure) this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
-				'session_command',
-			);
-			return null;
-		}
-		// Writing the note is the user's own retry, so the economy is measured again here rather
-		// than reused: a catalog that was unreachable at close must not freeze the note as unvalued.
-		await this.prepareSessionEconomyEvidence(runtime, true);
-		let note: SessionNoteWriteResult;
-		try {
-			note = await writeSessionNoteWithDiagnostics(
-				this.localDebugActions, () => this.sessionNotes.write(this.sessionNoteInput(runtime)),
-			);
-		} catch {
-			this.sessionSummarySaveState = 'failed';
-			if (notifyFailure) this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
-				'session_command',
-			);
-			return null;
-		}
-		const durable = note.status === 'written' || note.status === 'unchanged' ? note : null;
-		// The proof the next session releases this one on (H18.8): no vault scan, no rewrite later.
-		if (durable !== null) await this.sessions.markCompletedSummarySaved(durable.path);
-		this.sessionSummarySaveState = durable === null ? 'failed' : 'saved';
-		this.savedSessionNotePath = durable?.path ?? null;
-		if (this.runtimeReady) this.renderViews();
-		if (this.sessionSummarySaveState === 'failed' && notifyFailure) this.emitNotice(
-			translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
-			'session_command',
-		);
-		return note;
 	}
 
 	openManualSessionStart(humanBoundaryAt: string | null = null): void {

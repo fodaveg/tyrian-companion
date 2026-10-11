@@ -203,6 +203,9 @@ describe('H6.7 credential boundary', () => {
 		expect(boundaries).toEqual(expect.arrayContaining([
 			'src/assets/managed-assets-pointer.ts',
 			'src/catalog/persistent-catalog-cache.ts',
+			// DE-01, step 3e: it writes the session's notes and the summary's saved proof, so its name
+			// keeps it inside the persistence guard; a rename that leaves the guard turns this red.
+			'src/runtime/session-note-runtime.ts',
 			'src/sessions/coordination-store.ts',
 			// DE-07: the heartbeat re-saves the active SessionRuntimeRecord (`saveActiveEvidence`), so its
 			// name keeps it inside the persistence guard; a rename that leaves the guard turns this red.
