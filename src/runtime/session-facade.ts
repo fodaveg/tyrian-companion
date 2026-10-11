@@ -66,7 +66,7 @@ import type {
 } from '../sessions/session-history';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionHistoryView, SettingsUpdateResult } from '../ui/settings-panel-actions';
-import { refusedInConsult } from './core-actions';
+import { consulting, refusedInConsult } from './core-actions';
 import type { PilotRecoveryRuntime } from './pilot-recovery-runtime';
 
 /** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
@@ -465,10 +465,13 @@ export class SessionRuntime {
 		};
 	}
 
-	/** The settings panel's preview: the saved sessions are asked again first, then the one preview in flight. */
+	/**
+	 * The settings panel's preview: on a ready collector the saved sessions are asked again first, then the one preview in
+	 * flight. Before the boot built them, or on a consult device, the preview's own refusal answers without reading them.
+	 */
 	async previewSessionHistoryScrubAfterRecovery(): Promise<SessionHistoryScrubPreview> {
 		// Z2-2: saved sessions that did not answer at boot keep the gate shut; ask again before saying the runtime is not idle.
-		if (this.sessions.getRecoveryState().status === 'error') await this.sessions.initialize();
+		if (this.runtimeReady && !consulting(this) && this.sessions.getRecoveryState().status === 'error') await this.sessions.initialize();
 		return await this.previewSessionHistoryScrub();
 	}
 

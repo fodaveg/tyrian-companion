@@ -260,6 +260,44 @@ describe('the session history scrub and export through SessionRuntime', () => {
 		expect(runtime.getSessionHistoryView()).toEqual({ status: 'scrub_unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 });
 	});
 
+	it('the settings panel\'s preview before the runtime is ready says it is still starting, without asking the saved sessions again', async () => {
+		const notifyRuntimeStarting = vi.fn();
+		// `sessions` is the port's `unused` stub: reading it before the boot built it throws, as the core's own undefined field did.
+		const runtime = new SessionRuntime(port({ runtimeReady: false, notifyRuntimeStarting }));
+
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toEqual({
+			status: 'unavailable', message: 'Tyrian Companion is still starting.',
+		});
+		expect(notifyRuntimeStarting).toHaveBeenCalledOnce();
+	});
+
+	it('the settings panel\'s preview on a consult device is refused once, without asking the saved sessions again', async () => {
+		const notifyConsultMode = vi.fn();
+		const runtime = new SessionRuntime(port({ collectorMode: 'consult', notifyConsultMode }));
+
+		await expect(runtime.previewSessionHistoryScrubAfterRecovery()).resolves.toEqual({
+			status: 'unavailable', message: 'This installation is in consult mode.',
+		});
+		expect(notifyConsultMode).toHaveBeenCalledOnce();
+	});
+
+	it('the settings panel\'s preview on a ready collector asks saved sessions that did not answer again before the preview (Z2-2)', async () => {
+		const order: string[] = [];
+		const previewScrub = vi.fn(async (): Promise<SessionHistoryScrubPreview> => { order.push('preview'); return { status: 'blocked', message: 'not idle' }; });
+		const runtime = new SessionRuntime(port({
+			sessionHistory: { ...port().sessionHistory, previewScrub },
+			sessions: {
+				...port().sessions,
+				getRecoveryState: () => ({ status: 'error', code: 'unavailable' }) as ReturnType<SessionRuntimePort['sessions']['getRecoveryState']>,
+				initialize: async () => { order.push('initialize'); },
+			},
+		}));
+
+		await runtime.previewSessionHistoryScrubAfterRecovery();
+
+		expect(order).toEqual(['initialize', 'preview']);
+	});
+
 	it('refuses the scrub on a consult device and says so once, without reaching the history', async () => {
 		const notifyConsultMode = vi.fn();
 		const runtime = new SessionRuntime(port({ collectorMode: 'consult', notifyConsultMode }));

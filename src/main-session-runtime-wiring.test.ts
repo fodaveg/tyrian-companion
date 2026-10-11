@@ -299,6 +299,17 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 			});
 		});
 
+		it('runtimeReady: a preview pressed before the boot built the saved sessions says the plugin is still starting, without reading them', async () => {
+			const runtime = core();
+			const notices = vi.spyOn(runtime.core as unknown as { emitNotice(message: string, source: string): void }, 'emitNotice')
+				.mockImplementation(() => undefined);
+
+			await expect(runtime.core.previewSessionHistoryScrub()).resolves.toEqual({
+				status: 'unavailable', message: 'Tyrian Companion is still starting.',
+			});
+			expect(notices.mock.calls.map(([, source]) => source)).toEqual(['plugin_starting']);
+		});
+
 		it('sessions: a preview over saved sessions that did not answer at boot asks the boot\'s service again first (Z2-2)', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
