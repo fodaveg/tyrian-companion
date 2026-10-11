@@ -172,7 +172,7 @@ function assertGreen(root, releasePath, label) {
 	const result = runGuardrail(root, releasePath);
 	if (result.error) {
 		fail(`${label} could not execute the guardrail`);
-	} else if (result.status !== 0 || result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8)\n') {
+	} else if (result.status !== 0 || result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8; downloaded-bytes=not-checked)\n') {
 		fail(`${label} was rejected`);
 	}
 }
@@ -184,7 +184,7 @@ function assertStdinGreen(root, release) {
 		input: `${JSON.stringify(release)}\n`,
 	});
 	if (result.error || result.status !== 0 ||
-		result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8)\n') {
+		result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8; downloaded-bytes=not-checked)\n') {
 		fail('published-release stdin flow was rejected');
 	}
 }
@@ -195,7 +195,7 @@ function assertStdinGreen(root, release) {
  * `digest` GitHub reported has to match the bytes. One green case and one red per finding.
  */
 function assertDownloadedAssets(root) {
-	const build = (name, { version = '0.1.19', mainBytes = 'export const activate = 1;\n', declaredMain } = {}) => {
+	const build = (name, { version = '0.1.19', mainBytes = 'export const activate = 1;\n', declaredMain, publishedId = 'tyrian-companion', publishedVersion = '0.1.19', checksumText } = {}) => {
 		const directory = resolve(testRoot, `assets-${name}`);
 		mkdirSync(directory, { recursive: true });
 		const stylesBytes = '.tyrian{}\n';
@@ -209,6 +209,10 @@ function assertDownloadedAssets(root) {
 			},
 		};
 		writeFileSync(resolve(directory, 'hebra.json'), JSON.stringify(manifest));
+		// What BRAT reads, and the manual-install ZIP with its checksum (`<sha256>  <name>`).
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({ id: publishedId, version: publishedVersion }));
+		writeFileSync(resolve(directory, 'tyrian-companion-0.1.19.zip'), 'zip bytes\n');
+		writeFileSync(resolve(directory, 'tyrian-companion-0.1.19.zip.sha256'), checksumText ?? `${sha256('zip bytes\n')}  tyrian-companion-0.1.19.zip\n`);
 		return directory;
 	};
 	const withDigests = (directory) => releaseMetadata({
@@ -226,16 +230,25 @@ function assertDownloadedAssets(root) {
 		['hebra.json declaring another sha256 for hebra-main.mjs', build('hash', { declaredMain: `sha256:${'0'.repeat(64)}` }), 'hebra-manifest-hash', null],
 		['a published hebra-main.mjs that GitHub digests differently', build('digest'), 'release-asset-digest', 'tamper'],
 		['a download without hebra.json', build('missing'), 'hebra-manifest-unreadable', 'remove'],
+		// D-2: the PUBLISHED manifest.json and the ZIP checksum, not the local manifest.
+		['a published manifest.json of another version', build('pub-version', { publishedVersion: '0.1.18' }), 'published-manifest-mismatch', null],
+		['a published manifest.json of another plugin id', build('pub-id', { publishedId: 'other-plugin' }), 'published-manifest-mismatch', null],
+		['a download without manifest.json', build('pub-missing'), 'published-manifest-unreadable', 'remove-manifest'],
+		['a .zip.sha256 of other bytes', build('sum-bytes', { checksumText: `${'0'.repeat(64)}  tyrian-companion-0.1.19.zip\n` }), 'zip-checksum-mismatch', null],
+		['a .zip.sha256 naming another file', build('sum-name', { checksumText: `${sha256('zip bytes\n')}  other.zip\n` }), 'zip-checksum-mismatch', null],
+		['a download without the ZIP', build('sum-zip'), 'zip-checksum-mismatch', 'remove-zip'],
 	];
 	for (const [label, directory, category, mutation] of cases) {
 		const release = withDigests(directory);
 		if (mutation === 'tamper') writeFileSync(resolve(directory, 'hebra-main.mjs'), 'tampered\n');
 		if (mutation === 'remove') rmSync(resolve(directory, 'hebra.json'));
-		const path = resolve(testRoot, `downloaded-${category ?? 'green'}.json`);
+		if (mutation === 'remove-manifest') rmSync(resolve(directory, 'manifest.json'));
+		if (mutation === 'remove-zip') rmSync(resolve(directory, 'tyrian-companion-0.1.19.zip'));
+		const path = resolve(testRoot, `downloaded-${label.replace(/\W+/gu, '-')}.json`);
 		writeFileSync(path, `${JSON.stringify(release)}\n`);
 		const result = spawnSync(process.execPath, [guardrail, '--release-json', path, '--assets-dir', directory], { cwd: root, encoding: 'utf8' });
 		if (result.error) fail(`${label}: could not execute the guardrail`);
-		else if (category === null && (result.status !== 0 || !result.stdout.includes('PASS'))) fail(`${label} was rejected: ${result.stderr}`);
+		else if (category === null && (result.status !== 0 || !result.stdout.includes('PASS') || !result.stdout.includes('downloaded-bytes=checked'))) fail(`${label} was rejected: ${result.stderr}`);
 		else if (category !== null && (result.status === 0 || !result.stderr.includes(`BRAT release contract: ${category}\n`))) fail(`${label} did not turn red as ${category}`);
 		else process.stdout.write(`PASS: ${label}${category === null ? '' : ` turned red: ${category}`}\n`);
 	}

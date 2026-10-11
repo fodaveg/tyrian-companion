@@ -148,6 +148,9 @@ El verificador rechaza un nombre o tag distinto de `manifest.version`, una relea
 (`isPrerelease` debe ser `false`; si el JSON no trae el campo, también falla) y cualquier
 asset ausente, duplicado, extra, no terminado de subir o vacío. Con los assets descargados
 (`gh release download "<versión>" --dir <dir>` y `--release-json - --assets-dir <dir>`) comprueba además que
+el `manifest.json` descargado (el que lee BRAT) tiene el `id` esperado y por `version` el tag de la release,
+el `.zip.sha256` declara el sha256 del ZIP descargado y su nombre (sin `--assets-dir` nada de esto se mira y la
+salida lo dice: `downloaded-bytes=not-checked`),
 `hebra.json` declara la versión de `manifest.json` y el sha256 real de `hebra-main.mjs` y
 `hebra-styles.css`, y que cada asset cuyo `digest` informa GitHub coincide con sus bytes (`release.yml` lo
 hace tras publicar). GitHub puede tardar entre 5 y 15
