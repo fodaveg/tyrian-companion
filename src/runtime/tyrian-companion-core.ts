@@ -438,6 +438,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private registeredPlacement: ViewPlacement | null = null;
 	private registeredViews: TyrianDisposer[] = [];
+	/**
+	 * Z6-2: the three subscriptions `onload` makes outside the registrations the host undoes on its own (window `error` and
+	 * `unhandledrejection` in Hebra, its environment's connectivity and visibility). `shutdownRuntime` calls them, or a restart
+	 * would leave one more set per run, each holding this dead core.
+	 */
+	private uncaughtErrorOff: TyrianDisposer | null = null;
+	private connectivityOff: TyrianDisposer | null = null;
+	private visibilityOff: TyrianDisposer | null = null;
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private liveSessions: LiveSessionLifecycle | null = null;
@@ -690,6 +698,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private runtimeReadyWaiters: Array<() => void> = [];
 	/** True once `onunload` has run; guards the deferred boot tail against writing after teardown. */
 	private unloaded = false;
+	/** Z6-1: the start `initializeRuntime` has in flight (or ended); `shutdownRuntime` waits for it before it disposes. */
+	private runtimeInitialization: Promise<void> | null = null;
 	/** Local diagnostics remain optional and fail-open throughout teardown and isolated unit harnesses. */
 	private localDebug: LocalDebugLogger | null = null;
 	private localDebugActions: LocalDebugActionRunner | null = null;
@@ -764,14 +774,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// that survives, which listener caught it, without implying more than that.
 		// The host extracts the failure from the browser event (`error` or `reason`); `origin` is
 		// the one fact about which listener caught it that survives the sanitizer.
-		this.host.environment.onUncaughtError((failure, origin) => {
+		this.uncaughtErrorOff = this.host.environment.onUncaughtError((failure, origin) => {
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
 				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
 				details: { origin },
 			});
 		});
-		this.host.environment.onConnectivityChange((online) => {
+		this.connectivityOff = this.host.environment.onConnectivityChange((online) => {
 			const handle = () => {
 				const state = online ? 'online' : 'offline';
 				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state };
@@ -787,7 +797,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			);
 			else handle();
 		});
-		this.host.ui.onVisibilityChange((visible) => {
+		this.visibilityOff = this.host.ui.onVisibilityChange((visible) => {
 			if (!this.runtimeReady || !visible) return;
 			// After a suspend the session lease may have expired: renew (or take it back) right away.
 			this.sessions.notifyWake();
@@ -807,7 +817,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				// The trace already reaches the log through this same `run()`, on rethrow
 				// (`writeFailure`); this `.catch` only records that the boot broke, for
 				// `notifyRuntimeStarting` to tell apart from one still in progress.
-				() => this.initializeRuntime().catch((error: unknown) => {
+				() => this.startRuntimeInitialization().catch((error: unknown) => {
 					this.runtimeFailure = error;
 					this.writeBootTimings();
 					this.settleRuntimeReadyWaiters();
@@ -817,6 +827,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 		});
 		await runtime.start();
+	}
+
+	/** Z6-1: `initializeRuntime`, with the start in flight kept so `shutdownRuntime` can wait for it before it disposes. */
+	private startRuntimeInitialization(): Promise<void> {
+		const running = this.initializeRuntime();
+		this.runtimeInitialization = running;
+		return running;
 	}
 
 	/** Creates one data-free persistence bridge; an unavailable logger leaves a true no-op probe. */
@@ -860,6 +877,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * neutral value instead of touching an unassigned service.
 	 */
 	private async initializeRuntime(): Promise<void> {
+		// Z6-1: a layout that becomes ready after the unload (Obsidian restores it lazily) starts nothing. Every `await` that can
+		// take long below is followed by a look at `unloaded`: the unload does not cancel a start, it makes it stop at the next
+		// checkpoint, with everything built so far reachable from a field that `shutdownRuntime` disposes (it waits for the end).
+		if (this.unloaded) return;
 		this.bootTrace.mark('runtimeStart');
 		const host = this.host;
 		// DU-13: once per load, before the first database is opened, and never waited for. The answer is in the local log.
@@ -872,6 +893,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		);
 		const vaultId = await sha256Text(host.vault.canonicalIdentity().normalize('NFC'));
 		this.vaultId = vaultId;
+		if (this.unloaded) return;
 		// DU-04: settings a newer release wrote are used as read and never written in this run; the user is told once here.
 		if (this.settingsReadOnly) this.warnSettingsReadOnly();
 		// R1b: this device's mode, read before any service that collects is built. The first time,
@@ -905,6 +927,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			});
 		}
 		this.bootTrace.mark('mode');
+		if (this.unloaded) return;
 		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(
 			indexedDB,
 			vaultId,
@@ -1403,6 +1426,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.sessions = sessionServices.sessions;
 		await this.sessions.initialize();
 		this.bootTrace.mark('sessions');
+		if (this.unloaded) return;
 		const recoveryId = this.pilotRecoveryIdentity();
 		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 		this.sessionNotes = sessionServices.sessionNotes;
@@ -1429,6 +1453,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		});
 		await this.liveSessions.initialize();
 		this.bootTrace.mark('live');
+		if (this.unloaded) return;
 		this.liveSummaryNetwork = true;
 		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
@@ -1477,11 +1502,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.priceHistory.setOnline(this.host.environment.isOnline());
 		}
 		this.bootTrace.mark('priceHistory');
+		if (this.unloaded) return;
 		if (this.halloweenObservationActive()) {
 			await this.halloween.activate();
 			this.halloween.setOnline(this.host.environment.isOnline());
 		}
 		this.bootTrace.mark('halloween');
+		if (this.unloaded) return;
 		await this.halloweenPriceAlert.configure(halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled);
 		this.renderViews();
 		this.bootTrace.mark('renderRequested');
@@ -1686,15 +1713,31 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async shutdownRuntime(): Promise<void> {
 		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
+		// Z6-2: before anything that can fail, so a rejected drain cannot leave them subscribed to a dead core.
+		this.uncaughtErrorOff?.();
+		this.uncaughtErrorOff = null;
+		this.connectivityOff?.();
+		this.connectivityOff = null;
+		this.visibilityOff?.();
+		this.visibilityOff = null;
+		// Z6-1: a start still running has seen `unloaded` and stops at its next checkpoint; what it built up to there is disposed
+		// below, once it has ended, and a host that restarts (Hebra) does not overlap two activations.
+		if (this.runtimeInitialization !== null) {
+			try { await this.runtimeInitialization; } catch { /* Its own failure was already recorded by the start (`runtimeFailure`). */ }
+		}
 		this.liveSummaries?.dispose();
-		let bridgeDrained = false;
-		// After the durable bridge drain, always release local ownership even if another disposer fails.
-		// A rejected drain retains the handle, renewer and backing store for an observable retry.
+		// Z6-5: only what lives off the in-game bridge (live economy, live sessions, sessions) waits for its durable drain; a
+		// rejected drain retains those for an observable retry, and everything else is released regardless of it.
+		let bridgeFailure: { readonly error: unknown } | null = null;
 		try {
-		// Live callbacks retain their store and lease until the socket's durable work drains.
-		await this.closeAlertIngameServer();
-		bridgeDrained = true;
-		await this.liveEconomy?.dispose();
+			// Live callbacks retain their store and lease until the socket's durable work drains.
+			await this.closeAlertIngameServer();
+		} catch (error) {
+			bridgeFailure = { error };
+		}
+		// After the durable bridge drain, always release local ownership even if another disposer fails.
+		try {
+		if (bridgeFailure === null) await this.liveEconomy?.dispose();
 		const pilotProposalClosure = this.live.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
 		this.productActions?.dispose();
@@ -1754,18 +1797,22 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.sessionHistory?.dispose();
 		this.managedAssetsPointer?.close();
 		} finally {
-			if (bridgeDrained) {
+			if (bridgeFailure === null) {
 				await this.liveSessions?.dispose();
 				if (this.sessions) await this.sessions.dispose();
 			}
 		}
+		if (bridgeFailure !== null) throw bridgeFailure.error;
 		};
-		if (this.localDebugActions) await this.localDebugActions.run(
-			{ component: 'plugin', action: 'plugin_unload' }, dispose,
-		);
-		else await dispose();
-		// The same drain the runtime's `stop()` runs, over whatever log this plugin holds.
-		await flushTyrianLocalDebug(this.localDebug, this.localDebugActions);
+		try {
+			if (this.localDebugActions) await this.localDebugActions.run(
+				{ component: 'plugin', action: 'plugin_unload' }, dispose,
+			);
+			else await dispose();
+		} finally {
+			// The same drain the runtime's `stop()` runs, over whatever log this plugin holds; also when the unload failed.
+			await flushTyrianLocalDebug(this.localDebug, this.localDebugActions);
+		}
 	}
 
 	getConnectionState(): ConnectionState {
