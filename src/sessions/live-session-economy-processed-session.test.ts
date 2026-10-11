@@ -23,7 +23,8 @@ function harness() {
 		emit: async () => { running.sessionId = 'session-B'; await slow; return { delivered: [], failed: [], rejected: false }; }, onError: vi.fn(), onChange: vi.fn(),
 	});
 	const entry = { sessionId: 'session-A', observations: [{ id: 'o1', kind: 'item', idNumber: 1 }],
-		outbox: [{ outboxId: 'ob1', observationId: 'o1', state: 'ready' }] } as unknown as LiveJournalEntryV1;	return { economy, updateAlert, entry, release };
+		outbox: [{ outboxId: 'ob1', observationId: 'o1', state: 'ready' }] } as unknown as LiveJournalEntryV1;
+	return { economy, updateAlert, entry, release };
 }
 
 describe('LiveSessionEconomy processed write', () => {

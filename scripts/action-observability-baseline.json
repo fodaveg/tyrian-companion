@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 615,
+		"catch_clause": 616,
 		"promise_catch": 61,
 		"void_expression": 144,
 		"callback_registration": 252
@@ -11856,11 +11856,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "eef0078978903c4e58b734c5c9dd9a0da7d91d46",
+					"id": "ca7f82f90e159b3c54fb2a66c95363b47fd3bc61",
 					"kind": "catch_clause",
-					"line": 117,
+					"line": 118,
 					"column": 33,
-					"endLine": 119,
+					"endLine": 120,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11874,9 +11874,9 @@
 				{
 					"id": "e642139ff285f92278167951f07ae5c094545a17",
 					"kind": "catch_clause",
-					"line": 123,
+					"line": 124,
 					"column": 44,
-					"endLine": 123,
+					"endLine": 124,
 					"endColumn": 128,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11888,11 +11888,27 @@
 					"reason": "Allowlisted catch_clause: The \"report\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"report\"."
 				},
 				{
+					"id": "d9be7b59ff5a5f71947da5f9f4e7d501da4c4dbf",
+					"kind": "catch_clause",
+					"line": 196,
+					"column": 5,
+					"endLine": 199,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "write",
+						"justification": "The \"write\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"write\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"write\"."
+				},
+				{
 					"id": "e5488525f5cc8126c68971360a36932d1c9c0a8d",
 					"kind": "catch_clause",
-					"line": 230,
+					"line": 241,
 					"column": 32,
-					"endLine": 233,
+					"endLine": 244,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

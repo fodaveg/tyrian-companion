@@ -69,7 +69,7 @@ interface LiveSessionSummaryServiceOptions {
 	mapWaitMs?: number;
 }
 
-interface Progress { sessionId: string; attempts: number; lastAttemptAt: number; done: boolean; running: boolean }
+interface Progress { attempts: number; lastAttemptAt: number; done: boolean; running: boolean }
 
 /** Everything one summary is worked out from, copied before the first await: the next session may replace all of it while the summary is written. */
 interface Subject {
@@ -96,26 +96,27 @@ const PROGRESS_KEPT = 4;
  */
 export class LiveSessionSummaryService {
 	private readonly progress = new Map<string, Progress>();
-	/** The subject of the last attempt that failed with attempts left; it is retried even after another session has started. */
-	private stranded: Subject | null = null;
-	private lastAttempt = 0;
+	/** The subjects of the attempts that failed with attempts left, by session; they are retried even after another session has started. */
+	private readonly stranded = new Map<string, Subject>();
 	private readonly writer: LiveSessionSummaryWriter;
-	private cancelWait: (() => void) | null = null;
+	/** The cancel handle of every map-name wait in flight: more than one session can be writing at once. */
+	private readonly cancelWaits = new Set<() => void>();
 	private disposed = false;
 
 	constructor(private readonly options: LiveSessionSummaryServiceOptions) {
 		this.writer = new LiveSessionSummaryWriter(options.vault);
 	}
 
-	/** Cancels the pending map-name wait; whatever is in flight writes nothing once this was called. */
+	/** Cancels the pending map-name waits; whatever is in flight writes nothing once this was called. */
 	dispose(): void {
 		this.disposed = true;
-		this.cancelWait?.(); this.cancelWait = null;
+		for (const cancel of this.cancelWaits) cancel();
+		this.cancelWaits.clear();
 	}
 
 	async observe(): Promise<void> {
 		try { await this.attempt(); } catch (error) {
-			this.report({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: this.lastAttempt });
+			this.report({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: 0 });
 		}
 	}
 
@@ -131,27 +132,28 @@ export class LiveSessionSummaryService {
 		const currentReceipt = current?.summaryReceipt ?? null;
 		const currentReady = current !== null && current.phase === 'complete' && currentReceipt !== null && currentReceipt.sessionId === current.sessionId;
 		// A summary that failed for a session that is no longer the current one is retried from what was copied then; the current
-		// session (when it is the same one) is read live, as always. If the older one is waiting out its retry gap, the current one goes first.
-		const candidates: Subject[] = [];
-		if (this.stranded !== null && !(currentReady && current.sessionId === this.stranded.record.sessionId)) candidates.push(this.stranded);
-		if (currentReady && !this.options.isWritten()) {
-			candidates.push({ record: current, receipt: currentReceipt, journal: this.options.journal(), format: this.options.format(),
-				characters: this.options.characters(), charactersCapped: this.options.charactersCapped() });
-		}
+		// session (when it is the same one) is read live, as always. Every session that may be tried now is chosen and copied before
+		// the first await, so the one written first cannot leave the others to wait for another state change.
 		const now = this.options.now();
-		for (const subject of candidates) {
-			let progress = this.progress.get(subject.record.sessionId);
+		const jobs: { subject: Subject; progress: Progress }[] = [];
+		const take = (sessionId: string, subject: () => Subject): void => {
+			let progress = this.progress.get(sessionId);
 			if (progress === undefined) {
-				progress = { sessionId: subject.record.sessionId, attempts: 0, lastAttemptAt: 0, done: false, running: false };
-				this.progress.set(subject.record.sessionId, progress);
-				for (const key of this.progress.keys()) { if (this.progress.size <= PROGRESS_KEPT) break; this.progress.delete(key); }
+				progress = { attempts: 0, lastAttemptAt: 0, done: false, running: false };
+				this.progress.set(sessionId, progress);
+				for (const key of this.progress.keys()) { if (this.progress.size <= PROGRESS_KEPT) break; this.progress.delete(key); this.stranded.delete(key); }
 			}
 			if (progress.done || progress.running || progress.attempts >= LIVE_SUMMARY_MAX_ATTEMPTS
-				|| progress.attempts > 0 && now - progress.lastAttemptAt < LIVE_SUMMARY_RETRY_MS) continue;
-			progress.running = true; progress.attempts += 1; progress.lastAttemptAt = now; this.lastAttempt = progress.attempts;
-			await this.write(subject, progress);
-			return;
+				|| progress.attempts > 0 && now - progress.lastAttemptAt < LIVE_SUMMARY_RETRY_MS) return;
+			progress.running = true; progress.attempts += 1; progress.lastAttemptAt = now;
+			jobs.push({ subject: subject(), progress });
+		};
+		for (const [sessionId, subject] of this.stranded) if (!(currentReady && current.sessionId === sessionId)) take(sessionId, () => subject);
+		if (currentReady && !this.options.isWritten()) {
+			take(current.sessionId, () => ({ record: current, receipt: currentReceipt, journal: this.options.journal(), format: this.options.format(),
+				characters: this.options.characters(), charactersCapped: this.options.charactersCapped() }));
 		}
+		for (const job of jobs) await this.write(job.subject, job.progress);
 	}
 
 	private async write(subject: Subject, progress: Progress): Promise<void> {
@@ -191,21 +193,30 @@ export class LiveSessionSummaryService {
 			if (result.status === 'invalid' || result.status === 'conflict') progress.done = true;
 			this.report({ status: result.status, attempt: progress.attempts,
 				reason: 'reason' in result ? result.reason : 'errorName' in result ? result.errorName ?? null : null });
+		} catch (error) {
+			// Reported with the attempt of THIS session: another may be writing at the same time.
+			this.report({ status: 'unexpected', reason: error instanceof Error ? error.name : null, attempt: progress.attempts });
 		} finally {
 			progress.running = false;
-			// Kept for a retry only while it has attempts left; never two subjects at once (the newer failure replaces the older).
-			if (progress.done || progress.attempts >= LIVE_SUMMARY_MAX_ATTEMPTS) { if (this.stranded?.record.sessionId === record.sessionId) this.stranded = null; }
-			else this.stranded = subject;
+			// Kept for a retry only while it has attempts left, by session; the oldest go first once the bound is passed.
+			if (progress.done || progress.attempts >= LIVE_SUMMARY_MAX_ATTEMPTS) this.stranded.delete(record.sessionId);
+			else {
+				this.stranded.set(record.sessionId, subject);
+				for (const key of this.stranded.keys()) { if (this.stranded.size <= PROGRESS_KEPT) break; this.stranded.delete(key); }
+			}
 		}
 	}
 
 	/** Never longer than `mapWaitMs`: a slow API costs the name, not the summary. */
 	private async boundedMapNames(mapIds: readonly number[], network: boolean): Promise<Record<string, string>> {
 		if (mapIds.length === 0) return {};
+		// Local to this call: another write can be waiting on its own timer, and `dispose()` reaches all of them through the set.
+		const timer = { cancel: (): void => undefined };
 		const wait = new Promise<Record<string, string>>((resolve) => {
-			this.cancelWait = this.options.startTimer(() => { resolve({}); }, this.options.mapWaitMs ?? LIVE_SUMMARY_MAP_WAIT_MS);
+			timer.cancel = this.options.startTimer(() => { resolve({}); }, this.options.mapWaitMs ?? LIVE_SUMMARY_MAP_WAIT_MS);
 		});
-		try { return await Promise.race([this.options.mapNames(mapIds, network), wait]); } finally { this.cancelWait?.(); this.cancelWait = null; }
+		this.cancelWaits.add(timer.cancel);
+		try { return await Promise.race([this.options.mapNames(mapIds, network), wait]); } finally { timer.cancel(); this.cancelWaits.delete(timer.cancel); }
 	}
 
 	/**

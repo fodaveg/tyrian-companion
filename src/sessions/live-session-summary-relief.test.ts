@@ -96,7 +96,62 @@ describe('LiveSessionSummaryService across a source relief', () => {
 		clock += 61_000;
 		await summary.observe();
 		expect(f.summaries()).toHaveLength(1);
-		expect(f.files.get(f.summaries()[0]!)).toContain('session');
+		// It is the summary of the first session: it links its full note, and nothing of the session that replaced it.
+		const note = f.files.get(f.summaries()[0]!)!;
+		expect(note).toContain('[[Tyrian/sessions/session|');
+		expect(note).not.toContain('session-2');
 		expect(f.service.isSummaryWritten()).toBe(false);
+	});
+
+	it('writes the summaries of the failed closed session and of the one that replaced it in a single observe (Z1-1, review)', async () => {
+		const f = fixture(); await f.closeFirstSession();
+		let clock = AT + 3000;
+		const summary = f.summaryService({}, () => clock);
+		f.failNextCreates(1);
+		await summary.observe();
+		expect(f.summaries()).toHaveLength(0);
+		expect(await f.service.start('Test')).toBe('session-2');
+		f.setNow(AT + 10_000); expect(await f.service.stop(AT + 10_000)).toBe(true);
+		clock += 61_000;
+		await summary.observe();
+		expect(f.summaries()).toHaveLength(2);
+		expect(f.service.isSummaryWritten()).toBe(true);
+	});
+
+	it('keeps retrying the first session when the next one also fails its first attempt (Z1-1, review)', async () => {
+		const f = fixture(); await f.closeFirstSession();
+		let clock = AT + 3000;
+		const summary = f.summaryService({}, () => clock);
+		f.failNextCreates(1);
+		await summary.observe(); // session 1 fails
+		expect(await f.service.start('Test')).toBe('session-2');
+		f.setNow(AT + 10_000); expect(await f.service.stop(AT + 10_000)).toBe(true);
+		f.failNextCreates(1);
+		clock += 1000;
+		await summary.observe(); // session 1 waits out its gap; session 2 fails its first attempt
+		expect(f.summaries()).toHaveLength(0);
+		clock += 61_000;
+		await summary.observe();
+		expect(f.summaries()).toHaveLength(2);
+	});
+
+	it('cancels the map-name wait of each write on its own, and dispose reaches every one (Z1-1, review)', async () => {
+		const f = fixture(); await f.closeFirstSession();
+		const cancelled: number[] = []; let timers = 0;
+		const gates: (() => void)[] = [];
+		const summary = f.summaryService({ mapNames: async () => { await new Promise<void>((resolve) => { gates.push(resolve); }); return {}; },
+			startTimer: () => { const id = ++timers; return () => { cancelled.push(id); }; } });
+		const first = summary.observe(); // session 1 waits for its map names
+		await vi.waitFor(() => { expect(gates).toHaveLength(1); });
+		expect(await f.service.start('Test')).toBe('session-2');
+		await f.service.open(f.source); await f.service.commit(f.sample(0, 1)); f.setNow(AT + 9000); await f.service.commit(f.sample(1, 3));
+		f.setNow(AT + 10_000); expect(await f.service.stop(AT + 10_000)).toBe(true);
+		const second = summary.observe(); // session 2 waits for its own
+		await vi.waitFor(() => { expect(gates).toHaveLength(2); });
+		gates[0]!(); await first;
+		expect(cancelled).toEqual([1]); // the second write's timer (2) is still armed
+		summary.dispose();
+		expect(cancelled).toEqual([1, 2]);
+		gates[1]!(); await second;
 	});
 });
