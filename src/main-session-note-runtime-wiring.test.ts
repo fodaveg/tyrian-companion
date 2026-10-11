@@ -125,11 +125,14 @@ describe('the core hands the finished session\'s note and summary to SessionNote
 
 			await runtime.core.retrySessionSummarySave();
 
+			// The core's own fields, read straight: a copy of the state kept inside the runtime must not pass.
+			const fields = runtime.core as unknown as {
+				sessionSummarySaveState: string; savedSessionNotePath: string | null; storedSessionLootSummary: StoredSessionLootSummary | null;
+			};
 			expect({
 				input: noteInput.mock.calls, economy: economy.mock.calls, written: write.mock.calls,
 				proof: proof.mock.calls, refreshed: refreshed.mock.calls.length,
-				state: runtime.core.getSessionSummarySaveState(), path: runtime.core.getSavedSessionNotePath(),
-				loot: runtime.core.getStoredSessionLootSummary(),
+				state: fields.sessionSummarySaveState, path: fields.savedSessionNotePath, loot: fields.storedSessionLootSummary,
 			}).toEqual({
 				input: [[record]], economy: [[record, true]], written: [[input]], proof: [[NOTE_PATH]], refreshed: 1,
 				state: 'saved', path: NOTE_PATH, loot: LOOT,

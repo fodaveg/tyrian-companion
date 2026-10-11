@@ -9,11 +9,12 @@ import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
  * Was matched over the characters of `tyrian-companion-core.ts`
  * (`session-history-panel-architecture.test.ts`, 'keeps history off the core surface, with global
  * scans explicit and archival checks exact'): `inspectCompletedSessionSummary` held
- * `this.sessionHistory.readSession`, and the core held it once. Here the finished session's
- * summary is restored, saved and retried, and what each asks of the durable history is read: the
- * lookup across the vault by the session's hash (`readSession`) runs once, only on a boot whose
- * finished session has no saved proof of its note; every other path reads the one note the proof
- * names (`readSessionAt`) or nothing.
+ * `this.sessionHistory.readSession`, and the core held it once (that count now reads
+ * `session-note-runtime.ts`, where the lookup moved). Here the finished session's summary is
+ * restored, saved and retried, and what each asks of the durable history is read: a boot without
+ * the saved proof of its note looks it up once across the vault by the session's hash
+ * (`readSession`); a boot with the proof reads only the note it names (`readSessionAt`); a refused
+ * lookup leaves the summary failed; a save and a retry never look the vault up.
  */
 
 const SESSION_ID = 'session-1';
