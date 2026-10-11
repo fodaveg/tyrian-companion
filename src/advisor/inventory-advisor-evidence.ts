@@ -73,6 +73,13 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		private readonly rateLimit?: Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>,
 	) {}
 
+	/**
+	 * Z4-5: forgets the captures still running, so the next `capture` never joins one that was
+	 * started with a credential that has since been replaced. The old promise keeps running for
+	 * whoever already awaits it (the workflow's epoch rejects that consumer).
+	 */
+	invalidate(): void { this.inFlight.clear(); }
+
 	capture(
 		locale: CatalogLocale,
 		containerPriceItemIds: readonly number[] = [],

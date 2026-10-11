@@ -616,6 +616,25 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(gateway.requestDetailed).not.toHaveBeenCalled();
 	});
 
+	it('does not let a capture started with a replaced key serve the next request (Z4-5)', async () => {
+		const snapshot = snapshotFixture([10]);
+		let release: () => void = () => undefined;
+		const held = new Promise<void>((resolve) => { release = resolve; });
+		const beginOperation = vi.fn(() => clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }).beginOperation());
+		let calls = 0;
+		const snapshots = { captureInventoryWithOperation: async () => { calls += 1; if (calls === 1) await held; return snapshot; } };
+		const service = new InventoryAdvisorEvidenceService({ beginOperation }, snapshots,
+			{ resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW);
+		const old = service.capture('es');
+		expect(service.capture('es')).toBe(old);
+		service.invalidate();
+		const fresh = service.capture('es');
+		expect(fresh).not.toBe(old);
+		expect(beginOperation).toHaveBeenCalledTimes(2);
+		release();
+		await Promise.all([old, fresh]);
+	});
+
 	it('retries a passing 401/403 on its authenticated reads instead of dropping the capture (Z4-4)', async () => {
 		const snapshot = snapshotFixture([10]);
 		const base = clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }).beginOperation();
