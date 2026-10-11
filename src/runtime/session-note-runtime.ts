@@ -43,7 +43,7 @@ import { LiveSessionEconomy } from '../sessions/live-session-economy';
 import { newLiveSessionFormat } from '../sessions/live-session-format';
 import type { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import type { LiveSessionLootTracker } from '../sessions/live-session-loot';
-import type { LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
+import type { LiveAlertOutboxV1, LiveJournalEntryV1, LiveSessionFormat, LiveSessionRuntimeRecord } from '../sessions/live-session-model';
 import { knownLiveDisplayNames } from '../sessions/live-session-note-model';
 import { LiveSessionSummaryService, summaryCachedNames } from '../sessions/live-session-summary-service';
 import type { LootPresentationCache } from '../sessions/loot-presentation-cache';
@@ -51,7 +51,12 @@ import type { ManualSessionStartService } from '../sessions/manual-session-start
 import type { DetectionQualityRecorder } from '../sessions/session-detection-quality-recorder';
 import { buildSessionEconomyEvidence, sessionValuationItemIds, type SessionEconomyEvidence } from '../sessions/session-economy-evidence';
 import type { DurableSessionLookup, SessionHistoryService } from '../sessions/session-history';
-import { prepareSessionNote, sessionNoteEventDeclarationFromDetectionSummary, type SessionNoteInput } from '../sessions/session-note-model';
+import {
+	prepareSessionNote,
+	sessionNoteEventDeclarationFromDetectionSummary,
+	type SessionNoteEventDeclaration,
+	type SessionNoteInput,
+} from '../sessions/session-note-model';
 import type { StoredSessionLootSummary } from '../sessions/session-note-renderer';
 import type { SessionNoteWriter, SessionNoteWriteResult } from '../sessions/session-note-writer';
 import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
@@ -60,7 +65,6 @@ import { consulting, writeSessionNoteWithDiagnostics } from './core-actions';
 import type { FarmingSessionRuntime } from './farming-session-runtime';
 import { farmingGoalForSession } from './farming-runtime-projection';
 import type { HalloweenObservationRuntime } from './halloween-observation-runtime';
-import type { IngameSessionRuntime } from './ingame-session-runtime';
 import type { SessionSummarySaveState } from './live-session-runtime';
 
 /**
@@ -109,11 +113,17 @@ export interface SessionNoteRuntimePort {
 	readonly liveSummaryNetwork: boolean;
 	/** The core's own: the alerts, the live session and the commands read it too. */
 	readonly ingameSessionMarker: Pick<IngameSessionMarker, 'presenceEvidenceFor'> | null;
-	/** The sibling runtimes the note's input and the live economy read. */
+	/** The sibling runtimes the note's input reads. */
 	readonly farming: Pick<FarmingSessionRuntime, 'currentFarmingSessionContext'>;
 	readonly halloweenObservation: Pick<HalloweenObservationRuntime, 'sessionHalloweenInfoItemIds'>;
-	readonly ingame: Pick<IngameSessionRuntime, 'ingameLabyrinthDeclaration' | 'recordIngameSessionFailure'>;
-	readonly alerts: Pick<AlertRuntime, 'emitLiveSessionAlert'>;
+	/**
+	 * What the note's input and the live economy ask of the in-game session and the alerts, handed one call at a time:
+	 * neither runtime itself reaches this persistence boundary, so nothing here can call what else they hold (the
+	 * alerts copy the bridge's secret).
+	 */
+	ingameLabyrinthDeclaration(runtime: SessionRuntimeRecord): SessionNoteEventDeclaration | null;
+	recordIngameSessionFailure(error: unknown): void;
+	emitLiveSessionAlert(intent: LiveAlertOutboxV1): ReturnType<AlertRuntime['emitLiveSessionAlert']>;
 	/** The core's own; `LiveSessionRuntime` writes them too, the Companion snapshot reads them. */
 	sessionSummarySaveState: SessionSummarySaveState;
 	storedSessionLootSummary: StoredSessionLootSummary | null;
@@ -155,7 +165,6 @@ export class SessionNoteRuntime {
 	private get ingameSessionMarker(): SessionNoteRuntimePort['ingameSessionMarker'] { return this.port.ingameSessionMarker; }
 	private get farming(): SessionNoteRuntimePort['farming'] { return this.port.farming; }
 	private get halloweenObservation(): SessionNoteRuntimePort['halloweenObservation'] { return this.port.halloweenObservation; }
-	private get ingame(): SessionNoteRuntimePort['ingame'] { return this.port.ingame; }
 	private get sessionSummarySaveState(): SessionSummarySaveState { return this.port.sessionSummarySaveState; }
 	private set sessionSummarySaveState(value: SessionSummarySaveState) { this.port.sessionSummarySaveState = value; }
 	private get storedSessionLootSummary(): StoredSessionLootSummary | null { return this.port.storedSessionLootSummary; }
@@ -375,7 +384,7 @@ export class SessionNoteRuntime {
 			cachedItems: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedItems(ids,this.settings.language); },
 			currencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveCurrencies(ids,this.settings.language); },
 			cachedCurrencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedCurrencies(ids,this.settings.language); },
-			emit: async (intent) => await this.port.alerts.emitLiveSessionAlert(intent), onError: (error) => { this.ingame.recordIngameSessionFailure(error); },
+			emit: async (intent) => await this.port.emitLiveSessionAlert(intent), onError: (error) => { this.port.recordIngameSessionFailure(error); },
 			onChange: () => { this.renderViews(); },
 		});
 	}
@@ -436,7 +445,7 @@ export class SessionNoteRuntime {
 			// them measured here would be an invention rather than an omission.
 			recommendation: null, envelope: null,
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId))
-				?? this.ingame.ingameLabyrinthDeclaration(runtime),
+				?? this.port.ingameLabyrinthDeclaration(runtime),
 			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
 			...(farmingContext === null ? {} : { farmingGoal: farmingContext.goal }),
 			...(farmingGoalResult === null ? {} : { farmingGoalResult }),

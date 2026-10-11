@@ -7,6 +7,7 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { AlertRuntime } from './runtime/alert-runtime';
+import { HalloweenObservationRuntime } from './runtime/halloween-observation-runtime';
 import { IngameSessionRuntime } from './runtime/ingame-session-runtime';
 import type { LiveSessionRuntime } from './runtime/live-session-runtime';
 import { SessionNoteRuntime } from './runtime/session-note-runtime';
@@ -354,14 +355,61 @@ describe('the core hands the finished session\'s note and summary to SessionNote
 			await runtime.initializeRuntime();
 			const intent = { sessionId: 's', outboxId: 'o' };
 			const failure = new TypeError('catalog refused');
-			const emitted = vi.spyOn(AlertRuntime.prototype, 'emitLiveSessionAlert').mockResolvedValue(undefined as never);
+			const answer = { answeredBy: 'AlertRuntime' };
+			const emitted = vi.spyOn(AlertRuntime.prototype, 'emitLiveSessionAlert').mockResolvedValue(answer as never);
 			const failed = vi.spyOn(IngameSessionRuntime.prototype, 'recordIngameSessionFailure').mockImplementation(() => undefined);
 			const options = (internals(runtime).liveEconomy as { options: { emit(intent: unknown): Promise<unknown>; onError(error: unknown): void } }).options;
 
-			await options.emit(intent);
+			expect(await options.emit(intent)).toBe(answer);
 			options.onError(failure);
 
 			expect({ emitted: emitted.mock.calls, failed: failed.mock.calls }).toEqual({ emitted: [[intent]], failed: [[failure]] });
+		});
+
+		it('the port hands the in-game session and the alerts one call at a time, never the runtimes themselves', () => {
+			const runtime = core();
+			const port = (internals(runtime).notes as unknown as { port: Record<string, unknown> }).port;
+			const own = runtime.core as unknown as { alerts: object; ingame: object };
+
+			expect({
+				members: Object.keys(port).filter((key) => ['alerts', 'ingame'].includes(key)),
+				values: Object.keys(port).filter((key) => port[key] === own.alerts || port[key] === own.ingame),
+			}).toEqual({ members: [], values: [] });
+		});
+
+		it('ingame and halloweenObservation: the note\'s input reads the Labyrinth declaration and the Halloween items of its own session', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			const items = { firstSeenItemIds: [19721], rareUnpricedOrBoundItemIds: [36038] };
+			const halloween = vi.spyOn(HalloweenObservationRuntime.prototype, 'sessionHalloweenInfoItemIds').mockReturnValue(items);
+			const declaration = { event: 'halloween', source: 'ingame_presence', observedAt: '2026-10-10T23:00:00.000Z' } as const;
+			const labyrinth = vi.spyOn(IngameSessionRuntime.prototype, 'ingameLabyrinthDeclaration').mockReturnValue(declaration);
+
+			const input = stepsOf(internals(runtime)).sessionNoteInput(RECORD as unknown as SessionRuntimeRecord) as {
+				firstSeenItemIds: number[]; rareUnpricedOrBoundItemIds: number[]; eventDeclaration: unknown;
+			};
+
+			expect({
+				halloween: halloween.mock.calls, labyrinth: labyrinth.mock.calls,
+				items: { firstSeenItemIds: input.firstSeenItemIds, rareUnpricedOrBoundItemIds: input.rareUnpricedOrBoundItemIds },
+				declaration: input.eventDeclaration,
+			}).toEqual({ halloween: [['session-1']], labyrinth: [[RECORD]], items, declaration });
+		});
+
+		it('a session that turns complete after the boot projects the loot again here; one that does not, does not', async () => {
+			const runtime = core();
+			await runtime.initializeRuntime();
+			const projected = vi.spyOn(SessionNoteRuntime.prototype, 'refreshLootPresentation').mockResolvedValue(undefined);
+			const state = vi.spyOn(ManualSessionStartService.prototype, 'getState');
+			const sessions = (runtime.core as unknown as { sessions: { onStateChange(): void } }).sessions;
+
+			state.mockReturnValue({ status: 'active', sessionId: 'session-1' } as ReturnType<ManualSessionStartService['getState']>);
+			sessions.onStateChange();
+			const active = projected.mock.calls.length;
+			state.mockReturnValue({ status: 'complete', sessionId: 'session-1' } as ReturnType<ManualSessionStartService['getState']>);
+			sessions.onStateChange();
+
+			expect({ active, complete: projected.mock.calls.length }).toEqual({ active: 0, complete: 1 });
 		});
 
 		it('a language changed through the core\'s settings write projects the loot again here', async () => {

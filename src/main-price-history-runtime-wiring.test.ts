@@ -35,7 +35,8 @@ const HALLOWEEN_ROWS: Row<HalloweenObservationRuntime> = [
 	['observeAcceptedHalloweenDelta', 'observeAcceptedHalloweenDelta', [DELTA]],
 	['switchHalloweenAccount', 'switchHalloweenAccount', ['account-1', undefined]],
 	['halloweenObservationActive', 'halloweenObservationActive', []],
-	['sessionHalloweenInfoItemIds', 'sessionHalloweenInfoItemIds', ['s1']],
+	// DE-01, tenth wave: the note's input `SessionNoteRuntime` builds reads `sessionHalloweenInfoItemIds` here through its
+	// port, with no delegate left in the core; that route is a case of `src/main-session-note-runtime-wiring.test.ts`.
 ];
 const SENTINEL = { sentinel: true };
 
