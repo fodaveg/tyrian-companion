@@ -3,6 +3,7 @@ import type { LiveComparisonConditions, LiveComparisonGroup, LiveComparisonRow, 
 import { formatFarmingTime } from './farming-goal-copy';
 import { paintLiveSessionSetAside } from './live-session-set-aside-notice';
 import { liveComparisonCopy, type LiveComparisonCopyKey } from './live-session-comparison-copy';
+import { createOwnedRoot } from './owned-root';
 
 export interface LiveSessionComparisonActions {
 	getLocale(): 'es' | 'en';
@@ -28,8 +29,8 @@ export class LiveSessionComparisonPanel {
 	private historyKey = '';
 
 	constructor(document: Document, private readonly actions: LiveSessionComparisonActions) {
-		// The root has no parent yet (the farming panel places it), so only it comes from `document`.
-		this.element = document.createElement('details'); this.element.className = 'tyrian-live-comparison tyrian-live-session';
+		// The root has no parent yet (the farming panel places it), so only it comes from `document` (`createOwnedRoot` keeps that owner).
+		this.element = createOwnedRoot(document, 'details'); this.element.className = 'tyrian-live-comparison tyrian-live-session';
 		this.node(this.element, 'summary', this.copy('title')); this.node(this.element, 'p', this.copy('limit'));
 		const toolbar = this.node(this.element, 'div'); toolbar.className = 'tyrian-live-session__toolbar';
 		this.loadButton = this.button(toolbar, this.copy('load'), () => { void this.load(); });
