@@ -526,8 +526,10 @@ export class LiveSessionLifecycle {
 			if (status !== 'cleared') return { cleared: false, note, reason: status === 'stale' ? 'record_stale' : 'storage_unavailable' };
 			const held = this.handle; this.handle = null;
 			if (held !== null) { try { await this.options.coordinator.release(held); } catch { /* the lease runs out by itself */ } }
-			const receipt = this.record?.summaryReceipt ?? null;
-			if (this.record !== null && receipt !== null) { this.sealedForPrune.set(this.record.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
+			// The record cleared is the one in memory or, when none could be brought back (a journal that did not match it), the one
+			// read from the key: sealed either way when it carries its receipt, and its journal is queued like any other.
+			const cleared = this.record ?? target; const receipt = cleared.summaryReceipt ?? null;
+			if (receipt !== null) { this.sealedForPrune.set(cleared.sessionId, receipt.path); this.queueDirty = true; await this.saveSealedQueue(); }
 			this.resetAfterDiscard();
 			return { cleared: true, note };
 		}

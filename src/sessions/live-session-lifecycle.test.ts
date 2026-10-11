@@ -586,6 +586,16 @@ describe('passive live session lifecycle', () => {
 			expect(await lengths(), 'the two old ones go; the two this host sealed are retained').toEqual([0,0,2]); expect(await queued()).toEqual([ids[2],'session-4']);
 			await next.service.dispose();
 		});
+		it('a sealed session discarded while its record could not be brought back still joins the queue', async () => {
+			const { f, ids, first, host, lengths, queued } = await earlierHost(0, true); await first.dispose();
+			vi.spyOn(f.store,'readLiveJournal').mockResolvedValueOnce([]);
+			const next = host(); await next.service.initialize();
+			expect(next.service.getRuntime(), 'the journal does not match: the record is not kept in memory').toBeNull();
+			await expect(next.service.discard()).resolves.toMatchObject({ cleared: true });
+			expect(await queued(), 'its note is saved (the record says so): its journal is sealed like any other').toEqual([ids[0]]);
+			await expect(next.service.start('Test')).resolves.not.toBeNull(); await next.beat();
+			expect(await lengths(), 'and it is pruned instead of staying for ever').toEqual([0]); await next.service.dispose();
+		});
 		it('a host that does not own the live session prunes nothing until the lease is its own', async () => {
 			const { f, first, firstBeat, host, lengths } = await earlierHost(2); let busy = true;
 			const next = host({coordinator:{...f.options.coordinator,acquire:async (id) => busy
