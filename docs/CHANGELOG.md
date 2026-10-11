@@ -1,5 +1,23 @@
 # Changelog
 
+## Release beta 0.6.49 - Arreglos de la QA de año normal: asesor, legendarias, cierre de sesión y caducidades
+
+Se actualiza desde la 0.6.48 publicada. Los fallos salen de la QA de año normal del 11 oct (pruebas 1 a 10 sin el
+juego, en un Obsidian desechable); los arreglos no se han visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Asesor de inventario. Una fila «Vender ya» de una posición repartida (reserva o depósito parcial) salía como «No
+  disponible» y sin valor de venta; ahora muestra el neto de sus propias unidades, la misma cifra que la tarjeta.
+- Legendarias objetivo. «Cargar lista» siempre fallaba: la API devuelve una lista de ids y el plugin esperaba
+  objetos. Ahora carga.
+- Cierre de sesión. Si la nota no se puede guardar al terminar, el panel ya no dice que la sesión no puede terminar
+  ni ofrece descartarla: dice que se reintenta sola y que se compruebe la carpeta de salida. El texto de la barra roja
+  vuelve a leerse.
+- Caducidades. La tabla de materiales de legendarias caduca el 10 dic 2026: desde entonces sus reservas salen como
+  inciertas y el asesor lo avisa. La regla de reciclaje de equipo que caduca el 25 feb 2027 ya no marca como obsoletos
+  materiales que no son equipo.
+- Documentación. La matriz de QA (pruebas 3 a 8) y la guía de sincronización del inventario se ponen al día.
+
 ## Release beta 0.6.48 - El panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta
 
 Se actualiza desde la 0.6.47 publicada. Los dos fallos se encontraron el 11 oct midiendo la 0.6.47 en un Hebra de Linux

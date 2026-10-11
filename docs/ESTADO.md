@@ -1,5 +1,31 @@
 # Estado
 
+## Candidato 0.6.49: arreglos de la QA de año normal (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.49` sobre el canal 0.6.48 publicado
+(`dfe03655`, más su documentación y evidencias hasta `9fd87e04`); añade los metadatos de versión (`manifest.json`,
+`package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- Sin verificar: nada de la 0.6.49 se ha visto en un Obsidian ni en un Hebra reales. Los fallos salen de la QA H18.29
+  del 11 oct ([2026-10-11-h18-29-qa-0647](evidencia/2026-10-11-h18-29-qa-0647.md)); cada arreglo trae un test rojo
+  antes y verde después.
+- F1 (`af595e67`): `src/inventory/inventory-analysis.ts` deja sin valoración precalculada la decisión que no es `keep`
+  de una posición repartida, y `src/advisor/inventory-advisor-presentation.ts` la valora por `decision.quantity` con la
+  profundidad de la captura. Probado con reserva parcial; el depósito parcial pasa por el mismo código.
+- F2 (`d647295a`): `loadLegendaryArmoryOptions` acepta la forma real de `/v2/legendaryarmory` (lista de ids).
+- F4 (`a2cddff0`): `LiveSessionLifecycle.isRetryingNote` (sesión cerrada, nota sin guardar, el latido la reescribe)
+  hace que el panel muestre `noteRetrying` en vez de «no puede terminar» y oculte «Descartar»; `isStuck` no cambia y la
+  paleta sigue pudiendo descartar. `styles.css`: texto legible en la barra de alerta.
+- F5 (`f4152419`, `6c4af63f`): `activeLegendaryMaterialsTable` (`src/economy/legendary-materials.ts`) devuelve `null`
+  desde el `validUntil` de la tabla (10 dic 2026), las reservas pasan a inciertas y el asesor muestra
+  `advisor.view.legendaryTableExpired` si hay un objetivo de legendaria.
+- F6 (`82722fa9`): la ventana de la política de reciclaje de equipo se comprueba después de descartar lo que no es
+  equipo, rareza fuera de alcance o nivel menor de 68: su caducidad (25 feb 2027) solo afecta al equipo cubierto.
+- F3 (`8b62499c`): docs/QA-MVP.md (pruebas 3 a 8) y docs/INVENTORY-VAULT-SYNC.md (sin confirmación al desactivar
+  filas, H18.37).
+- Pendiente: gate, publicación y verlo en hosts reales; de H18.29 quedan las pruebas 2, 3, 4 y 7 con el juego.
+
 ## Canal 0.6.48 publicado: el panel de sesión ya no afirma bloqueos que no existen y Hebra no abre una sesión sin carpeta (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.48` = `dfe03655` (atestación; candidato `c36dcf62`,
