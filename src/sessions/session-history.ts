@@ -6,7 +6,6 @@ import { parseDurableSessionComparison, parseSessionSackObservation, type Durabl
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { INVENTORY_NOTE_KIND } from '../inventory/inventory-vault-sync';
-import { ACHIEVEMENTS_NOTE_KIND } from '../achievements/leyspring-note';
 import { COLLECTOR_STATUS_NOTE_KIND } from '../runtime/collector-status';
 import { WALLET_NOTE_KIND } from '../wallet/wallet-vault-sync';
 import { normalizeSessionOutputFolder } from './session-note-model';
@@ -1061,6 +1060,8 @@ export function serializeCsvCell(value: string | number | null): string {
 function compareSessions(a: DurableSessionHistoryRecord, b: DurableSessionHistoryRecord): number {
 	return a.startedAt.localeCompare(b.startedAt) || a.endedAt.localeCompare(b.endedAt) || a.sessionRef.localeCompare(b.sessionRef);
 }
+/** `tc_kind` of the Leyspring achievements note; it lives here because the history must recognise it and `achievements` sits above `sessions`. */
+export const ACHIEVEMENTS_NOTE_KIND = 'gw2_achievements' as const;
 /**
  * The history scan reads the whole vault, so it also meets the notes the plugin's other writers
  * leave there (inventory positions, wallet currencies, the collector status note). Those are not
