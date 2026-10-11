@@ -10,6 +10,8 @@ import { inspectDurableSessionNote } from './session-history';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 import type { AbandonedSessionState } from './session';
 import { renderCollectorStatusNote } from '../runtime/collector-status';
+import { LeyspringNoteWriter, type AchievementsVaultFile, type AchievementsVaultPort } from '../achievements/leyspring-note';
+import { LEYSPRING_MASTERY_ACHIEVEMENT_ID } from '../achievements/leyspring-set';
 import { WalletVaultSyncService, type WalletVaultPort } from '../wallet/wallet-vault-sync';
 import {
 	SESSION_HISTORY_CSV_FILE,
@@ -72,6 +74,40 @@ describe('durable session history', () => {
 			expect(canScrubSessionHistory({ ...scrubGate, recoveryStatus })).toBe(false);
 		}
 		expect(canScrubSessionHistory({ ...scrubGate, detectorStatus: 'start_proposed' })).toBe(false);
+	});
+
+	it('opens the scrub gate for a sealed finished session only when the authority can retire it (Z2-3)', async () => {
+		const sealed = { ...scrubGate, sessionStatus: 'complete', sealedRetirable: true } as const;
+		expect(canScrubSessionHistory(sealed)).toBe(true);
+		expect(canScrubSessionHistory({ ...sealed, sealedRetirable: false })).toBe(false);
+		expect(canScrubSessionHistory({ ...sealed, sessionStatus: 'active' })).toBe(false);
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		let retired = false;
+		const retire = vi.fn(async () => { retired = true; return true; });
+		const authority = new SessionHistoryRuntimeAuthority(() => retired ? scrubGate : sealed, retire);
+		const history = new SessionHistoryService(vault);
+		const preview = await history.previewScrub(authority);
+		expect(preview.status).toBe('ready');
+		expect(retire, 'previewing changes nothing').not.toHaveBeenCalled();
+		if (preview.status !== 'ready') throw new Error('Expected a ready preview.');
+		await expect(history.scrub(preview.token, authority)).resolves.toMatchObject({ status: 'erased', erased: 1 });
+		expect(retire).toHaveBeenCalledOnce();
+		// A refusal to retire leaves every note as it was.
+		const refused = new MemoryVault();
+		refused.contents.set('Sessions/one.md', await note());
+		const refusing = new SessionHistoryRuntimeAuthority(() => sealed, async () => false);
+		const refusedHistory = new SessionHistoryService(refused);
+		const refusedPreview = await refusedHistory.previewScrub(refusing);
+		if (refusedPreview.status !== 'ready') throw new Error('Expected a ready preview.');
+		await expect(refusedHistory.scrub(refusedPreview.token, refusing)).resolves.toMatchObject({ status: 'blocked', erased: 0 });
+		expect(refused.contents.get('Sessions/one.md')).toBe(await note());
+		// Without a way to retire it, the sealed session keeps blocking.
+		const unwired = new SessionHistoryRuntimeAuthority(() => sealed);
+		const unwiredHistory = new SessionHistoryService(refused);
+		const unwiredPreview = await unwiredHistory.previewScrub(unwired);
+		if (unwiredPreview.status !== 'ready') throw new Error('Expected a ready preview.');
+		await expect(unwiredHistory.scrub(unwiredPreview.token, unwired)).resolves.toMatchObject({ status: 'blocked', erased: 0 });
 	});
 
 	it('shares mutual exclusion between runtime transitions and a scrub lease', () => {
@@ -712,6 +748,40 @@ describe('durable session history', () => {
 		relabelled.contents.set('Notes/relabelled.md', (await note()).replace('tc_kind: "gw2_farming_session"', 'tc_kind: gw2_inventory_position'));
 		expect(relabelled.contents.get('Notes/relabelled.md')).toContain('tc_kind: gw2_inventory_position');
 		await expect(new SessionHistoryService(relabelled).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+	});
+
+	it('does not read the Leyspring achievements note as a corrupt session, but still rejects a session identity under that kind (Z2-1)', async () => {
+		const files = new Map<string, string>();
+		const achievementsVault: AchievementsVaultPort = {
+			file: (path): AchievementsVaultFile | null => files.has(path) ? { path } : null,
+			read: async (file) => files.get(file.path) ?? '',
+			createFolder: async () => undefined,
+			create: async (path, content) => { files.set(path, content); return { path }; },
+			process: async (file, update) => { const next = update(files.get(file.path)!); files.set(file.path, next); return next; },
+		};
+		const written = await new LeyspringNoteWriter(achievementsVault, 'vault-config').write('Tyrian Companion', {
+			capturedAt: '2026-10-10T08:40:12.000Z', locale: 'es', accountName: 'Tester.1234', accountRef: 'a'.repeat(24),
+			progress: new Map(), names: new Map([[LEYSPRING_MASTERY_ACHIEVEMENT_ID, 'Mastery']]), thresholds: new Map(),
+		} as never);
+		expect(written.status).toBe('created');
+		const [achievementsPath, achievementsContent] = [...files.entries()][0]!;
+		expect(achievementsContent).toContain('tc_account_ref');
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note());
+		vault.contents.set(achievementsPath, achievementsContent);
+		const history = new SessionHistoryService(vault);
+		await expect(history.scan()).resolves.toMatchObject({ status: 'ok', ignored: 1 });
+		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'written', sessions: 1 });
+		await expect(history.previewScrub(idleAuthority())).resolves.toMatchObject({ status: 'ready', sessions: 1 });
+		const withSessionRef = new MemoryVault();
+		withSessionRef.contents.set('Notes/ach.md', achievementsContent.replace('tc_account_ref:', `tc_session_ref: ${'b'.repeat(64)}\ntc_account_ref:`));
+		await expect(new SessionHistoryService(withSessionRef).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const relabelled = new MemoryVault();
+		relabelled.contents.set('Notes/relabelled.md', (await note()).replace('tc_kind: "gw2_farming_session"', 'tc_kind: gw2_achievements'));
+		await expect(new SessionHistoryService(relabelled).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
+		const accountRefOnOtherKind = new MemoryVault();
+		accountRefOnOtherKind.contents.set('Notes/inv.md', inventoryNote().replace('tc_kind:', `tc_account_ref: ${'b'.repeat(64)}\ntc_kind:`));
+		await expect(new SessionHistoryService(accountRefOnOtherKind).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 	});
 
 	it('recognizes existing folders without attempting to read them as export files', async () => {

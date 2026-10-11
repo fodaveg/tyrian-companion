@@ -11,7 +11,7 @@ import { LiveSessionEconomy } from './live-session-economy';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { buildLiveChart } from './live-session-reducer';
 import { liveSessionViewFromStored, LiveSessionHistoryService } from './live-session-history';
-import type { SessionHistoryVault } from './session-history';
+import { SessionHistoryRuntimeAuthority, SessionHistoryService, type SessionHistoryFile, type SessionHistoryVault } from './session-history';
 import { currentLiveSessionCharacter } from './live-session-characters';
 import { isLiveSessionRuntimeRecord } from './live-session-validation';
 import { isLiveSessionSummaryState } from './live-session-summary-state';
@@ -755,6 +755,65 @@ describe('passive live session lifecycle', () => {
 			await expect(f.service.discard()).resolves.toMatchObject({ cleared: false });
 			expect(f.service.getRuntime()).not.toBeNull();
 			await f.service.dispose();
+		});
+	});
+	describe('the history scrub and a sealed session (Z2-3)', () => {
+		/** The vault the note goes to, and the writer that puts it back whenever the load asks for it. */
+		function notesVault() {
+			const contents = new Map<string,string>();
+			const vault: SessionHistoryVault = {
+				markdownFiles: () => [...contents.keys()].map((path) => ({ path })), exists: (path) => contents.has(path),
+				file: (path): SessionHistoryFile | null => contents.has(path) ? { path } : null, read: async (file) => contents.get(file.path)!,
+				process: async (file, update) => { contents.set(file.path, update(contents.get(file.path)!)); },
+				createFolder: async () => undefined, create: async (path, content) => { contents.set(path, content); return { path }; },
+			};
+			return { contents, vault };
+		}
+		async function sealed() {
+			const f = fixture(); const { contents, vault } = notesVault();
+			f.onComplete.mockImplementation((async (record: Parameters<typeof renderLiveSessionNote>[0]['record'], journal: Parameters<typeof renderLiveSessionNote>[0]['journal'], format: Parameters<typeof renderLiveSessionNote>[0]['format']) => {
+				const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'es', outputFolder: 'Tyrian' });
+				if (rendered.status !== 'ok') throw new Error('The note did not render.');
+				contents.set('Sessions/live.md', rendered.note.content); return 'Sessions/live.md';
+			}) as never);
+			await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.commit(f.sample(1,3));
+			await expect(f.service.stop(AT+2000)).resolves.toBe(true);
+			expect(f.service.getRuntime()).toMatchObject({ phase: 'complete' });
+			return { f, contents, vault };
+		}
+		it('scrub, reload: the note stays erased and the history stays empty', async () => {
+			const { f, contents, vault } = await sealed();
+			const gate = (service: LiveSessionLifecycle) => { const live = service.getRuntime();
+				return { sessionStatus: live?.phase ?? 'idle', sealedRetirable: live?.phase === 'complete' && live.summaryReceipt !== null, recoveryStatus: 'none', detectorStatus: 'disarmed' }; };
+			const authority = new SessionHistoryRuntimeAuthority(() => gate(f.service), () => f.service.retireSealed());
+			const history = new SessionHistoryService(vault);
+			expect(await new LiveSessionHistoryService(vault).list()).toMatchObject({ status: 'ok', sessions: [expect.anything()] });
+			const preview = await history.previewScrub(authority);
+			if (preview.status !== 'ready') throw new Error(`Expected a ready preview, got ${preview.status}.`);
+			await expect(history.scrub(preview.token, authority)).resolves.toMatchObject({ status: 'erased', erased: 1 });
+			expect(f.service.getRuntime(), 'the sealed record no longer holds the runtime key').toBeNull();
+			const scrubbed = contents.get('Sessions/live.md');
+			await f.service.dispose();
+			const reloaded = new LiveSessionLifecycle(f.options); await reloaded.initialize();
+			expect(reloaded.getRuntime()).toBeNull(); expect(f.onComplete, 'nothing writes the note back').toHaveBeenCalledOnce();
+			expect(contents.get('Sessions/live.md')).toBe(scrubbed); expect(contents.size).toBe(1);
+			expect(await new LiveSessionHistoryService(vault).list()).toMatchObject({ status: 'ok', sessions: [] });
+			await expect(reloaded.start('Test')).resolves.not.toBeNull();
+			await reloaded.dispose();
+		});
+		it('retires only a finished session whose note is saved', async () => {
+			const running = fixture(); await running.service.start('Test');
+			await expect(running.service.retireSealed(), 'a running session is not retired').resolves.toBe(false);
+			expect(running.service.getRuntime()).toMatchObject({ phase: 'active' });
+			const unsaved = fixture(); await unsaved.service.start('Test'); unsaved.onComplete.mockResolvedValue(null as unknown as string);
+			await expect(unsaved.service.stop(AT+2000)).resolves.toBe(false);
+			await expect(unsaved.service.retireSealed(), 'a finished session without its note is not retired').resolves.toBe(false);
+			expect(unsaved.service.getRuntime()).toMatchObject({ phase: 'complete', summaryReceipt: null });
+			await expect(fixture().service.retireSealed(), 'nothing to retire is nothing under the key').resolves.toBe(true);
+			const { f } = await sealed();
+			await expect(f.service.retireSealed()).resolves.toBe(true); expect(f.service.getRuntime()).toBeNull();
+			await expect(f.service.retireSealed()).resolves.toBe(true);
+			await running.service.dispose(); await unsaved.service.dispose(); await f.service.dispose();
 		});
 	});
 	describe('discarding only what this host may', () => {
