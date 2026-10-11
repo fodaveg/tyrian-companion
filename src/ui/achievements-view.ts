@@ -980,7 +980,11 @@ export class AchievementsView {
 
 	private statusText(view: TrackedAchievementView): string {
 		const status = view.status;
-		if (status.kind === 'repeatable') return this.t.t('achievements.status.repeatable', { times: status.timesDone });
+		if (status.kind === 'repeatable') {
+			return status.timesDone === 1
+				? this.t.t('achievements.status.repeatable.one')
+				: this.t.t('achievements.status.repeatable.many', { times: status.timesDone });
+		}
 		return this.t.t(`achievements.status.${status.kind}` as TranslationKey);
 	}
 
