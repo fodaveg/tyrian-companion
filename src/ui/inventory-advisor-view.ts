@@ -614,6 +614,7 @@ function mountInventoryAdvisorView(
 			{
 				scope: scopeSummaryOfScopedRows(ordered.scoped, new Set(rows.map((row) => row.itemId)), filters),
 				storageSpace: model.storageSpace ?? null,
+				legendaryTableExpiredAt: model.legendaryTableExpiredAt ?? null,
 				rowElement: (row) => {
 					let element = rowElements.get(row);
 					// A row the advisor already keeps shows a note, whatever the exceptions say.
@@ -865,6 +866,8 @@ function renderResults(
 	context: {
 		scope: InventoryAdvisorScopeSummary;
 		storageSpace: InventoryAdvisorStorageSpaceView | null;
+		/** F5: the legendary materials table's `validUntil` when it expired under a chosen target. */
+		legendaryTableExpiredAt: string | null;
 		/** The element of a row: the one already built for it, or a new one the first time it is listed. */
 		rowElement: (row: InventoryAdvisorViewRow) => HTMLLIElement;
 	},
@@ -873,6 +876,13 @@ function renderResults(
 	content.className = 'tyrian-inventory-advisor__results-content';
 	if (context.storageSpace !== null) content.append(renderStorageSpace(context.storageSpace, translator));
 	content.append(renderScopeSummary(context.scope, translator));
+	if (context.legendaryTableExpiredAt !== null) {
+		const expired = createEl('p');
+		expired.className = 'tyrian-inventory-advisor__scope-note';
+		expired.setAttribute('role', 'status');
+		expired.textContent = translator.t('advisor.view.legendaryTableExpired', { date: context.legendaryTableExpiredAt.slice(0, 10) });
+		content.append(expired);
+	}
 	if (characterScope !== null) {
 		const scopeNote = createEl('p');
 		scopeNote.className = 'tyrian-inventory-advisor__scope-note';

@@ -171,6 +171,8 @@ export interface InventoryAdvisorPresentation {
 		| { status: 'review_only'; proofs: InventoryDiscardAllowlistProofV1[] };
 	/** H18.15: the analysis's storage space (free slots, low-space state, material capacity). */
 	storageSpace?: InventoryAdvisorStorageSpace | null;
+	/** F5: `validUntil` of the legendary materials table when it has expired under a chosen target. */
+	legendaryTableExpiredAt?: string;
 	/**
 	 * Set only on an `invalid` presentation: the stable snake_case code of the exit that rejected the
 	 * source (a closed list, no account data). It never changes what is invalid.

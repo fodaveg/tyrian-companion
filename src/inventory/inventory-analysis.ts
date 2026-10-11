@@ -91,6 +91,11 @@ export interface InventoryPositionRecommendationPort {
 	/** The curated table `legendaryTargetItemIds` are checked against, or `null` while unavailable. */
 	legendaryMaterialsTable(): LegendaryMaterialsTableV1 | null;
 	/**
+	 * F5 (QA-MVP prueba 10): the `validUntil` of the shipped table once it is past, else `null`.
+	 * Optional so a port that predates it keeps compiling; absent means "not expired".
+	 */
+	legendaryMaterialsTableExpiredAt?(): string | null;
+	/**
 	 * `GET /v2/account/legendaryarmory`'s per-id `count`, or `null` on any failure. Called only
 	 * from an explicit analysis (the advisor's refresh, which every inventory sync starts with) and
 	 * only while a target is chosen, never from settings or plugin load. `docs/PRODUCT.md:28`
@@ -375,12 +380,15 @@ export class InventoryAnalysisService {
 			valuationByDecision[decision.explanationRef] = quantity === decision.quantity && Number.isSafeInteger(copper) ? copper : null;
 		}
 
+		const legendaryTableExpiredAt = this.recommendation.legendaryTargetItemIds().length > 0
+			? this.recommendation.legendaryMaterialsTableExpiredAt?.() ?? null : null;
 		return {
 			version: 1,
 			snapshotId: input.snapshot.snapshotId,
 			decisions,
 			positions,
 			uncertainItemIds: sortedIds(uncertain),
+			...(legendaryTableExpiredAt === null ? {} : { legendaryTableExpiredAt }),
 			valuationByDecision,
 			storageSpace: storageSpaceOf(source, decisions, this.recommendation.lowStorageSpaceThresholdFreeSlots(), options.storageCharacter),
 		};

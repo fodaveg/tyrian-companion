@@ -1204,6 +1204,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Rule (a), M4: the settings' target list, empty by default.
 			legendaryTargetItemIds: () => this.settings.legendaryTargetItemIds,
 			legendaryMaterialsTable: () => activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, Date.now()),
+			legendaryMaterialsTableExpiredAt: () => activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, Date.now()) === null
+				? LEGENDARY_MATERIALS_TABLE.validUntil : null,
 			// GET /v2/account/legendaryarmory, called only from an explicit advisor analysis while a
 			// target is chosen (decision 1's own scoping): never from the settings panel or plugin
 			// load. A rejected or malformed response becomes null, which the analysis treats as

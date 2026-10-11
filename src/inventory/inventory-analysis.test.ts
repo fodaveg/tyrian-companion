@@ -518,13 +518,14 @@ describe('inventory analysis: legendary reservations through the advisor (H18.1)
 		holdings: ItemHolding[],
 		targets: number[],
 		table: LegendaryMaterialsTableV1 | null,
-		options: { owned?: ReadonlyMap<number, number>; goals?: ReservationGoal[] } = {},
+		options: { owned?: ReadonlyMap<number, number>; goals?: ReservationGoal[]; expiredAt?: string } = {},
 	) {
 		const port = recommendationPort({
 			readDaily: async (itemId) => dailySeries(itemId, 36, 300, 5, AS_OF_MS),
 			seasonalInputFor: () => ({ window: WINDOW, parameters: SIGNAL }),
 			legendaryTargetItemIds: () => targets,
 			legendaryMaterialsTable: () => table,
+			legendaryMaterialsTableExpiredAt: () => options.expiredAt ?? null,
 			readLegendaryArmoryCounts: async () => options.owned ?? new Map(),
 		});
 		const analysed = await analyse(holdings, { port, goals: options.goals ?? [] });
@@ -603,6 +604,18 @@ describe('inventory analysis: legendary reservations through the advisor (H18.1)
 		});
 		const forged = await withTargets(holdings, [LEGENDARY_A], null, { owned: new Map([[LEGENDARY_A, 1]]) });
 		expect(forged.at(SHIPPED_MATERIAL, 'bank')).toMatchObject({ ...pick(SELLS), reservedQuantity: 0, freeQuantity: 100 });
+	});
+
+	it('F5: an expired table under a chosen target is reported on the result and reaches the presentation', async () => {
+		const holdings = [bank(MATERIAL, 100, 0)];
+		const expiredAt = '2026-12-10T00:00:00.000Z';
+		const expired = await withTargets(holdings, [LEGENDARY_A], null, { expiredAt });
+		expect(expired.objects.legendaryTableExpiredAt).toBe(expiredAt);
+		expect(expired.model.legendaryTableExpiredAt).toBe(expiredAt);
+		const valid = await withTargets(holdings, [LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]));
+		expect(valid.objects.legendaryTableExpiredAt).toBeUndefined();
+		const noTarget = await withTargets(holdings, [], null, { expiredAt });
+		expect(noTarget.objects.legendaryTableExpiredAt).toBeUndefined();
 	});
 });
 
