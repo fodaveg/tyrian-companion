@@ -104,7 +104,7 @@ export function canonicalHoldingOrder(holdings: StorageSnapshotPass['holdings'])
 				const b = right.key[i]!;
 				if (a === b) continue;
 				if (typeof a === 'string') return a < (b as string) ? -1 : 1;
-				return (a as number) - (b as number);
+				return (a) - (b as number);
 			}
 			return left.index - right.index;
 		})

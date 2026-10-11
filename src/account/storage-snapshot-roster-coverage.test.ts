@@ -35,7 +35,7 @@ function client(roster: Answer, characters: Record<string, Answer>) {
 
 async function capture(roster: Answer, characters: Record<string, Answer>) {
 	const source = client(roster, characters);
-	return new StorageSnapshotService(source).captureWithOperation(source.beginOperation() as never);
+	return new StorageSnapshotService(source).captureWithOperation(source.beginOperation());
 }
 
 describe('Z4-1 a roster read that answered 206', () => {

@@ -44,7 +44,7 @@ describe('Z4-2 canonical holding order', () => {
 				},
 			};
 			const client = { beginOperation: () => operation };
-			const snapshot = await new StorageSnapshotService(client).captureInventoryWithOperation(operation as never);
+			const snapshot = await new StorageSnapshotService(client).captureInventoryWithOperation(operation);
 			return snapshot.holdings.map((entry) => entry.location.source);
 		};
 		const bankSlow = await capture('account/bank');
