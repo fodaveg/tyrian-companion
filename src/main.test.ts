@@ -15,6 +15,7 @@ vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
 import TyrianCompanionPlugin from './main';
 import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian-companion-core';
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
+import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -39,7 +40,7 @@ import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from './ui/sale-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
-import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
+import type { SessionCommandPorts } from './ui/session-command-controller';
 import type { SessionCommandContext } from './ui/session-command-model';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
 import type { SessionStartInput } from './sessions/session-start-capture';
@@ -58,6 +59,9 @@ interface StartIntentHarness {
 	startModal: ManualSessionStartModal | null;
 	// DE-01, step 3c: the start itself is `LiveSessionRuntime`'s, the core's `live`.
 	live: { startManualSession(input: SessionStartInput): Promise<void> };
+	// DE-01, step 3d: what the controller's `prepare` reads before it opens the modal.
+	sessionHistoryRuntimeAuthority: { runtimeMutationAllowed(): boolean };
+	liveSessions: null;
 }
 
 interface InventoryVaultIntentHarness {
@@ -71,7 +75,8 @@ interface InventoryVaultIntentHarness {
 }
 
 /**
- * DE-01, step 3c: the start, the stop and the finalization are `LiveSessionRuntime`'s. The cases below
+ * DE-01, steps 3c and 3d: the start, the stop, the finalization, the assisted detection and the
+ * pending proposals are `LiveSessionRuntime`'s. The cases below
  * that drove them as methods of `TyrianCompanionCore` on a plain object run them on a runtime built
  * over that same object through the core's own port (`liveSessionRuntimePort`), so the object's
  * fields and the core's methods it lends are read exactly as the moved code reads them in production.
@@ -81,6 +86,20 @@ function liveOver(harness: object): LiveSessionRuntime {
 		liveSessionRuntimePort(this: void, core: object): LiveSessionRuntimePort;
 	}).liveSessionRuntimePort;
 	return new LiveSessionRuntime(portOf(harness));
+}
+
+/**
+ * DE-01, step 3d: the session commands' intents are `SessionCommandRuntime`'s. The cases below that
+ * prepared them as methods of `TyrianCompanionCore` on a plain object prepare them through the
+ * controller's own `prepare` (`prepareSessionCommand`) on a runtime built over that same object
+ * through the core's own port (`sessionCommandRuntimePort`), so the modal is written to the object's
+ * own field, as it is to the core's in production.
+ */
+function commandsOver(harness: object): SessionCommandRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		sessionCommandRuntimePort(this: void, core: object): SessionCommandRuntimePort;
+	}).sessionCommandRuntimePort;
+	return new SessionCommandRuntime(portOf(harness));
 }
 
 describe('connection diagnostics composition', () => {
@@ -129,7 +148,7 @@ describe('connection diagnostics composition', () => {
 			settingTab: { refreshConnectionRow: vi.fn() },
 			renderViews: vi.fn(),
 			localDebugActions: actions,
-			reconcilePendingProposals: vi.fn(async () => undefined),
+			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const checkConnection = (TyrianCompanionCore.prototype as unknown as {
@@ -191,7 +210,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			settingTab: { refreshConnectionRow: vi.fn() },
 			renderViews: vi.fn(),
 			localDebugActions: null,
-			reconcilePendingProposals: vi.fn(async () => undefined),
+			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
 			halloweenObservationActive: () => true,
@@ -229,7 +248,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			settingTab: { refreshConnectionRow: vi.fn() },
 			renderViews: vi.fn(),
 			localDebugActions: null,
-			reconcilePendingProposals: vi.fn(async () => undefined),
+			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
 			halloweenObservationActive: () => true,
@@ -267,7 +286,7 @@ describe('Halloween backfill wiring (H14.11)', () => {
 				settingTab: { refreshConnectionRow: vi.fn() },
 				renderViews: vi.fn(),
 				localDebugActions: null,
-				reconcilePendingProposals: vi.fn(async () => undefined),
+				live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 				alertAccountRef: null as string | null,
 				halloweenAccountRef: null as string | null,
 				halloweenObservationActive: () => true,
@@ -339,12 +358,8 @@ describe('legacy armAssistedDetection observability (H15.12)', () => {
 			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const armAssistedDetection = (TyrianCompanionCore.prototype as unknown as {
-			armAssistedDetection(this: typeof harness): Promise<string>;
-		}).armAssistedDetection;
-
-		const outcome = await armAssistedDetection.call(harness);
+		// DE-01, step 3d: the arming is `LiveSessionRuntime`'s, run over this harness through the core's port.
+		const outcome = await liveOver(harness).armAssistedDetection();
 
 		expect(outcome).toBe('failed');
 		expect(events).toContainEqual(expect.objectContaining({
@@ -374,12 +389,7 @@ describe('legacy armAssistedDetection observability (H15.12)', () => {
 			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const armAssistedDetection = (TyrianCompanionCore.prototype as unknown as {
-			armAssistedDetection(this: typeof harness): Promise<string>;
-		}).armAssistedDetection;
-
-		await armAssistedDetection.call(harness);
+		await liveOver(harness).armAssistedDetection();
 
 		expect(harness.assistedDetection.arm).toHaveBeenCalledOnce();
 		expect(events).toEqual([]);
@@ -535,9 +545,10 @@ describe('assisted proposal invalidation metrics', () => {
 			},
 			pilotMetrics: { proposalExcluded },
 			renderViews: vi.fn(() => { events.push('render'); }),
-		}) as unknown as TyrianCompanionCore;
+		});
 
-		plugin.disarmAssistedDetection();
+		// DE-01, step 3d: the disarm is `LiveSessionRuntime`'s, run over this object through the core's port.
+		liveOver(plugin).disarmAssistedDetection();
 
 		expect(events).toEqual(['excluded', 'disarm', 'render']);
 		expect(proposalExcluded).toHaveBeenCalledWith(halloweenProposal().proposalId, 'invalidated');
@@ -556,9 +567,9 @@ describe('assisted proposal invalidation metrics', () => {
 			},
 			pilotMetrics: { proposalExcluded: () => { throw new Error('pilot unavailable'); } },
 			renderViews: vi.fn(),
-		}) as unknown as TyrianCompanionCore;
+		});
 
-		expect(() => plugin.disarmAssistedDetection()).not.toThrow();
+		expect(() => { liveOver(plugin).disarmAssistedDetection(); }).not.toThrow();
 		expect(disarm).toHaveBeenCalledWith('user');
 	});
 });
@@ -576,11 +587,10 @@ describe('manual session start command', () => {
 			settings: { language: 'en', preferredCharacter: 'Astra Uno' },
 			startModal: null,
 			live: { startManualSession },
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			liveSessions: null,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const prepareStartIntent = (TyrianCompanionCore.prototype as unknown as {
-			prepareStartIntent(this: StartIntentHarness): Promise<PreparedSessionCommand | null>;
-		}).prepareStartIntent;
+		const commands = commandsOver(plugin);
 		const notify = vi.fn();
 		const controller = new SessionCommandController({
 			getContext: () => ({
@@ -589,7 +599,7 @@ describe('manual session start command', () => {
 				connection: 'connected',
 				stopFailure: null,
 			}),
-			prepare: () => prepareStartIntent.call(plugin),
+			prepare: (id) => commands.prepareSessionCommand(id),
 			notify,
 		} satisfies SessionCommandPorts);
 
@@ -623,14 +633,14 @@ describe('abandon session command', () => {
 		const plugin = withObsidianHost({
 			app: {}, settings: { language: 'es' }, abandonModal: null as ConfirmAbandonSessionModal | null,
 			live: { performAbandonSession } satisfies Pick<LiveSessionRuntime, 'performAbandonSession'>,
+			// DE-01, step 3d: what the controller's `prepare` reads before it opens the confirmation.
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			liveSessions: null,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
-		const prepare = (TyrianCompanionCore.prototype as unknown as {
-			prepareAbandonIntent(this: typeof plugin): Promise<PreparedSessionCommand | null>;
-		}).prepareAbandonIntent;
+		const commands = commandsOver(plugin);
 		const notify = vi.fn();
 		const controller = new SessionCommandController({
-			getContext: stoppingContext, prepare: () => prepare.call(plugin), notify,
+			getContext: stoppingContext, prepare: (id) => commands.prepareSessionCommand(id), notify,
 		} satisfies SessionCommandPorts);
 		return { plugin, performAbandonSession, controller, notify };
 	}
@@ -706,7 +716,8 @@ describe('product navigation diagnostics', () => {
 			getPendingProposalState: () => ({
 				next: { proposalId: 'proposal-1', accountId: 'account-1', phase: 'start', binding: { kind: 'idle', ruleSetId: 'rules', ruleSetVersion: 1 } },
 			}),
-			reviewPendingProposalOutcome,
+			// DE-01, step 3d: the review is `LiveSessionRuntime`'s, the core's `live`.
+			live: { reviewPendingProposalOutcome } satisfies Pick<LiveSessionRuntime, 'reviewPendingProposalOutcome'>,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
 		const execute = (TyrianCompanionCore.prototype as unknown as {
@@ -733,21 +744,16 @@ describe('product navigation diagnostics', () => {
 			renderViews: vi.fn(),
 			localDebugActions: null,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const review = (TyrianCompanionCore.prototype as unknown as {
-			reviewPendingProposalOutcome(
-				this: typeof harness,
-				intent: PendingProposalIntent,
-			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
-		}).reviewPendingProposalOutcome;
+		// DE-01, step 3d: the review is `LiveSessionRuntime`'s, run over this harness through the core's port.
+		const review = (intent: PendingProposalIntent) => liveOver(harness).reviewPendingProposalOutcome(intent);
 		const intent = {
 			proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
 			binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
 		};
 
-		await expect(review.call(harness, intent)).resolves.toBe('unavailable');
+		await expect(review(intent)).resolves.toBe('unavailable');
 		acknowledge.mockRejectedValueOnce(new Error('storage failed'));
-		await expect(review.call(harness, intent)).resolves.toBe('failed');
+		await expect(review(intent)).resolves.toBe('failed');
 		expect(emitNotice).toHaveBeenCalledTimes(2);
 	});
 
@@ -767,19 +773,14 @@ describe('product navigation diagnostics', () => {
 			renderViews: vi.fn(),
 			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'proposal-review' }),
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const review = (TyrianCompanionCore.prototype as unknown as {
-			reviewPendingProposalOutcome(
-				this: typeof harness,
-				intent: PendingProposalIntent,
-			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
-		}).reviewPendingProposalOutcome;
+		// DE-01, step 3d: the review is `LiveSessionRuntime`'s, run over this harness through the core's port.
+		const review = (intent: PendingProposalIntent) => liveOver(harness).reviewPendingProposalOutcome(intent);
 		const intent = {
 			proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
 			binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
 		};
 
-		await expect(review.call(harness, intent)).resolves.toBe('failed');
+		await expect(review(intent)).resolves.toBe('failed');
 
 		const failure = record.mock.calls.map(([input]) => input).find(
 			(input) => input.component === 'detection' && input.action === 'detection_proposal' && input.phase === 'failure',
@@ -809,11 +810,8 @@ describe('product navigation diagnostics', () => {
 			pendingProposals: { getState: () => ({ status: 'ready' as const, pendingCount: 1, next: proposal }) },
 			pilotMetrics: { proposalPresented },
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const presented = (TyrianCompanionCore.prototype as unknown as {
-			recordPendingProposalPresented(this: typeof harness, intent: PendingProposalIntent): Promise<void>;
-		}).recordPendingProposalPresented;
-		await presented.call(harness, proposalIntent(proposal as never));
+		// DE-01, step 3d: the journal entry is `LiveSessionRuntime`'s, run over this harness through the core's port.
+		liveOver(harness).recordPendingProposalPresented(proposalIntent(proposal as never));
 		expect(proposalPresented).toHaveBeenCalledWith(expect.objectContaining({
 			proposalId: 'proposal-1', phase: 'start', mode: 'assisted', pollingIntervalMs: 120_000,
 			window: proposal.proposal.possibleStart, evidenceQuality: 'complete',
@@ -924,14 +922,12 @@ describe('product navigation diagnostics', () => {
 			notifyRuntimeStarting: vi.fn(),
 			assistedDetection: { arm: armRuntime },
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const arm = (TyrianCompanionCore.prototype as unknown as {
-			armAssistedDetection(this: typeof armHarness): Promise<'unavailable'>;
-		}).armAssistedDetection;
+		// DE-01, step 3d: the arming is `LiveSessionRuntime`'s, run over `armHarness` through the core's port.
+		const live = liveOver(armHarness);
 		const plugin = Object.assign(Object.create(TyrianCompanionCore.prototype) as {
-			armAssistedDetection(): Promise<'unavailable'>;
+			armAssistedDetection(): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
 		}, {
-			armAssistedDetection: () => arm.call(armHarness),
+			armAssistedDetection: () => live.armAssistedDetection(),
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
 		const execute = (TyrianCompanionCore.prototype as unknown as {
@@ -1391,14 +1387,19 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 		const accept = vi.fn(async () => true);
 		const proposalDecided = vi.fn(async () => true);
 		const intent = { proposalId: 'proposal-1', accountId: 'account-1', phase: 'stop' as const, binding: { kind: 'session' as const, sessionId: 'session-1', baselineSnapshotId: 'before' } };
+		const claim = vi.fn(async () => ({
+			status: 'claimed' as const,
+			proposal: { phase: 'stop', proposalId: 'proposal-1', proposal: { proposalId: 'proposal-1' } },
+		}));
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
 			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
-			acquirePendingIntent: vi.fn(async () => ({
-				proposal: { phase: 'stop', proposalId: 'proposal-1', proposal: { proposalId: 'proposal-1' } },
-				operationId: 'operation-1', stopRenewal: vi.fn(),
-			})),
+			// The claim the runtime's own `acquirePendingIntent` makes: reconcile, claim, renewal (DE-01, step 3d).
+			connection: { getState: () => ({ status: 'idle' }) },
+			pendingClaimRenewals: { start: () => vi.fn() },
 			sessions: {
+				getState: () => ({ status: 'active', sessionId: 'session-1', baseline: { snapshotId: 'before' } }),
+				getRecoveryState: () => ({ status: 'none' }),
 				stop: vi.fn(async () => ({
 					status: 'stopped' as const,
 					state: { sessionId: 'session-1', stopRequestedAt: '2026-09-01T08:00:00.000Z', finalSnapshot: { completedAt: '2026-09-01T08:10:00.000Z' } },
@@ -1417,30 +1418,32 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 			observeHalloweenDelta: vi.fn(async () => undefined),
 			emitNotice: vi.fn(), settings: { language: 'en' as const },
 			assistedDetection: { getState: () => ({ status: 'armed' }), disarm: vi.fn() },
-			pendingProposals: { accept },
+			pendingProposals: { accept, claim, reconcile: vi.fn(async () => ({ status: 'ready', pendingCount: 1, next: null })) },
 			pilotMetrics: { proposalDecided, sessionCompleted: vi.fn(async () => true) },
 			detectionQuality: { recordAccepted: vi.fn(async () => undefined) },
 			priceHistory: null,
 			renderViews: vi.fn(), localDebugActions: null,
 		});
-		return { run: () => liveOver(harness).performStopManualSession(intent), accept, proposalDecided };
+		/** The operation id the claim was made with, which the accept must carry. */
+		const operationId = (): unknown => (claim.mock.calls[0] as unknown[] | undefined)?.[1];
+		return { run: () => liveOver(harness).performStopManualSession(intent), accept, proposalDecided, operationId };
 	}
 
 	it('records a failed workflow in the receipt and the pilot when the summary could not be saved', async () => {
-		const { run, accept, proposalDecided } = stopHarness(false);
+		const { run, accept, proposalDecided, operationId } = stopHarness(false);
 
 		await run();
 
-		expect(accept).toHaveBeenCalledWith(expect.anything(), 'operation-1', 'session-1', 'failed');
+		expect(accept).toHaveBeenCalledWith(expect.anything(), operationId(), 'session-1', 'failed');
 		expect(proposalDecided).toHaveBeenCalledWith(expect.objectContaining({ decision: 'accepted', workflow: 'failed' }));
 	});
 
 	it('keeps recording a clean success when the summary was saved', async () => {
-		const { run, accept, proposalDecided } = stopHarness(true);
+		const { run, accept, proposalDecided, operationId } = stopHarness(true);
 
 		await run();
 
-		expect(accept).toHaveBeenCalledWith(expect.anything(), 'operation-1', 'session-1', 'succeeded');
+		expect(accept).toHaveBeenCalledWith(expect.anything(), operationId(), 'session-1', 'succeeded');
 		expect(proposalDecided).toHaveBeenCalledWith(expect.objectContaining({ workflow: 'succeeded' }));
 	});
 });
@@ -2618,6 +2621,8 @@ describe('local diagnostics composition', () => {
 			} },
 			sessions: { dispose: vi.fn(async () => { events.push('sessions:dispose'); }) },
 			ingameReceipts: { dispose: vi.fn() },
+			// No assisted proposal is live: the live session runtime closes none (DE-01, step 3d).
+			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
 		}) as unknown as TyrianCompanionCore;
 		harness.onunload();
 		await harness.awaitLocalDebugShutdown();

@@ -32,6 +32,8 @@ import { HalloweenRuntime } from './halloween/halloween-runtime';
 import type { PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { loadCollectorMode } from './runtime/collector-instance';
 import { COLLECTOR_HEARTBEAT_INTERVAL_MS, parseCollectorStatusNote } from './runtime/collector-status';
+import { LiveSessionRuntime } from './runtime/live-session-runtime';
+import type { SessionCommandRuntime } from './runtime/session-command-runtime';
 import { AssistedDetectionService } from './sessions/assisted-detection-service';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
@@ -294,6 +296,15 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 	});
 });
 
+/**
+ * What `onload` runs to build the session commands and the product actions; the session commands'
+ * setup is the core's `SessionCommandRuntime`'s (DE-01, step 3d).
+ */
+interface CommandSetup {
+	commands: Pick<SessionCommandRuntime, 'setupSessionCommands'>;
+	setupProductActions(): void;
+}
+
 /** The real action controller and the Settings loader, which the harness type above does not list. */
 interface ConsultManualActions {
 	productActions: {
@@ -317,11 +328,11 @@ describe('consult: the manual actions through the real action controller', () =>
 		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
 		await world.plugin.initializeRuntime();
 		await settle();
-		const actions = world.plugin as unknown as ConsultManualActions & { setupSessionCommands(): void; setupProductActions(): void };
+		const actions = world.plugin as unknown as ConsultManualActions & CommandSetup;
 		// `onload` builds the controller; the harness boots only the runtime, so build it as production does.
 		vi.spyOn(world.plugin.host.ui, 'registerCommand').mockImplementation(() => () => undefined);
 		vi.spyOn(world.plugin.host.ui, 'ribbon').mockImplementation(() => ({ remove: () => undefined, setIcon: () => undefined, setTitle: () => undefined, setPending: () => undefined, setActive: () => undefined, update: () => undefined }) as never);
-		actions.setupSessionCommands();
+		actions.commands.setupSessionCommands();
 		actions.setupProductActions();
 
 		// Nothing ever analysed: the advisor model reads `loading`, and nothing is in flight.
@@ -343,10 +354,10 @@ describe('consult: the manual actions through the real action controller', () =>
 		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'collector' });
 		await world.plugin.initializeRuntime();
 		await settle();
-		const actions = world.plugin as unknown as ConsultManualActions & { setupSessionCommands(): void; setupProductActions(): void };
+		const actions = world.plugin as unknown as ConsultManualActions & CommandSetup;
 		vi.spyOn(world.plugin.host.ui, 'registerCommand').mockImplementation(() => () => undefined);
 		vi.spyOn(world.plugin.host.ui, 'ribbon').mockImplementation(() => ({ remove: () => undefined, setIcon: () => undefined, setTitle: () => undefined, setPending: () => undefined, setActive: () => undefined, update: () => undefined }) as never);
-		actions.setupSessionCommands();
+		actions.commands.setupSessionCommands();
 		actions.setupProductActions();
 
 		expect(actions.productActions.describe('refresh-inventory-advisor')).toMatchObject({ available: false, state: 'running' });
@@ -377,7 +388,6 @@ interface ConsultConnectionActions {
 	getConnectionState(): { status: string };
 	runInventoryVaultSync(): Promise<void>;
 	getInventoryVaultSyncRunState(): { status: string; lastRun: { status: string; error: string | null } | null };
-	reconcilePendingProposals(): Promise<void>;
 }
 
 /**
@@ -423,8 +433,10 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		const world = collectorModePlugin({
 			apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true, halloweenEnabled: true,
 		}, { mode: 'consult' });
-		const arm = vi.spyOn(world.plugin, 'armAssistedDetection');
-		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+		// The arming and the reconcile are the core's live session runtime's (DE-01, step 3d): spied on
+		// it, they also catch the re-arms it makes on its own after a stop or a way out of a session.
+		const arm = vi.spyOn(LiveSessionRuntime.prototype, 'armAssistedDetection');
+		const reconcile = vi.spyOn(LiveSessionRuntime.prototype, 'reconcilePendingProposals');
 		await world.plugin.initializeRuntime();
 		// The boot reconciles the proposal queue once it is open (in either mode): only what comes
 		// after is the check's.
@@ -452,8 +464,8 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		// Booted without a key, so the collector's boot warm-up check (which arms detection and
 		// reconciles too, and under load could land after `settle`) never runs; the key comes after.
 		const world = collectorModePlugin({ apiKeySecret: '' }, { mode: 'collector' });
-		const arm = vi.spyOn(world.plugin, 'armAssistedDetection').mockResolvedValue('unavailable');
-		const reconcile = vi.spyOn(world.plugin as unknown as ConsultConnectionActions, 'reconcilePendingProposals');
+		const arm = vi.spyOn(LiveSessionRuntime.prototype, 'armAssistedDetection').mockResolvedValue('unavailable');
+		const reconcile = vi.spyOn(LiveSessionRuntime.prototype, 'reconcilePendingProposals');
 		await world.plugin.initializeRuntime();
 		await bootReconciled(reconcile);
 		expect(arm).not.toHaveBeenCalled();

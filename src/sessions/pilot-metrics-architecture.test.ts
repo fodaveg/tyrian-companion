@@ -49,8 +49,11 @@ describe('pilot metrics architecture', () => {
 		// in `src/runtime/live-session-runtime.test.ts`; `sessionStarted`, `sessionCompleted` and the
 		// start's `workflow: 'succeeded'`/`'failed'` from a start and a finalization that run, in
 		// `src/main-session-workflow-semantics.test.ts`, and the stop's workflow in `src/main.test.ts`
-		// ('stop workflow outcome in the receipt and the pilot (H18.4)') (DE-01).
-		for (const hook of ['proposalPresented', 'recoveryPresented', 'proposalExcluded']) expect(main).toContain(hook);
+		// ('stop workflow outcome in the receipt and the pilot (H18.4)') (DE-01). `proposalPresented` is
+		// read from a pending card and an assisted proposal that are journaled, in `src/main.test.ts`
+		// ('journals a materialized pending-proposal card...') and
+		// `src/main-assisted-proposal-semantics.test.ts` (DE-01).
+		for (const hook of ['recoveryPresented', 'proposalExcluded']) expect(main).toContain(hook);
 	});
 
 	it('attempts review-presented when a card materializes without delaying any product action', () => {
@@ -74,11 +77,9 @@ describe('pilot metrics architecture', () => {
 		expect(assisted).not.toContain('PilotBoundaryModal');
 		expect(assisted).toContain('openManualSessionStart(null)');
 		expect(assisted).toContain('stopManualSession(null)');
-		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
-		const review = classMethodBody(main, 'TyrianCompanionCore', 'reviewPendingProposalOutcome');
-		expect(review).not.toContain('proposalPresented');
-		// That a recovery or a discard never waits for the journal to record it as presented is run,
-		// not matched, in `src/runtime/live-session-runtime.test.ts` (DE-01).
+		// That reviewing a pending proposal never journals it as presented runs over the real core in
+		// `src/main-assisted-proposal-semantics.test.ts`; that a recovery or a discard never waits for
+		// the journal to record it as presented, in `src/runtime/live-session-runtime.test.ts` (DE-01).
 	});
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
@@ -96,15 +97,14 @@ describe('pilot metrics architecture', () => {
 
 	it('closes every product invalidation of a live assisted proposal without changing successful workflow closure', () => {
 		const main = readModuleSource('src/runtime/tyrian-companion-core.ts');
-		const disarm = classMethodBody(main, 'TyrianCompanionCore', 'disarmAssistedDetection');
-		expect(disarm).toContain("invalidateAndDisarmAssistedDetection('user')");
 		const settings = classMethodBody(main, 'TyrianCompanionCore', 'updateSettings');
 		// `'mode_off'` is gone (Lote S, 2026-09-09): there is no more `detectionMode` toggle to turn
 		// off, so `updateSettings` never invalidates a live proposal for that reason anymore.
 		expect(settings).not.toContain("invalidateAndDisarmAssistedDetection('mode_off')");
 		expect(settings).toContain("invalidateAndDisarmAssistedDetection('connection_changed')");
-		const shutdown = classMethodBody(main, 'TyrianCompanionCore', 'shutdownRuntime');
-		expect(shutdown).toContain('const pilotProposalClosure = this.excludeLiveAssistedProposal()');
+		// That the user's disarm closes the live proposal as `invalidated` before it disarms as `user`,
+		// and that the unload closes it before the journal, run over the real core in
+		// `src/main-assisted-proposal-semantics.test.ts` (DE-01).
 		// That a stop disarms the detector as `session_stopped` and never invalidates the proposal it
 		// accepted runs in `src/main-session-workflow-semantics.test.ts` (DE-01).
 	});

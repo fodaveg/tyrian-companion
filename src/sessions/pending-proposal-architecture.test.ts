@@ -50,8 +50,8 @@ describe('pending confirmation background boundary', () => {
 			.toContain('new PendingProposalRenewalRegistry({');
 		expect(classMethodBody(source, 'TyrianCompanionCore', 'shutdownRuntime'))
 			.toContain('this.pendingClaimRenewals?.dispose()');
-		expect(classMethodBody(source, 'TyrianCompanionCore', 'acquirePendingIntent'))
-			.toContain('const stopRenewal = this.pendingClaimRenewals.start');
-		expect(source).not.toMatch(/window\.setInterval\(\(\) => \{\s*void this\.pendingProposals\.renew/u);
+		// That a claim is renewed every minute through that registry, never on a timer of its own, and
+		// that the unload leaves none of its renewals armed, runs over the real core in
+		// `src/main-assisted-proposal-semantics.test.ts` (DE-01).
 	});
 });

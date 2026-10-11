@@ -43,7 +43,6 @@ import type {
 	TyrianCodeBlockContext,
 	TyrianDisposer,
 	TyrianHost,
-	TyrianMenuEntry,
 	TyrianRibbonHandle,
 	TyrianRuntime,
 	TyrianVaultChange,
@@ -155,7 +154,7 @@ import {
 	vaultSyncActionOutcome,
 	vaultSyncFailureOutcome,
 } from './core-outcomes';
-import { consulting, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
+import { consulting, consumeRecorded, fireAndForgetLocal, refusedInConsult, writeSessionNoteWithDiagnostics } from './core-actions';
 import {
 	FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS,
 	liveRulesExpiredAtMsFromLoad,
@@ -163,12 +162,8 @@ import {
 } from './core-sale-rules';
 import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
-import {
-	LiveSessionRuntime,
-	type LiveSessionRuntimePort,
-	type PendingIntentClaim,
-	type SessionSummarySaveState,
-} from './live-session-runtime';
+import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
+import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
 import { CollectorReadUnansweredError, loadCollectorInstanceId, deleteStoredCollectorMode, loadCollectorMode, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { StorageDeadline, StorageUnansweredError } from '../sessions/storage-deadline';
@@ -239,7 +234,7 @@ import type {
 } from '../sessions/pilot-metrics-model';
 import type { PilotMetricsRecorder, PilotMetricsState } from '../sessions/pilot-metrics-recorder';
 import type { PendingProposalService, ProposalQueueState } from '../sessions/pending-proposal-service';
-import { proposalIntent, sameProposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
+import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { PendingProposalRenewalRegistry } from '../sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import { LootPresentationCache } from '../sessions/loot-presentation-cache';
@@ -282,7 +277,7 @@ import {
 	type IngameSessionView,
 } from '../sessions/ingame-session-marker';
 import type { SessionRuntimeRecord } from '../sessions/session-runtime-store';
-import { SESSION_STATE_VERSION, type SessionState } from '../sessions/session';
+import type { SessionState } from '../sessions/session';
 import { assembleSessions } from './assemble-sessions';
 import {
 	COMPANION_VIEW_SLOT,
@@ -290,24 +285,17 @@ import {
 	companionSection,
 	TyrianCompanionView,
 } from '../ui/companion-view';
-import {
+import type {
 	ConfirmAbandonSessionModal,
 	ConfirmDiscardLiveSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
 	ConfirmDiscardUnreadableSessionModal,
 } from '../ui/companion-modals';
-import { ManualSessionStartModal } from '../ui/manual-session-start-modal';
+import type { ManualSessionStartModal } from '../ui/manual-session-start-modal';
 import { AlertIngameSecretModal } from '../ui/alert-ingame-secret-modal';
-import {
-	SessionCommandController,
-	type PreparedSessionCommand,
-} from '../ui/session-command-controller';
-import {
-	createSessionCommandDispatch,
-	projectSessionMenu,
-	type SessionCommandDispatch,
-} from '../ui/session-command-adapter';
+import type { SessionCommandController } from '../ui/session-command-controller';
+import type { SessionCommandDispatch } from '../ui/session-command-adapter';
 import type { SessionCommandId } from '../ui/session-command-model';
 import {
 	ProductActionController,
@@ -316,7 +304,6 @@ import {
 	type ProductActionId,
 	type ProductActionOutcome,
 } from '../ui/product-action-controller';
-import { projectPendingProposalUi } from '../ui/pending-proposal-command';
 import { refreshBackgroundStatus } from '../ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from '../ui/settings-tab';
 import { InventoryAdvisorPresentationController } from '../ui/inventory-advisor-controller';
@@ -600,13 +587,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
 	/**
-	 * DE-01, step 3c: the live session's lifecycle (start, stop, finalization, recovery, discard,
-	 * clear, abandon, a stuck live session) and the session state the views read. It reads the core's
-	 * fields through `liveSessionRuntimePort`, under their own names, and writes the summary fields
-	 * and the farming reminders back through it; the core keeps the commands, their intents and
-	 * modals, the pending queue's claim, and the note, summary, loot projection and Halloween code.
+	 * DE-01, steps 3c and 3d: the live session's lifecycle (start, stop, finalization, recovery,
+	 * discard, clear, abandon, a stuck live session), the session state the views read, and the
+	 * assisted detection with the pending proposals. It reads the core's fields through
+	 * `liveSessionRuntimePort`, under their own names, and writes the summary fields and the farming
+	 * reminders back through it; the core keeps the note, summary, loot projection and Halloween code.
 	 */
 	private readonly live: LiveSessionRuntime = new LiveSessionRuntime(TyrianCompanionCore.liveSessionRuntimePort(this));
+	/**
+	 * DE-01, step 3d: the session commands (the controller, its ribbon and menu, the intents and their
+	 * modals, the passive session's context). It reads the core's fields through
+	 * `sessionCommandRuntimePort` and writes the modals, the controller, its dispatch and the ribbon
+	 * back to the core's own fields, which the unload, the product actions and `live` read.
+	 */
+	private readonly commands: SessionCommandRuntime = new SessionCommandRuntime(TyrianCompanionCore.sessionCommandRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -784,7 +778,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			unmount: () => { settingTab.unmount(); },
 			settingDefinitions: () => settingTab.getSettingDefinitions(),
 		});
-		this.setupSessionCommands();
+		this.commands.setupSessionCommands();
 		this.setupProductActions();
 		this.registerAlertIngameSecretCommand();
 		this.registerSessionExportCommands();
@@ -827,7 +821,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_poll', state: 'wake' },
-					async () => { await this.reconcilePendingProposals(); this.renderViews(); });
+					async () => { await this.live.reconcilePendingProposals(); this.renderViews(); });
 			}
 			this.priceHistory?.notifyWake();
 		});
@@ -1373,7 +1367,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
 				if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
-					() => this.reconcilePendingProposals());
+					() => this.live.reconcilePendingProposals());
 			},
 			// The grace window ends outside any click: the same stop pipeline has to run then,
 			// or the note, the valuation and the detection bookkeeping would never happen.
@@ -1469,7 +1463,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_proposal', state: 'queue_initialize' },
-			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
+			async () => { await this.pendingProposals.initialize(); await this.live.reconcilePendingProposals(); });
 		this.assistedDetection = sessionServices.assistedDetection;
 		this.assistedDetection.setOnline(this.host.environment.isOnline());
 		// `initialize()` above already classified and finalized, on its own, any `provisional` record
@@ -1931,7 +1925,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (collector) this.syncAlertIngameServer();
 		else await this.closeAlertIngameServer();
 		if (collector) for (const entry of this.liveSessions?.getUnsettledPriceEntries() ?? []) this.liveEconomy?.observe(entry);
-		if (!collector) this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
+		if (!collector) this.runRuntimeMutation(() => this.live.invalidateAndDisarmAssistedDetection('mode_off'));
 		if (this.priceHistory !== null && this.settings.priceHistoryEnabled) {
 			const settings = priceHistorySettingsFrom(this.settings);
 			await this.priceHistory.configure({ ...settings, enabled: false }, context);
@@ -1994,7 +1988,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.closeAlertIngameServer();
 		bridgeDrained = true;
 		await this.liveEconomy?.dispose();
-		const pilotProposalClosure = this.excludeLiveAssistedProposal();
+		const pilotProposalClosure = this.live.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
 		this.productActions?.dispose();
 		this.inventoryAdvisor?.dispose();
@@ -2099,7 +2093,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		}
 		if (collector) fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_proposal', state: 'connection_reconcile' },
-			() => this.reconcilePendingProposals());
+			() => this.live.reconcilePendingProposals());
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		return {
@@ -3052,19 +3046,19 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getAssistedDetectionState(): AssistedDetectionState {
-		return this.runtimeReady ? this.assistedDetection.getState() : structuredClone(IDLE_ASSISTED_DETECTION_STATE);
+		return this.live.getAssistedDetectionState();
 	}
 
 	getDetectionQualityState(): DetectionQualityRecorderState {
-		return this.runtimeReady ? this.detectionQuality.getState() : { status: 'loading' };
+		return this.live.getDetectionQualityState();
 	}
 
-	getSessionDetectionQuality(sessionId: string) {
-		return this.runtimeReady ? this.detectionQuality.getSessionSummary(sessionId) : null;
+	getSessionDetectionQuality(sessionId: string): ReturnType<LiveSessionRuntime['getSessionDetectionQuality']> {
+		return this.live.getSessionDetectionQuality(sessionId);
 	}
 
-	getDetectionQualityStats() {
-		return this.runtimeReady ? this.detectionQuality.getStats() : null;
+	getDetectionQualityStats(): ReturnType<LiveSessionRuntime['getDetectionQualityStats']> {
+		return this.live.getDetectionQualityStats();
 	}
 
 	/**
@@ -3099,6 +3093,55 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/**
+	 * What `SessionCommandRuntime` reads from this core and asks of it (DE-01, step 3d). Getters over
+	 * the core's own fields, read as they stand; the modals, the controller, its dispatch and the
+	 * ribbon are setters too, so the commands write the core's own fields, which its unload, its
+	 * product actions and `live` read.
+	 */
+	private static sessionCommandRuntimePort(core: TyrianCompanionCore): SessionCommandRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get collectorMode() { return core.collectorMode; },
+			get unloaded() { return core.unloaded; },
+			get localDebugActions() { return core.localDebugActions; },
+			get host() { return core.host; },
+			get sessionHistoryRuntimeAuthority() { return core.sessionHistoryRuntimeAuthority; },
+			get sessions() { return core.sessions; },
+			get liveSessions() { return core.liveSessions; },
+			get connection() { return core.connection; },
+			get pendingProposals() { return core.pendingProposals; },
+			get ingameSessionMarker() { return core.ingameSessionMarker; },
+			get live() { return core.live; },
+			get startModal() { return core.startModal; },
+			set startModal(value) { core.startModal = value; },
+			get discardModal() { return core.discardModal; },
+			set discardModal(value) { core.discardModal = value; },
+			get clearModal() { return core.clearModal; },
+			set clearModal(value) { core.clearModal = value; },
+			get abandonModal() { return core.abandonModal; },
+			set abandonModal(value) { core.abandonModal = value; },
+			get discardLiveModal() { return core.discardLiveModal; },
+			set discardLiveModal(value) { core.discardLiveModal = value; },
+			get sessionCommands() { return core.sessionCommands; },
+			set sessionCommands(value) { core.sessionCommands = value; },
+			get sessionDispatch() { return core.sessionDispatch; },
+			set sessionDispatch(value) { core.sessionDispatch = value; },
+			get sessionRibbon() { return core.sessionRibbon; },
+			set sessionRibbon(value) { core.sessionRibbon = value; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			emitNotice: (message, source) => { core.emitNotice(message, source); },
+			activateView: () => core.activateView(),
+			reviewPendingProposal: (intent) => core.reviewPendingProposal(intent),
+			getIngamePresence: () => core.getIngamePresence(),
+			startIngameSession: (character) => core.startIngameSession(character),
+			stopManualSession: () => core.stopManualSession(),
+			ingameSessionView: () => core.ingameSessionView(),
+			isLiveSessionStuck: () => core.isLiveSessionStuck(),
+		};
+	}
+
+	/**
 	 * What `LiveSessionRuntime` reads from this core and asks of it (DE-01, step 3c). Getters over the
 	 * core's own fields, read as they stand; the summary fields and the farming reminders are setters
 	 * too, so the session's lifecycle writes the core's own state, which its note, summary and farming
@@ -3119,9 +3162,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get sessionCommands() { return core.sessionCommands; },
 			get sessionDispatch() { return core.sessionDispatch; },
 			get pilotMetrics() { return core.pilotMetrics; },
+			get connection() { return core.connection; },
 			get assistedDetection() { return core.assistedDetection; },
 			get detectionQuality() { return core.detectionQuality; },
 			get pendingProposals() { return core.pendingProposals; },
+			get pendingClaimRenewals() { return core.pendingClaimRenewals; },
 			get priceHistory() { return core.priceHistory; },
 			get farmingGroupContext() { return core.farmingGroupContext; },
 			get sessionSummarySaveState() { return core.sessionSummarySaveState; },
@@ -3135,13 +3180,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			notifyConsultMode: () => { core.notifyConsultMode(); },
 			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			requireRuntimeMutationLease: () => core.requireRuntimeMutationLease(),
+			runRuntimeMutation: (operation) => core.runRuntimeMutation(operation),
 			renderViews: () => { core.renderViews(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
-			armAssistedDetection: () => core.armAssistedDetection(),
+			activateView: () => core.activateView(),
 			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
 			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
 			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
-			acquirePendingIntent: (intent) => core.acquirePendingIntent(intent),
 			ensureCompletedSummarySaved: () => core.ensureCompletedSummarySaved(),
 			persistFarmingSessionContext: (context) => { core.persistFarmingSessionContext(context); },
 			updateSettings: (settings) => core.updateSettings(settings),
@@ -3191,240 +3236,50 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	getPendingProposalState(): ProposalQueueState {
-		return this.runtimeReady ? this.pendingProposals.getState() : { status: 'loading', pendingCount: 0, next: null };
+		return this.live.getPendingProposalState();
 	}
 
-	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
-		return await this.reviewPendingProposalOutcome(intent) === 'completed';
+	reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
+		return this.live.reviewPendingProposal(intent);
 	}
 
 	recordPendingProposalPresented(intent: PendingProposalIntent): void {
-		if (!this.runtimeReady) return;
-		const state = this.pendingProposals.getState();
-		const proposal = state.status === 'ready' && state.next && sameProposalIntent(state.next, intent) ? state.next : null;
-		if (!proposal) return;
-		void this.pilotMetrics.proposalPresented({
-			proposalId: proposal.proposalId, phase: proposal.phase, mode: 'assisted',
-			presentedAt: new Date().toISOString(),
-			window: proposal.phase === 'start' ? proposal.proposal.possibleStart : proposal.proposal.possibleStop,
-			pollingIntervalMs: proposal.pollingIntervalMs, evidenceQuality: proposal.proposal.evidenceQuality,
-		});
+		this.live.recordPendingProposalPresented(intent);
 	}
 
-	private async reviewPendingProposalOutcome(intent: PendingProposalIntent): Promise<ProductActionOutcome> {
-		const perform = async (): Promise<ProductActionOutcome> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
-		try {
-			if (!await this.pendingProposals.acknowledge(intent)) {
-				this.emitNotice(
-					translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'),
-					'proposal_unavailable',
-				);
-				return 'unavailable';
-			}
-			await this.activateView();
-			this.renderViews();
-			return 'completed';
-		} catch (error) {
-			this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'),
-				'proposal_review_failed',
-			);
-			// `perform()` never rejects here (the outer `run()` would then log the failure itself);
-			// this is the only place left that still learns the review actually failed (H15.14).
-			this.localDebugActions?.event({
-				component: 'detection', action: 'detection_proposal', state: 'review',
-				level: 'error', phase: 'failure', code: 'unknown_failure',
-				details: unmappedErrorLogDetails(error),
-			});
-			return 'failed';
-		}
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'detection', action: 'detection_proposal', state: 'review' }, perform,
-		) ?? perform());
-	}
-
-	async dismissPendingProposal(
+	dismissPendingProposal(
 		intent: PendingProposalIntent,
 		cause: DetectionCorrectionCause,
 		humanBoundaryAt: string | null = null,
 	): Promise<void> {
-		const perform = async (): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const claim = await this.acquirePendingIntent(intent);
-		try {
-			const sessionId = claim.proposal.phase === 'stop' ? claim.proposal.binding.sessionId : null;
-			const recorded = await this.detectionQuality.recordDismissed(claim.proposal.phase, sessionId, cause, claim.proposal.proposal);
-			if (!await this.pendingProposals.dismiss(intent, claim.operationId, sessionId, cause, recorded)) {
-				throw new Error('Proposal dismissal failed.');
-			}
-			void this.pilotMetrics?.proposalDecided({
-				proposalId: claim.proposal.proposalId,
-				decision: 'dismissed', workflow: null, cause, humanBoundaryAt,
-			});
-		} finally {
-			claim.stopRenewal();
-			this.renderViews();
-		}
-		};
-		await (this.localDebugActions?.run(
-			{ component: 'detection', action: 'detection_proposal', state: 'dismiss' }, perform,
-		) ?? perform());
+		return this.live.dismissPendingProposal(intent, cause, humanBoundaryAt);
 	}
 
 	openPendingSessionStart(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): void {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (intent.phase !== 'start' || this.startModal) return;
-		this.startModal = new ManualSessionStartModal(
-			this.host.ui,
-			this.settings.preferredCharacter,
-			() => this.settings.language,
-			(input) => { fireAndForgetLocal(this.localDebugActions,
-				{ component: 'session', action: 'session_start' },
-				async () => {
-					try { await this.live.startManualSession(input, intent, humanBoundaryAt); }
-					catch (error) {
-						this.emitNotice(
-							translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'),
-							'pending_start_failed',
-						);
-						throw error;
-					}
-				}); },
-			() => { this.startModal = null; },
-		);
-		this.startModal.open();
+		this.commands.openPendingSessionStart(intent, humanBoundaryAt);
 	}
 
-	async stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		if (intent.phase !== 'stop') return;
-		await this.live.performStopManualSession(intent, humanBoundaryAt);
+	stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
+		return this.live.stopPendingSession(intent, humanBoundaryAt);
 	}
 
-	async armAssistedDetection(): Promise<ProductActionOutcome> {
-		if (this.liveSessions !== null) return 'unavailable';
-		if (refusedInConsult(this)) return 'unavailable';
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ProductActionOutcome> => {
-			if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
-			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-			if (runtimeLease === null) return 'unavailable';
-			try {
-				const connected = this.connection.getState().status;
-				const session = this.sessions.getState();
-				const recovery = this.sessions.getRecoveryState();
-				// `complete` arms too (H18.9): a finished session waits for the next one like `idle`,
-				// and the detector must look for it without anyone checking the connection by hand.
-				if (
-					(connected !== 'connected' && connected !== 'warning') ||
-					(session.status !== 'idle' && session.status !== 'active' && session.status !== 'complete') ||
-					(session.status === 'idle' && recovery.status !== 'none')
-				) return 'unavailable';
-				this.renderViews();
-				const state = await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000, context);
-				this.renderViews();
-				// H15.12: `detectionActionOutcome` returns a plain `'failed'` string, which `run()`
-				// only recognizes as a failure when it has the closed `{phase|code|state|details}`
-				// shape; a bare string always writes `info success ok`, so a stopped detector left
-				// zero warn+ lines behind it.
-				if (state.status === 'error') {
-					this.localDebugActions?.event({
-						component: 'detection', action: 'detection_arm', level: 'error', phase: 'failure',
-						code: state.code ?? 'unknown_failure', message: state.message,
-					});
-				}
-				return detectionActionOutcome(state, 'arm');
-			} finally { runtimeLease.release(); }
-		};
-		return await (this.localDebugActions?.run({ component: 'detection', action: 'detection_arm' }, perform) ?? perform());
+	armAssistedDetection(): Promise<ProductActionOutcome> {
+		return this.live.armAssistedDetection();
 	}
 
 	disarmAssistedDetection(): void {
-		const perform = (): void => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		this.runRuntimeMutation(() => {
-			this.invalidateAndDisarmAssistedDetection('user');
-			this.renderViews();
-		});
-		};
-		if (this.localDebugActions) this.localDebugActions.runSync(
-			{ component: 'detection', action: 'detection_disarm' }, perform,
-		);
-		else perform();
-	}
-
-	/** Starts the optional terminal write before invalidating product state, but never waits for it. */
-	private invalidateAndDisarmAssistedDetection(reason: 'user' | 'mode_off' | 'connection_changed'): void {
-		void this.excludeLiveAssistedProposal();
-		this.assistedDetection.disarm(reason);
-	}
-
-	private excludeLiveAssistedProposal(): Promise<boolean> | null {
-		const detection = this.assistedDetection?.getState();
-		if ((detection?.status !== 'start_proposed' && detection?.status !== 'stop_proposed') || !this.pilotMetrics) {
-			return null;
-		}
-		try {
-			return this.pilotMetrics.proposalExcluded(detection.proposal.proposalId, 'invalidated').catch(() => false);
-		} catch {
-			return Promise.resolve(false);
-		}
+		this.live.disarmAssistedDetection();
 	}
 
 	recordAssistedProposalPresented(): void {
-		if (!this.runtimeReady) return;
-		const detection = this.assistedDetection.getState();
-		if (detection.status !== 'start_proposed' && detection.status !== 'stop_proposed') return;
-		void this.pilotMetrics.proposalPresented({
-			proposalId: detection.proposal.proposalId,
-			phase: detection.status === 'start_proposed' ? 'start' : 'stop',
-			mode: 'assisted',
-			presentedAt: new Date().toISOString(),
-			window: detection.status === 'start_proposed'
-				? detection.proposal.possibleStart : detection.proposal.possibleStop,
-			pollingIntervalMs: detection.pollingIntervalMs,
-			evidenceQuality: detection.proposal.evidenceQuality,
-		});
+		this.live.recordAssistedProposalPresented();
 	}
 
-	async dismissAssistedProposal(
+	dismissAssistedProposal(
 		cause: DetectionCorrectionCause,
 		humanBoundaryAt: string | null = null,
 	): Promise<void> {
-		const perform = async (): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-		if (runtimeLease === null) return;
-		try {
-		const detection = this.assistedDetection.getState();
-		const session = this.sessions.getState();
-		let proposalId: string | null = null;
-		if (detection.status === 'start_proposed') {
-			proposalId = detection.proposal.proposalId;
-			fireAndForgetLocal(this.localDebugActions,
-				{ component: 'detection', action: 'detection_proposal', state: 'dismiss_start' },
-				async () => { await this.detectionQuality.recordDismissed('start', null, cause, detection.proposal); this.renderViews(); });
-		} else if (detection.status === 'stop_proposed') {
-			proposalId = detection.proposal.proposalId;
-			const observed = session.status === 'error' ? session.failedState : session;
-			const sessionId = observed.status === 'active' ? observed.sessionId : null;
-			if (sessionId) {
-				fireAndForgetLocal(this.localDebugActions,
-					{ component: 'detection', action: 'detection_proposal', state: 'dismiss_stop' },
-					async () => { await this.detectionQuality.recordDismissed('stop', sessionId, cause, detection.proposal); this.renderViews(); });
-			}
-		}
-		this.assistedDetection.dismissProposal();
-		if (proposalId) void this.pilotMetrics?.proposalDecided({
-			proposalId, decision: 'dismissed', workflow: null, cause, humanBoundaryAt,
-		});
-		this.renderViews();
-		} finally { runtimeLease.release(); }
-		};
-		await (this.localDebugActions?.run(
-			{ component: 'detection', action: 'detection_proposal', state: 'dismiss' }, perform,
-		) ?? perform());
+		return this.live.dismissAssistedProposal(cause, humanBoundaryAt);
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
@@ -5180,7 +5035,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Before any repaint below: the views read it on their next render.
 			this.apiKeyRevision += 1;
 			this.invalidateInventoryAdvisor();
-			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('connection_changed'));
+			this.runRuntimeMutation(() => this.live.invalidateAndDisarmAssistedDetection('connection_changed'));
 			this.connection.reset();
 			this.halloweenAccountRef = null;
 			this.halloween?.disable(context);
@@ -5301,7 +5156,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	private flushRenderViews(): void {
 		this.productActions?.refresh();
-		this.refreshSessionRibbon();
+		this.commands.refreshSessionRibbon();
 		for (const view of this.mountedViews.companion.current()) view.render();
 	}
 
@@ -5361,73 +5216,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.renderInventoryAdvisorViews();
 	}
 
-	private async reconcilePendingProposals(): Promise<void> {
-		if (!this.pendingProposals) return;
-		const connection = this.connection.getState();
-		const accountId = connection.status === 'connected' || connection.status === 'warning'
-			? connection.details.account.id : null;
-		const state = this.sessions.getState();
-		const observed = state.status === 'error' ? state.failedState : state;
-		await this.pendingProposals.reconcile({
-			accountId,
-			recoveryPending: this.sessions.getRecoveryState().status !== 'none',
-			// A finished session waits for the next one exactly like `idle` (H18.8/H18.9): a start
-			// proposal found meanwhile stays valid, and accepting it releases the finished session.
-			session: observed.status === 'active'
-				? { status: 'active', sessionId: observed.sessionId, baselineSnapshotId: observed.baseline.snapshotId }
-				: { status: observed.status === 'complete' ? 'idle' : observed.status },
-		});
-	}
-
 	private refreshBackgroundIndicators(): void {
-		this.refreshSessionRibbon();
+		this.commands.refreshSessionRibbon();
 		refreshBackgroundStatus(this.mountedViews.companion.current());
-	}
-
-	private async acquirePendingIntent(intent: PendingProposalIntent): Promise<PendingIntentClaim> {
-		await this.reconcilePendingProposals();
-		const operationId = crypto.randomUUID();
-		const claimed = await this.pendingProposals.claim(intent, operationId);
-		if (claimed.status !== 'claimed' && claimed.status !== 'already_claimed') throw new Error('Proposal claim failed.');
-		const stopRenewal = this.pendingClaimRenewals.start(() => {
-			fireAndForgetLocal(this.localDebugActions,
-				{ component: 'detection', action: 'detection_proposal', state: 'renew_claim' },
-				() => this.pendingProposals.renew(intent, operationId));
-		}, 60_000);
-		return {
-			proposal: claimed.proposal,
-			operationId,
-			stopRenewal,
-		};
-	}
-
-	private setupSessionCommands(): void {
-		this.sessionCommands = new SessionCommandController({
-			getContext: () => this.runtimeReady && this.liveSessions !== null ? this.passiveSessionCommandContext() : this.runtimeReady
-				? {
-					state: this.sessions.getState(),
-					recovery: this.sessions.getRecoveryState(),
-					connection: this.connection.getState().status,
-					stopFailure: this.sessions.getLastStopFailure(),
-				}
-				: {
-					state: { version: SESSION_STATE_VERSION, status: 'idle' },
-					recovery: { status: 'none' },
-					connection: 'idle',
-					stopFailure: null,
-				},
-			getLocale: () => this.settings.language,
-			prepare: (id) => this.prepareSessionCommand(id),
-			notify: (message) => { this.emitNotice(message, 'session_command'); },
-			diagnostics: this.localDebugActions ?? undefined,
-		});
-		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
-		this.sessionRibbon = this.host.ui.ribbon({
-			icon: 'sword',
-			title: createTranslator(this.settings.language).t('commands.ribbon'),
-			onClick: (event) => { this.openSessionCommandMenu(event); },
-		});
-		this.refreshSessionRibbon();
 	}
 
 	private setupProductActions(): void {
@@ -5461,7 +5252,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			execute: (id) => this.executeProductAction(id),
 			getRecoveryState: () => this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' },
 			checkConnection: () => this.checkConnection(),
-			canStartSession: () => this.runtimeReady && this.liveSessions !== null && this.passiveSessionCommandContext().canStart,
+			canStartSession: () => this.runtimeReady && this.liveSessions !== null && this.commands.passiveSessionCommandContext().canStart,
 			isCollector: () => !consulting(this),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
@@ -5490,7 +5281,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		if (id === 'review-pending-farming-proposal') {
 			const next = this.getPendingProposalState().next;
 			if (next === null) return 'unavailable';
-			return await this.reviewPendingProposalOutcome(proposalIntent(next));
+			return await this.live.reviewPendingProposalOutcome(proposalIntent(next));
 		}
 		if (id === 'arm-assisted-detection') return await this.armAssistedDetection();
 		if (id === 'disarm-assisted-detection') this.disarmAssistedDetection();
@@ -5514,147 +5305,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return vaultSyncActionOutcome(this.walletVaultSync.current(), 'apply');
 	}
 
-	private openSessionCommandMenu(event: MouseEvent): void {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const menu: TyrianMenuEntry[] = [];
-		if (this.pendingProposals.getState().pendingCount > 0) {
-			const next = this.pendingProposals.getState().next;
-			menu.push({
-				kind: 'item', title: translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending'), icon: 'inbox',
-				onClick: () => { if (next) consumeRecorded(this.reviewPendingProposal(proposalIntent(next))); },
-			});
-			menu.push({ kind: 'separator' });
-		}
-		for (const entry of projectSessionMenu(this.sessionCommands.available(), this.settings.language)) {
-			if (entry.type === 'separator') menu.push({ kind: 'separator' });
-			else if (entry.type === 'open') {
-				menu.push({ kind: 'item', title: entry.title, icon: entry.icon, onClick: () => {
-					fireAndForgetLocal(this.localDebugActions,
-						{ component: 'ui', action: 'command_execute', state: 'open_companion' }, () => this.activateView());
-				} });
-			} else {
-				menu.push({ kind: 'item', title: entry.command.name, icon: entry.command.icon,
-					onClick: () => { fireAndForgetLocal(this.localDebugActions,
-						{ component: 'session', action: 'command_execute', state: entry.command.id },
-						() => this.sessionCommands.run(entry.command.id)); } });
-			}
-		}
-		this.host.ui.openMenu(menu, event);
-	}
-
-	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
-		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) return Promise.resolve(null);
-		if (this.liveSessions !== null) {
-			if (id === 'start-farming-session') return Promise.resolve(async () => {
-				const previous = this.liveSessions?.getRuntime()?.sessionId ?? null;
-				const presence = this.getIngamePresence();
-				if (presence.status !== 'present') throw new Error('The passive inventory source is unavailable.');
-				const id = await this.startIngameSession(presence.context?.character ?? null);
-				if (id === null) throw new Error('The passive session could not start.');
-				this.ingameSessionMarker?.linkReplacement(previous,id,'adopted');
-			});
-			if (id === 'finish-farming-session') return Promise.resolve(async () => { await this.stopManualSession(); });
-			if (id === 'discard-saved-session') return this.prepareDiscardLiveIntent();
-			return Promise.resolve(null);
-		}
-		if (id === 'start-farming-session') return this.prepareStartIntent();
-		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
-		if (id === 'clear-completed-session') return this.prepareClearIntent();
-		if (id === 'abandon-farming-session') return this.prepareAbandonIntent();
-		if (id === 'finish-farming-session') return Promise.resolve(() => this.live.performStopManualSession());
-		return Promise.resolve(() => this.live.performRecoverSession());
-	}
-
-	/** Every palette/ribbon action uses the same passive identity and manual-source availability. */
-	private passiveSessionCommandContext() {
-		const live = this.liveSessions?.getRuntime(); const presence = this.getIngamePresence();
-		return {source:'nexus_inventory' as const,sessionId:live?.sessionId ?? null,phase:live?.phase ?? 'idle' as const,
-			fence:live?.authority.fence ?? null,
-			canStart:!consulting(this) && !this.unloaded && this.ingameSessionView().canStart && presence.status === 'present'
-				&& (presence.context?.source === 'nexus' || live?.sourceInstance !== null && live?.sourceInstance !== undefined),
-			canFinish:!consulting(this) && !this.unloaded && live !== null && live !== undefined
-				&& (live.phase === 'active' || live.summaryReceipt === null),
-			canDiscard:!this.unloaded && !consulting(this) && this.isLiveSessionStuck()};
-	}
-
 	/** A live session that cannot get out by itself (`LiveSessionRuntime`). */
 	isLiveSessionStuck(): boolean {
 		return this.live.isLiveSessionStuck();
-	}
-
-	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.startModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let submitted = false;
-			this.startModal = new ManualSessionStartModal(
-				this.host.ui,
-				this.settings.preferredCharacter,
-				() => this.settings.language,
-				(input) => { submitted = true; resolve(() => this.live.startManualSession(input)); },
-				() => { this.startModal = null; if (!submitted) resolve(null); },
-			);
-			this.startModal.open();
-		});
-	}
-
-	private prepareDiscardIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.discardModal) return Promise.resolve(null);
-		// An unreadable saved record gets its own copy: there is nothing to recover from it, only
-		// something to erase, and the generic discard copy implies the opposite.
-		const unreadable = this.sessions.getRecoveryState().status === 'error';
-		const ModalClass = unreadable ? ConfirmDiscardUnreadableSessionModal : ConfirmDiscardSessionModal;
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.discardModal = new ModalClass(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performDiscardRecoveredSession()); return Promise.resolve(); },
-				() => { this.discardModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.discardModal.open();
-		});
-	}
-
-	private prepareDiscardLiveIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.discardLiveModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.discardLiveModal = new ConfirmDiscardLiveSessionModal(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performDiscardLiveSession()); return Promise.resolve(); },
-				() => { this.discardLiveModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.discardLiveModal.open();
-		});
-	}
-
-	private prepareClearIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.clearModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.clearModal = new ConfirmClearCompletedSessionModal(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performClearCompletedSession()); return Promise.resolve(); },
-				() => { this.clearModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.clearModal.open();
-		});
-	}
-
-	private prepareAbandonIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.abandonModal) return Promise.resolve(null);
-		return new Promise((resolve) => {
-			let confirmed = false;
-			this.abandonModal = new ConfirmAbandonSessionModal(
-				this.host.ui,
-				() => { confirmed = true; resolve(() => this.live.performAbandonSession()); return Promise.resolve(); },
-				() => { this.abandonModal = null; if (!confirmed) resolve(null); },
-				() => this.settings.language,
-			);
-			this.abandonModal.open();
-		});
 	}
 
 	/** Whether the card may offer "Abandon session" (`LiveSessionRuntime`). */
@@ -5812,21 +5465,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		else span.success(result.status);
 	}
 
-	private refreshSessionRibbon(): void {
-		if (!this.sessionRibbon || !this.sessionCommands) return;
-		const next = this.sessionCommands.available().find((command) => !command.destructive);
-		const pending = this.pendingProposals
-			? projectPendingProposalUi(this.pendingProposals.getState(), this.settings.language)
-			: { pendingCount: 0, ribbonLabel: null };
-		const translator = createTranslator(this.settings.language);
-		const title = pending.ribbonLabel || next
-			? translator.t('commands.ribbonCurrentAction', { label: pending.ribbonLabel ?? next!.name })
-			: translator.t('commands.ribbon');
-		// The ribbon has a live title and a pending flag, no badge (`TyrianRibbonHandle`).
-		this.sessionRibbon.setTitle(title);
-		this.sessionRibbon.setPending(pending.pendingCount > 0);
-	}
-
 	/** Opens the Companion, or focuses it where it is already open (`host.ui.revealView`). */
 	private async activateView(): Promise<void> {
 		await this.revealSection('session', COMPANION_VIEW_TYPE);
@@ -5857,7 +5495,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 }
 
-/** Identical to `AssistedDetectionService`'s own freshly-constructed, never-armed state. */
 /** `liveRulesExpiredAtMsFromLoad` from a bare instant, for callers that have not already loaded the bundle themselves. */
 function liveRulesExpiredAtMs(nowMs: number): number | null {
 	return liveRulesExpiredAtMsFromLoad(inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString()));
@@ -5865,16 +5502,6 @@ function liveRulesExpiredAtMs(nowMs: number): number | null {
 
 /** H18.26: per-vault local storage key of the link between the in-game presence and its session. */
 const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
-
-const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
-	status: 'disarmed',
-	reason: 'initial',
-	scheduler: {
-		status: 'idle', intervalMs: null, nextRunAt: null,
-		lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
-	},
-	lastSnapshotAt: null,
-};
 
 /**
  * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session
@@ -6158,9 +5785,4 @@ function hostPaintsRemoteImages(host: TyrianHost | undefined): boolean {
  */
 function sessionInProgress(state: SessionState): boolean {
 	return state.status !== 'idle' && state.status !== 'complete' && state.status !== 'abandoned';
-}
-
-/** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
-function consumeRecorded(action: Promise<unknown>): void {
-	action.catch(() => undefined);
 }

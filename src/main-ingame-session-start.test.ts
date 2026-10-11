@@ -14,6 +14,7 @@ import type { LiveSessionPersistence } from './sessions/live-session-persistence
 import type { IngameSessionMarker } from './sessions/ingame-session-marker';
 import type { ProductActionController } from './ui/product-action-controller';
 import type { SessionCommandController } from './ui/session-command-controller';
+import type { SessionCommandRuntime } from './runtime/session-command-runtime';
 import type { LiveSessionEconomy } from './sessions/live-session-economy';
 import type { PublicCatalogGateway } from './catalog/public-catalog-client';
 import type { CatalogItem } from './catalog/public-catalog-model';
@@ -26,7 +27,7 @@ import type { AlertV1 } from './alerts/alert-contract';
 interface RuntimeAccess {host:TyrianHost;liveIngamePort():LiveIngamePort;liveSessions:LiveSessionLifecycle;sessions:ManualSessionStartService;alertIngameServer:AlertIngameServerHandle|null;
 	alertIngameServerPort:number|null;ensureAlertIngameServer():Promise<AlertIngameServerHandle|null>;ingamePresenceTracker():IngamePresenceTracker;
 	onIngameConnectionEvent(event:IngameConnectionEvent):void;
-	ingameSessionMarker:IngameSessionMarker;setupSessionCommands():void;setupProductActions():void;productActions:ProductActionController;
+	ingameSessionMarker:IngameSessionMarker;commands:Pick<SessionCommandRuntime,'setupSessionCommands'>;setupProductActions():void;productActions:ProductActionController;
 	sessionCommands:SessionCommandController;collectorMode:'collector'|'consult';liveEconomy:LiveSessionEconomy;emitLiveSessionAlert(intent:unknown):Promise<unknown>}
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ'; const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-06T12:00:00.000Z');
@@ -121,7 +122,7 @@ describe('real passive Nexus composition', () => {
 	});
 	it('palette and ribbon start/finish use Nexus, never connection-check or legacy recapture, and explicit restart overrides only a manual stop', async () => {
 		const f=await runtime(); vi.spyOn(f.access.host.ui,'ribbon').mockReturnValue({setTitle:vi.fn(),setPending:vi.fn()});
-		vi.spyOn(f.access.host.ui,'registerCommand').mockReturnValue(vi.fn()); f.access.setupSessionCommands(); f.access.setupProductActions();
+		vi.spyOn(f.access.host.ui,'registerCommand').mockReturnValue(vi.fn()); f.access.commands.setupSessionCommands(); f.access.setupProductActions();
 		const check=vi.spyOn(f.h.core,'checkConnection'); const accountStart=vi.spyOn(f.access.sessions,'start');
 		await expect(f.access.productActions.run('start-farming-session')).resolves.toBe('unavailable'); expect(check).not.toHaveBeenCalled();
 		await presence(f); await f.port.open(f.source); const id=f.h.core.getLiveSessionView().sessionId;

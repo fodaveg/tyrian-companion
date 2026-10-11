@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+import type { LiveSessionRuntime } from './runtime/live-session-runtime';
 import { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 
 /**
@@ -32,6 +33,8 @@ describe('H14.14 shutdownRuntime disposal', () => {
 			alertIngameServer: { close: alertIngameServerClose },
 			alertIngameServerFlight: null,
 			alertIngameCloseFlight: null,
+			// No assisted proposal is live: the live session runtime closes none (DE-01, step 3d).
+			live: { excludeLiveAssistedProposal: () => null } satisfies Pick<LiveSessionRuntime, 'excludeLiveAssistedProposal'>,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const shutdownRuntime = (TyrianCompanionCore.prototype as unknown as {
