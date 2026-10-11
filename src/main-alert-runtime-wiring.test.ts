@@ -15,7 +15,6 @@ type Core = Record<string, (...args: unknown[]) => unknown>;
 
 const ALERT = { kind: 'valuable_loot', itemId: 1, name: 'Bag', quantity: 1, totalCopper: 1, priceStatus: 'known', reason: 'valuable' };
 const ITEM = { itemId: 1, name: 'Bag', quantity: 2 };
-const INTENT = { sessionId: 's', outboxId: 'o', alert: ALERT };
 const LISTENER = () => undefined;
 /** The delegates that returned nothing before the move, and still return nothing. */
 const VOID = new Set(['dispatchAlert', 'dispatchPolicyAlert', 'syncAlertIngameServer', 'registerAlertIngameSecretCommand']);
@@ -33,7 +32,8 @@ const ROWS: ReadonlyArray<readonly [core: string, runtime: Delegate, args: reado
 	['registerAlertIngameSecretCommand', 'registerAlertIngameSecretCommand', []],
 	['getAlertDeliveries', 'getAlertDeliveries', []],
 	['getEmittedAlerts', 'getEmittedAlerts', []],
-	['emitLiveSessionAlert', 'emitLiveSessionAlert', [INTENT]],
+	// DE-01, tenth wave: the live economy `SessionNoteRuntime` wires emits here through its port, with no delegate left
+	// in the core; that route is a row of `src/main-session-note-runtime-wiring.test.ts`.
 ];
 
 describe('the core hands the alerts to AlertRuntime', () => {

@@ -954,6 +954,22 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).not.toContain('Los iconos visibles se cargan desde el CDN oficial de ArenaNet.');
 	});
 
+	it('swaps an item icon that fails to load for the initials of a missing one, and leaves a loaded icon alone', () => {
+		const model = allStatesAndActionsModel();
+		const target = model.groups[0]!.rows[1]!;
+		target.icon = 'https://render.guildwars2.com/file/abc.png';
+		const mount = render(model);
+		const [image] = find(mount.elements(), 'img');
+		expect(image).toBeDefined();
+		image!.dispatch('load');
+		expect(find(mount.elements(), 'img')).toHaveLength(1);
+		image!.dispatch('error');
+		expect(find(mount.elements(), 'img')).toHaveLength(0);
+		const initials = byClass(mount.elements(), 'tyrian-inventory__icon').filter((el) => el.textContent === 'O2');
+		expect(initials.length).toBeGreaterThan(0);
+		expect(initials[0]!.attributes.get('aria-hidden')).toBe('true');
+	});
+
 	it.each([
 		['credential_unavailable', 'La clave seleccionada ya no está disponible en el almacén seguro. Vuelve a seleccionarla en los ajustes.'],
 		['capture_unavailable', 'No se pudo leer la cuenta de Guild Wars 2. Comprueba la clave seleccionada y vuelve a actualizar.'],
@@ -1841,8 +1857,17 @@ class FakeElement {
 	hidden = false;
 
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
-	append(...children: FakeElement[]): void { this.children.push(...children); }
-	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
+	parent: FakeElement | null = null;
+	append(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.push(...children); }
+	replaceChildren(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.splice(0, this.children.length, ...children); }
+	/** Like `ChildNode.replaceWith` for a single replacement. */
+	replaceWith(next: FakeElement): void {
+		const index = this.parent?.children.indexOf(this) ?? -1;
+		if (index < 0) return;
+		next.parent = this.parent;
+		this.parent!.children.splice(index, 1, next);
+		this.parent = null;
+	}
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
 	addEventListener(type: string, listener: (event: { preventDefault(): void }) => void): void {

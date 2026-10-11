@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 620,
 		"promise_catch": 61,
-		"void_expression": 146,
-		"callback_registration": 253
+		"void_expression": 145,
+		"callback_registration": 257
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -9766,6 +9766,45 @@
 				}
 			]
 		},
+		"src/runtime/pilot-recovery-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "4a304d0627ece6325f00e4f7c3d5c39696de6cd6",
+					"kind": "void_expression",
+					"line": 71,
+					"column": 19,
+					"endLine": 71,
+					"endColumn": 96,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.ensurePilotRecoveryPresented().then",
+						"scope": "presentPilotRecovery",
+						"justification": "The \"presentPilotRecovery\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"presentPilotRecovery\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"presentPilotRecovery\"."
+				},
+				{
+					"id": "c6bf2458e3bf0069eb0601f4e37b08a5a7386ed6",
+					"kind": "callback_registration",
+					"line": 71,
+					"column": 24,
+					"endLine": 71,
+					"endColumn": 96,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "presentPilotRecovery",
+						"justification": "The \"presentPilotRecovery\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"presentPilotRecovery\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"presentPilotRecovery\"."
+				}
+			]
+		},
 		"src/runtime/price-history-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -9896,9 +9935,9 @@
 				{
 					"id": "e2677db7ee9ffb05a0cfe653251c22b5859ecf60",
 					"kind": "catch_clause",
-					"line": 326,
+					"line": 348,
 					"column": 5,
-					"endLine": 326,
+					"endLine": 348,
 					"endColumn": 63,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9910,11 +9949,44 @@
 					"reason": "Allowlisted catch_clause: In \"loadLiveComparisonNotes\", \"local_recovery\" exposes unavailable state to the retained comparison panel; captured notes remain intact and explicit retry is possible without authenticated queries. Verified recovery: \"local_recovery\" in \"loadLiveComparisonNotes\"."
 				},
 				{
+					"id": "a740dfa9f43588903c41994f6ea83a903e53e853",
+					"kind": "void_expression",
+					"line": 405,
+					"column": 7,
+					"endLine": 408,
+					"endColumn": 8,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "spec.run().then",
+						"scope": "checkCallback",
+						"justification": "In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made."
+					},
+					"reason": "Allowlisted void_expression: In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made. Verified target: \"spec.run().then\" in \"checkCallback\"."
+				},
+				{
+					"id": "58428adf61711c54ffd28e6aee64f209fe77da87",
+					"kind": "callback_registration",
+					"line": 405,
+					"column": 12,
+					"endLine": 408,
+					"endColumn": 8,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "checkCallback",
+						"justification": "In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state."
+					},
+					"reason": "Allowlisted callback_registration: In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state. Verified registration: \"then\" in \"checkCallback\"."
+				},
+				{
 					"id": "7fd9797abc04d64b45bec03cf4331ffc950b3198",
 					"kind": "catch_clause",
-					"line": 378,
+					"line": 452,
 					"column": 5,
-					"endLine": 380,
+					"endLine": 454,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9928,9 +10000,9 @@
 				{
 					"id": "483ff675cc19c1d3654a9ad25e93e0cb5a23cda2",
 					"kind": "callback_registration",
-					"line": 395,
+					"line": 490,
 					"column": 18,
-					"endLine": 399,
+					"endLine": 494,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9945,9 +10017,9 @@
 				{
 					"id": "0e0e21d3664b5c025c35a8aac9c61d5c864a9e94",
 					"kind": "promise_catch",
-					"line": 395,
+					"line": 490,
 					"column": 18,
-					"endLine": 404,
+					"endLine": 499,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9962,9 +10034,9 @@
 				{
 					"id": "ea755acba0cb7d892da98e98a2082873f5a179ae",
 					"kind": "callback_registration",
-					"line": 395,
+					"line": 490,
 					"column": 18,
-					"endLine": 408,
+					"endLine": 503,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9979,9 +10051,9 @@
 				{
 					"id": "254ed92e0b04ee2b9deccc5b7a97d045d96b4edb",
 					"kind": "callback_registration",
-					"line": 440,
+					"line": 535,
 					"column": 18,
-					"endLine": 444,
+					"endLine": 539,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9996,9 +10068,9 @@
 				{
 					"id": "1c9e9f7942d97b2f4f562fe299333c4c42229e1f",
 					"kind": "promise_catch",
-					"line": 440,
+					"line": 535,
 					"column": 18,
-					"endLine": 452,
+					"endLine": 547,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10013,9 +10085,9 @@
 				{
 					"id": "df6af941d19a62ca62fd63564e53b6d7eee46721",
 					"kind": "callback_registration",
-					"line": 440,
+					"line": 535,
 					"column": 18,
-					"endLine": 456,
+					"endLine": 551,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10036,9 +10108,9 @@
 				{
 					"id": "9a04ee82e89d51b956e3f2bd6cb751fbfb0a3236",
 					"kind": "catch_clause",
-					"line": 257,
+					"line": 315,
 					"column": 3,
-					"endLine": 257,
+					"endLine": 315,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10052,9 +10124,9 @@
 				{
 					"id": "09b68f795f462d5ad7cf8051e8db247c5e26d31b",
 					"kind": "catch_clause",
-					"line": 287,
+					"line": 345,
 					"column": 5,
-					"endLine": 294,
+					"endLine": 352,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10062,6 +10134,20 @@
 						"callee": "this.emitNotice"
 					},
 					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "d7b089acfd20d81344d3694195f34ef6ac3d4d3e",
+					"kind": "catch_clause",
+					"line": 506,
+					"column": 5,
+					"endLine": 509,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				}
 			]
 		},
@@ -10072,9 +10158,9 @@
 				{
 					"id": "eef5936ccfaeb30d3e3fafb8cac4d2d759abd631",
 					"kind": "promise_catch",
-					"line": 820,
+					"line": 805,
 					"column": 11,
-					"endLine": 825,
+					"endLine": 810,
 					"endColumn": 7,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10089,9 +10175,9 @@
 				{
 					"id": "6ea242cbc2846a2d7b4957f09fba6bcf86833734",
 					"kind": "void_expression",
-					"line": 887,
+					"line": 872,
 					"column": 3,
-					"endLine": 887,
+					"endLine": 872,
 					"endColumn": 109,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10105,9 +10191,9 @@
 				{
 					"id": "c3e4fa40f86b6e8c74c825df57303c4b7f831995",
 					"kind": "catch_clause",
-					"line": 919,
+					"line": 904,
 					"column": 5,
-					"endLine": 928,
+					"endLine": 913,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -10119,9 +10205,9 @@
 				{
 					"id": "b9dd4a4555940f117aa91f79474e06fbe62fc849",
 					"kind": "catch_clause",
-					"line": 1036,
+					"line": 1021,
 					"column": 7,
-					"endLine": 1038,
+					"endLine": 1023,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10135,9 +10221,9 @@
 				{
 					"id": "9ab67d14d649c97b4e5cba6cccb4052e0240d583",
 					"kind": "catch_clause",
-					"line": 1190,
+					"line": 1175,
 					"column": 7,
-					"endLine": 1196,
+					"endLine": 1181,
 					"endColumn": 6,
 					"classification": "observed",
 					"evidence": {
@@ -10149,9 +10235,9 @@
 				{
 					"id": "ec5f92ef8f7fca865d94cb22b85c586504f84bce",
 					"kind": "catch_clause",
-					"line": 1236,
+					"line": 1221,
 					"column": 7,
-					"endLine": 1238,
+					"endLine": 1223,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10165,9 +10251,9 @@
 				{
 					"id": "362e4edcf0f3f4ddd7d85101fc3ee63850ddad9d",
 					"kind": "void_expression",
-					"line": 1336,
+					"line": 1321,
 					"column": 3,
-					"endLine": 1336,
+					"endLine": 1321,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10179,44 +10265,11 @@
 					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"advisorServices.preferencesBackup.restore\" so the start never waits for IndexedDB; that named operation never rejects, because restoreOnce catches every failure and records each outcome (restored, not needed, absent, invalid, failed) on its own advisor span. Verified target: \"advisorServices.preferencesBackup.restore\" in \"initializeRuntime\"."
 				},
 				{
-					"id": "c0d6ddc51b54af6b566015a85e2cbaec880e82a7",
-					"kind": "void_expression",
-					"line": 1356,
-					"column": 21,
-					"endLine": 1356,
-					"endColumn": 102,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.ensurePilotRecoveryPresented().then",
-						"scope": "onSessionStateChange",
-						"justification": "The \"onSessionStateChange\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"onSessionStateChange\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"onSessionStateChange\"."
-				},
-				{
-					"id": "bf7d358684d6e3ff708aa412d55f84c1cacf49fa",
-					"kind": "callback_registration",
-					"line": 1356,
-					"column": 26,
-					"endLine": 1356,
-					"endColumn": 102,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "onSessionStateChange",
-						"justification": "The \"onSessionStateChange\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onSessionStateChange\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"onSessionStateChange\"."
-				},
-				{
 					"id": "fe70eae3373782f57876d29a32ea21742964a4bb",
 					"kind": "void_expression",
-					"line": 1362,
+					"line": 1346,
 					"column": 35,
-					"endLine": 1362,
+					"endLine": 1346,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10230,9 +10283,9 @@
 				{
 					"id": "cc21861f11fbd1dace6ac8801eb6f7c22a82ca82",
 					"kind": "void_expression",
-					"line": 1379,
+					"line": 1363,
 					"column": 5,
-					"endLine": 1379,
+					"endLine": 1363,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10244,44 +10297,11 @@
 					"reason": "Allowlisted void_expression: The \"onProposalExcluded\" owner deliberately detaches \"this.pilotMetrics.proposalExcluded\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalExcluded\" in \"onProposalExcluded\"."
 				},
 				{
-					"id": "09863725c53254997fa42639e8c1ed30f985f871",
-					"kind": "void_expression",
-					"line": 1431,
-					"column": 19,
-					"endLine": 1431,
-					"endColumn": 100,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.ensurePilotRecoveryPresented().then",
-						"scope": "initializeRuntime",
-						"justification": "The \"initializeRuntime\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"initializeRuntime\"."
-				},
-				{
-					"id": "f05ee0a2b576e9d91cbb9e7ec23113009e009f5c",
-					"kind": "callback_registration",
-					"line": 1431,
-					"column": 24,
-					"endLine": 1431,
-					"endColumn": 100,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "initializeRuntime",
-						"justification": "The \"initializeRuntime\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"initializeRuntime\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"initializeRuntime\"."
-				},
-				{
 					"id": "7597fd7197fd4f3df5915492a396e8b2f6fa4a2e",
 					"kind": "void_expression",
-					"line": 1444,
+					"line": 1427,
 					"column": 83,
-					"endLine": 1444,
+					"endLine": 1427,
 					"endColumn": 125,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10295,9 +10315,9 @@
 				{
 					"id": "8bacfe4308bba0f0ba9dae50ef780cc2d0f15ae7",
 					"kind": "void_expression",
-					"line": 1444,
+					"line": 1427,
 					"column": 127,
-					"endLine": 1444,
+					"endLine": 1427,
 					"endColumn": 161,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10311,9 +10331,9 @@
 				{
 					"id": "d4fd3c7c921b4aedcfafe128fd5f0840cd1027cc",
 					"kind": "catch_clause",
-					"line": 1566,
+					"line": 1549,
 					"column": 6,
-					"endLine": 1572,
+					"endLine": 1555,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -10325,9 +10345,9 @@
 				{
 					"id": "1f40e4851a1e017ed7b9a6ecdd8416721c4466b6",
 					"kind": "promise_catch",
-					"line": 1691,
+					"line": 1674,
 					"column": 3,
-					"endLine": 1691,
+					"endLine": 1674,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10342,9 +10362,9 @@
 				{
 					"id": "159de0a0475f31bec1cbaaf7c6d79c578bb9f6c7",
 					"kind": "catch_clause",
-					"line": 1727,
+					"line": 1710,
 					"column": 46,
-					"endLine": 1727,
+					"endLine": 1710,
 					"endColumn": 131,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10358,9 +10378,9 @@
 				{
 					"id": "9f0b4cfe335a6092baf0070b38ed7e7c4872a370",
 					"kind": "catch_clause",
-					"line": 1736,
+					"line": 1719,
 					"column": 5,
-					"endLine": 1738,
+					"endLine": 1721,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10374,9 +10394,9 @@
 				{
 					"id": "a0b4d649e014951a88d491bd9b0d8e7a8e327132",
 					"kind": "void_expression",
-					"line": 1793,
+					"line": 1776,
 					"column": 30,
-					"endLine": 1793,
+					"endLine": 1776,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10390,9 +10410,9 @@
 				{
 					"id": "39b977f7aee04b8faa42b51990318eb60078f1f7",
 					"kind": "callback_registration",
-					"line": 1793,
+					"line": 1776,
 					"column": 35,
-					"endLine": 1793,
+					"endLine": 1776,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10407,9 +10427,9 @@
 				{
 					"id": "5975d1589f5e6b0e0fa022521b5f7dcf7e106db8",
 					"kind": "void_expression",
-					"line": 1846,
+					"line": 1829,
 					"column": 4,
-					"endLine": 1846,
+					"endLine": 1829,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10423,9 +10443,9 @@
 				{
 					"id": "343676b02d39fb16ceeed226aa9ceb8e4ef7461a",
 					"kind": "catch_clause",
-					"line": 1923,
+					"line": 1906,
 					"column": 5,
-					"endLine": 1926,
+					"endLine": 1909,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10437,11 +10457,11 @@
 					"reason": "Allowlisted catch_clause: The \"toggleTrackedAchievement\" owner answers refused with a \"fallback_return\" when the settings save threw; that failure was already recorded by updateSettings under settings_save, and the section says it in its live region. Verified recovery: \"fallback_return\" in \"toggleTrackedAchievement\"."
 				},
 				{
-					"id": "d8fcad351b0e3fabc77a7144ea5146c2e4c808a7",
+					"id": "0fbf65c82bf814c2fa9dbf942f9a2220f2a8bcf5",
 					"kind": "catch_clause",
-					"line": 3039,
+					"line": 2988,
 					"column": 6,
-					"endLine": 3051,
+					"endLine": 2995,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -10451,60 +10471,27 @@
 					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "9481a982452a2b01ac678cef2ebacfe400c2cc02",
+					"id": "d2c8ea96af56c33d263788aa085d0c32ccae2a8e",
 					"kind": "catch_clause",
-					"line": 3071,
+					"line": 3034,
 					"column": 6,
-					"endLine": 3074,
+					"endLine": 3037,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "rethrow",
 						"scope": "run",
-						"justification": "The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first puts the previous value of the token entry back, so a failed replacement does not lose the working token, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run."
+						"justification": "The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first withdraws the token (HP-15), putting the previous value of the token entry back so a failed replacement does not lose the working token and overwriting a clipboard copy that already landed, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run."
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first puts the previous value of the token entry back, so a failed replacement does not lose the working token, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run. Verified recovery: \"rethrow\" in \"run\"."
-				},
-				{
-					"id": "81c62c0279eb731d8a288003f470d4dd18b99fbe",
-					"kind": "void_expression",
-					"line": 3113,
-					"column": 7,
-					"endLine": 3116,
-					"endColumn": 8,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "spec.run().then",
-						"scope": "checkCallback",
-						"justification": "In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made."
-					},
-					"reason": "Allowlisted void_expression: In \"checkCallback\", detached \"spec.run().then\" is the explicit local export command; both outcomes end in a notice, a failure keeps the session data untouched, and no authenticated query or session lifecycle change is made. Verified target: \"spec.run().then\" in \"checkCallback\"."
-				},
-				{
-					"id": "ba040cad1edce89114b19793e7efa7e46a16bd7a",
-					"kind": "callback_registration",
-					"line": 3113,
-					"column": 12,
-					"endLine": 3116,
-					"endColumn": 8,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "checkCallback",
-						"justification": "In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state."
-					},
-					"reason": "Allowlisted callback_registration: In \"checkCallback\", the \"then\" callbacks answer the export command with a saved or failed notice; they change no session, ledger or account state. Verified registration: \"then\" in \"checkCallback\"."
+					"reason": "Allowlisted catch_clause: The \"run\" owner applies \"rethrow\" when saving the new token selection throws: it first withdraws the token (HP-15), putting the previous value of the token entry back so a failed replacement does not lose the working token and overwriting a clipboard copy that already landed, then rethrows the same error to the caller, which reports it and records it through localDebugActions.run. Verified recovery: \"rethrow\" in \"run\"."
 				},
 				{
 					"id": "f1d8ad9a2b41606a3a04cd653597f21918a0fa95",
 					"kind": "void_expression",
-					"line": 3134,
+					"line": 3061,
 					"column": 22,
-					"endLine": 3134,
+					"endLine": 3061,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10518,9 +10505,9 @@
 				{
 					"id": "6752a7c99052d0a41664dc47536e1a33394d1648",
 					"kind": "promise_catch",
-					"line": 3134,
+					"line": 3061,
 					"column": 27,
-					"endLine": 3134,
+					"endLine": 3061,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10533,91 +10520,11 @@
 					"reason": "Allowlisted promise_catch: The palette \"callback\" applies an \"intentional_noop\" catch because updateLeyspringAchievements already records its failure in the diagnostic action and the notice. Verified recovery: \"intentional_noop\" in \"callback\"."
 				},
 				{
-					"id": "f71b27614079d8710ac91a84c66ee9bcfd283218",
-					"kind": "void_expression",
-					"line": 3191,
-					"column": 4,
-					"endLine": 3191,
-					"endColumn": 29,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "marker.handle",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.handle\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "d4bafd7d3f50ec407381957023f1a066cfd8b82f",
-					"kind": "void_expression",
-					"line": 3192,
-					"column": 4,
-					"endLine": 3193,
-					"endColumn": 104,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.liveSessions.presence",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store. Verified target: \"this.liveSessions.presence\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "cb6a88f9ec9089bdb29ae287d93edf374c40923f",
-					"kind": "void_expression",
-					"line": 3195,
-					"column": 3,
-					"endLine": 3195,
-					"endColumn": 26,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "marker.reconcile",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.reconcile\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "bcf5ccc78f836b1a682497bc8aa293348cf4ca3e",
-					"kind": "catch_clause",
-					"line": 3280,
-					"column": 5,
-					"endLine": 3283,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "readIngameSessionLink",
-						"justification": "The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own."
-					},
-					"reason": "Allowlisted catch_clause: The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own. Verified recovery: \"fallback_return\" in \"readIngameSessionLink\"."
-				},
-				{
-					"id": "adfd960861f6e628a65d0a01dabfc7dd5621f1e4",
-					"kind": "catch_clause",
-					"line": 3291,
-					"column": 5,
-					"endLine": 3293,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "writeIngameSessionLink",
-						"justification": "The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner."
-					},
-					"reason": "Allowlisted catch_clause: The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner. Verified recovery: \"local_recovery\" in \"writeIngameSessionLink\"."
-				},
-				{
 					"id": "334022dc13fbebddb4dcb92f8406d45cf14a62da",
 					"kind": "catch_clause",
-					"line": 3546,
+					"line": 3340,
 					"column": 6,
-					"endLine": 3548,
+					"endLine": 3342,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10629,25 +10536,11 @@
 					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"perform\"."
 				},
 				{
-					"id": "3f1d9a42d7bad4594837c36688d9f6a839811106",
-					"kind": "catch_clause",
-					"line": 3848,
-					"column": 5,
-					"endLine": 3851,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "span.failure"
-					},
-					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
-				},
-				{
 					"id": "cf2457ea09339a061ccbd73e4e47bce5b13473e5",
 					"kind": "callback_registration",
-					"line": 3922,
+					"line": 3568,
 					"column": 17,
-					"endLine": 3922,
+					"endLine": 3568,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10662,9 +10555,9 @@
 				{
 					"id": "43004c112baf2d083714ed369372095021455d1d",
 					"kind": "promise_catch",
-					"line": 3922,
+					"line": 3568,
 					"column": 17,
-					"endLine": 3922,
+					"endLine": 3568,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10679,9 +10572,9 @@
 				{
 					"id": "5f8e08d4a327890e911dad18d1957e859d216cc2",
 					"kind": "callback_registration",
-					"line": 3923,
+					"line": 3569,
 					"column": 20,
-					"endLine": 3923,
+					"endLine": 3569,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10696,9 +10589,9 @@
 				{
 					"id": "8974d15d4ec4a076f85ec88ad0d8f42f56c90302",
 					"kind": "promise_catch",
-					"line": 3923,
+					"line": 3569,
 					"column": 20,
-					"endLine": 3923,
+					"endLine": 3569,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11844,9 +11737,9 @@
 				{
 					"id": "b204c0e949dc42376a40fdf92125ff9d67a0d69f",
 					"kind": "catch_clause",
-					"line": 201,
+					"line": 203,
 					"column": 3,
-					"endLine": 201,
+					"endLine": 203,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11860,9 +11753,9 @@
 				{
 					"id": "820e0fc360799498b389f663bbf47057004082ad",
 					"kind": "catch_clause",
-					"line": 230,
+					"line": 232,
 					"column": 4,
-					"endLine": 230,
+					"endLine": 232,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11876,9 +11769,9 @@
 				{
 					"id": "05c694a61bc64fe33b782f018a268866b8ddec9f",
 					"kind": "catch_clause",
-					"line": 236,
+					"line": 238,
 					"column": 4,
-					"endLine": 236,
+					"endLine": 238,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11892,9 +11785,9 @@
 				{
 					"id": "42fd9a6ae5e7ba795642e084c49f6c2e9308163c",
 					"kind": "catch_clause",
-					"line": 527,
+					"line": 530,
 					"column": 7,
-					"endLine": 527,
+					"endLine": 530,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11908,9 +11801,9 @@
 				{
 					"id": "aa5abc84dff223c7142f2ae1e9cde4ac57cda494",
 					"kind": "catch_clause",
-					"line": 533,
+					"line": 536,
 					"column": 4,
-					"endLine": 533,
+					"endLine": 536,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11924,9 +11817,9 @@
 				{
 					"id": "5afe6c8284cf9e463ca52f543ef2b5fc6f6e38fb",
 					"kind": "catch_clause",
-					"line": 536,
+					"line": 539,
 					"column": 79,
-					"endLine": 536,
+					"endLine": 539,
 					"endColumn": 123,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11940,9 +11833,9 @@
 				{
 					"id": "1769c2982cc7600e103c7b81c233fdff58ace7b0",
 					"kind": "catch_clause",
-					"line": 714,
+					"line": 719,
 					"column": 5,
-					"endLine": 714,
+					"endLine": 719,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11956,9 +11849,9 @@
 				{
 					"id": "8508cd8935b74c9ffd787fa7a6ef711172d4fa3b",
 					"kind": "catch_clause",
-					"line": 769,
+					"line": 774,
 					"column": 41,
-					"endLine": 769,
+					"endLine": 774,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11972,9 +11865,9 @@
 				{
 					"id": "7c035d4a49139072cc03c37a219deb6a85d1abd2",
 					"kind": "catch_clause",
-					"line": 915,
+					"line": 920,
 					"column": 5,
-					"endLine": 915,
+					"endLine": 920,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11988,9 +11881,9 @@
 				{
 					"id": "91c1d62daec6aad6537ee5cf7bc3e3a60123810c",
 					"kind": "catch_clause",
-					"line": 934,
+					"line": 939,
 					"column": 3,
-					"endLine": 934,
+					"endLine": 939,
 					"endColumn": 30,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12004,9 +11897,9 @@
 				{
 					"id": "1df169d046eca4030f9a385c2d3c395e34e85f3c",
 					"kind": "callback_registration",
-					"line": 980,
+					"line": 985,
 					"column": 16,
-					"endLine": 984,
+					"endLine": 989,
 					"endColumn": 27,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -12021,9 +11914,9 @@
 				{
 					"id": "69fe951b87925b65ce28ce50085a842348c73ad6",
 					"kind": "void_expression",
-					"line": 983,
+					"line": 988,
 					"column": 4,
-					"endLine": 983,
+					"endLine": 988,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12037,9 +11930,9 @@
 				{
 					"id": "9a0dd42adce53d202a058057a2f5881a3d72e7f2",
 					"kind": "catch_clause",
-					"line": 1014,
+					"line": 1019,
 					"column": 41,
-					"endLine": 1014,
+					"endLine": 1019,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12053,9 +11946,9 @@
 				{
 					"id": "7ddd9f475ee93665839cd8b3166da5e8b9e9eb65",
 					"kind": "catch_clause",
-					"line": 1041,
+					"line": 1046,
 					"column": 92,
-					"endLine": 1041,
+					"endLine": 1046,
 					"endColumn": 191,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12067,12 +11960,12 @@
 					"reason": "Allowlisted catch_clause: The \"pruneSealed\" catch is a \"local_recovery\": a journal prune that throws is reported through onError and its session id stays queued for the next start, so a failed prune never touches the session or blocks start(). Verified recovery: \"local_recovery\" in \"pruneSealed\"."
 				},
 				{
-					"id": "ebf8c4e6a7aae5bb567be14e09631b8b1fde0fd6",
+					"id": "b94877b8f4bb0edbc006c12b5a90b2fcb0d1b232",
 					"kind": "catch_clause",
-					"line": 1065,
+					"line": 1081,
 					"column": 5,
-					"endLine": 1065,
-					"endColumn": 51,
+					"endLine": 1081,
+					"endColumn": 104,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -12085,9 +11978,9 @@
 				{
 					"id": "3b957ea797d76ce6bf47810a3c79ca2fa61e2ede",
 					"kind": "catch_clause",
-					"line": 1078,
+					"line": 1094,
 					"column": 5,
-					"endLine": 1078,
+					"endLine": 1094,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12101,9 +11994,9 @@
 				{
 					"id": "6cbbb0836dfb071587f2543e51de07446397417b",
 					"kind": "callback_registration",
-					"line": 1125,
+					"line": 1141,
 					"column": 16,
-					"endLine": 1125,
+					"endLine": 1141,
 					"endColumn": 147,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -12118,9 +12011,9 @@
 				{
 					"id": "adf55f5bc4bd198a84023e136b829c746b3dbc28",
 					"kind": "catch_clause",
-					"line": 1207,
+					"line": 1223,
 					"column": 4,
-					"endLine": 1207,
+					"endLine": 1223,
 					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {
@@ -15405,6 +15298,23 @@
 					"reason": "Allowlisted void_expression: The \"loadTracked\" owner deliberately detaches \"this.loadNames\": it never rejects (the public name lists answer closed results and a failed page only leaves the ids on screen) and repaints the followed list itself; nothing is left unobserved. Verified target: \"this.loadNames\" in \"loadTracked\"."
 				},
 				{
+					"id": "db8251f25fdf65684f04ef554886fe4b4174e1fd",
+					"kind": "callback_registration",
+					"line": 493,
+					"column": 3,
+					"endLine": 493,
+					"endColumn": 91,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "applyIcon",
+						"justification": "In \"applyIcon\", the \"addEventListener\" callback removes a followed-achievement icon that failed to load, so the slot stays empty like a missing icon; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"applyIcon\", the \"addEventListener\" callback removes a followed-achievement icon that failed to load, so the slot stays empty like a missing icon; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"applyIcon\"."
+				},
+				{
 					"id": "757e2a0cf8e7851fdab354bd7141ead8e2c48c9d",
 					"kind": "catch_clause",
 					"line": 514,
@@ -17755,6 +17665,23 @@
 					"reason": "Allowlisted callback_registration: The \"keepControl\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"keepControl\"."
 				},
 				{
+					"id": "3d6fd72bf8cd0c4e96b80d913cfe7810b22a865c",
+					"kind": "callback_registration",
+					"line": 1518,
+					"column": 3,
+					"endLine": 1518,
+					"endColumn": 88,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "appendItemIdentity",
+						"justification": "In \"appendItemIdentity\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"appendItemIdentity\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"appendItemIdentity\"."
+				},
+				{
 					"id": "5ba5e329d1d55dd055320079a7cd2e88112c25d2",
 					"kind": "catch_clause",
 					"line": 1587,
@@ -18419,6 +18346,23 @@
 					"reason": "Allowlisted catch_clause: a pointer that is no longer active cannot be captured (NotFoundError); the cursor keeps following it without capture; \"onPlotPointer\" owns it as \"intentional_noop\" Verified recovery: \"intentional_noop\" in \"onPlotPointer\"."
 				},
 				{
+					"id": "ae19921f1c15f44d7daa4ad598cd65a350beff32",
+					"kind": "callback_registration",
+					"line": 953,
+					"column": 6,
+					"endLine": 953,
+					"endColumn": 87,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "icon",
+						"justification": "In \"icon\", the \"addEventListener\" callback swaps an item icon that failed to load for the \"?\" marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"icon\", the \"addEventListener\" callback swaps an item icon that failed to load for the \"?\" marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"icon\"."
+				},
+				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
 					"line": 956,
@@ -18556,6 +18500,23 @@
 						"justification": "The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics."
 					},
 					"reason": "Allowlisted void_expression: The \"renderPriceHistoryPanel\" owner deliberately detaches \"interactions.onEnable\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onEnable\" in \"renderPriceHistoryPanel\"."
+				},
+				{
+					"id": "37a8aaf14343ba3e5003d9b1aa61dcd4e623950a",
+					"kind": "callback_registration",
+					"line": 187,
+					"column": 4,
+					"endLine": 190,
+					"endColumn": 6,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderPriceHistoryPanel",
+						"justification": "In \"renderPriceHistoryPanel\", the \"addEventListener\" callback removes the selected item's icon when it failed to load, as for an unresolved id; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"renderPriceHistoryPanel\", the \"addEventListener\" callback removes the selected item's icon when it failed to load, as for an unresolved id; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"renderPriceHistoryPanel\"."
 				},
 				{
 					"id": "05b3c54e1f3dac0ae068136b92a9bf438cd13922",
@@ -18908,6 +18869,23 @@
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
+				{
+					"id": "2ca4dd2709ab50bfa73cd25c37975a8a6238a93d",
+					"kind": "callback_registration",
+					"line": 425,
+					"column": 3,
+					"endLine": 425,
+					"endColumn": 80,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderIcon",
+						"justification": "In \"renderIcon\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request."
+					},
+					"reason": "Allowlisted callback_registration: In \"renderIcon\", the \"addEventListener\" callback swaps an item icon that failed to load for the initials marker; a failed image needs no report and the callback makes no request. Verified registration: \"addEventListener\" in \"renderIcon\"."
+				},
 				{
 					"id": "fc9306caaa918ec531833e1981dd478ddd0664a4",
 					"kind": "callback_registration",
@@ -19797,6 +19775,92 @@
 						"justification": "The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
+				}
+			]
+		},
+		"src/runtime/ingame-session-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "c14294a6f761c399d4b6aacf0e5e9569a8f4255a",
+					"kind": "void_expression",
+					"line": 102,
+					"column": 4,
+					"endLine": 102,
+					"endColumn": 29,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "marker.handle",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.handle\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "8a3f1c01cd601fc7e3aa605f377dd99016293ef7",
+					"kind": "void_expression",
+					"line": 103,
+					"column": 4,
+					"endLine": 104,
+					"endColumn": 104,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.liveSessions.presence",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store. Verified target: \"this.liveSessions.presence\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "e3141c9ac8ed8f43d1e1377ef72b1f31490756f0",
+					"kind": "void_expression",
+					"line": 106,
+					"column": 3,
+					"endLine": 106,
+					"endColumn": 26,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "marker.reconcile",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.reconcile\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "7caf4b09e28778840190f4aa69918394e5a2616c",
+					"kind": "catch_clause",
+					"line": 193,
+					"column": 5,
+					"endLine": 196,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "readIngameSessionLink",
+						"justification": "The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own."
+					},
+					"reason": "Allowlisted catch_clause: The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own. Verified recovery: \"fallback_return\" in \"readIngameSessionLink\"."
+				},
+				{
+					"id": "7de265dcfdf9b8fc2f8ba90addcfe7bca2dfac88",
+					"kind": "catch_clause",
+					"line": 204,
+					"column": 5,
+					"endLine": 206,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "writeIngameSessionLink",
+						"justification": "The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner."
+					},
+					"reason": "Allowlisted catch_clause: The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner. Verified recovery: \"local_recovery\" in \"writeIngameSessionLink\"."
 				}
 			]
 		}

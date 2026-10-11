@@ -129,8 +129,16 @@ function notesOver(harness: object): SessionNoteRuntime {
 	const portOf = (TyrianCompanionCore as unknown as {
 		sessionNoteRuntimePort(this: void, core: object): SessionNoteRuntimePort;
 	}).sessionNoteRuntimePort;
-	return new SessionNoteRuntime(portOf(harness));
+	const notes = new SessionNoteRuntime(portOf(harness));
+	// DE-01, tenth wave: the note's input, its economy and the loot projection are the runtime's own now. A harness
+	// that stubbed them on the core stubs them here, on the runtime, where the summary's write reaches them.
+	const stubs = harness as Partial<Record<(typeof NOTE_STEPS)[number], unknown>>;
+	for (const name of NOTE_STEPS) if (stubs[name] !== undefined) Object.assign(notes, { [name]: stubs[name] });
+	return notes;
 }
+
+/** The steps of the note that moved from the core to `SessionNoteRuntime` (DE-01, tenth wave). */
+const NOTE_STEPS = ['sessionNoteInput', 'prepareSessionEconomyEvidence', 'refreshLootPresentation'] as const;
 
 /**
  * DE-01, step 3g: the inventory (the advisor's refresh, the syncs, the outcome of the one-click one) is
@@ -633,7 +641,7 @@ describe('assisted proposal invalidation metrics', () => {
 });
 
 // DE-01, step 3a: 'persisted pilot recovery classification' moved with `classifyPilotRecovery` to
-// `src/runtime/session-facade.test.ts`, over the core's own `ensurePilotRecoveryPresented`.
+// `src/runtime/session-facade.test.ts`, over `PilotRecoveryRuntime.ensurePilotRecoveryPresented`.
 
 describe('manual session start command', () => {
 	it('resolves Cancel or Esc from the real start modal without calling its backend or mutating runtime', async () => {
@@ -1225,9 +1233,8 @@ describe('Halloween production gating', () => {
 			sessionSummarySaveState: 'unknown' as TyrianCompanionCore['sessionSummarySaveState'],
 			emitNotice: vi.fn(),
 			settings: { language: 'en' as const },
-			// The summary's write is the core's `notes`' (DE-01, step 3e).
-			notes: { persistCompletedSessionSummary: vi.fn(async () => null) },
-			refreshLootPresentation: vi.fn(async () => undefined),
+			// The summary's write and the loot projection are the core's `notes`' (DE-01, step 3e and tenth wave).
+			notes: { persistCompletedSessionSummary: vi.fn(async () => null), refreshLootPresentation: vi.fn(async () => undefined) },
 			localDebugActions: null,
 			observeHalloweenDelta,
 		};
@@ -1431,8 +1438,10 @@ describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
 				getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete', sessionId: 'session-1' } })),
 			},
 			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
-			notes: { persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })) },
-			refreshLootPresentation: vi.fn(async () => undefined),
+			notes: {
+				persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+				refreshLootPresentation: vi.fn(async () => undefined),
+			},
 			observeHalloweenDelta: vi.fn(async () => undefined),
 			emitNotice: vi.fn(), settings: { language: 'en' as const },
 			assistedDetection: { getState: () => ({ status: 'armed' }), disarm: vi.fn() },
@@ -1479,8 +1488,10 @@ describe('legacy summary reconciliation under passive sessions', () => {
 				getState: () => ({ version: SESSION_STATE_VERSION, status: 'complete' as const, sessionId: 'session-1' }),
 				getRecoveryState: () => ({ status: 'none' as const }),
 			},
-			notes: { persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })) },
-			refreshLootPresentation: vi.fn(async () => undefined),
+			notes: {
+				persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+				refreshLootPresentation: vi.fn(async () => undefined),
+			},
 			observeHalloweenDelta: vi.fn(async () => undefined),
 			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
 			connection: { getState: () => ({ status: 'connected' as const }) },
@@ -2662,7 +2673,8 @@ interface ManagedAssetsRootHarness {
 	inventoryVaultSyncRun: { invalidate(): void };
 	walletVaultSync: { invalidate(): void };
 	saveData(data: unknown): Promise<void>;
-	refreshLootPresentation(): Promise<void>;
+	/** The loot projection a changed language or folder repaints (`SessionNoteRuntime`, DE-01 tenth wave). */
+	notes: { refreshLootPresentation(): Promise<void> };
 	renderViews(): void;
 	renderInventoryAdvisorViews(): void;
 	emitNotice(message: string, source: string): void;
@@ -2698,7 +2710,7 @@ function buildManagedAssetsRootHarness(
 		inventoryVaultSyncRun: { invalidate: () => undefined },
 		walletVaultSync: { invalidate: () => undefined },
 		saveData: async () => undefined,
-		refreshLootPresentation: async () => undefined,
+		notes: { refreshLootPresentation: async () => undefined },
 		renderViews: () => undefined,
 		renderInventoryAdvisorViews: () => undefined,
 		emitNotice: () => undefined,

@@ -105,9 +105,8 @@ function port(overrides: Partial<LiveSessionRuntimePort> = {}): LiveSessionRunti
 		runRuntimeMutation: (operation) => { operation(); return true; },
 		renderViews: () => undefined,
 		emitNotice: unused('emitNotice'),
+		pilotRecovery: { pilotRecoveryIdentity: () => null, ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented') },
 		activateView: unused('activateView'),
-		pilotRecoveryIdentity: () => null,
-		ensurePilotRecoveryPresented: unused('ensurePilotRecoveryPresented'),
 		sessionNoteInput: unused('sessionNoteInput'),
 		ensureCompletedSummarySaved: unused('ensureCompletedSummarySaved'),
 		persistFarmingSessionContext: unused('persistFarmingSessionContext'),
@@ -131,7 +130,7 @@ interface RecoveryHarness {
 
 /**
  * The recovery on screen is `session-a:7`; `presented` is what recording it as presented answers
- * (the core's `ensurePilotRecoveryPresented`, through the port).
+ * (`PilotRecoveryRuntime.ensurePilotRecoveryPresented`, through the port).
  */
 function recoveryHarness(kind: RecoveryKind, outcome: 'confirms' | 'refuses' | 'throws', presented: Promise<boolean> = Promise.resolve(true)): RecoveryHarness {
 	type RecoveryResult = Awaited<ReturnType<LiveSessionRuntimePort['sessions']['recover']>>;
@@ -152,8 +151,7 @@ function recoveryHarness(kind: RecoveryKind, outcome: 'confirms' | 'refuses' | '
 			discardRecovery: kind === 'discard' ? backend : unused('sessions.discardRecovery'),
 		},
 		pilotMetrics: { ...base.pilotMetrics, recoveryFinished },
-		pilotRecoveryIdentity: () => 'session-a:7',
-		ensurePilotRecoveryPresented: recoveryPresented,
+		pilotRecovery: { pilotRecoveryIdentity: () => 'session-a:7', ensurePilotRecoveryPresented: recoveryPresented },
 	}));
 	const run = kind === 'recover' ? () => runtime.performRecoverSession() : () => runtime.performDiscardRecoveredSession();
 	return { run, backend, recoveryFinished, recoveryPresented };

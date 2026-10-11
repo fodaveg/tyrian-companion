@@ -306,6 +306,23 @@ describe('sale view render', () => {
 		expect(initials.some((el) => el.textContent === 'OS')).toBe(true);
 	});
 
+	it('swaps an icon that fails to load for the initials of a missing one, and leaves a loaded icon alone', () => {
+		const model = buildSaleViewModel(baseInput({
+			rows: [row({ itemId: 1, name: 'Objeto Con Icono', icon: 'https://render.guildwars2.com/file/abc/1.png' })],
+		}));
+		const container = render(model, 'es');
+		const images = find(container, 'img').filter((img) => img.attributes.get('src') === 'https://render.guildwars2.com/file/abc/1.png');
+		expect(images.length).toBeGreaterThan(0);
+		expect(byClass(walk(container), 'tyrian-inventory__icon').some((el) => el.textContent === 'OC')).toBe(false);
+		images[0]!.dispatch('load');
+		expect(find(container, 'img')).toContain(images[0]);
+		for (const image of images) image.dispatch('error');
+		expect(find(container, 'img')).toHaveLength(0);
+		const initials = byClass(walk(container), 'tyrian-inventory__icon').filter((el) => el.textContent === 'OC');
+		expect(initials).toHaveLength(images.length);
+		expect(initials.every((el) => el.attributes.get('aria-hidden') === 'true')).toBe(true);
+	});
+
 	it('shows the plugin\'s own blocked-reason copy, never a made-up one, when the model is blocked', () => {
 		const model = buildSaleViewModel(baseInput({ status: 'blocked', blockedReason: 'capture_rate_limited' }));
 		const container = render(model, 'es');
@@ -430,10 +447,20 @@ class FakeElement {
 		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
 	}
 	empty(): void { this.children.splice(0); this.textContent = null; }
-	append(...children: FakeElement[]): void { this.children.push(...children); }
-	createEl(tag: string, options?: FakeOptions): FakeElement { const child = new FakeElement(tag, this.ownerDocument, options); this.children.push(child); return child; }
-	createDiv(options?: FakeOptions): FakeElement { const child = new FakeElement('div', this.ownerDocument, options); this.children.push(child); return child; }
-	createSpan(options?: FakeOptions): FakeElement { const child = new FakeElement('span', this.ownerDocument, options); this.children.push(child); return child; }
+	parent: FakeElement | null = null;
+	append(...children: FakeElement[]): void { for (const child of children) child.parent = this; this.children.push(...children); }
+	/** Like `ChildNode.replaceWith` for a single replacement. */
+	replaceWith(next: FakeElement): void {
+		const index = this.parent?.children.indexOf(this) ?? -1;
+		if (index < 0) return;
+		next.parent = this.parent;
+		this.parent!.children.splice(index, 1, next);
+		this.parent = null;
+	}
+	createEl(tag: string, options?: FakeOptions): FakeElement { const child = new FakeElement(tag, this.ownerDocument, options); child.parent = this; this.children.push(child); return child; }
+	createDiv(options?: FakeOptions): FakeElement { const child = new FakeElement('div', this.ownerDocument, options); child.parent = this; this.children.push(child); return child; }
+	createSpan(options?: FakeOptions): FakeElement { const child = new FakeElement('span', this.ownerDocument, options); child.parent = this; this.children.push(child); return child; }
+	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
 	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
 	setText(value: string): void { this.textContent = value; }
 	addClass(value: string): void { this.className = `${this.className} ${value}`.trim(); }

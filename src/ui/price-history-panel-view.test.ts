@@ -131,6 +131,24 @@ describe('price-history panel', () => {
 		expect(icons[0]?.attributes.get('alt')).toBe('');
 	});
 
+	it('drops the item icon when it fails to load, as for an unresolved id, and leaves a loaded one alone', () => {
+		const mount = createMount();
+		const options = {
+			state: { ...state('collecting'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [daily('2026-08-29', 100)] },
+			itemIcons: { 36_038: 'https://render.guildwars2.com/x/y.png' },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		};
+		const icons = () => walk(mount.container).filter((element) => element.className === 'tyrian-price-history__item-icon');
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), options);
+		icons()[0]!.dispatch('load');
+		expect(icons()).toHaveLength(1);
+		icons()[0]!.dispatch('error');
+		expect(icons()).toHaveLength(0);
+		// The next paint builds the icon again instead of reusing the removed one.
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), options);
+		expect(icons()).toHaveLength(1);
+	});
+
 	it('never renders an icon from a host other than render.guildwars2.com', () => {
 		const mount = createMount();
 		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {

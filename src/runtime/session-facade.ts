@@ -5,27 +5,31 @@
  * (goal, preparation, declared build) with their serialized writes, and the saved live sessions
  * (list, selection, the view and alerts of the selected one, the comparison and the export); with
  * the nine fields only they use. `loadSessionHistory`, the only scan of the history (H9.7), is here too.
+ * DE-01, tenth wave: what the history's runtime authority reads before a scrub
+ * (`sessionHistoryScrubGate`), the preview that first asks the saved sessions again (Z2-2), the
+ * export of the preserved account-era session and the two palette commands that export a session
+ * (`registerSessionExportCommands`).
  *
  * Moved unchanged from `TyrianCompanionCore`, which stays the facade the views and the settings
  * panel see. The core keeps:
  * - building the services (`pilotMetrics`, `pilotMetricsExporter`, `sessionHistory`,
  *   `liveSessions`, `liveHistory`);
- * - the history's runtime authority and its gate: the live session's start, stop and recovery
- *   take their leases from it;
- * - the recovery's own pilot hooks (`pilotRecoveryIdentity`, `ensurePilotRecoveryPresented`) with
- *   the two sets they fill;
+ * - the history's runtime authority: the live session's start, stop and recovery take their
+ *   leases from it; it reads its gate here and lets a finished live session go through `SessionNoteRuntime`;
  * - the farming state a start captures (the group context and the reminders).
  * It hands all of that through `SessionRuntimePort`; the getters below carry the names of the
- * core's own fields, so the moved code reads as it did there.
+ * core's own fields, so the moved code reads as it did there. The recovery's pilot hooks and the two
+ * collections they fill are `PilotRecoveryRuntime`'s (DE-01, group F), handed through the same port.
  *
  * The file is not named `session-runtime.ts`: `scripts/security-scan.mjs` treats any file of that
  * name as a persisted-session boundary, and this module persists nothing of its own.
  */
 import type { LocalDebugActionRunner } from '../core/local-debug-action-runner';
-import { createTranslator } from '../core/i18n';
+import { createTranslator, type Translator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
 import type { TyrianEnvironmentPort, TyrianUiPort, TyrianVault } from '../host/tyrian-host';
+import type { AssistedDetectionService } from '../sessions/assisted-detection-service';
 import { normalizeFarmingGoal, type FarmingGoalV1 } from '../sessions/farming-goal';
 import type { FarmingPreparationSettingsV1 } from '../sessions/farming-goal-preparation';
 import { provisionalLiveComparison, type LiveSessionComparisonState, type LiveSessionComparisonView } from '../sessions/live-session-comparison';
@@ -38,9 +42,11 @@ import {
 	type LiveSessionSetAside,
 } from '../sessions/live-session-history';
 import { emptyLiveSessionView, type LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
+import { exportLegacyRuntimeArchive } from '../sessions/live-session-legacy-archive';
 import type { LiveSessionAlertViewV1, LiveSessionViewV1 } from '../sessions/live-session-model';
 import type { StoredLiveSessionPayloadV1 } from '../sessions/live-session-note-model';
 import type { FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
+import type { ManualSessionStartService } from '../sessions/manual-session-start-service';
 import type { PilotMetricsExporter, PilotMetricsExportPreview, PilotMetricsExportResult } from '../sessions/pilot-metrics-export';
 import type {
 	PilotJournalHealth,
@@ -53,13 +59,19 @@ import type { PilotMetricsRecorder, PilotMetricsState } from '../sessions/pilot-
 import type {
 	SessionHistoryExportResult,
 	SessionHistoryRuntimeAuthority,
+	SessionHistoryScrubGate,
 	SessionHistoryScrubPreview,
 	SessionHistoryScrubResult,
 	SessionHistoryService,
 } from '../sessions/session-history';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionHistoryView, SettingsUpdateResult } from '../ui/settings-panel-actions';
-import { refusedInConsult } from './core-actions';
+import { consulting, refusedInConsult } from './core-actions';
+import type { PilotRecoveryRuntime } from './pilot-recovery-runtime';
+
+/** Palette commands that export what the simplified Session tab no longer offers (0.6.0 candidate). */
+export const EXPORT_LIVE_SESSION_COMMAND_ID = 'export-live-session-csv';
+export const EXPORT_LEGACY_SESSION_COMMAND_ID = 'export-preserved-legacy-session';
 
 /**
  * Everything `SessionRuntime` reads from the core and asks of it. Each member carries the name of
@@ -81,11 +93,14 @@ export interface SessionRuntimePort {
 	/** R1b: only an explicit `consult` refuses the pilot export and the history scrub. */
 	readonly collectorMode: CollectorMode | undefined;
 	readonly localDebugActions: LocalDebugActionRunner | null;
-	/** The pilot profile's versions, and the vault lookup and note open of a history row's link. */
+	/**
+	 * The pilot profile's versions, the vault lookup and note open of a history row's link, the
+	 * preserved session's export and the palette's export commands.
+	 */
 	readonly host: {
 		readonly environment: Pick<TyrianEnvironmentPort, 'hostVersion' | 'pluginVersion'>;
-		readonly vault: Pick<TyrianVault, 'file'>;
-		readonly ui: Pick<TyrianUiPort, 'openNote'>;
+		readonly vault: Pick<TyrianVault, 'file'> & Parameters<typeof exportLegacyRuntimeArchive>[0];
+		readonly ui: Pick<TyrianUiPort, 'openNote' | 'registerCommand'>;
 	};
 	/** The settings panel's history row, repainted on each step of an export or a scrub. */
 	readonly settingTab: { refreshSessionHistoryRow(): void };
@@ -99,24 +114,29 @@ export interface SessionRuntimePort {
 		'getState' | 'profile' | 'inspect' | 'configure' | 'clear' | 'reviewSilentLosses' | 'disable' | 'recoveryClassified'
 	>;
 	readonly pilotMetricsExporter: Pick<PilotMetricsExporter, 'preview' | 'export'>;
-	/** The recoveries this run has seen presented, filled by the core's `ensurePilotRecoveryPresented`. */
-	readonly measuredPilotRecoveries: Set<string>;
-	/** Each presented recovery's saved kind, filled by the core's `ensurePilotRecoveryPresented`. */
-	readonly pilotRecoveryKinds: Map<string, PilotRecoveryKind>;
+	/**
+	 * The core's `PilotRecoveryRuntime`: the recovery on screen as `sessionId:fence`, its presentation
+	 * to the journal, and the two collections that presentation fills and the classification writes.
+	 */
+	readonly pilotRecovery: Pick<
+		PilotRecoveryRuntime,
+		'measuredPilotRecoveries' | 'pilotRecoveryKinds' | 'pilotRecoveryIdentity' | 'ensurePilotRecoveryPresented'
+	>;
 	/** The live session's lifecycle, built in `initializeRuntime`; null before it and on a device without one. */
-	readonly liveSessions: Pick<LiveSessionLifecycle, 'getAlerts' | 'getView' | 'getRuntime' | 'getSessionFormat' | 'capture'> | null;
+	readonly liveSessions: Pick<LiveSessionLifecycle, 'getAlerts' | 'getView' | 'getRuntime' | 'getSessionFormat' | 'capture' | 'canRetireSealed'> | null;
 	/** The saved live sessions (schema7 notes), built in `initializeRuntime`; null before it. */
 	readonly liveHistory: Pick<LiveSessionHistoryService, 'loadComparison' | 'list' | 'select' | 'export'> | null;
+	/** Built in `initializeRuntime`: the session and its recovery the scrub's gate reads, and the preserved account-era session. */
+	readonly sessions: Pick<ManualSessionStartService,
+		'getState' | 'getRecoveryState' | 'initialize' | 'getPreservedLegacyRuntime' | 'readPreservedLegacyRuntime'>;
+	/** Built in `initializeRuntime`: an armed detector keeps the history's gate shut. */
+	readonly assistedDetection: Pick<AssistedDetectionService, 'getState'>;
 	/** Says once that this device only consults (`refusedInConsult`). */
 	notifyConsultMode(): void;
 	/** Says the runtime is still starting, or that it failed to start. */
 	notifyRuntimeStarting(): void;
-	emitNotice(message: string, source: 'session_history_note'): void;
+	emitNotice(message: string, source: 'session_history_note' | 'session_command'): void;
 	renderViews(): void;
-	/** The recovery on screen as `sessionId:fence`, or null when there is none. */
-	pilotRecoveryIdentity(): string | null;
-	/** Records the recovery as presented and reads its saved kind back into the two sets above. */
-	ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
 	/** The core's own settings write: one serialized section, merged against the latest saved copy. */
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 }
@@ -152,19 +172,21 @@ export class SessionRuntime {
 	private get sessionHistoryRuntimeAuthority(): SessionHistoryRuntimeAuthority { return this.port.sessionHistoryRuntimeAuthority; }
 	private get pilotMetrics(): SessionRuntimePort['pilotMetrics'] { return this.port.pilotMetrics; }
 	private get pilotMetricsExporter(): SessionRuntimePort['pilotMetricsExporter'] { return this.port.pilotMetricsExporter; }
-	private get measuredPilotRecoveries(): Set<string> { return this.port.measuredPilotRecoveries; }
-	private get pilotRecoveryKinds(): Map<string, PilotRecoveryKind> { return this.port.pilotRecoveryKinds; }
+	private get measuredPilotRecoveries(): Set<string> { return this.port.pilotRecovery.measuredPilotRecoveries; }
+	private get pilotRecoveryKinds(): Map<string, PilotRecoveryKind> { return this.port.pilotRecovery.pilotRecoveryKinds; }
 	private get liveSessions(): SessionRuntimePort['liveSessions'] { return this.port.liveSessions; }
 	private get liveHistory(): SessionRuntimePort['liveHistory'] { return this.port.liveHistory; }
+	private get sessions(): SessionRuntimePort['sessions'] { return this.port.sessions; }
+	private get assistedDetection(): SessionRuntimePort['assistedDetection'] { return this.port.assistedDetection; }
 	/** Public, like the core's: `refusedInConsult` calls it on `this`. */
 	notifyConsultMode(): void { this.port.notifyConsultMode(); }
 	private notifyRuntimeStarting(): void { this.port.notifyRuntimeStarting(); }
-	private emitNotice(message: string, source: 'session_history_note'): void { this.port.emitNotice(message, source); }
+	private emitNotice(message: string, source: 'session_history_note' | 'session_command'): void { this.port.emitNotice(message, source); }
 	private renderViews(): void { this.port.renderViews(); }
-	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecoveryIdentity(); }
-	// These two hand back the core's own promise, so an await on them takes the ticks it took there.
+	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecovery.pilotRecoveryIdentity(); }
+	// These two hand back the callee's own promise, so an await on them takes the ticks it took in the core.
 	private ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
-		return this.port.ensurePilotRecoveryPresented(recoveryId);
+		return this.port.pilotRecovery.ensurePilotRecoveryPresented(recoveryId);
 	}
 	private updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
 		return this.port.updateSettings(settings);
@@ -349,6 +371,48 @@ export class SessionRuntime {
 		const result = await this.liveHistory.export(this.settings.outputFolder,kind,format,payload);
 		if (result.status !== 'written' && result.status !== 'unchanged') throw new Error('The live session export could not be saved.');
 	}
+	/** Explicit local export of preserved account evidence; it never calls a capture service. */
+	async exportPreservedLegacySession():Promise<void> {
+		const preserved = await this.sessions.readPreservedLegacyRuntime();
+		if (preserved === null) throw new Error('Preserved API session evidence is unavailable.');
+		await exportLegacyRuntimeArchive(this.host.vault,this.settings.outputFolder,preserved.archive,preserved.runtime);
+	}
+
+	/**
+	 * Two commands with no interface of their own: the active live session as CSV, and the preserved
+	 * account-era session. Each is available only while there is something to export, and answers
+	 * with a notice either way; the data and the export code are the ones the Session tab used.
+	 */
+	registerSessionExportCommands(): void {
+		const translator = (): Translator => createTranslator(this.settings.language);
+		const specs = [
+			{ id: EXPORT_LIVE_SESSION_COMMAND_ID, name: 'commands.exportLiveSession' as const,
+				unavailable: 'commands.exportLiveUnavailable' as const,
+				available: () => this.runtimeReady && this.liveSessions?.getRuntime() != null,
+				run: () => this.exportLiveSession('timeline', 'csv') },
+			{ id: EXPORT_LEGACY_SESSION_COMMAND_ID, name: 'commands.exportLegacySession' as const,
+				unavailable: 'commands.exportLegacyUnavailable' as const,
+				available: () => this.runtimeReady && this.sessions.getPreservedLegacyRuntime() !== null,
+				run: () => this.exportPreservedLegacySession() },
+		];
+		for (const spec of specs) {
+			this.host.ui.registerCommand({
+				id: spec.id,
+				name: translator().t(spec.name),
+				checkCallback: (checking) => {
+					const available = spec.available();
+					if (!checking && available) {
+						void spec.run().then(
+							() => { this.emitNotice(translateRuntime(translator(), 'notices.exportSaved'), 'session_command'); },
+							() => { this.emitNotice(translateRuntime(translator(), 'notices.exportFailed'), 'session_command'); },
+						);
+					}
+					return available;
+				},
+				unavailableReason: () => (spec.available() ? null : translateRuntime(translator(), spec.unavailable)),
+			});
+		}
+	}
 
 	/**
 	 * Opens the note a history row links to. The history was read earlier, so the note may have been
@@ -388,6 +452,27 @@ export class SessionRuntime {
 		} catch {
 			this.sessionHistoryView = { status: 'unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 };
 		} finally { this.settingTab.refreshSessionHistoryRow(); }
+	}
+
+	/** What the history's runtime authority reads before a scrub: the session, its recovery and the detector as they stand. */
+	sessionHistoryScrubGate(): SessionHistoryScrubGate {
+		const live = this.liveSessions?.getRuntime() ?? null;
+		return {
+			sessionStatus: live?.phase ?? this.sessions.getState().status,
+			sealedRetirable: this.liveSessions?.canRetireSealed() ?? false,
+			recoveryStatus: this.sessions.getRecoveryState().status,
+			detectorStatus: this.assistedDetection.getState().status,
+		};
+	}
+
+	/**
+	 * The settings panel's preview: on a ready collector the saved sessions are asked again first, then the one preview in
+	 * flight. Before the boot built them, or on a consult device, the preview's own refusal answers without reading them.
+	 */
+	async previewSessionHistoryScrubAfterRecovery(): Promise<SessionHistoryScrubPreview> {
+		// Z2-2: saved sessions that did not answer at boot keep the gate shut; ask again before saying the runtime is not idle.
+		if (this.runtimeReady && !consulting(this) && this.sessions.getRecoveryState().status === 'error') await this.sessions.initialize();
+		return await this.previewSessionHistoryScrub();
 	}
 
 	previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
