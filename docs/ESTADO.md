@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.51: el enlace de cada sesión anterior se ve como texto (11 oct 2026)
+## Canal 0.6.51 publicado: el enlace de cada sesión anterior se ve como texto (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `fix/0651-enlace-como-texto` sobre el canal 0.6.50
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.51` = `17888291` (atestación; candidato `52fe0ebe`,
+árbol `8e3b3800`). Gate local verde (check con 7586 tests, guardrails 25/25, BRAT PASS); CI 38143203472 y Release
+38143205418 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `fix/0651-enlace-como-texto` sobre el canal 0.6.50
 publicado (`2e130748`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
 `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
@@ -17,7 +20,7 @@ publicado (`2e130748`); añade los metadatos de versión (`manifest.json`, `pack
   `3e44341`, release `0.8.8` publicada el 11 oct) y `docs/SPEC-live-loot.md` con la espera nueva.
 - Sin verificar: el aspecto en Hebra y en Obsidian reales; en Hebra el color cae a `--text-accent`, no a su `--link`.
   El objetivo táctil mide lo que la línea de texto (unos 20 px).
-- Pendiente: gate, publicación y verlo en hosts reales.
+- Pendiente: verlo en hosts reales.
 
 ## Canal 0.6.50 publicado: cada sesión anterior enlaza a su nota resumen (11 oct 2026)
 
