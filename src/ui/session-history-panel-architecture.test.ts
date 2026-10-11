@@ -33,9 +33,8 @@ describe('H9.7 durable session history boundary', () => {
 		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'loadSessionHistory'))
 			.toContain('this.sessionHistory.scan');
 		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
-		expect(classMethodCallChains(main, 'TyrianCompanionCore', 'inspectCompletedSessionSummary'))
-			.toContain('this.sessionHistory.readSession');
-		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(1);
+		// The lookup of a finished session's note across the vault (`readSession`) is run, not read
+		// in this text: `src/main-session-summary-lookup.test.ts` (DE-01).
 	});
 
 	it('uses local typed ES/EN copy and the required accessible responsive contracts', () => {
