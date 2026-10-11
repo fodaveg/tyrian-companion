@@ -22,7 +22,7 @@ import {
 	legendaryMaterialsTableItemIds,
 	type LegendaryMaterialsTableV1,
 } from '../economy/legendary-materials';
-import { normalizePriceHistoryItemIds, selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { rankedPriceHistoryItemIds, selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
 import { sellOrWaitForQuantity } from '../economy/sell-or-wait';
@@ -236,7 +236,9 @@ export class InventoryAnalysisService {
 			const seasonalItemIds = cores
 				.map((core) => core.itemId)
 				.filter((itemId) => this.recommendation.seasonalInputFor(itemId) !== null);
-			const watchListItemIds = normalizePriceHistoryItemIds([...derivedItemIds, ...seasonalItemIds]);
+			// Calendar items first (few, and the seasonal rule needs them whatever they are worth), then the
+			// derived ones by capital rank: the budget trims the lowest capital, not the highest item ids.
+			const watchListItemIds = rankedPriceHistoryItemIds([...seasonalItemIds, ...derivedItemIds]);
 			await this.recommendation.updateDerivedWatchList(watchListItemIds);
 			// The seed preload is auxiliary: if it rejects (e.g. IndexedDB unavailable) the analysis
 			// still runs on what is cached. The port implementation records the failure locally. It

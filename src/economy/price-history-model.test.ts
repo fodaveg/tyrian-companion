@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PRICE_HISTORY_MAX_WATCH_ITEMS, selectDerivedWatchListItemIds } from './price-history-model';
+import { PRICE_HISTORY_MAX_DERIVED_ITEMS, selectDerivedWatchListItemIds } from './price-history-model';
 
 describe('selectDerivedWatchListItemIds (SPEC-recomendacion-por-objeto, decision 3, M2)', () => {
 	it('admits exactly the items whose demonstrated capital clears the threshold, dropping the rest', () => {
@@ -23,12 +23,12 @@ describe('selectDerivedWatchListItemIds (SPEC-recomendacion-por-objeto, decision
 	});
 
 	it('caps at maxItems, keeping the highest-capital items and breaking ties by item id', () => {
-		const positions = Array.from({ length: PRICE_HISTORY_MAX_WATCH_ITEMS + 50 }, (_, index) => ({
+		const positions = Array.from({ length: PRICE_HISTORY_MAX_DERIVED_ITEMS + 50 }, (_, index) => ({
 			itemId: index + 1, totalSellCopper: 1_000_000 - index,
 		}));
 		const derived = selectDerivedWatchListItemIds(positions, 1);
-		expect(derived).toHaveLength(PRICE_HISTORY_MAX_WATCH_ITEMS);
-		expect(derived).toEqual(Array.from({ length: PRICE_HISTORY_MAX_WATCH_ITEMS }, (_, index) => index + 1));
+		expect(derived).toHaveLength(PRICE_HISTORY_MAX_DERIVED_ITEMS);
+		expect(derived).toEqual(Array.from({ length: PRICE_HISTORY_MAX_DERIVED_ITEMS }, (_, index) => index + 1));
 	});
 
 	it('returns nothing when every position is below the threshold or undemonstrated', () => {

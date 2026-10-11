@@ -6,6 +6,7 @@ import {
 	PRICE_HISTORY_DAILY_STORE,
 	PRICE_HISTORY_META_STORE,
 	PRICE_HISTORY_SEED_ITEM_IDS,
+	PRICE_HISTORY_MAX_DERIVED_ITEMS,
 	PRICE_HISTORY_SNAPSHOT_STORE,
 	PRICE_HISTORY_WATCH_STORE,
 	type PriceHistorySnapshotV1,
@@ -53,14 +54,40 @@ describe('IndexedDbPriceHistoryStore', () => {
 		store.close();
 	});
 
-	// The store defensively re-enforces the 400 total cap even if a caller passed more; which
-	// 400 win by capital is `selectDerivedWatchListItemIds`'s own responsibility and is covered
-	// by price-history-model.test.ts, not here.
-	it('never exceeds 400 total watch entries even when handed more derived ids than that', async () => {
+	// The store enforces the derived budget itself (cap - seeds - observed reserve) even if a caller passed
+	// more, and keeps the FIRST ids of the ranked list: the caller ranks by capital, so the cut is the
+	// lowest capital (H3). Which ids win by capital is `selectDerivedWatchListItemIds`'s responsibility.
+	it('caps the derived slice at its budget, keeping the best-ranked ids and not the lowest ones', async () => {
 		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('derived-cap'));
-		await store.applyDerivedWatchList('vault', Array.from({ length: 450 }, (_, index) => index + 1), 1);
-		const watch = await store.readWatchList('vault');
-		expect(watch).toHaveLength(400);
+		// Ranked list: high ids first, as a capital ranking can well be.
+		const ranked = Array.from({ length: 450 }, (_, index) => 10_000 - index);
+		await store.applyDerivedWatchList('vault', ranked, 1);
+		const watch = (await store.readWatchList('vault')).map((entry) => entry.itemId);
+		expect(watch).toHaveLength(PRICE_HISTORY_MAX_DERIVED_ITEMS);
+		expect(watch).toContain(10_000);
+		expect(watch).toContain(10_000 - PRICE_HISTORY_MAX_DERIVED_ITEMS + 1);
+		expect(watch).not.toContain(10_000 - PRICE_HISTORY_MAX_DERIVED_ITEMS);
+		store.close();
+	});
+
+	it('leaves room for new observations when the derived slice is full, and keeps the whole slice (H3)', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('derived-reserve'));
+		const derived = Array.from({ length: PRICE_HISTORY_MAX_DERIVED_ITEMS }, (_, index) => 10_000 + index);
+		await store.ensureSeedWatchList('vault', 1);
+		await store.applyDerivedWatchList('vault', derived, 2);
+		await store.observeItems('vault', [1, 2, 3], 3);
+		const watch = (await store.readWatchList('vault')).map((entry) => entry.itemId);
+		for (const id of [1, 2, 3, ...derived]) expect(watch).toContain(id);
+		store.close();
+	});
+
+	it('with more wanted ids than the budget, a repeated sync evicts nothing it just kept', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('derived-stable'));
+		const ranked = Array.from({ length: PRICE_HISTORY_MAX_DERIVED_ITEMS + 30 }, (_, index) => 5_000 + index);
+		await store.applyDerivedWatchList('vault', ranked, 1);
+		const first = (await store.readWatchList('vault')).map((entry) => entry.itemId);
+		await store.applyDerivedWatchList('vault', ranked, 2);
+		expect((await store.readWatchList('vault')).map((entry) => entry.itemId)).toEqual(first);
 		store.close();
 	});
 

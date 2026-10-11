@@ -4,6 +4,8 @@ import {
 	PRICE_HISTORY_DB_VERSION,
 	PRICE_HISTORY_MAX_WATCH_ITEMS,
 	PRICE_HISTORY_META_STORE,
+	PRICE_HISTORY_MAX_DERIVED_ITEMS,
+	rankedPriceHistoryItemIds,
 	PRICE_HISTORY_SEED_ITEM_IDS,
 	PRICE_HISTORY_SNAPSHOT_STORE,
 	PRICE_HISTORY_WATCH_STORE,
@@ -37,7 +39,9 @@ export type PriceHistoryStoreFailure = 'unavailable' | 'blocked' | 'future_schem
  * neither can evict what the other just protected (Z3-4): fixed seeds first, then the rows an
  * inventory-capital sync asks for (`derived`), then the rest by recency. Before, a derived row kept
  * its old `lastObservedAtMs` and lost to every newer observed row, so a saturated list dropped the
- * high-capital item the same sync had just requested.
+ * high-capital item the same sync had just requested. The derived slice never needs a tie-break by
+ * rank: `applyDerivedWatchList` caps it at its own budget (below the cap, seeds and the observed
+ * reserve included), so no derived row is evicted by this ordering.
  */
 function retainWatchItems(entries: readonly PriceHistoryWatchItemV1[]): PriceHistoryWatchItemV1[] {
 	return [...entries].sort((left, right) =>
@@ -157,7 +161,11 @@ export class IndexedDbPriceHistoryStore {
 		return await this.readWatchList(vaultId);
 	}
 
-	/** Adds positive observed ids and evicts only the oldest non-seed entries beyond 400. */
+	/**
+	 * Adds positive observed ids. Beyond 400 it evicts by the shared priority of `retainWatchItems`:
+	 * never a seed, then plain observed rows (oldest first) before any derived one, so a derived row
+	 * is only lost when the derived slice itself (which has its own budget) shrinks.
+	 */
 	observeItems(vaultId: string, itemIds: readonly number[], nowMs: number): Promise<void> {
 		const observed = new Set(itemIds.filter(positiveInteger));
 		for (const seed of PRICE_HISTORY_SEED_ITEM_IDS) observed.add(seed);
@@ -201,7 +209,10 @@ export class IndexedDbPriceHistoryStore {
 	 * ordinary session-observed watch (`observeItems`) holds are never lost to a capital drop.
 	 */
 	applyDerivedWatchList(vaultId: string, itemIds: readonly number[], nowMs: number): Promise<void> {
-		const desired = new Set(itemIds.filter(positiveInteger));
+		// The derived slice has its own budget (cap - seeds - observed reserve): the caller's list is
+		// ranked by capital, so what exceeds it is the lowest capital.
+		const ranked = rankedPriceHistoryItemIds(itemIds, PRICE_HISTORY_MAX_DERIVED_ITEMS);
+		const desired = new Set(ranked);
 		return this.transaction([PRICE_HISTORY_WATCH_STORE], 'readwrite', (transaction, resolve, reject) => {
 			const store = transaction.objectStore(PRICE_HISTORY_WATCH_STORE);
 			const request = store.getAll(keyRangeForVault(vaultId));
