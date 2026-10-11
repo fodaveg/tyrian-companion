@@ -71,8 +71,10 @@
   media, D-2 baja. Sin fallos en economía, precios, Halloween, cuenta, asesor y avisos.
   - A-1: `src/sessions/live-session-lifecycle.ts`, `initializeRecord` salía por `!enabled()` antes de marcar la
     recuperación y armar el latido, así que una sesión cargada en consulta no se reclamaba al pasar a recolector y una
-    terminada no verificaba su nota antes de encolar su diario. Ahora se marca y se arma antes de salir. El arreglo
-    llega en un commit posterior al de este estado.
+    terminada no verificaba su nota antes de encolar su diario. Ahora se marca y se arma antes de salir. Queda
+    un caso vecino sin arreglar, para la 0.6.47: si en consulta el almacén no contesta al arrancar y el dispositivo pasa
+    a recolector antes de que conteste, el reintento de RT-17 se para (solo actúa en consulta) y nada vuelve a leer la
+    sesión hasta un inicio. No pierde datos: la vista queda en error y el gate del borrado, cerrado (A-2).
   - A-2: `src/runtime/session-facade.ts`, el gate del borrado del historial leía el servicio manual cuando la sesión en
     vivo no se había leído. Ahora un almacén sin leer mantiene el gate cerrado.
   - B-1: `src/runtime/ingame-session-runtime.ts`, `src/runtime/core-actions.ts` y `src/runtime/tyrian-companion-core.ts`
@@ -104,6 +106,8 @@
     soltarlo sale solo a los 7,0 s, 15,0 s y 14,0 s (tres corridas); la 0.6.45 no se recuperaba en 166 s;
     `verify-beta-runtime` PASS antes, después y tras reabrir (con `--no-release-check`, sin release 0.6.46 todavía).
     No medido: modo recolector, sesión viva, mudo más de 5 min.
+- Gate del código final con los arreglos del audit, antes de esta documentación: VERDE (9/9, 7558 tests, 429 ficheros;
+  guardarraíles 25/25; bench p95 18,02 / 36,40 / 40,92 ms; contrato BRAT con 8 assets).
 - Pendiente: verla en el Obsidian y el Hebra de un usuario y por BRAT, con los arreglos del audit incluidos.
 
 ## Canal 0.6.45 publicado: estilos de Hebra con respaldo, tests del falso 1.4.0 y addon 0.8.7 (11 oct 2026)
