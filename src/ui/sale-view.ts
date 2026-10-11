@@ -3,6 +3,7 @@ import type { TyrianUiPort } from '../host/tyrian-host';
 import type { TranslationKey, Translator } from '../core/i18n';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import { relativeTimeLabel, renderStorageSpace } from './inventory-advisor-view';
+import { keepFocusOnRebuild } from './keep-focus';
 import { priceHistoryDayUtc } from '../economy/price-history-model';
 import type {
 	SaleCalendarRowViewModel,
@@ -43,6 +44,17 @@ export function renderSaleView(
 	model: SaleViewModel,
 	translator: Translator,
 	interactions: SaleViewInteractions = {},
+): void {
+	// The whole page is rebuilt on every repaint, "Actualizar" included: it keeps the focus it had (Z7-4).
+	keepFocusOnRebuild(container, '.tyrian-sale__refresh', () => { paintSaleView(container, ui, model, translator, interactions); });
+}
+
+function paintSaleView(
+	container: HTMLElement,
+	ui: IconPainter,
+	model: SaleViewModel,
+	translator: Translator,
+	interactions: SaleViewInteractions,
 ): void {
 	container.empty();
 	container.addClass('tyrian-sale-page');
@@ -435,9 +447,10 @@ function renderRefreshButton(translator: Translator, interactions: SaleViewInter
 	ui.setIcon(icon, 'refresh-cw');
 	button.createSpan({ text: translator.t('sale.foot.refresh') });
 	const busy = interactions.refreshing === true;
-	button.disabled = busy;
+	// `aria-disabled`, not `disabled`: a disabled button cannot hold the focus through the repaint.
+	button.setAttribute('aria-disabled', String(busy));
 	button.setAttribute('aria-busy', String(busy));
-	button.addEventListener('click', () => { void interactions.onRefresh?.(); });
+	button.addEventListener('click', () => { if (!busy) void interactions.onRefresh?.(); });
 	return button;
 }
 
