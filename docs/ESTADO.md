@@ -29,7 +29,10 @@
   `api.has('instance.lock')` es `false` fuera de Linux porque no está garantizado, no porque falte. Tras SIGKILL, el
   candado está libre en cuanto el proceso nuevo lo pide (0-1 ms de espera). No se arrancaron dos Hebras reales en Mac.
   Windows (HP-14), sin medir ([2026-10-11-hebra-candado-macos](evidencia/2026-10-11-hebra-candado-macos.md)).
-- Pendiente: verla en hosts reales.
+- Hebra de David en Fedora (rpm 0.2.0-25, registro de diagnóstico con `window`), 11 oct: `node
+  scripts/verify-hebra-install.mjs` da PASS (`version=0.6.47; previous=0.6.46; release-bytes=match; carga=loaded
+  (activada 0.6.47)`), juzgando la última sesión `principal`. Es instalación y carga en Hebra, no QA de sesión.
+- Pendiente: Obsidian/BRAT y la QA de sesión en hosts reales.
 
 ## Canal 0.6.46 publicado: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
 
