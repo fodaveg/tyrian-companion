@@ -28,7 +28,7 @@ import type { LocalDebugActionRunner, ResolvedLocalDebugActionContext } from '..
 import { createTranslator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import { collectorModeSeed, type CollectorMode, type TyrianSettings } from '../core/settings';
-import type { PriceHistoryRuntime } from '../economy/price-history-runtime';
+import type { PriceHistoryRuntime as PriceHistoryService } from '../economy/price-history-runtime';
 import type { PriceHistorySettings } from '../economy/price-history-model';
 import type { HalloweenRuntime } from '../halloween/halloween-runtime';
 import type { TyrianHost } from '../host/tyrian-host';
@@ -80,7 +80,7 @@ export interface VaultRuntimePort {
 	readonly sessions: Pick<ManualSessionStartService, 'getState'>;
 	readonly liveSessions: Pick<LiveSessionLifecycle, 'getRuntime' | 'getUnsettledPriceEntries'> | null;
 	readonly liveEconomy: Pick<LiveSessionEconomy, 'observe'> | null;
-	readonly priceHistory: Pick<PriceHistoryRuntime, 'configure' | 'activate' | 'setOnline'> | null;
+	readonly priceHistory: Pick<PriceHistoryService, 'configure' | 'activate' | 'setOnline'> | null;
 	readonly halloween: Pick<HalloweenRuntime, 'activate' | 'setOnline' | 'disable'> | null;
 	readonly settingTab: Pick<TyrianCompanionSettingTab, 'refreshForSettingsChange'>;
 	readonly inventoryPreferences: Pick<InventoryPreferencesRuntime, 'loadCached'>;

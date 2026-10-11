@@ -108,14 +108,39 @@ describe('the core hands the vault and the collector mode to VaultRuntime', () =
 		expect(notify).toHaveBeenCalledOnce();
 	});
 
-	it('an application of the mode that the runtime asks for goes through the core\'s own applyCollectorModeChange', async () => {
+	it('the mode switch VaultRuntime makes goes through the core\'s own applyCollectorModeChange', async () => {
 		harness = createRuntimeHarness();
-		const own = harness.core as unknown as { applyCollectorModeChange(context?: unknown): Promise<void>; vaultRelocation: unknown };
+		const own = harness.core as unknown as {
+			runtimeReady: boolean; vaultId: string | null; collectorMode: string | undefined; localDebugActions: unknown;
+			sessions: unknown; liveSessions: unknown; applyCollectorModeChange(context?: unknown): Promise<void>;
+		};
+		own.localDebugActions = null;
+		own.runtimeReady = true;
+		own.vaultId = 'a'.repeat(64);
+		own.sessions = { getState: () => ({ status: 'idle' }) };
+		own.liveSessions = null;
+		own.collectorMode = 'collector';
 		const viaCore = vi.spyOn(own, 'applyCollectorModeChange').mockResolvedValue(undefined);
-		own.vaultRelocation = null;
-		vi.spyOn(VaultRuntime.prototype, 'applyCollectorModeChange').mockResolvedValue(undefined);
-		await (harness.core as unknown as Core).applyCollectorModeChange!(CONTEXT);
-		expect(viaCore).toHaveBeenCalledExactlyOnceWith(CONTEXT);
+
+		await expect(harness.core.updateCollectorMode('consult')).resolves.toEqual({ status: 'saved', inventoryAdvisor: 'unchanged' });
+
+		expect(own.collectorMode).toBe('consult');
+		expect(viaCore).toHaveBeenCalledOnce();
+	});
+
+	it('awaitLocalDebugShutdown waits for the drain the core records, read live through the port', async () => {
+		harness = createRuntimeHarness();
+		const own = harness.core as unknown as { localDebugShutdown: Promise<void> | null };
+		let finish: () => void = () => undefined;
+		own.localDebugShutdown = new Promise<void>((resolve) => { finish = resolve; });
+		let settled = false;
+		const waiting = harness.core.awaitLocalDebugShutdown().then(() => { settled = true; });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		finish();
+		await waiting;
+		expect(settled).toBe(true);
 	});
 });
 
