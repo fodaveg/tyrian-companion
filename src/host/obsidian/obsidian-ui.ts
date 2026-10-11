@@ -67,7 +67,7 @@ export function createObsidianUi(plugin: Plugin): TyrianUiPort {
 			});
 			return () => { plugin.removeCommand(command.id); };
 		},
-		// Same element and class `main.ts`'s `refreshSessionRibbon` drives.
+		// Same element and class `SessionCommandRuntime`'s `refreshSessionRibbon` drives.
 		ribbon: (ribbon) => {
 			const element = plugin.addRibbonIcon(ribbon.icon, ribbon.title, (event) => { ribbon.onClick(event); });
 			return {

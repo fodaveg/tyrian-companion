@@ -433,8 +433,9 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		const world = collectorModePlugin({
 			apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true, halloweenEnabled: true,
 		}, { mode: 'consult' });
-		const arm = vi.spyOn(world.plugin, 'armAssistedDetection');
-		// The reconcile is the core's live session runtime's (DE-01, step 3d).
+		// The arming and the reconcile are the core's live session runtime's (DE-01, step 3d): spied on
+		// it, they also catch the re-arms it makes on its own after a stop or a way out of a session.
+		const arm = vi.spyOn(LiveSessionRuntime.prototype, 'armAssistedDetection');
 		const reconcile = vi.spyOn(LiveSessionRuntime.prototype, 'reconcilePendingProposals');
 		await world.plugin.initializeRuntime();
 		// The boot reconciles the proposal queue once it is open (in either mode): only what comes
@@ -463,7 +464,7 @@ describe('consult: the key check and the inventory sync are manual actions (rule
 		// Booted without a key, so the collector's boot warm-up check (which arms detection and
 		// reconciles too, and under load could land after `settle`) never runs; the key comes after.
 		const world = collectorModePlugin({ apiKeySecret: '' }, { mode: 'collector' });
-		const arm = vi.spyOn(world.plugin, 'armAssistedDetection').mockResolvedValue('unavailable');
+		const arm = vi.spyOn(LiveSessionRuntime.prototype, 'armAssistedDetection').mockResolvedValue('unavailable');
 		const reconcile = vi.spyOn(LiveSessionRuntime.prototype, 'reconcilePendingProposals');
 		await world.plugin.initializeRuntime();
 		await bootReconciled(reconcile);
