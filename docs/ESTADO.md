@@ -1,5 +1,24 @@
 # Estado
 
+## Candidato 0.6.51: el enlace de cada sesión anterior se ve como texto (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `fix/0651-enlace-como-texto` sobre el canal 0.6.50
+publicado (`2e130748`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de
+`package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Captura de David en Hebra con la 0.6.50: el botón del enlace (`tyrian-live-session__summary-link`) heredaba borde,
+  relleno y alto de los botones del host porque su regla solo tenía la clase; sin separación entre fecha y horas.
+- `b64c8a1e`: `styles.css` usa `.tyrian-live-session button.tyrian-live-session__summary-link` (0,2,1), que gana a
+  `button:where(...)` de `src/host/hebra/tyrian-host.css`, a `button:not(.clickable-icon)` de Obsidian y al
+  `min-height: 44px` de `.tyrian-live-session button`, sin `!important`; `inline-flex` con el mismo `column-gap` que
+  `.tyrian-live-session__previous-line`, color `var(--link-color, var(--text-accent))`, subrayado al pasar el ratón y
+  contorno en `:focus-visible`. Test en `src/ui/live-session-panel.test.ts` que compara la fila enlazada con la que no.
+- `e4b7a68b`: guías de Windows al addon 0.8.8 (`CONFLICT_RETRY_INTERVAL` de 30 s a 5 s, `tyrian-companion-nexus`
+  `3e44341`, release `0.8.8` publicada el 11 oct) y `docs/SPEC-live-loot.md` con la espera nueva.
+- Sin verificar: el aspecto en Hebra y en Obsidian reales; en Hebra el color cae a `--text-accent`, no a su `--link`.
+  El objetivo táctil mide lo que la línea de texto (unos 20 px).
+- Pendiente: gate, publicación y verlo en hosts reales.
+
 ## Canal 0.6.50 publicado: cada sesión anterior enlaza a su nota resumen (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.50` = `aceaa3eb` (atestación; candidato `49eb2798`,

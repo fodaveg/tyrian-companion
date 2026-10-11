@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.6.51 - El enlace de cada sesión anterior se ve como texto
+
+Se actualiza desde la 0.6.50 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesiones anteriores. En Hebra, el enlace a la nota resumen salía como una caja con borde, sin espacio entre la
+  fecha y las horas («11 oct14:41») y descolocando la fila. Ahora es texto con el color de enlace, subrayado al pasar
+  el ratón, y la fila tiene la misma altura y separación que una sin enlace.
+- Addon de Nexus 0.8.8. Tras terminar una sesión a mano y empezar otra, el addon vuelve a enviar datos en unos 5 s en
+  vez de hasta 30 s o más. Las guías de instalación pasan a la 0.8.8.
+
 ## Release beta 0.6.50 - Cada sesión anterior enlaza a su nota resumen
 
 Se actualiza desde la 0.6.49 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
