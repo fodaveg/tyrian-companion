@@ -121,6 +121,18 @@ export function legendaryMaterialsEntryFor(
 	return table.entries.find((entry) => entry.legendaryItemId === legendaryItemId) ?? null;
 }
 
+/**
+ * F5 (QA-MVP prueba 10): from `validUntil` on (00:00 UTC, inclusive) the table is withdrawn, so the
+ * caller gets the same `null` as "no curated table" and `InventoryAnalysisService.derivedGoals`
+ * turns the shipped materials' reservations uncertain instead of exact. `nowMs` is injected.
+ */
+export function activeLegendaryMaterialsTable(
+	table: LegendaryMaterialsTableV1,
+	nowMs: number,
+): LegendaryMaterialsTableV1 | null {
+	return nowMs >= Date.parse(table.validUntil) ? null : table;
+}
+
 /** `true` when at least one of the entry's leaves cannot be turned into a reservation requirement. */
 export function legendaryMaterialsEntryHasUnresolvedComponents(entry: LegendaryMaterialsEntryV1): boolean {
 	return entry.materials.some((leaf) => !leaf.resolvable);

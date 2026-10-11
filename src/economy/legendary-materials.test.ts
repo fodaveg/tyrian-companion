@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	LEGENDARY_ARMORY_ITEM_ID_KLOBJARNE_GEIRR,
 	LEGENDARY_MATERIALS_TABLE,
+	activeLegendaryMaterialsTable,
 	isLegendaryMaterialsTable,
 	legendaryMaterialsEntryFor,
 	legendaryMaterialsEntryHasUnresolvedComponents,
@@ -59,5 +60,18 @@ describe('LEGENDARY_MATERIALS_TABLE (Klobjarne Geirr, M4)', () => {
 
 	it('returns null for a legendary the curated table does not carry', () => {
 		expect(legendaryMaterialsEntryFor(LEGENDARY_MATERIALS_TABLE, 999_999)).toBeNull();
+	});
+});
+
+describe('activeLegendaryMaterialsTable (F5, QA-MVP prueba 10)', () => {
+	const validUntilMs = Date.parse(LEGENDARY_MATERIALS_TABLE.validUntil);
+
+	it('serves the table up to the last millisecond before validUntil', () => {
+		expect(activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, validUntilMs - 1)).toBe(LEGENDARY_MATERIALS_TABLE);
+	});
+
+	it('withdraws the table from validUntil on, so the reservations turn uncertain', () => {
+		expect(activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, validUntilMs)).toBeNull();
+		expect(activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, validUntilMs + 35_000)).toBeNull();
 	});
 });
