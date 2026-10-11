@@ -281,7 +281,7 @@ export class LiveSessionEconomy {
 			if (claimed?.state !== 'dispatching' || claimed.alert === null || this.disposed) continue;
 			if (this.options.canEmit?.() === false) return;
 			const report = await this.options.emit(claimed);
-			await lifecycle.updateAlert(candidate.outboxId,(prior) => ({...prior,state:'processed',deliveryReport:report}),true);
+			await lifecycle.updateAlert(candidate.outboxId,(prior) => ({...prior,state:'processed',deliveryReport:report}),true,claimed.sessionId); // the session that raised the alert: another may be running by the time a slow channel answers
 		}
 		this.tried.clear(); // what enrich() just fetched may have filled the cache for ids a render missed
 		this.options.onChange();
