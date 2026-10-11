@@ -1,8 +1,10 @@
 # Estado
 
-## Candidato 0.6.42: reserva devuelta al cerrar, delta acotado y dos fachadas más del núcleo (11 oct 2026)
+## Canal 0.6.42 publicado: reserva devuelta al cerrar, delta acotado y dos fachadas más del núcleo (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.42` sobre el canal 0.6.41 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.42` = `4a78271b` (atestación; candidato `5af35a4f`,
+árbol `55f67a58`). Gate local verde (check 9/9 con 7245 tests, guardrails 25/25, BRAT PASS); CI 38115488581 y Release
+38116105000 en verde; `release:brat-verify` PASS con 8 assets, release normal. Rama `integracion/0.6.42` sobre el canal 0.6.41 publicado
 (`b0ae2112`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
 `versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
 
