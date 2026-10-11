@@ -12,11 +12,10 @@
  *   `liveSessions`, `liveHistory`);
  * - the history's runtime authority and its gate: the live session's start, stop and recovery
  *   take their leases from it;
- * - the recovery's own pilot hooks (`pilotRecoveryIdentity`, `ensurePilotRecoveryPresented`) with
- *   the two sets they fill;
  * - the farming state a start captures (the group context and the reminders).
  * It hands all of that through `SessionRuntimePort`; the getters below carry the names of the
- * core's own fields, so the moved code reads as it did there.
+ * core's own fields, so the moved code reads as it did there. The recovery's pilot hooks and the two
+ * collections they fill are `PilotRecoveryRuntime`'s (DE-01, group F), handed through the same port.
  *
  * The file is not named `session-runtime.ts`: `scripts/security-scan.mjs` treats any file of that
  * name as a persisted-session boundary, and this module persists nothing of its own.
@@ -60,6 +59,7 @@ import type {
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionHistoryView, SettingsUpdateResult } from '../ui/settings-panel-actions';
 import { refusedInConsult } from './core-actions';
+import type { PilotRecoveryRuntime } from './pilot-recovery-runtime';
 
 /**
  * Everything `SessionRuntime` reads from the core and asks of it. Each member carries the name of
@@ -99,10 +99,14 @@ export interface SessionRuntimePort {
 		'getState' | 'profile' | 'inspect' | 'configure' | 'clear' | 'reviewSilentLosses' | 'disable' | 'recoveryClassified'
 	>;
 	readonly pilotMetricsExporter: Pick<PilotMetricsExporter, 'preview' | 'export'>;
-	/** The recoveries this run has seen presented, filled by the core's `ensurePilotRecoveryPresented`. */
-	readonly measuredPilotRecoveries: Set<string>;
-	/** Each presented recovery's saved kind, filled by the core's `ensurePilotRecoveryPresented`. */
-	readonly pilotRecoveryKinds: Map<string, PilotRecoveryKind>;
+	/**
+	 * The core's `PilotRecoveryRuntime`: the recovery on screen as `sessionId:fence`, its presentation
+	 * to the journal, and the two collections that presentation fills and the classification writes.
+	 */
+	readonly pilotRecovery: Pick<
+		PilotRecoveryRuntime,
+		'measuredPilotRecoveries' | 'pilotRecoveryKinds' | 'pilotRecoveryIdentity' | 'ensurePilotRecoveryPresented'
+	>;
 	/** The live session's lifecycle, built in `initializeRuntime`; null before it and on a device without one. */
 	readonly liveSessions: Pick<LiveSessionLifecycle, 'getAlerts' | 'getView' | 'getRuntime' | 'getSessionFormat' | 'capture'> | null;
 	/** The saved live sessions (schema7 notes), built in `initializeRuntime`; null before it. */
@@ -113,10 +117,6 @@ export interface SessionRuntimePort {
 	notifyRuntimeStarting(): void;
 	emitNotice(message: string, source: 'session_history_note'): void;
 	renderViews(): void;
-	/** The recovery on screen as `sessionId:fence`, or null when there is none. */
-	pilotRecoveryIdentity(): string | null;
-	/** Records the recovery as presented and reads its saved kind back into the two sets above. */
-	ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
 	/** The core's own settings write: one serialized section, merged against the latest saved copy. */
 	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 }
@@ -152,8 +152,8 @@ export class SessionRuntime {
 	private get sessionHistoryRuntimeAuthority(): SessionHistoryRuntimeAuthority { return this.port.sessionHistoryRuntimeAuthority; }
 	private get pilotMetrics(): SessionRuntimePort['pilotMetrics'] { return this.port.pilotMetrics; }
 	private get pilotMetricsExporter(): SessionRuntimePort['pilotMetricsExporter'] { return this.port.pilotMetricsExporter; }
-	private get measuredPilotRecoveries(): Set<string> { return this.port.measuredPilotRecoveries; }
-	private get pilotRecoveryKinds(): Map<string, PilotRecoveryKind> { return this.port.pilotRecoveryKinds; }
+	private get measuredPilotRecoveries(): Set<string> { return this.port.pilotRecovery.measuredPilotRecoveries; }
+	private get pilotRecoveryKinds(): Map<string, PilotRecoveryKind> { return this.port.pilotRecovery.pilotRecoveryKinds; }
 	private get liveSessions(): SessionRuntimePort['liveSessions'] { return this.port.liveSessions; }
 	private get liveHistory(): SessionRuntimePort['liveHistory'] { return this.port.liveHistory; }
 	/** Public, like the core's: `refusedInConsult` calls it on `this`. */
@@ -161,10 +161,10 @@ export class SessionRuntime {
 	private notifyRuntimeStarting(): void { this.port.notifyRuntimeStarting(); }
 	private emitNotice(message: string, source: 'session_history_note'): void { this.port.emitNotice(message, source); }
 	private renderViews(): void { this.port.renderViews(); }
-	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecoveryIdentity(); }
-	// These two hand back the core's own promise, so an await on them takes the ticks it took there.
+	private pilotRecoveryIdentity(): string | null { return this.port.pilotRecovery.pilotRecoveryIdentity(); }
+	// These two hand back the callee's own promise, so an await on them takes the ticks it took in the core.
 	private ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
-		return this.port.ensurePilotRecoveryPresented(recoveryId);
+		return this.port.pilotRecovery.ensurePilotRecoveryPresented(recoveryId);
 	}
 	private updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
 		return this.port.updateSettings(settings);

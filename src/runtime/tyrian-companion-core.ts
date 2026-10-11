@@ -137,6 +137,7 @@ import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type 
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
 import { VaultRuntime, type VaultRuntimePort } from './vault-runtime';
 import { LocalDebugRuntime, type LocalDebugRuntimePort } from './local-debug-runtime';
+import { PilotRecoveryRuntime, type PilotRecoveryRuntimePort } from './pilot-recovery-runtime';
 import { InventoryRuntime, type InventoryRuntimePort } from './inventory-runtime';
 import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './price-history-runtime';
 import { HalloweenObservationRuntime, halloweenPriceAlertSettingsFrom, type HalloweenObservationRuntimePort } from './halloween-observation-runtime';
@@ -460,8 +461,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private detectionQuality!: DetectionQualityRecorder;
 	private pilotMetrics!: PilotMetricsRecorder;
 	private pilotMetricsExporter!: PilotMetricsExporter;
-	private readonly pilotRecoveryKinds = new Map<string, PilotRecoveryKind>();
-	private readonly measuredPilotRecoveries = new Set<string>();
+	/** DE-01, group F: the pilot journal's side of a recovery and the two collections it fills (`pilotRecoveryRuntimePort`). */
+	private readonly pilotRecovery = new PilotRecoveryRuntime(TyrianCompanionCore.pilotRecoveryRuntimePort(this));
 	private pendingProposals!: PendingProposalService;
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private sessionNotes!: SessionNoteWriter;
@@ -541,7 +542,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * farming preferences and the saved live sessions. It reads the core's fields through
 	 * `sessionRuntimePort`, under their own names; the core still builds `pilotMetrics`,
 	 * `pilotMetricsExporter`, `sessionHistory`, `liveSessions` and `liveHistory`, and keeps the
-	 * history's runtime authority, the recovery's pilot hooks and the farming state a start captures.
+	 * history's runtime authority and the farming state a start captures (the recovery's pilot hooks: `pilotRecovery`).
 	 */
 	private readonly session: SessionRuntime = new SessionRuntime(TyrianCompanionCore.sessionRuntimePort(this));
 	/**
@@ -1352,8 +1353,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			sessionState: () => this.sessions.getState(),
 			onSessionStateChange: () => {
 				const session = this.sessions.getState();
-				const recoveryId = this.pilotRecoveryIdentity();
-				if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
+				this.pilotRecovery.presentPilotRecovery(() => this.renderViews());
 				if (session.status !== 'complete') this.lootPresentation.invalidate();
 				this.renderViews();
 				this.adoptLateCollectorMode(false);
@@ -1427,8 +1427,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.sessions.initialize();
 		this.bootTrace.mark('sessions');
 		if (this.unloaded) return;
-		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
+		this.pilotRecovery.presentPilotRecovery(() => this.renderViews());
 		this.sessionNotes = sessionServices.sessionNotes;
 		this.sessionHistory = sessionServices.sessionHistory;
 		// Z24: the live list reads through the durable history's reads, so a note is read once per run for both.
@@ -2229,18 +2228,20 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get sessionHistoryRuntimeAuthority() { return core.sessionHistoryRuntimeAuthority; },
 			get pilotMetrics() { return core.pilotMetrics; },
 			get pilotMetricsExporter() { return core.pilotMetricsExporter; },
-			get measuredPilotRecoveries() { return core.measuredPilotRecoveries; },
-			get pilotRecoveryKinds() { return core.pilotRecoveryKinds; },
+			get pilotRecovery() { return core.pilotRecovery; },
 			get liveSessions() { return core.liveSessions; },
 			get liveHistory() { return core.liveHistory; },
 			notifyConsultMode: () => { core.notifyConsultMode(); },
 			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			renderViews: () => { core.renderViews(); },
-			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
-			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
 			updateSettings: (settings) => core.updateSettings(settings),
 		};
+	}
+
+	/** What `PilotRecoveryRuntime` reads from this core (DE-01, group F): the services `initializeRuntime` builds, as they stand. */
+	private static pilotRecoveryRuntimePort(core: TyrianCompanionCore): PilotRecoveryRuntimePort {
+		return { get sessions() { return core.sessions; }, get pilotMetrics() { return core.pilotMetrics; } };
 	}
 
 	/**
@@ -2575,6 +2576,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get sessionCommands() { return core.sessionCommands; },
 			get sessionDispatch() { return core.sessionDispatch; },
 			get pilotMetrics() { return core.pilotMetrics; },
+			get pilotRecovery() { return core.pilotRecovery; },
 			get connection() { return core.connection; },
 			get assistedDetection() { return core.assistedDetection; },
 			get detectionQuality() { return core.detectionQuality; },
@@ -2597,8 +2599,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			renderViews: () => { core.renderViews(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			activateView: () => core.activateView(),
-			pilotRecoveryIdentity: () => core.pilotRecoveryIdentity(),
-			ensurePilotRecoveryPresented: (recoveryId) => core.ensurePilotRecoveryPresented(recoveryId),
 			sessionNoteInput: (runtime) => core.sessionNoteInput(runtime),
 			ensureCompletedSummarySaved: () => core.notes.ensureCompletedSummarySaved(),
 			persistFarmingSessionContext: (context) => { core.persistFarmingSessionContext(context); },
@@ -3738,23 +3738,6 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	/** The card's "Abandon session": the confirmation opens first (`LiveSessionRuntime`). */
 	confirmAbandonSession(): void {
 		this.live.confirmAbandonSession();
-	}
-
-	private pilotRecoveryIdentity(): string | null {
-		const recovery = this.sessions.getRecoveryState();
-		if (!('state' in recovery)) return null;
-		const state = recovery.state.status === 'error' ? recovery.state.failedState : recovery.state;
-		return 'sessionId' in state ? `${state.sessionId}:${String(state.authority.fence)}` : null;
-	}
-
-	private async ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
-		const recorded = await this.pilotMetrics.recoveryPresented(recoveryId);
-		if (recorded) {
-			this.measuredPilotRecoveries.add(recoveryId);
-			const recoveryKind = await this.pilotMetrics.recoveryKind(recoveryId);
-			if (recoveryKind) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
-		}
-		return recorded;
 	}
 
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {

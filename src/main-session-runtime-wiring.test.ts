@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
+import type { PilotRecoveryRuntime } from './runtime/pilot-recovery-runtime';
 import { SessionRuntime } from './runtime/session-facade';
 import type { TyrianCompanionCore } from './runtime/tyrian-companion-core';
 import { DEFAULT_FARMING_PREPARATION } from './sessions/farming-goal-preparation';
@@ -194,15 +195,11 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 			expect(runtime.core.getPilotMetricsState()).toEqual({ status: 'ready', observations: 3, limit: 10_000 });
 		});
 
-		it('measuredPilotRecoveries and pilotRecoveryKinds: what the core\'s recovery hooks fill is what the runtime reads', async () => {
+		it('pilotRecovery: what the core\'s `PilotRecoveryRuntime` fills is what the runtime reads', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
-			// The core's own recovery identity and sets: privates of the core, never of `SessionRuntime`.
-			const own = runtime.core as unknown as {
-				pilotRecoveryIdentity(): string | null;
-				measuredPilotRecoveries: Set<string>;
-				pilotRecoveryKinds: Map<string, 'forced_restart' | 'organic'>;
-			};
+			// The core's own `PilotRecoveryRuntime`: a private of the core, never of `SessionRuntime`.
+			const own = pilotOf(runtime.core);
 			vi.spyOn(own, 'pilotRecoveryIdentity').mockReturnValue('session-a:7');
 			own.measuredPilotRecoveries.add('session-a:7');
 			own.pilotRecoveryKinds.set('session-a:7', 'organic');
@@ -213,37 +210,35 @@ describe('the core hands the pilot metrics and the session history to SessionRun
 			}).toEqual({ required: true, kind: 'organic' });
 		});
 
-		/** The core's own recovery hooks, sets and recorder: privates of the core, never of `SessionRuntime`. */
-		function pilotOf(core: TyrianCompanionCore) {
-			return core as unknown as {
-				pilotRecoveryIdentity(): string | null;
-				ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean>;
-				measuredPilotRecoveries: Set<string>;
-				pilotRecoveryKinds: Map<string, 'forced_restart' | 'organic'>;
-				pilotMetrics: PilotMetricsRecorder;
-			};
+		/** The core's own `PilotRecoveryRuntime` (DE-01, group F): a private of the core, never of `SessionRuntime`. */
+		function pilotOf(core: TyrianCompanionCore): PilotRecoveryRuntime {
+			return (core as unknown as { pilotRecovery: PilotRecoveryRuntime }).pilotRecovery;
+		}
+		/** The core's own recorder: a private of the core, never of `SessionRuntime`. */
+		function recorderOf(core: TyrianCompanionCore): PilotMetricsRecorder {
+			return (core as unknown as { pilotMetrics: PilotMetricsRecorder }).pilotMetrics;
 		}
 
-		it('measuredPilotRecoveries and pilotRecoveryKinds: clearing the journal through the core empties the core\'s own sets', async () => {
+		it('pilotRecovery: clearing the journal through the core empties the core\'s own collections', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
 			const own = pilotOf(runtime.core);
 			own.measuredPilotRecoveries.add('session-a:7');
 			own.pilotRecoveryKinds.set('session-a:7', 'organic');
-			vi.spyOn(own.pilotMetrics, 'clear').mockResolvedValue(0);
+			vi.spyOn(recorderOf(runtime.core), 'clear').mockResolvedValue(0);
 
 			await runtime.core.clearPilotMetrics();
 
 			expect({ measured: [...own.measuredPilotRecoveries], kinds: [...own.pilotRecoveryKinds] }).toEqual({ measured: [], kinds: [] });
 		});
 
-		it('pilotRecoveryKinds: a recovery classified through the core keeps its kind in the core\'s own map', async () => {
+		it('pilotRecovery: a recovery classified through the core keeps its kind in the core\'s own map', async () => {
 			const runtime = core();
 			await runtime.initializeRuntime();
 			const own = pilotOf(runtime.core);
 			vi.spyOn(own, 'pilotRecoveryIdentity').mockReturnValue('session-a:7');
 			vi.spyOn(own, 'ensurePilotRecoveryPresented').mockResolvedValue(true);
-			vi.spyOn(own.pilotMetrics, 'recoveryClassified').mockResolvedValue(true);
+			vi.spyOn(recorderOf(runtime.core), 'recoveryClassified').mockResolvedValue(true);
 
 			await expect(runtime.core.classifyPilotRecovery('forced_restart')).resolves.toBe(true);
 
