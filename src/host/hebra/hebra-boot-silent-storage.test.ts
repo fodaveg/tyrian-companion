@@ -7,7 +7,7 @@ import type { LocalDebugRecordInput } from '../../core/local-debug-contract';
 import { LocalDebugLogger } from '../../core/local-debug-logger';
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
-import { engineIdle, hangStorage, hangTransactions, trackedIndexedDb, type TrackedIndexedDb } from '../../test/indexed-db-connections';
+import { engineIdle, hangStorage, hangTransactions, resumeStorage, trackedIndexedDb, type TrackedIndexedDb } from '../../test/indexed-db-connections';
 import { activateTyrian } from './hebra-runtime';
 
 /**
@@ -107,9 +107,12 @@ interface SilentBoot {
 
 /**
  * Activates the plugin as `entry.ts` does over `tracked` and boots it with the virtual clock until the runtime is ready;
- * then, when `thenUntil` is given, until it holds over the diagnostic log; then stops the plugin.
+ * then, when `thenUntil` is given, until it holds over the diagnostic log (and the core, for what the log does not say); then
+ * stops the plugin.
  */
-async function bootWithEngine(tracked: TrackedIndexedDb, thenUntil?: (records: readonly LocalDebugRecordInput[]) => boolean): Promise<SilentBoot> {
+async function bootWithEngine(
+	tracked: TrackedIndexedDb, thenUntil?: (records: readonly LocalDebugRecordInput[], core: BootCore) => boolean,
+): Promise<SilentBoot> {
 	const test = hebraWithOutputFolder();
 	const clock = manualWindowTimers();
 	// The session lease opens its database on the page's own `window.indexedDB`: the same factory the host is given.
@@ -153,7 +156,8 @@ async function bootWithEngine(tracked: TrackedIndexedDb, thenUntil?: (records: r
 	expect(plugin.core?.runtimeFailure, 'the start did not break').toBeNull();
 	expect(plugin.core?.runtimeReady).toBe(true);
 	// What the start left running in the background (the path index's save), for as long as the test wants to watch it.
-	if (thenUntil !== undefined) await driveUntil(() => thenUntil(records), clock, tracked, 'after the runtime is ready');
+	const core = plugin.core as BootCore;
+	if (thenUntil !== undefined) await driveUntil(() => thenUntil(records, core), clock, tracked, 'after the runtime is ready');
 	const watchedUntilMs = clock.nowMs;
 
 	// Stopped here, under the same clock: what the boot left waiting on the silent engine must not arm timers in the next test.
@@ -238,5 +242,28 @@ describe('the Hebra start with no database answering at all', { timeout: 15_000 
 		expect(boot.readyAtMs).toBe(30_000);
 		expect(bootMs(boot)).toMatchObject({ hebraIndex: 10_000, hebraHost: 10_000, mode: 20_000, sessions: 30_000, ready: 30_000 });
 		expect(pathIndexReports(boot)).toHaveLength(2);
+	});
+});
+
+/**
+ * RT-17 (measured in Obsidian on 11 Oct 2026): a Hebra without an API key is a consult device, and a session store that did not
+ * answer at its start left the panel in «Session error» after the store came back. The same core runs here, over HebraHost.
+ */
+describe('the Hebra start with the session store silent on a consult device', { timeout: 15_000 }, () => {
+	it('leaves «error» once the store answers again, without a reload', async () => {
+		const tracked = trackedIndexedDb();
+		tracked.hangOnly = (name) => /session-runtime|coordination/.test(name);
+		hangStorage(tracked);
+		type SessionCore = BootCore & { collectorMode: string; liveSessions: { getView(): { phase: string } }; getSessionRecoveryState(): { status: string } };
+		const seen: string[] = [];
+		await bootWithEngine(tracked, (_records, core) => {
+			const session = core as SessionCore;
+			const now = `${session.collectorMode} ${session.liveSessions.getView().phase} ${session.getSessionRecoveryState().status}`;
+			if (seen.length === 0) { seen.push(now); resumeStorage(tracked); }
+			if (now.endsWith('error')) return false;
+			seen.push(now);
+			return true;
+		});
+		expect(seen).toEqual(['consult error error', 'consult idle none']);
 	});
 });

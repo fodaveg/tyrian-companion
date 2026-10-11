@@ -142,6 +142,7 @@ import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './price-histo
 import { HalloweenObservationRuntime, halloweenPriceAlertSettingsFrom, type HalloweenObservationRuntimePort } from './halloween-observation-runtime';
 import { ManagedAssetsRuntime, canMoveManagedAssets, type ManagedAssetsRuntimePort } from './managed-assets-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
+import { SessionStoreRetry } from './session-store-retry';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
@@ -449,6 +450,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private liveSessions: LiveSessionLifecycle | null = null;
+	/** RT-17: asks a session store that did not answer again, on a consult device (`SessionStoreRetry`). */
+	private sessionStoreRetry: SessionStoreRetry | null = null;
 	/** Which Nexus producers are connected right now, in memory: see `liveSourceReliefAt`. */
 	private readonly liveSourceConnections = new LiveSourceConnections();
 	private liveEconomy: LiveSessionEconomy | null = null;
@@ -1441,7 +1444,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			clearInterval: (handle) => { window.clearInterval(handle as number); },
 			// A state change is the only word the lifecycle gives when a write storage had refused finally lands, so the alerts a
 			// refused claim left `ready` are looked at again here (nothing happens while none is owed) instead of waiting for a mode switch.
-			onStateChange: () => { this.adoptLateCollectorMode(false); this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); },
+			onStateChange: () => { this.adoptLateCollectorMode(false); this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); this.sessionStoreRetry?.arm(); },
 			onError: (error) => { this.recordIngameSessionFailure(error); },
 			preparation: () => this.settings.farmingPreparation,
 			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
@@ -1454,6 +1457,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.liveSessions.initialize();
 		this.bootTrace.mark('live');
 		if (this.unloaded) return;
+		this.sessionStoreRetry = new SessionStoreRetry({
+			consulting: () => consulting(this), sessions: this.sessions, liveSessions: this.liveSessions,
+			onDiagnostic: (error) => { this.recordIngameSessionFailure(error); },
+			scheduleTimeout: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+			cancelTimeout: (handle) => { window.clearTimeout(handle as number); },
+		});
+		this.sessionStoreRetry.arm();
 		this.liveSummaryNetwork = true;
 		this.liveEconomy = this.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
@@ -1681,7 +1691,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private syncCollectorHeartbeat(): void { this.vaultRuntime.syncCollectorHeartbeat(); }
 
 	/** R1b: applies a collector/consult switch without a reload (`VaultRuntime`). */
-	private applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> { return this.vaultRuntime.applyCollectorModeChange(context); }
+	private applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> {
+		// RT-17: a device that turns consult with a session store still unanswered has no heartbeat that asks it again.
+		return this.vaultRuntime.applyCollectorModeChange(context).finally(() => { this.sessionStoreRetry?.arm(); });
+	}
 
 	onunload(): void {
 		const finalization = this.shutdownRuntime();
@@ -1713,6 +1726,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async shutdownRuntime(): Promise<void> {
 		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
+		this.sessionStoreRetry?.dispose();
 		// Z6-2: before anything that can fail, so a rejected drain cannot leave them subscribed to a dead core.
 		this.uncaughtErrorOff?.();
 		this.uncaughtErrorOff = null;
