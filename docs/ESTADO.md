@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.6.46: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
+## Canal 0.6.46 publicado: sección Sesión en Hebra de Linux, almacén mudo en consulta y diario sin podar (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.46` sobre el canal 0.6.45 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.46` = `af91f444` (atestación; candidato `3e8b6f35`,
+árbol `1090415e`). Gate local verde (check 9/9 con 7558 tests, guardrails 25/25, BRAT PASS); CI 38128340803 y Release
+38129070811 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. La atestación anterior `3d4a653f` no se etiquetó: A-1 retuvo la
+publicación. Rama `integracion/0.6.46` sobre el canal 0.6.45 publicado
 (`88f1ff4b`, más la documentación del canal `4f5136c4`); añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
