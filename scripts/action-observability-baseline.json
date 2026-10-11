@@ -19454,11 +19454,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "5cd3f11ddcbc516dc4b6faab530e29203991608d",
+					"id": "b1ecec0f1d8b28981c6d6f5e16437336f5d26cee",
 					"kind": "callback_registration",
-					"line": 425,
+					"line": 434,
 					"column": 18,
-					"endLine": 456,
+					"endLine": 465,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -19471,11 +19471,11 @@
 					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" \"then\" boundary retains the single server-start flight, captures a classified bind failure and updates visible diagnostics, and clears only the completed flight reference; replacement awaits durable close first. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
 				},
 				{
-					"id": "91a8f5ff69c7710c2e7f4844d4b39b6b1f54e63a",
+					"id": "537439dc9bc31faa16fe884641d57094f8e93c81",
 					"kind": "promise_catch",
-					"line": 425,
+					"line": 434,
 					"column": 18,
-					"endLine": 470,
+					"endLine": 479,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "observed",
@@ -19486,11 +19486,11 @@
 					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
 				},
 				{
-					"id": "c24ccb90b8d28419fa4fb61a047fe8df060e0de9",
+					"id": "ee6a481a29f1cd3c41d2217bd0672dbbe468fc5c",
 					"kind": "callback_registration",
-					"line": 425,
+					"line": 434,
 					"column": 18,
-					"endLine": 471,
+					"endLine": 480,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -19505,66 +19505,56 @@
 				{
 					"id": "9f18056334cfe7d6a3ea25f653a0d2c03df39637",
 					"kind": "catch_clause",
-					"line": 626,
+					"line": 635,
 					"column": 5,
-					"endLine": 628,
+					"endLine": 637,
 					"endColumn": 4,
-					"classification": "observed",
+					"classification": "unreviewed",
 					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.emitNotice"
+						"type": "pending_review"
 					},
-					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
+					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
 				},
 				{
 					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
 					"kind": "void_expression",
-					"line": 635,
+					"line": 644,
 					"column": 22,
-					"endLine": 635,
+					"endLine": 644,
 					"endColumn": 66,
-					"classification": "allowlisted",
+					"classification": "unreviewed",
 					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.copyAlertIngameSecretFromCommand",
-						"scope": "callback",
-						"justification": "The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice."
+						"type": "pending_review"
 					},
-					"reason": "Allowlisted void_expression: The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice. Verified target: \"this.copyAlertIngameSecretFromCommand\" in \"callback\"."
+					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
 				},
 				{
 					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
 					"kind": "callback_registration",
-					"line": 654,
+					"line": 663,
 					"column": 18,
-					"endLine": 657,
+					"endLine": 666,
 					"endColumn": 4,
 					"registration": "then",
-					"classification": "allowlisted",
+					"classification": "unreviewed",
 					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "resolveAlertAccountRef",
-						"justification": "The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration."
+						"type": "pending_review"
 					},
-					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration. Verified registration: \"then\" in \"resolveAlertAccountRef\"."
+					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
 				},
 				{
 					"id": "378194b415575bb405c10210312836c46456263c",
 					"kind": "callback_registration",
-					"line": 654,
+					"line": 663,
 					"column": 18,
-					"endLine": 657,
+					"endLine": 666,
 					"endColumn": 91,
 					"registration": "finally",
-					"classification": "allowlisted",
+					"classification": "unreviewed",
 					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "resolveAlertAccountRef",
-						"justification": "The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own."
+						"type": "pending_review"
 					},
-					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
+					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
 				}
 			]
 		},

@@ -16,7 +16,11 @@
  * the queue and the emitter it builds in `initializeRuntime`, the account scope Halloween sets, and
  * everything that touches a credential: reading and creating the bridge token (`host.secrets`) and
  * the webhook's transport (`core/http`) stay there, behind `AlertRuntimePort`, because this module
- * is not on the reviewed lists of `security-boundary.test.ts`. The getters below carry the names of
+ * is not on the reviewed lists of `security-boundary.test.ts`. The token's value never reaches this
+ * module: the port answers `authenticateIngameBridge(candidate)` with a boolean, and
+ * `copyAlertIngameSecret()` may generate and store the token but resolves with the outcome only. The
+ * host it sees is the three members it uses (`notify`, `tcpServer`, `ui.registerCommand`), not the
+ * whole `TyrianHost` with its secrets and HTTP. The getters below carry the names of
  * the core's own fields, so the moved code reads as it did there.
  *
  * Its name does not hold `session-runtime` or `session-note`, and it is not a persisted-session
@@ -35,7 +39,6 @@ import {
 } from '../alerts/alert-ingame-presence';
 import {
 	createIngameBridgeNonce,
-	ingameBridgeSecretMatches,
 	type IngameBridgeClient,
 } from '../alerts/alert-ingame-protocol';
 import { IngameAlertReceiptTracker, type IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
@@ -118,9 +121,15 @@ export interface AlertRuntimePort {
 	readonly ingameSessionMarker: Pick<IngameSessionMarker, 'blocksAutomaticRestart' | 'linkReplacement'> | null;
 	emitNotice(message: string, source: AlertNoticeSource): void;
 	renderViews(): void;
-	/** The bridge token, read for one comparison and kept nowhere (`host.secrets` stays in the core). */
-	readAlertIngameSecret(): string | null;
-	/** Copies the token, generating one first when needed; the settings button and the palette share it. */
+	/**
+	 * Whether a candidate token is the bridge's. The core compares it against the stored token
+	 * (`ingameBridgeSecretMatches`); the value itself never crosses to this module.
+	 */
+	authenticateIngameBridge(candidate: string): boolean;
+	/**
+	 * Copies the token, generating one first when needed; the settings button and the palette share
+	 * it. It may create and store the token, but it resolves with the outcome only, never the value.
+	 */
 	copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome>;
 	/** The webhook's transport, over the core's one reviewed HTTP boundary; a fresh one per emitter. */
 	alertWebhookTransport(): AlertWebhookTransport;
@@ -430,7 +439,7 @@ export class AlertRuntime {
 				cancel: (handle) => { window.clearTimeout(handle as number); },
 			},
 			{
-				authenticate: (candidate) => ingameBridgeSecretMatches(candidate, this.port.readAlertIngameSecret()),
+				authenticate: (candidate) => this.port.authenticateIngameBridge(candidate),
 				now: () => Date.now(),
 				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
 				onConnectionEvent: (event) => { this.onIngameConnectionEvent(event); },

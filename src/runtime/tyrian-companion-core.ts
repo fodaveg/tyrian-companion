@@ -59,6 +59,7 @@ import {
 } from '../alerts/alert-ingame-presence';
 import {
 	createIngameBridgeSecret,
+	ingameBridgeSecretMatches,
 	isUsableIngameBridgeSecret,
 } from '../alerts/alert-ingame-protocol';
 import { ConnectionService, type ConnectionState } from '../account/connection-service';
@@ -2207,7 +2208,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get collectorMode() { return core.collectorMode; },
 			get unloaded() { return core.unloaded; },
 			get localDebugActions() { return core.localDebugActions; },
-			get host() { return core.host; },
+			get host() {
+				const { notify, tcpServer, ui } = core.host;
+				return { notify, tcpServer, ui: { registerCommand: (command: Parameters<TyrianHost['ui']['registerCommand']>[0]) => ui.registerCommand(command) } };
+			},
 			get settingTab() { return core.settingTab; },
 			get alertEmitter() { return core.alertEmitter; },
 			get alertQueue() { return core.alertQueue; },
@@ -2220,7 +2224,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			get ingameSessionMarker() { return core.ingameSessionMarker; },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			renderViews: () => { core.renderViews(); },
-			readAlertIngameSecret: () => core.readAlertIngameSecret(),
+			authenticateIngameBridge: (candidate) => ingameBridgeSecretMatches(candidate, core.readAlertIngameSecret()),
 			copyAlertIngameSecret: () => core.copyAlertIngameSecret(),
 			alertWebhookTransport: () => {
 				const transport = new HostRequestTransport(core.host.http, {

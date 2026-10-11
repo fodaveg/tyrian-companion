@@ -29,6 +29,8 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		}));
 		// The in-game server lives in `AlertRuntime` now (DE-01, step 3g): a real one holding the fake handle.
 		const alerts = Object.assign(new AlertRuntime({} as AlertRuntimePort), { alertIngameServer: { close: alertIngameServerClose } });
+		const disposedReceipts = vi.spyOn(alerts, 'disposeIngameReceipts');
+		const disposedPresence = vi.spyOn(alerts, 'disposeIngamePresence');
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
 			sessionCatalog: { dispose: sessionCatalogDispose },
 			productActions: { dispose: productActionsDispose },
@@ -49,6 +51,8 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		expect(sessionCatalogDispose).toHaveBeenCalledOnce();
 		expect(productActionsDispose).toHaveBeenCalledOnce();
 		expect(alertIngameServerClose).toHaveBeenCalledOnce();
+		expect(disposedReceipts).toHaveBeenCalledOnce();
+		expect(disposedPresence).toHaveBeenCalledOnce();
 		expect(closeResolved).toBe(true);
 		expect((harness as { sessionCatalog: unknown }).sessionCatalog).toBeNull();
 		expect((alerts as unknown as { alertIngameServer: unknown }).alertIngameServer).toBeNull();
