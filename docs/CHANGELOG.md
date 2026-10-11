@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.6.39 - Un temporizador menos al cerrar y más orden interno
+
+Se actualiza desde la 0.6.38 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión. Si una recuperación o un arranque de sesión terminaba justo después de cerrar el plugin, el latido de la
+  sesión volvía a quedar armado en un servicio ya cerrado. Ya no se arma.
+- Limpieza interna, sin cambios visibles. Las propuestas de sesión y la detección asistida pasan al módulo de la sesión
+  en vivo, y los comandos de sesión (cinta, menú y paleta) a su propio módulo; el servicio de inicio manual de sesión se
+  parte en piezas (vigilancia y reintentos, latido, modelo, errores y evidencia).
+
 ## Release beta 0.6.38 - Restaurar una sesión larga lee su diario de una vez
 
 Se actualiza desde la 0.6.37 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;

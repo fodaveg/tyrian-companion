@@ -1,5 +1,27 @@
 # Estado
 
+## Candidato 0.6.39: latido que no se rearma tras cerrar y núcleo y servicio de inicio partidos (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.39` sobre el canal 0.6.38 publicado
+(`9a667d06`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.39 se ha visto en un Obsidian ni en un Hebra reales.
+- Contenido:
+  - DE-01 paso 3, tercera parte: propuestas y detección asistida (18 métodos) a `LiveSessionRuntime`; comandos de sesión
+    (11) a `SessionCommandRuntime` (`src/runtime/session-command-runtime.ts`). El núcleo pasa de 6.166 a 5.788 líneas.
+    Las aserciones de texto congeladas de propuestas pasan a tests de comportamiento
+    (`src/main-assisted-proposal-semantics.test.ts`), incluida la revisión aceptada que no presenta.
+  - DE-07, primera mitad del servicio: `src/sessions/manual-session-start-service.ts` pasa de 2.244 a unas 1.840 líneas;
+    salen el modelo, los errores, la evidencia, `ManualSessionWatch` y `ManualSessionHeartbeat`
+    (`manual-session-runtime-heartbeat.ts`, dentro de la guarda de persistencia de security-scan).
+  - Arreglo: `startHeartbeat` no arma el latido si el servicio ya está cerrado (cuatro caminos que lo hacían tras un
+    `await` que sobrevivía al cierre). Tests nuevos del reinicio de la espera de reintento y de `disposed` en vivo.
+  - Revisiones independientes: código movido idéntico por AST en los dos lotes; mutaciones del puerto en rojo.
+- Límite conocido: un lease concedido después del cierre no se libera y caduca por su TTL, como en la base.
+- Pendiente: DE-01 (lifecycleCore restante, nota y resumen, vista en vivo, farming, piloto, historial); DE-07 (arranque,
+  parada, recuperación y reclamación del servicio). El gate, la publicación y verla en hosts reales.
+
 ## Canal 0.6.38 publicado: diario de sesión en una lectura y ciclo de la sesión en vivo fuera del núcleo (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.38` = `123c766b` (atestación; candidato `52a6eb3a`,
