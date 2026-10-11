@@ -997,12 +997,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				try {
 					const response = await publicClient.requestDetailed('legendaryarmory');
 					if (response.status !== 200 || !Array.isArray(response.body)) return { status: 'error' };
+					// Real shape (checked 11 oct 2026): `GET /v2/legendaryarmory` is a bare array of item ids.
 					const ids: number[] = [];
 					for (const entry of response.body as unknown[]) {
-						if (typeof entry !== 'object' || entry === null) return { status: 'error' };
-						const id = (entry as Record<string, unknown>).id;
-						if (!Number.isSafeInteger(id)) return { status: 'error' };
-						ids.push(id as number);
+						if (!Number.isSafeInteger(entry)) return { status: 'error' };
+						ids.push(entry as number);
 					}
 					this.sessionCatalogFactory ??= async () => new PublicCatalogService(
 						publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),

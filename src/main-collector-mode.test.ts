@@ -380,6 +380,22 @@ describe('consult: the manual actions through the real action controller', () =>
 		expect(notify).not.toHaveBeenCalled();
 		await world.plugin.shutdownRuntime();
 	});
+
+	it('consult: "Cargar lista" accepts the real /v2/legendaryarmory shape, a bare array of item ids (F2)', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		outbound.respond = (url) => url.includes('/legendaryarmory')
+			? { status: 200, json: [101582, 83162] }
+			: { status: 404, json: {} };
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { mode: 'consult' });
+		await world.plugin.initializeRuntime();
+		await settle();
+
+		const result = await (world.plugin as unknown as ConsultManualActions).loadLegendaryArmoryOptions();
+
+		expect(result.status).toBe('ok');
+		expect(result).toMatchObject({ options: [{ itemId: 101582 }, { itemId: 83162 }] });
+		await world.plugin.shutdownRuntime();
+	});
 });
 
 /** What the key and account checks, and the one-click sync, read on top of the harness. */
