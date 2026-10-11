@@ -18,7 +18,7 @@ function seedDays(count: number) {
 function mount(): HTMLElement {
 	const container = document.createElement('div');
 	document.body.append(container);
-	mountPriceHistoryChart(container, createTranslator('es'), { daily: [], side: 'bid', seedDays: seedDays(30) as never });
+	mountPriceHistoryChart(container, createTranslator('es'), { daily: [], side: 'bid', seedDays: seedDays(30) });
 	return container;
 }
 

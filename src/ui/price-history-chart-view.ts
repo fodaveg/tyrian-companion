@@ -182,7 +182,7 @@ const FOCUS_FALLBACK_KEY = 'window:all';
 /** The stable name of the chart control holding the focus, or null when the focus is elsewhere. */
 function focusedControlKey(container: HTMLElement): string | null {
 	const active = container.ownerDocument.activeElement;
-	if (!active || !container.contains(active)) return null;
+	if (!active || typeof container.contains !== 'function' || !container.contains(active)) return null;
 	return active.getAttribute(FOCUS_KEY_ATTRIBUTE);
 }
 
