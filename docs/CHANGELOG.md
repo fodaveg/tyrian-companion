@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.43 - Orden interno: el núcleo del plugin, partido en siete fachadas más
+
+Se actualiza desde la 0.6.42 publicada. No cambia nada visible. Nada de esto se ha visto todavía en un Obsidian ni en
+un Hebra reales; [ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Orden interno: los avisos y el puente con el juego, los assets gestionados, el inventario y la cartera, la bóveda y
+  el modo colector, el registro local, el historial de precios y Halloween salen del núcleo del plugin a piezas propias.
+- Paneles: los paneles de farming y de la sesión en vivo crean su elemento raíz en la ventana donde se abren, sin usar
+  `document.createElement`, como pide la revisión automática del catálogo de Obsidian.
+
 ## Release beta 0.6.42 - La reserva de una sesión se devuelve al cerrar y el registro de sesión pesa menos
 
 Se actualiza desde la 0.6.41 publicada. Nada de esto se ha visto todavía en un Obsidian ni en un Hebra reales;

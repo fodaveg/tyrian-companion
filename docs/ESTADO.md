@@ -1,5 +1,24 @@
 # Estado
 
+## Candidato 0.6.43: núcleo partido en siete fachadas más y raíces de panel sin `createElement` (11 oct 2026)
+
+**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.43` sobre el canal 0.6.42 publicado
+(`bb42702c`); añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y
+`versions.json`, mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md).
+
+- Sin verificar, y es lo primero que hay que saber: nada de la 0.6.43 se ha visto en un Obsidian ni en un Hebra reales.
+- DE-01: `src/runtime/tyrian-companion-core.ts` baja de 5.554 a 3.857 líneas. Fachadas nuevas en `src/runtime/`, con
+  puerto de lectura en vivo y delegados de una línea en el núcleo: `AlertRuntime` (`alert-runtime.ts`; el bloque del
+  token in-game se queda en el núcleo por la lista revisada de ficheros con secretos), `ManagedAssetsRuntime`
+  (`managed-assets-runtime.ts`), `InventoryRuntime` (`inventory-runtime.ts`), `VaultRuntime` (`vault-runtime.ts`),
+  `LocalDebugRuntime` (`local-debug-runtime.ts`), `PriceHistoryRuntime` (`price-history-runtime.ts`) y
+  `HalloweenObservationRuntime` (`halloween-observation-runtime.ts`). Un test de cableado `src/main-*-runtime-wiring`
+  por fachada; congelados de texto fuente: 16.
+- DE-20: `createOwnedRoot` (`src/ui/owned-root.ts`) crea la raíz de cuatro paneles desde un fragmento vacío del
+  `document` recibido; los 4 avisos `prefer-create-el` de producto quedan a 0. Probado en happy-dom
+  (`src/ui/root-owner-document.test.ts`), no en Obsidian ni en Hebra.
+- Pendiente: verla en hosts reales.
+
 ## Canal 0.6.42 publicado: reserva devuelta al cerrar, delta acotado y dos fachadas más del núcleo (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.42` = `4a78271b` (atestación; candidato `5af35a4f`,
