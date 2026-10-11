@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.47: la sesión se recupera al pasar a recolector con el almacén mudo (11 oct 2026)
+## Canal 0.6.47 publicado: la sesión se recupera al pasar a recolector con el almacén mudo (11 oct 2026)
 
-**Candidata; gate pendiente; no publicada ni etiquetada.** Rama `integracion/0.6.47` sobre el canal 0.6.46 publicado
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.47` = `026a4d5d` (atestación; candidato `ee367a21`,
+árbol `283d1eb4`). Gate local verde (check 9/9 con 7561 tests, guardrails 25/25, BRAT PASS); CI 38129742528 y Release
+38130503165 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `integracion/0.6.47` sobre el canal 0.6.46 publicado
 (`af91f444`, más la documentación del canal `1c219e1e`); añade los metadatos de versión (`manifest.json`,
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
@@ -33,11 +36,15 @@ publicación. Rama `integracion/0.6.46` sobre el canal 0.6.45 publicado
 `package.json`, la raíz de `package-lock.json` y `versions.json`, mínimo de Obsidian 1.11.4). Detalle en
 [CHANGELOG](CHANGELOG.md).
 
+Hebra de David en Fedora (rpm 0.2.0-23), 11 oct: `node scripts/verify-hebra-install.mjs` da PASS
+(`version=0.6.46; previous=0.6.45; release-bytes=match; carga=loaded (activada 0.6.46)`). Es instalación y carga en
+Hebra, no QA de sesión; Obsidian/BRAT sigue pendiente.
+
 - Sin verificar, y es lo primero que hay que saber: el candidato se ha medido el 11 oct solo en un Obsidian y un Hebra
-  desechables (ver «Pruebas en hosts reales» más abajo); nada de la 0.6.46 se ha visto en el Obsidian ni en el Hebra
-  de un usuario ni a través de BRAT. RT-17 (modo consulta), RT-09 nivel 2, HP-03 y el `Notify` de HP-01 sí se probaron
-  en esos hosts; quedan sin medir RT-17 en recolector o con sesión viva, un aviso disparado por el propio plugin y los
-  arreglos del tercer audit, posteriores al candidato medido.
+  desechables (ver «Pruebas en hosts reales» más abajo); nada de la 0.6.46 se ha visto en el Obsidian de un usuario ni a
+  través de BRAT; en el Hebra de David, solo la instalación y la carga (arriba). RT-17 (modo consulta), RT-09 nivel 2,
+  HP-03 y el `Notify` de HP-01 sí se probaron en esos hosts; quedan sin medir RT-17 en recolector o con sesión viva, un
+  aviso disparado por el propio plugin y los arreglos del tercer audit, posteriores al candidato medido.
 - HP-03 (urgente): en Hebra de escritorio sobre Linux la sección Sesión salía vacía desde la 0.6.43. Causa: `emptyFragment`
   de `src/ui/owned-root.ts` usaba `createContextualFragment('')`, que la CSP de Hebra (`require-trusted-types-for
   'script'`, aplicada por WebKitGTK 2.54) rechaza con `This assignment requires a TrustedHTML`. Ahora es
