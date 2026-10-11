@@ -143,6 +143,7 @@ export function evaluateEquipmentSalvageEconomy(value: unknown): EquipmentSalvag
 		}
 		if (!Number.isSafeInteger(item.level) || item.level < 0) return review('item_level_uncertain');
 		if (item.level < 68) return { status: 'not_applicable', reason: 'level_below_68' };
+		if (!policyInWindow(value)) return review('policy_invalid_or_stale');
 		const rule = policy.rules.find((candidate) => candidate.rarity === item.rarity);
 		if (rule === undefined) return review('policy_invalid_or_stale');
 		if (item.flags.includes('NoSalvage')) return review('no_salvage', rule.ruleId);
@@ -237,8 +238,17 @@ function isInput(value: unknown): value is EquipmentSalvageEconomyInputV1 {
 		|| !salvageOutput(value.output)
 		|| value.output.itemId !== ECTOPLASM_ITEM_ID || !isEquipmentSalvagePolicy(value.policy)
 		|| !isEquipmentSalvagePreferences(value.preferences)) return false;
-	return Date.parse(value.asOf) >= Date.parse(value.policy.publishedAt)
-		&& Date.parse(value.asOf) < Date.parse(value.policy.validUntil);
+	return true;
+}
+
+/**
+ * F6: the policy's validity window only gates the items the policy covers (Rare/Exotic level 68+
+ * equipment). It is checked AFTER the scope tests, so an expired policy never turns a material,
+ * a trophy or an out-of-scope piece into a stale review.
+ */
+function policyInWindow(input: EquipmentSalvageEconomyInputV1): boolean {
+	return Date.parse(input.asOf) >= Date.parse(input.policy.publishedAt)
+		&& Date.parse(input.asOf) < Date.parse(input.policy.validUntil);
 }
 
 function marketAlternatives(
