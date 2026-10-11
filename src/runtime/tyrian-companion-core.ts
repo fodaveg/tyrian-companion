@@ -15,13 +15,12 @@
 import { bootNow, createBootTrace, type BootTrace } from '../core/boot-trace';
 import { readFarmingDeclaredBuild, type FarmingDeclaredBuildPreferenceV1 } from '../sessions/manual-build-model';
 import type { LiveSessionComparisonView } from '../sessions/live-session-comparison';
-import { farmingGoalForSession, projectBagPriceIngameState } from './farming-runtime-projection';
+import { farmingGoalForSession } from './farming-runtime-projection';
 import { observeFarmingSessionContext, type FarmingGroupContext, type FarmingSessionContext } from './farming-session-context';
 import { type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farming-goal';
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
-import { HALLOWEEN_TOT_BAG_ITEM_ID } from '../economy/session-valuation';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import { LiveSourceConnections, liveSourceReliefAt } from '../sessions/live-source-connections';
 import type { LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
@@ -128,8 +127,7 @@ import {
 } from '../core/local-debug-persistence';
 import { requestPersistentStorage } from '../core/persistent-storage';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
-import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
-import { halloweenObservationActive } from '../halloween/halloween-activation';
+import type { PriceHistoryRuntime as PriceHistoryService, PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
 import { IndexedDbHalloweenStore } from '../halloween/halloween-store';
 import type { HalloweenRuntime, HalloweenRuntimeState } from '../halloween/halloween-runtime';
@@ -163,6 +161,8 @@ import { SaleRuntime, type SaleRuntimePort } from './sale-runtime';
 import { SessionRuntime, type SessionRuntimePort } from './session-facade';
 import { LiveViewRuntime, TYRIAN_MAIN_VIEW_TYPE, type LiveViewControllers, type LiveViewRuntimePort } from './live-view-runtime';
 import { FarmingSessionRuntime, type FarmingSessionRuntimePort } from './farming-session-runtime';
+import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './price-history-runtime';
+import { HalloweenObservationRuntime, halloweenPriceAlertSettingsFrom, type HalloweenObservationRuntimePort } from './halloween-observation-runtime';
 import { LiveSessionRuntime, type LiveSessionRuntimePort, type SessionSummarySaveState } from './live-session-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
@@ -178,9 +178,7 @@ import {
 } from '../economy/price-seed-bulk-refresh';
 import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
-import { safePublicRenderIconUrl } from '../ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
-import { paintPriceHistoryNoteBlock } from '../ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
 import {
@@ -213,7 +211,6 @@ import {
 	mergeSettingsUpdate,
 	migrateSettings,
 	SETTINGS_SCHEMA_VERSION,
-	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	type InventoryVaultSyncLastRun,
@@ -543,7 +540,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	/** DU-13: the copy of the preferences in the host's settings; told of the changes that bypass the preferences store. */
 	private inventoryPreferencesBackup: InventoryPreferencesBackup | null = null;
-	private priceHistory: PriceHistoryRuntime | null = null;
+	private priceHistory: PriceHistoryService | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
 	/** Set once during `initializeRuntime`; `readCachedPriceSeed`'s own key, reused by `refreshSaleHeroTiming`. */
@@ -613,6 +610,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * the core keeps the mounted controllers, which its registration and unload also walk.
 	 */
 	private readonly liveView: LiveViewRuntime = new LiveViewRuntime(TyrianCompanionCore.liveViewRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the price history (its state and opt-in, the series and seeds the panels ask
+	 * for, the note block, the watch list's names, the bag's public price). It reads the core's
+	 * fields through `priceHistoryRuntimePort`; the core keeps the services and the shared catalog.
+	 */
+	private readonly priceHistoryFacade: PriceHistoryRuntime = new PriceHistoryRuntime(TyrianCompanionCore.priceHistoryRuntimePort(this));
+	/**
+	 * DE-01, step 3g: the Halloween observation (its states, the storage delta reaching it, the
+	 * account switch). It reads and writes the core's fields through `halloweenObservationRuntimePort`;
+	 * the core keeps the two services and both account references.
+	 */
+	private readonly halloweenObservation: HalloweenObservationRuntime = new HalloweenObservationRuntime(TyrianCompanionCore.halloweenObservationRuntimePort(this));
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -2413,141 +2422,50 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		await this.sale.refreshSale(options);
 	}
 
-	getPriceHistoryState(): PriceHistoryRuntimeState {
-		return this.priceHistory?.getState() ?? disabledPriceHistoryState();
-	}
+	/** The price history's state (`PriceHistoryRuntime`). */
+	getPriceHistoryState(): PriceHistoryRuntimeState { return this.priceHistoryFacade.getPriceHistoryState(); }
 
-	getHalloweenState(): HalloweenRuntimeState {
-		return this.halloween?.getState() ?? disabledHalloweenState();
-	}
+	/** The Halloween notices as the views read them (`HalloweenObservationRuntime`). */
+	getHalloweenState(): HalloweenRuntimeState { return this.halloweenObservation.getHalloweenState(); }
 
-	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
-		return this.halloweenPriceAlert?.getState() ?? disabledHalloweenPriceAlertState();
-	}
+	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState { return this.halloweenObservation.getHalloweenPriceAlertState(); }
 
-	// `acknowledgeHalloweenNotice`/`acknowledgeHalloweenPriceNotice` are gone (Lote S, 2026-09-09):
-	// nobody marks an aviso reviewed anymore. `this.halloween`/`this.halloweenPriceAlert` keep their
-	// own `acknowledge()` capability and `acknowledgedAt` bookkeeping — that stays out of scope, see
-	// the final report — this host simply stops calling it.
-
-	private async observeHalloweenDelta(
+	private observeHalloweenDelta(
 		delta: StorageDelta,
 		source: 'assisted_poll' | 'session_final',
 		episodeId: string,
 		classification?: Parameters<HalloweenRuntime['observeDelta']>[0]['classification'],
 	): Promise<void> {
-		if (delta.status === 'invalid' || delta.accountId === null) return;
-		// The account hash is resolved before the seasonal gate, not after it: it scopes the
-		// durable alert queue too, and outside the festival window that queue is the only
-		// surface still writing.
-		const accountRef = await this.switchHalloweenAccount(delta.accountId);
-		if (accountRef !== this.halloweenAccountRef) return;
-		if (!this.halloweenObservationActive() || this.halloween === null) return;
-		await this.halloween.observeDelta({ delta, source, episodeId, classification });
+		return this.halloweenObservation.observeHalloweenDelta(delta, source, episodeId, classification);
 	}
 
-	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
-		const session = this.sessions.getState();
-		if (session.status !== 'active') return;
-		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
+	private observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> { return this.halloweenObservation.observeAcceptedHalloweenDelta(delta); }
+
+	private switchHalloweenAccount(accountId: string, parent?: ResolvedLocalDebugActionContext): Promise<string> {
+		return this.halloweenObservation.switchHalloweenAccount(accountId, parent);
 	}
 
-	private async switchHalloweenAccount(
-		accountId: string,
-		parent?: ResolvedLocalDebugActionContext,
-	): Promise<string> {
-		const accountRef = await sha256Text(accountId);
-		this.alertAccountRef = accountRef;
-		// An unchanged account has nothing to do here: it was already activated the first time
-		// this account was observed, and this used to call `activate` again on every single
-		// "Comprobar conexión", even when nothing changed. Toggling the setting, a secret
-		// change and the season opening reactivate through their own dedicated paths below.
-		if (accountRef === this.halloweenAccountRef) return accountRef;
-		this.halloweenAccountRef = accountRef;
-		await this.halloweenPriceAlert?.configure(
-			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, parent,
-		);
-		if (!this.halloweenObservationActive() || this.halloween === null) return accountRef;
-		this.halloween.disable(parent);
-		// Z21: `activate` drains the session-note backfill (it reads and parses every candidate note,
-		// seconds on a big vault), so awaiting it here held "Comprobar conexión" and what runs after it
-		// (`armAssistedDetection`, `reconcilePendingProposals`) behind the walk. It runs in the
-		// background instead. Loot does NOT skip the wait, on purpose: `HalloweenRuntime.observeDelta`
-		// awaits the pending activation and every backfill flight before counting anything, and
-		// per-episode flights stay serialised, so no loot is counted twice or lost while the walk goes
-		// on. `activate` reports store failures through the runtime state; only a disposed runtime
-		// rejects, which is not an error here.
-		void this.halloween.activate(parent).catch(() => undefined);
-		this.halloween.setOnline(this.host.environment.isOnline());
-		return accountRef;
+	enablePriceHistory(): Promise<void> { return this.priceHistoryFacade.enablePriceHistory(); }
+
+	/** Whether the advisor shows the price-history opt-in offer (`PriceHistoryRuntime`). */
+	isPriceHistoryOptInOffered(): boolean { return this.priceHistoryFacade.isPriceHistoryOptInOffered(); }
+
+	/** «Ahora no» on that offer (`PriceHistoryRuntime`). */
+	dismissPriceHistoryOptIn(): Promise<void> { return this.priceHistoryFacade.dismissPriceHistoryOptIn(); }
+
+	loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
+		return this.priceHistoryFacade.loadPriceHistorySeries(itemId, side, windowDays);
 	}
 
-	async enablePriceHistory(): Promise<void> {
-		await this.updateSettings({ priceHistoryEnabled: true });
-	}
+	/** The datawars2 seed of one item for an Inventory row's «Detalles» (`PriceHistoryRuntime`). */
+	ensurePriceHistorySeed(itemId: number): Promise<void> { return this.priceHistoryFacade.ensurePriceHistorySeed(itemId); }
 
-	/** Whether the advisor shows the price-history opt-in offer. Reads settings only; starts no I/O. */
-	isPriceHistoryOptInOffered(): boolean {
-		return priceHistoryOptInOffered(this.settings, this.host.environment.pluginVersion);
-	}
+	/** Last known datawars2 seed for one item; a stale read (`PriceHistoryRuntime`). */
+	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState { return this.priceHistoryFacade.getPriceHistorySeedState(itemId); }
 
-	/** «Ahora no» on that offer: records the installed version, so the next release offers it again. */
-	async dismissPriceHistoryOptIn(): Promise<void> {
-		await this.updateSettings({ priceHistoryNoticeDismissedVersion: this.host.environment.pluginVersion });
-	}
-
-	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
-		if (!this.runtimeReady || this.priceHistory === null) { this.notifyRuntimeStarting(); return; }
-		await this.priceHistory.loadSeries(itemId, side, windowDays);
-		// `ensure` never throws: a datawars2 failure is a state on the seed service, not an
-		// exception, so the local series above is never held hostage to a third party.
-		await this.priceHistoryPanelSeed?.ensure(itemId);
-		this.renderInventoryAdvisorViews();
-	}
-
-	/**
-	 * The datawars2 seed of one item for the chart inside an Inventory row's «Detalles». Unlike
-	 * `loadPriceHistorySeries` it never touches the price panel's selected item or its local series:
-	 * the seed service takes any item id (the watch list only bounds the LOCAL captures), and it
-	 * already carries the 24 h cache and the shared interactive download turn. With the history off
-	 * it does nothing at all, so opening a row cannot start a request the player has not consented to.
-	 */
-	async ensurePriceHistorySeed(itemId: number): Promise<void> {
-		if (!this.settings.priceHistoryEnabled || !this.runtimeReady || this.priceHistoryPanelSeed === null) return;
-		await this.priceHistoryPanelSeed.ensure(itemId);
-		this.renderInventoryAdvisorViews();
-	}
-
-	/** Last known datawars2 seed for one item; a stale read, it never starts a download itself. */
-	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState {
-		return this.priceHistoryPanelSeed?.getState(itemId)
-			?? { status: 'idle', itemId, days: [], failureReason: null, retrievedAt: null };
-	}
-
-	/**
-	 * H9.2 piloto: the `tyrian-price-history` code-block handler Obsidian invokes for every
-	 * rendered note that carries one, never at load. Shares the exact same 24h-cached seed
-	 * service as the settings panel (`priceHistoryPanelSeed`): a note and the panel showing
-	 * the same item inside that window never cost a second request.
-	 */
-	private async paintPriceHistoryNoteBlockView(
-		source: string,
-		el: HTMLElement,
-		ctx: TyrianCodeBlockContext,
-	): Promise<void> {
-		const frontmatterItemName = frontmatterTcItemName(ctx.frontmatter);
-		await paintPriceHistoryNoteBlock(el, source, {
-			translator: createTranslator(this.settings.language),
-			ready: () => this.runtimeReady && this.priceHistoryPanelSeed !== null,
-			getState: (itemId) => this.getPriceHistorySeedState(itemId),
-			ensure: async (itemId) => await this.priceHistoryPanelSeed?.ensure(itemId)
-				?? this.getPriceHistorySeedState(itemId),
-			itemName: () => frontmatterItemName,
-			// A note can render this block before `initializeRuntime` finishes (H18 bug, 28 sep):
-			// nothing else ever repaints a code block on its own, so without this the block was
-			// stuck on "loading" forever. Retried exactly once, the moment startup settles.
-			whenReady: () => this.whenRuntimeReady(),
-		});
+	/** The `tyrian-price-history` code-block handler (`PriceHistoryRuntime`). */
+	private paintPriceHistoryNoteBlockView(source: string, el: HTMLElement, ctx: TyrianCodeBlockContext): Promise<void> {
+		return this.priceHistoryFacade.paintPriceHistoryNoteBlockView(source, el, ctx);
 	}
 
 	/** Resolves once, the first time after this call that `runtimeReady` settles (ready or failed). */
@@ -2560,34 +2478,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const resolve of this.runtimeReadyWaiters.splice(0)) resolve();
 	}
 
-	/**
-	 * Public catalog name + icon for the price-history watch list.
-	 *
-	 * Reuses the same lazily-opened, IndexedDB-cached catalog service the session
-	 * loot panel uses: names and icons ride the one existing 7-day cache instead of
-	 * a bespoke one, and a second panel opening inside that window never repeats
-	 * the network request.
-	 */
-	async resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
-		if (itemIds.length === 0 || this.sessionCatalogFactory === null) return {};
-		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
-			component: 'price_history', action: 'price_history_load_series', state: 'price_history_catalog',
-		});
-		try {
-			this.sessionCatalog ??= await this.sessionCatalogFactory();
-			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
-			const resolved: Record<number, { name: string; icon: string | null }> = {};
-			for (const [key, item] of Object.entries(items)) {
-				const itemId = Number(key);
-				if (!Number.isSafeInteger(itemId)) continue;
-				resolved[itemId] = { name: item.name, icon: safePublicRenderIconUrl(item.icon) };
-			}
-			span.success('resolved', { itemCount: itemIds.length });
-			return resolved;
-		} catch (error) {
-			span.failure(error, 'network_failure', 'price_history_catalog_unavailable');
-			return {};
-		}
+	/** Public catalog name + icon for the price-history watch list (`PriceHistoryRuntime`). */
+	resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
+		return this.priceHistoryFacade.resolvePriceHistoryItemCatalog(itemIds);
 	}
 
 	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {
@@ -3109,6 +3002,46 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * fields, read as they stand: the controllers, the placement and the product actions are built
 	 * after the port.
 	 */
+	private static priceHistoryRuntimePort(core: TyrianCompanionCore): PriceHistoryRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get runtimeReady() { return core.runtimeReady; },
+			get host() { return core.host; },
+			get localDebugActions() { return core.localDebugActions; },
+			get priceHistory() { return core.priceHistory; },
+			get priceHistoryPanelSeed() { return core.priceHistoryPanelSeed; },
+			get sessionCatalogFactory() { return core.sessionCatalogFactory; },
+			get sessionCatalog() { return core.sessionCatalog; },
+			set sessionCatalog(value) { core.sessionCatalog = value; },
+			get liveSessions() { return core.liveSessions; },
+			get liveEconomy() { return core.liveEconomy; },
+			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
+			whenRuntimeReady: () => core.whenRuntimeReady(),
+			renderInventoryAdvisorViews: () => { core.renderInventoryAdvisorViews(); },
+			updateSettings: (settings) => core.updateSettings(settings),
+		};
+	}
+
+	/**
+	 * What `HalloweenObservationRuntime` reads from this core and writes back to it (DE-01, step 3g).
+	 * Getters over the core's own fields, so the services built in `initializeRuntime` are read as they
+	 * stand; the two account references are setters too, which `unload`, the reset and the alert queue
+	 * also read.
+	 */
+	private static halloweenObservationRuntimePort(core: TyrianCompanionCore): HalloweenObservationRuntimePort {
+		return {
+			get settings() { return core.settings; },
+			get host() { return core.host; },
+			get sessions() { return core.sessions; },
+			get halloween() { return core.halloween; },
+			get halloweenPriceAlert() { return core.halloweenPriceAlert; },
+			get halloweenAccountRef() { return core.halloweenAccountRef; },
+			set halloweenAccountRef(value) { core.halloweenAccountRef = value; },
+			get alertAccountRef() { return core.alertAccountRef; },
+			set alertAccountRef(value) { core.alertAccountRef = value; },
+		};
+	}
+
 	private static liveViewRuntimePort(core: TyrianCompanionCore): LiveViewRuntimePort {
 		return {
 			get runtimeReady() { return core.runtimeReady; },
@@ -3423,12 +3356,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	getFarmingPreparationContext(): FarmingPreparationContext { return this.farming.getFarmingPreparationContext(); }
 	getFarmingIngameState(): FarmingIngameState { return this.farming.getFarmingIngameState(); }
 
-	/** Public gross price of the Halloween bag for `price2`. The bridge calls it only for a subscribed connection, which is what keeps the quote refreshed. */
-	getBagPriceIngameState(): PriceIngameState {
-		this.liveEconomy?.refreshBagQuote();
-		return projectBagPriceIngameState({ phase: this.liveSessions?.getView().phase ?? 'idle',
-			quote: this.liveEconomy?.rawQuote(HALLOWEEN_TOT_BAG_ITEM_ID) ?? null, now: Date.now() });
-	}
+	/** Public gross price of the Halloween bag for `price2` (`PriceHistoryRuntime`). */
+	getBagPriceIngameState(): PriceIngameState { return this.priceHistoryFacade.getBagPriceIngameState(); }
 
 	getLiveSessionLoot(): LiveSessionLootState { return this.liveView.getLiveSessionLoot(); }
 
@@ -3608,10 +3537,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** True while the Halloween observation surface is live: the pack's window, or the manual widening. */
-	private halloweenObservationActive(): boolean {
-		// New sessions are passive; the legacy authenticated monitor remains a local history source.
-		return false;
-	}
+	private halloweenObservationActive(): boolean { return this.halloweenObservation.halloweenObservationActive(); }
 
 	/**
 	 * The single exit point for loot and price alerts.
@@ -5157,21 +5083,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		};
 	}
 
-	/**
-	 * H14.3: `first_seen` and `rare_unpriced_or_bound` no longer alert (`ALWAYS_ALERT_REASONS`);
-	 * the note surfaces them as information instead, read from the Halloween notice this session
-	 * already produced (`episodeId` is `session:<sessionId>`, same key `observeHalloweenDelta`
-	 * writes under). Outside the festival, or without a matching notice, both stay empty.
-	 */
+	/** H14.3: the note's first-seen and rare-unpriced items (`HalloweenObservationRuntime`). */
 	private sessionHalloweenInfoItemIds(sessionId: string): { firstSeenItemIds: number[]; rareUnpricedOrBoundItemIds: number[] } {
-		const notice = this.halloween?.getState().notices.find((entry) => entry.episodeId === `session:${sessionId}`);
-		const firstSeenItemIds: number[] = [];
-		const rareUnpricedOrBoundItemIds: number[] = [];
-		for (const item of notice?.items ?? []) {
-			if (item.reasons.some((reason) => reason.code === 'first_seen')) firstSeenItemIds.push(item.itemId);
-			if (item.reasons.some((reason) => reason.code === 'rare_unpriced_or_bound')) rareUnpricedOrBoundItemIds.push(item.itemId);
-		}
-		return { firstSeenItemIds, rareUnpricedOrBoundItemIds };
+		return this.halloweenObservation.sessionHalloweenInfoItemIds(sessionId);
 	}
 
 	/** Only evidence measured from *this* runtime record may travel with it into the note. */
@@ -5281,21 +5195,6 @@ function sessionEconomyKey(runtime: SessionRuntimeRecord): string | null {
 		: null;
 }
 
-function disabledPriceHistoryState(): PriceHistoryRuntimeState {
-	return {
-		status: 'disabled', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
-		daily: [], lastSampleAtMs: null, nextCaptureAtMs: null, provisionalDayUtc: null,
-	};
-}
-
-function disabledHalloweenState(): HalloweenRuntimeState {
-	return { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null };
-}
-
-function disabledHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
-	return { status: 'disabled', projection: null, notices: [], unreadCount: 0 };
-}
-
 function connectionScopes(state: ConnectionState): string[] {
 	return state.status === 'connected' || state.status === 'warning' ? [...state.details.scopes] : [];
 }
@@ -5306,19 +5205,6 @@ function priceHistorySettingsFrom(settings: TyrianSettings): PriceHistorySetting
 		intervalMinutes: settings.priceHistoryIntervalMinutes,
 		rawRetentionDays: settings.priceHistoryRawRetentionDays,
 		dailyRetentionDays: settings.priceHistoryDailyRetentionDays,
-	};
-}
-
-/**
- * The price alert keeps its own opt-in, but its Halloween half now follows the
- * calendar: after H13.3 `halloweenEnabled` only widens the window, so reading it
- * directly would have left the price surface dark during the festival.
- */
-function halloweenPriceAlertSettingsFrom(settings: TyrianSettings, nowMs: number = Date.now()) {
-	return {
-		enabled: halloweenObservationActive(settings.halloweenEnabled, nowMs) && settings.halloweenPriceAlertEnabled,
-		minimumAboveP90Bps: settings.halloweenPriceAlertMinimumAboveP90Bps,
-		cooldownHours: settings.halloweenPriceAlertCooldownHours,
 	};
 }
 
@@ -5363,13 +5249,6 @@ function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'una
 		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
 	};
 	return codes[status];
-}
-
-/** `ctx.frontmatter` is `any`; this is the one place that reads `tc_item_name` out of it safely. */
-function frontmatterTcItemName(frontmatter: unknown): string | null {
-	if (typeof frontmatter !== 'object' || frontmatter === null) return null;
-	const value = (frontmatter as Record<string, unknown>).tc_item_name;
-	return typeof value === 'string' ? value : null;
 }
 
 /** Closed diagnostic cause per alert kind, so a delivery record never carries the visible text. */

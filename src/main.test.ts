@@ -17,6 +17,8 @@ import { TyrianCompanionCore, type SettingsUpdateResult } from './runtime/tyrian
 import { LiveSessionRuntime, type LiveSessionRuntimePort } from './runtime/live-session-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './runtime/session-command-runtime';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './runtime/session-note-runtime';
+import { HalloweenObservationRuntime, type HalloweenObservationRuntimePort } from './runtime/halloween-observation-runtime';
+import { PriceHistoryRuntime, type PriceHistoryRuntimePort } from './runtime/price-history-runtime';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
@@ -116,6 +118,33 @@ function notesOver(harness: object): SessionNoteRuntime {
 	return new SessionNoteRuntime(portOf(harness));
 }
 
+/**
+ * DE-01, step 3g: the Halloween observation is `HalloweenObservationRuntime`'s. The cases below that
+ * ran it as methods of `TyrianCompanionCore` on a plain object run it on a runtime built over that same
+ * object through the core's own port (`halloweenObservationRuntimePort`), so the account references are
+ * written to the object's own fields. `active` stands in for the observation surface being live, which
+ * a new session never is.
+ */
+function halloweenOver(harness: object, active = true): HalloweenObservationRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		halloweenObservationRuntimePort(this: void, core: object): HalloweenObservationRuntimePort;
+	}).halloweenObservationRuntimePort;
+	const runtime = new HalloweenObservationRuntime(portOf(harness));
+	vi.spyOn(runtime, 'halloweenObservationActive').mockReturnValue(active);
+	return runtime;
+}
+
+/**
+ * DE-01, step 3g: the price history is `PriceHistoryRuntime`'s; the same arrangement, through
+ * `priceHistoryRuntimePort`.
+ */
+function priceHistoryOver(harness: object): PriceHistoryRuntime {
+	const portOf = (TyrianCompanionCore as unknown as {
+		priceHistoryRuntimePort(this: void, core: object): PriceHistoryRuntimePort;
+	}).priceHistoryRuntimePort;
+	return new PriceHistoryRuntime(portOf(harness));
+}
+
 describe('connection diagnostics composition', () => {
 	it('passes the resolved root context from main into ConnectionService', async () => {
 		const parent = {
@@ -184,28 +213,24 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const harness = withObsidianHost({
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
-			halloweenObservationActive: () => true,
 			halloween: { activate, disable, setOnline },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const switchHalloweenAccount = (TyrianCompanionCore.prototype as unknown as {
-			switchHalloweenAccount(this: typeof harness, accountId: string): Promise<string>;
-		}).switchHalloweenAccount;
+		const observation = halloweenOver(harness);
 
-		await switchHalloweenAccount.call(harness, 'account-1');
+		await observation.switchHalloweenAccount('account-1');
 		expect(activate).toHaveBeenCalledTimes(1);
 		expect(disable).toHaveBeenCalledTimes(1);
 
 		// A second "Comprobar conexión" for the SAME account used to call `activate` again,
 		// even though nothing about the account changed.
-		await switchHalloweenAccount.call(harness, 'account-1');
+		await observation.switchHalloweenAccount('account-1');
 		expect(activate).toHaveBeenCalledTimes(1);
 		expect(disable).toHaveBeenCalledTimes(1);
 
 		// A genuinely different account still goes through the full reactivation path.
-		await switchHalloweenAccount.call(harness, 'account-2');
+		await observation.switchHalloweenAccount('account-2');
 		expect(activate).toHaveBeenCalledTimes(2);
 		expect(disable).toHaveBeenCalledTimes(2);
 	});
@@ -214,7 +239,6 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const activate = vi.fn(async () => undefined);
 		const prototype = TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: unknown): Promise<ConnectionState>;
-			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 		};
 		const harness = withObsidianHost({
 			runtimeReady: true,
@@ -227,14 +251,12 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
-			halloweenObservationActive: () => true,
 			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
 			// `checkConnection` calls `this.switchHalloweenAccount`; the harness needs the real
 			// implementation, not a mock, since that private method is exactly what H14.11 fixes.
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-			switchHalloweenAccount: prototype.switchHalloweenAccount,
+			switchHalloweenAccount(this: object, accountId: string, parent?: unknown) { return halloweenOver(this).switchHalloweenAccount(accountId, parent as never); },
 			// Detection is always armed with a connected account now (Lote S, 2026-09-09):
 			// `checkConnection` also calls `this.armAssistedDetection`.
 			armAssistedDetection: vi.fn(async () => 'unavailable'),
@@ -252,7 +274,6 @@ describe('Halloween backfill wiring (H14.11)', () => {
 		const activate = vi.fn(() => new Promise<void>(() => undefined));
 		const prototype = TyrianCompanionCore.prototype as unknown as {
 			checkConnection(this: unknown): Promise<ConnectionState>;
-			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 		};
 		const harness = withObsidianHost({
 			runtimeReady: true,
@@ -265,12 +286,10 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 			alertAccountRef: null as string | null,
 			halloweenAccountRef: null as string | null,
-			halloweenObservationActive: () => true,
 			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 			settings: DEFAULT_SETTINGS,
-			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-			switchHalloweenAccount: prototype.switchHalloweenAccount,
+			switchHalloweenAccount(this: object, accountId: string, parent?: unknown) { return halloweenOver(this).switchHalloweenAccount(accountId, parent as never); },
 			armAssistedDetection: vi.fn(async () => 'unavailable'),
 		});
 
@@ -290,7 +309,6 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			const activate = (): Promise<void> => { activations += 1; return Promise.reject(new Error('Halloween runtime is disposed.')); };
 			const prototype = TyrianCompanionCore.prototype as unknown as {
 				checkConnection(this: unknown): Promise<ConnectionState>;
-				switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
 			};
 			const harness = withObsidianHost({
 				runtimeReady: true,
@@ -303,12 +321,10 @@ describe('Halloween backfill wiring (H14.11)', () => {
 				live: { reconcilePendingProposals: vi.fn(async () => undefined) } satisfies Pick<LiveSessionRuntime, 'reconcilePendingProposals'>,
 				alertAccountRef: null as string | null,
 				halloweenAccountRef: null as string | null,
-				halloweenObservationActive: () => true,
 				halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
 				halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
 				settings: DEFAULT_SETTINGS,
-				// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-				switchHalloweenAccount: prototype.switchHalloweenAccount,
+				switchHalloweenAccount(this: object, accountId: string, parent?: unknown) { return halloweenOver(this).switchHalloweenAccount(accountId, parent as never); },
 				armAssistedDetection: vi.fn(async () => 'unavailable'),
 			});
 			await expect(prototype.checkConnection.call(harness)).resolves.toMatchObject({ status: 'connected' });
@@ -1130,12 +1146,6 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 		manifest: { version: string };
 		updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	}
-	const proto = TyrianCompanionCore.prototype as unknown as {
-		isPriceHistoryOptInOffered(this: OptInHarness): boolean;
-		enablePriceHistory(this: OptInHarness): Promise<void>;
-		dismissPriceHistoryOptIn(this: OptInHarness): Promise<void>;
-	};
-
 	/** Only `settings`, `manifest` and the Settings tab's own `updateSettings`: any other member would be undefined. */
 	function harness(): OptInHarness & { updates: Partial<TyrianSettings>[] } {
 		const updates: Partial<TyrianSettings>[] = [];
@@ -1155,19 +1165,19 @@ describe('price-history opt-in offer (David, 24 sep 2026)', () => {
 
 	it('offers on a default install from settings alone, and both buttons write through updateSettings', async () => {
 		const enabled = harness();
-		expect(proto.isPriceHistoryOptInOffered.call(enabled)).toBe(true);
+		expect(priceHistoryOver(enabled).isPriceHistoryOptInOffered()).toBe(true);
 		expect(enabled.updates).toEqual([]);
-		await proto.enablePriceHistory.call(enabled);
+		await priceHistoryOver(enabled).enablePriceHistory();
 		expect(enabled.updates).toEqual([{ priceHistoryEnabled: true }]);
-		expect(proto.isPriceHistoryOptInOffered.call(enabled)).toBe(false);
+		expect(priceHistoryOver(enabled).isPriceHistoryOptInOffered()).toBe(false);
 
 		const dismissed = harness();
-		await proto.dismissPriceHistoryOptIn.call(dismissed);
+		await priceHistoryOver(dismissed).dismissPriceHistoryOptIn();
 		expect(dismissed.updates).toEqual([{ priceHistoryNoticeDismissedVersion: '0.1.35' }]);
 		expect(dismissed.settings.priceHistoryEnabled).toBe(false);
-		expect(proto.isPriceHistoryOptInOffered.call(dismissed)).toBe(false);
+		expect(priceHistoryOver(dismissed).isPriceHistoryOptInOffered()).toBe(false);
 		dismissed.manifest.version = '0.1.36';
-		expect(proto.isPriceHistoryOptInOffered.call(dismissed)).toBe(true);
+		expect(priceHistoryOver(dismissed).isPriceHistoryOptInOffered()).toBe(true);
 	});
 });
 
@@ -1238,15 +1248,12 @@ describe('Halloween production gating', () => {
 		let session: SessionState = { version: SESSION_STATE_VERSION, status: 'idle' };
 		const harness = {
 			sessions: { getState: () => session },
-			observeHalloweenDelta,
 		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const observe = (TyrianCompanionCore.prototype as unknown as {
-			observeAcceptedHalloweenDelta(this: typeof harness, value: StorageDelta): Promise<void>;
-		}).observeAcceptedHalloweenDelta;
-		await observe.call(harness, delta);
+		const observation = halloweenOver(harness);
+		vi.spyOn(observation, 'observeHalloweenDelta').mockImplementation(observeHalloweenDelta);
+		await observation.observeAcceptedHalloweenDelta(delta);
 		session = { version: SESSION_STATE_VERSION, status: 'active', sessionId: 'session-halloween' } as SessionState;
-		await observe.call(harness, delta);
+		await observation.observeAcceptedHalloweenDelta(delta);
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(delta, 'assisted_poll', 'session:session-halloween');
 	});
 });
