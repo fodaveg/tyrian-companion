@@ -1675,10 +1675,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private syncCollectorHeartbeat(): void { this.vaultRuntime.syncCollectorHeartbeat(); }
 
 	/** R1b: applies a collector/consult switch without a reload (`VaultRuntime`). */
-	private applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> {
-		// RT-17: a device that turns consult with a session store still unanswered has no heartbeat that asks it again.
-		return this.vaultRuntime.applyCollectorModeChange(context).finally(() => { this.sessionStoreRetry?.arm(); });
-	}
+	private applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> { return this.vaultRuntime.applyCollectorModeChange(context); }
 
 	onunload(): void {
 		const finalization = this.shutdownRuntime();
@@ -2450,6 +2447,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			renderInventoryAdvisorViews: () => { core.renderInventoryAdvisorViews(); },
 			renderAchievementsViews: () => { core.renderAchievementsViews(); },
 			applyCollectorModeChange: (context) => core.applyCollectorModeChange(context),
+			// RT-17: a device that turns consult with a session store still unanswered has no heartbeat that asks it again.
+			afterCollectorModeChange: () => { core.sessionStoreRetry?.arm(); },
 		};
 	}
 

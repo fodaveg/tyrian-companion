@@ -105,6 +105,8 @@ export interface VaultRuntimePort {
 	renderAchievementsViews(): void;
 	/** The core's own `applyCollectorModeChange`, so a caller that replaces it there is still honoured. */
 	applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void>;
+	/** Called once a collector/consult switch has been applied, or has failed to (RT-17: the core arms its session store retry). */
+	afterCollectorModeChange(): void;
 }
 
 export class VaultRuntime {
@@ -416,6 +418,10 @@ export class VaultRuntime {
 	 * (reopened in the new mode), Halloween, the heartbeat and the connection warm-up.
 	 */
 	async applyCollectorModeChange(context?: ResolvedLocalDebugActionContext): Promise<void> {
+		try { await this.applyCollectorModeChangeNow(context); } finally { this.port.afterCollectorModeChange(); }
+	}
+
+	private async applyCollectorModeChangeNow(context?: ResolvedLocalDebugActionContext): Promise<void> {
 		const collector = !consulting(this);
 		if (collector) this.port.syncAlertIngameServer();
 		else await this.port.closeAlertIngameServer();
