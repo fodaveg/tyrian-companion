@@ -19509,11 +19509,12 @@
 					"column": 5,
 					"endLine": 637,
 					"endColumn": 4,
-					"classification": "unreviewed",
+					"classification": "observed",
 					"evidence": {
-						"type": "pending_review"
+						"type": "direct_observability_call",
+						"callee": "this.emitNotice"
 					},
-					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
+					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
 				},
 				{
 					"id": "bdc507f4c8cb204f9eff1fa6ab0b72ba1fb41cd6",
@@ -19522,11 +19523,14 @@
 					"column": 22,
 					"endLine": 644,
 					"endColumn": 66,
-					"classification": "unreviewed",
+					"classification": "allowlisted",
 					"evidence": {
-						"type": "pending_review"
+						"type": "reviewed_detached_execution",
+						"target": "this.copyAlertIngameSecretFromCommand",
+						"scope": "callback",
+						"justification": "The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice."
 					},
-					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
+					"reason": "Allowlisted void_expression: The \"callback\" owner deliberately detaches \"this.copyAlertIngameSecretFromCommand\"; that named operation never rejects, because it catches every failure of copyAlertIngameSecret and reports it through emitNotice. Verified target: \"this.copyAlertIngameSecretFromCommand\" in \"callback\"."
 				},
 				{
 					"id": "d1e85b343eb114277e2415603c32b94895402ff7",
@@ -19536,11 +19540,14 @@
 					"endLine": 666,
 					"endColumn": 4,
 					"registration": "then",
-					"classification": "unreviewed",
+					"classification": "allowlisted",
 					"evidence": {
-						"type": "pending_review"
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "resolveAlertAccountRef",
+						"justification": "The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration."
 					},
-					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
+					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"then\" purely to cache the account hash it just computed; the digest has no observable side effect and its rejection is already reduced to a null scope on the same registration. Verified registration: \"then\" in \"resolveAlertAccountRef\"."
 				},
 				{
 					"id": "378194b415575bb405c10210312836c46456263c",
@@ -19550,11 +19557,14 @@
 					"endLine": 666,
 					"endColumn": 91,
 					"registration": "finally",
-					"classification": "unreviewed",
+					"classification": "allowlisted",
 					"evidence": {
-						"type": "pending_review"
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "resolveAlertAccountRef",
+						"justification": "The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own."
 					},
-					"reason": "Pending an explicit observability review; candidate generation never approves a boundary."
+					"reason": "Allowlisted callback_registration: The \"resolveAlertAccountRef\" owner registers \"finally\" only to clear its own in-flight slot so a later alert can retry; it performs no I/O and cannot fail on its own. Verified registration: \"finally\" in \"resolveAlertAccountRef\"."
 				}
 			]
 		},
