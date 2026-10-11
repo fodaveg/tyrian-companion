@@ -183,6 +183,11 @@ precio hundido en ventana) con la recomendación y su motivo visibles.
 
 ### Prueba 3: Fallos del cierre
 
+> **Nota (QA del 11 oct 2026):** las sesiones por API ya no existen; la fuente es siempre
+> `nexus_inventory` (addon de Nexus). Esta prueba se ejecuta adaptada a la sesión del addon, como hizo la
+> [QA del 11 oct](evidencia/2026-10-11-h18-29-qa-0647.md). Los pasos que
+> dependen de la captura por red no tienen equivalente.
+
 Verificar los cuatro puntos de fallo del cierre (antes y después de guardar el estado interno, antes
 y después de escribir la nota), el reintento, y dos ventanas compitiendo por la misma sesión
 (auditoría §8.3).
@@ -217,6 +222,10 @@ captura del estado tras forzar el camino de `error`.
 
 ### Prueba 4: Suspensión
 
+> **Nota (QA del 11 oct 2026):** las sesiones por API ya no existen; la fuente es siempre
+> `nexus_inventory` (addon de Nexus). Esta prueba se ejecuta adaptada a la sesión del addon, como hizo la
+> [QA del 11 oct](evidencia/2026-10-11-h18-29-qa-0647.md). 
+
 Verificar que suspender el equipo durante una sesión no la pierde al reactivar, y que empezar la
 sesión siguiente no exige limpiar la anterior a mano (auditoría §8.4).
 
@@ -248,6 +257,11 @@ resultado al intentar iniciar sin limpiar.
 ---
 
 ### Prueba 5: Sesión manual año normal
+
+> **Nota (QA del 11 oct 2026):** las sesiones por API ya no existen; la fuente es siempre
+> `nexus_inventory` (addon de Nexus). Esta prueba se ejecuta adaptada a la sesión del addon, como hizo la
+> [QA del 11 oct](evidencia/2026-10-11-h18-29-qa-0647.md). La calidad
+> `exact`/`estimated` y la comparación por calidad eran de las sesiones por API y no aplican.
 
 Verificar que una sesión manual de 60 minutos en un mapa normal (fuera del Laberinto) se clasifica sin
 fin falso, aparece en el historial y en la comparación de rendimiento con su calidad separada, y que
@@ -281,6 +295,11 @@ captura de la comparación de rendimiento con el desglose por calidad.
 
 ### Prueba 6: Dos sesiones con detección rearmada
 
+> **Nota (QA del 11 oct 2026):** las sesiones por API ya no existen; la fuente es siempre
+> `nexus_inventory` (addon de Nexus). Esta prueba se ejecuta adaptada a la sesión del addon, como hizo la
+> [QA del 11 oct](evidencia/2026-10-11-h18-29-qa-0647.md). La detección
+> asistida por API ya no existe.
+
 Verificar que, tras completar una sesión con la detección asistida activada, la detección vuelve a
 funcionar sin tener que comprobar la conexión a mano (auditoría §8.6, hallazgo F7).
 
@@ -307,6 +326,11 @@ y de la propuesta o inicio de la segunda, sin pulsar **Comprobar conexión**.
 ---
 
 ### Prueba 7: Atribución
+
+> **Nota (QA del 11 oct 2026):** obsoleta para la sesión v1. La sesión del addon observa solo las bolsas del
+> personaje controlado y el modelo live no tiene las razones `tp_buy_observed`, `tp_sell_observed`,
+> `wallet_decreased` ni `delivery_items_changed`: una disminución es «causa desconocida». Pendiente de
+> reescribir sobre el modelo live. La QA del 11 oct no la ejecutó.
 
 Verificar que el delta no confunde un traslado A→B con ganancia, distingue movimientos entre
 ubicaciones, y separa compras en el bazar/mercader sin contaminar la sesión (auditoría §8.7).
@@ -339,21 +363,27 @@ encima de 250 se muestran con el mínimo observado, no como la capacidad exacta 
 
 **Plataforma:** Fedora con Proton (primaria).
 
+> **Nota (QA del 11 oct 2026):** el control de capacidad de materiales se retiró de Ajustes en `00ddcaf6`
+> (6 oct). El ajuste sigue en `data.json` (`materialStorageCapacity`), pero ya no tiene fila en Ajustes.
+
 **Pasos:**
-1. Sin configurar una capacidad de material en Ajustes, sincroniza un vault con más de 250 unidades de
-   algún material.
-2. Configura una capacidad explícita (250-3.000, en pasos de 250) y repite.
+1. Sincroniza un vault con más de 250 unidades de algún material en el almacén (la QA usó 400 de ectoplasma).
+2. En el Asesor, mira la línea de materiales y la fila de un material con hueco conocido (la QA usó mithril
+   con 260 en bolsas y un hueco de 240).
+3. Opcional, solo editando `data.json`: fija `materialStorageCapacity` en 500 y repite.
 
 **Resultado esperado:**
-- Sin capacidad configurada, se muestra el mínimo garantizado de 250 si no hay evidencia de más. Si
-  un depósito observado supera 250, se muestra el mínimo observado redondeado al siguiente múltiplo
-  de 250, con su procedencia explícita; nunca como capacidad exacta.
-- Con capacidad configurada, la suma de depósito nunca supera el hueco demostrado.
-- Ninguna decisión se bloquea solo por desconocer la capacidad exacta; se separa lo conocido de lo
-  asumido.
+- Sin capacidad fijada, el Asesor dice «Materiales: al menos 500 por material (mínimo visto en tu almacén)»
+  y la fila del material muestra «260 / al menos 500 · hueco antes: 240». «Depositar material» no se
+  bloquea.
+- El depósito propuesto es igual al hueco demostrado (240 en el ejemplo); el resto va a «Vender ya».
+- Con la capacidad fijada en `data.json`, el Asesor dice «500 por material (configurada)» y el depósito
+  sigue siendo igual al hueco.
+- Ninguna decisión se bloquea solo por desconocer la capacidad exacta.
 
-**Evidencia mínima:** captura de Ajustes con y sin capacidad configurada; captura de
-`Bases/Inventory.base` (vista «Materiales») mostrando el mínimo observado.
+**Evidencia mínima:** captura del Asesor con la línea «al menos 500 · mínimo visto» y la fila con el
+depósito igual al hueco. `Bases/Inventory.base` no tiene columnas de capacidad: el mínimo visto solo sale
+en el Asesor.
 
 **Versión probada:** ______________
 
