@@ -27,13 +27,16 @@
  * - `priceHistory` uses the core's own IndexedDB databases on THIS device;
  * - `tcpServer` (R4) is Hebra's byte server through `api.tcp`; without it (web, iPhone) it refuses
  *   with `EHEBRA_NO_BRIDGE`. `notify.system` uses Hebra's system notifications when it has them and
- *   the browser `Notification` otherwise;
+ *   the browser `Notification` otherwise; with `notify.urgency` (API 1.5) it also asks for the same
+ *   `silent`/`urgency` options as the Obsidian banner (critical on Linux, so GNOME shows it over a
+ *   full-screen game). `instance.lock` (true only on Linux desktop) confirms the `flock` of the
+ *   instance, but Tyrian's own life lock stays as it is (HP-02) and the plugin does not read it;
  * - `environment.onUncaughtError` only lets Tyrian's errors through, not Hebra's.
  */
-import type { HebraPluginApi } from 'hebra-plugin-api';
+import type { HebraPluginApi, PluginSystemNotifyInput } from 'hebra-plugin-api';
 
 import { browserAlertAudioContextFactory, closeBrowserAlertAudio, playAlertSound } from '../../alerts/alert-sound';
-import { hostSystemNotificationConstructor, showSystemNotification } from '../../alerts/alert-system-notification';
+import { hostSystemNotificationConstructor, showSystemNotification, systemNotificationOptions } from '../../alerts/alert-system-notification';
 import { MANAGED_ASSETS_MANIFEST } from '../../assets/managed-assets-model';
 import type { Translator } from '../../core/i18n';
 import { localDebugDirectory } from '../../core/local-debug-contract';
@@ -275,6 +278,21 @@ export function isTyrianFailure(failure: unknown, filename?: string, moduleUrl?:
 	if (mentions(filename)) return true;
 	if (failure instanceof Error) return mentions(failure.stack);
 	return false;
+}
+
+/**
+ * What `api.notify.system` receives. A Hebra with `notify.urgency` (API 1.5) reads `silent` and
+ * `urgency`, so it gets what the Obsidian banner asks for (`systemNotificationOptions`: silent
+ * everywhere, critical on Linux); an older Hebra gets title and body only, as before.
+ */
+export function hebraSystemNotifyInput(
+	api: Pick<HebraPluginApi, 'has'>,
+	input: { readonly title: string; readonly body: string },
+	platform: TyrianPlatform,
+): PluginSystemNotifyInput {
+	if (!api.has('notify.urgency')) return { title: input.title, body: input.body };
+	const options = systemNotificationOptions({ ...input, platform: platform === 'linux' ? 'linux' : 'other' });
+	return { title: input.title, body: input.body, silent: options.silent, ...(options.urgency === undefined ? {} : { urgency: options.urgency }) };
 }
 
 /**
@@ -606,7 +624,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			: unavailableTcpServerPort('the TCP bridge only exists in the desktop app (macOS, Linux, Windows)'),
 		notify: {
 			system: (input) => (api.has('notify.system')
-				? api.notify.system({ title: input.title, body: input.body })
+				? api.notify.system(hebraSystemNotifyInput(api, input, deps.platform))
 				: showSystemNotification(hostSystemNotificationConstructor(win), {
 					...input,
 					platform: deps.platform === 'linux' ? 'linux' : 'other',

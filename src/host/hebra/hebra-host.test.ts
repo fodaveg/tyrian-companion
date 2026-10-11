@@ -602,9 +602,27 @@ describe('createHebraHost: the other ports', () => {
 		const system = vi.spyOn(test.api.notify, 'system').mockReturnValue('pending');
 		const handle = await createHebraHost(deps(test));
 		expect(handle.host.notify.system({ title: 'T', body: 'B' })).toBe('pending');
-		expect(system).toHaveBeenCalledWith({ title: 'T', body: 'B' });
+		// The test Hebra has `notify.urgency`: silent always, critical only on Linux (not on macOS).
+		expect(system).toHaveBeenCalledWith({ title: 'T', body: 'B', silent: true });
 		// No `AudioContext` in the test environment: it does not throw, it says so.
 		expect(handle.host.notify.sound()).toBe('unavailable');
+	});
+
+	it('notify.system asks Hebra for critical urgency on Linux and always for silence when Hebra has notify.urgency', async () => {
+		const test = createTyrianTestApi({ platform: 'linux' });
+		const system = vi.spyOn(test.api.notify, 'system').mockReturnValue('shown');
+		const handle = await createHebraHost(deps(test, { platform: 'linux' }));
+		handle.host.notify.system({ title: 'T', body: 'B' });
+		expect(system).toHaveBeenCalledWith({ title: 'T', body: 'B', silent: true, urgency: 'critical' });
+	});
+
+	it('notify.system sends only title and body to a Hebra before 1.5.0 (no notify.urgency)', async () => {
+		const test = createTyrianTestApi({ platform: 'linux', notifyUrgency: false });
+		expect(test.api.has('notify.urgency')).toBe(false);
+		const system = vi.spyOn(test.api.notify, 'system').mockReturnValue('shown');
+		const handle = await createHebraHost(deps(test, { platform: 'linux' }));
+		handle.host.notify.system({ title: 'T', body: 'B' });
+		expect(system).toHaveBeenCalledWith({ title: 'T', body: 'B' });
 	});
 
 	it('dispose closes the AudioContext the sound channel opened', async () => {
