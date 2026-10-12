@@ -3248,7 +3248,9 @@
 .tyrian-live-session__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tyrian-tile), 1fr)); gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
 .tyrian-live-session__tile { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-s); background: var(--background-secondary); }
 .tyrian-live-session__tile img, .tyrian-live-session__tile .tyrian-live-session__missing { width: 100%; height: 100%; object-fit: cover; }
-.tyrian-live-session__missing { display: grid; place-items: center; box-sizing: border-box; border: 1px dashed var(--background-modifier-border); border-radius: inherit; color: var(--text-muted); font-size: var(--font-smallest); }
+/* The stand-in for an icon that has no source or did not load: a quiet filled chip with a `?`, meant to look
+   like a placeholder and not like a broken frame (a dashed border read as one, David, 12 Oct 2026). */
+.tyrian-live-session__missing { display: grid; place-items: center; box-sizing: border-box; border-radius: inherit; background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
 .tyrian-live-session__qty { position: absolute; top: 0; right: 0; max-width: 100%; overflow: hidden; padding: var(--size-2-1) var(--size-4-1); border-bottom-left-radius: var(--radius-s); background: var(--background-primary); color: var(--text-normal); font-size: var(--font-smallest); font-weight: var(--font-semibold); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; }
 .tyrian-live-session__tile[data-neg] .tyrian-live-session__qty, .tyrian-live-session__delta[data-neg] { color: var(--text-error); }
 /* The plot takes the pointer and the keyboard for its cursor: `pan-y` leaves vertical scrolling to the finger and hands
@@ -3292,13 +3294,29 @@
 .tyrian-live-session__delta { font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tyrian-live-session__more { display: flex; align-items: center; gap: var(--size-4-3); margin-top: var(--size-4-2); }
 .tyrian-live-session__more span { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
-.tyrian-live-session__previous-rows { margin: 0; padding: var(--size-4-1) 0 0; list-style: none; }
-.tyrian-live-session__previous-row { display: flex; flex-wrap: wrap; column-gap: var(--size-4-4); padding: var(--size-4-1) 0; font-size: var(--font-ui-small); }
-.tyrian-live-session__previous-grid { flex: 0 0 100%; margin-top: var(--size-4-1); }
-.tyrian-live-session__previous-coins { flex: 0 0 100%; margin-top: var(--size-4-1); }
+/* Previous sessions: each saved session is a row separated from the next by a rule, read top to bottom. Its head
+   holds the title (the day in semibold, then the hours) and, when the note exists, the «View summary» text action;
+   under it one muted line of figures with the value in evidence (duration · value · objects, the dots are a pseudo
+   with an empty alternative text, plain `content` first as in the ✓ of «Logros»); then the objects and the coins as
+   small fixed-size tiles (`--tyrian-tile`, never stretched to the column) with the quantity as a caption UNDER the
+   icon, so neither hides the other. The `+N` of the objects left out is a count chip, like the icon-less placeholder. */
+.tyrian-live-session__previous-rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.tyrian-live-session__previous-row { display: flex; flex-direction: column; gap: var(--size-4-2); padding: var(--size-4-3) 0; font-size: var(--font-ui-small); }
+.tyrian-live-session__previous-row + .tyrian-live-session__previous-row { border-top: 1px solid var(--background-modifier-border); }
+.tyrian-live-session__previous-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--size-4-4); row-gap: var(--size-4-1); min-width: 0; }
+.tyrian-live-session__previous-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--size-4-2); min-width: 0; font-variant-numeric: tabular-nums; }
+.tyrian-live-session__previous-when { color: var(--text-normal); }
+.tyrian-live-session__previous-when time { font-weight: var(--font-semibold); }
+.tyrian-live-session__previous-figures { column-gap: var(--size-4-2); color: var(--text-muted); }
+.tyrian-live-session__previous-figures > * + *::before { content: '·'; content: '·' / ''; margin-inline-end: var(--size-4-2); color: var(--text-faint); }
+.tyrian-live-session__previous-value { color: var(--text-normal); font-weight: var(--font-semibold); }
+.tyrian-live-session__previous-grid, .tyrian-live-session__previous-coins { grid-template-columns: repeat(auto-fill, var(--tyrian-tile)); justify-content: start; gap: var(--size-4-2); }
+.tyrian-live-session__previous-row .tyrian-live-session__tile { display: grid; grid-template-rows: var(--tyrian-tile) auto; row-gap: var(--size-2-1); aspect-ratio: auto; overflow: visible; border-radius: 0; background: none; }
+.tyrian-live-session__previous-row .tyrian-live-session__tile img, .tyrian-live-session__previous-row .tyrian-live-session__tile .tyrian-live-session__missing { border-radius: var(--radius-s); background: var(--background-secondary); }
+.tyrian-live-session__previous-row .tyrian-live-session__qty { position: static; max-width: 100%; padding: 0; border-radius: 0; background: none; color: var(--text-muted); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.tyrian-live-session__previous-row .tyrian-live-session__tile[data-neg] .tyrian-live-session__qty { color: var(--text-error); }
 .tyrian-live-session__tile-more { display: grid; place-items: center; color: var(--text-muted); font-size: var(--font-ui-small); font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; }
-.tyrian-live-session__previous-line { display: flex; flex-wrap: wrap; column-gap: var(--size-4-2); min-width: 0; font-variant-numeric: tabular-nums; }
-.tyrian-live-session__previous-line time { color: var(--text-muted); }
+.tyrian-live-session__previous-row .tyrian-live-session__tile-more { grid-template-rows: var(--tyrian-tile); border-radius: var(--radius-s); background: color-mix(in srgb, var(--text-muted) 12%, transparent); font-size: var(--font-ui-smaller); }
 .tyrian-live-session__previous-alert { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-3); }
 .tyrian-live-session__previous-alert p { margin: 0; }
 .tyrian-live-session__previous-alert button, .tyrian-live-session__previous .tyrian-live-session__more-button { min-height: 44px; }
@@ -3406,13 +3424,11 @@
    `.tyrian-live-session button.…` (0,2,1) and not the bare class: Obsidian boxes every
    `button:not(.clickable-icon)` (0,1,1) with a fill, a shadow and `--input-height`, and Hebra's host
    sheet gives `button` a border, a padding and `--hit-pointer`; a class alone lost to the first, and
-   the row grew to the button's height. It lays out its date and hours like the `previous-line` it
-   sits in (same column gap, wrapping), so a row with a link reads and measures like one without. */
+   the row grew to the button's height. It is the «View summary» text beside the row's title, sized like
+   the row, so a row with the action measures like one without; on a touch device it keeps a 44 px target. */
 .tyrian-live-session button.tyrian-live-session__summary-link {
 	display: inline-flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	column-gap: var(--size-4-2);
+	align-items: center;
 	min-width: 0;
 	height: auto;
 	min-height: 0;
@@ -3424,11 +3440,14 @@
 	box-shadow: none;
 	color: var(--link-color, var(--text-accent));
 	font: inherit;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-normal);
 	line-height: inherit;
 	text-align: start;
+	white-space: nowrap;
 	cursor: pointer;
 }
-.tyrian-live-session button.tyrian-live-session__summary-link time { color: inherit; }
+.is-mobile .tyrian-live-session button.tyrian-live-session__summary-link { min-height: 44px; }
 .tyrian-live-session button.tyrian-live-session__summary-link:hover,
 .tyrian-live-session button.tyrian-live-session__summary-link:active {
 	background: none;

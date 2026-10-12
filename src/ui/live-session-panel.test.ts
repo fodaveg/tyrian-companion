@@ -957,21 +957,30 @@ describe('previous sessions block', () => {
 		}
 	});
 
-	it('links a session to its summary note by its date and hours, and leaves a session without one as plain text', async () => {
-		for (const [locale, label] of [['en', 'Open the summary note of the session of'], ['es', 'Abrir la nota resumen de la sesión del']] as const) {
+	it('offers «View summary» beside the title of a session that has its note, named after the session; a session without one has no action', async () => {
+		for (const [locale, text, label] of [['en', 'View summary', 'Open the summary note of the session of'], ['es', 'Ver resumen', 'Abrir la nota resumen de la sesión del']] as const) {
 			const openSessionSummaryNote = vi.fn();
 			const rows = [entry(0, { summaryPath: 'GW2/summaries/a - summary.md' }), entry(1), entry(2, { summaryPath: null })];
 			const h = harness(idleView(), control(), locale, vi.fn(async () => rows), undefined, { openSessionSummaryNote });
 			open(h.panel);
 			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(3));
-			const links = rowsOf(h.panel).map((row) => row.querySelector<HTMLButtonElement>('button.mod-link'));
+			const links = rowsOf(h.panel).map((row) => row.querySelector<HTMLButtonElement>('button.mod-link.tyrian-live-session__summary-link'));
 			expect(links[1]).toBeNull(); expect(links[2]).toBeNull();
 			const link = links[0]!;
 			expect(link.type).toBe('button');
-			expect(link.getAttribute('aria-label')).toBe(`${label} ${Array.from(link.children, (part) => part.textContent).join(' ')}`);
-			expect(link.querySelector('time')!.getAttribute('datetime')).toBe(rows[0]!.startedAt);
+			expect(link.textContent).toBe(text);
+			// The day and hours are the title, plain text, and the action sits next to them in the head; the name says which session.
+			const head = rowsOf(h.panel)[0]!.querySelector('.tyrian-live-session__previous-head')!;
+			const when = head.querySelector('.tyrian-live-session__previous-when')!;
+			expect(Array.from(head.children)).toEqual([when, link]);
+			expect(link.querySelector('time')).toBeNull();
+			expect(when.querySelector('time')!.getAttribute('datetime')).toBe(rows[0]!.startedAt);
+			expect(link.getAttribute('aria-label')).toBe(`${label} ${Array.from(when.children, (part) => part.textContent).join(' ')}`);
 			link.click();
 			expect(openSessionSummaryNote).toHaveBeenCalledExactlyOnceWith('GW2/summaries/a - summary.md');
+			// A row without the note keeps the same title and reserves no slot for the action.
+			const bareHead = rowsOf(h.panel)[1]!.querySelector('.tyrian-live-session__previous-head')!;
+			expect(Array.from(bareHead.children, (part) => part.className)).toEqual(['tyrian-live-session__previous-line tyrian-live-session__previous-when']);
 		}
 		// Without the action there is nothing to press, even when the entry knows its note.
 		const bare = harness(idleView(), control(), 'en', vi.fn(async () => [entry(0, { summaryPath: 'x.md' })]));
@@ -980,19 +989,14 @@ describe('previous sessions block', () => {
 		expect(rowsOf(bare.panel)[0]!.querySelector('button')).toBeNull();
 	});
 
-	it('lays out a linked date and hours like an unlinked row: same parts, and a text link with the line\'s own gap', async () => {
+	it('lays out a row with the action like one without: same title and figures, and the action is a text link, not a boxed button', async () => {
 		const linked = harness(idleView(), control(), 'en', vi.fn(async () => [entry(0, { summaryPath: 'a.md' })]), undefined, { openSessionSummaryNote: vi.fn() });
 		const plain = harness(idleView(), control(), 'en', vi.fn(async () => [entry(0)]));
 		open(linked.panel); open(plain.panel);
 		await vi.waitFor(() => { expect(rowsOf(linked.panel)).toHaveLength(1); expect(rowsOf(plain.panel)).toHaveLength(1); });
-		const linkedLine = rowsOf(linked.panel)[0]!.querySelector('.tyrian-live-session__previous-line')!;
-		const plainLine = rowsOf(plain.panel)[0]!.querySelector('.tyrian-live-session__previous-line')!;
-		const link = linkedLine.querySelector<HTMLButtonElement>('button.tyrian-live-session__summary-link')!;
-		const parts = (parent: Element): string[] => Array.from(parent.children, (part) => `${part.tagName}|${part.textContent ?? ''}`);
-		// The link wraps the very elements an unlinked line holds, and nothing else; the gap between them is CSS on both sides.
-		expect(Array.from(linkedLine.children)).toEqual([link]);
-		expect(parts(link)).toEqual(parts(plainLine));
-		expect(link.textContent).toBe(plainLine.textContent);
+		const lines = (panel: LiveSessionPanel): string[] => Array.from(rowsOf(panel)[0]!.querySelectorAll('.tyrian-live-session__previous-line'),
+			(line) => `${line.className}: ${Array.from(line.children, (part) => `${part.tagName}|${part.textContent ?? ''}`).join(' ')}`);
+		expect(lines(linked.panel)).toEqual(lines(plain.panel));
 		// A happy-dom test cannot lay out a stylesheet, so the CSS text is what is under test (a `.css` is the contract itself).
 		const css = readFileSync(join(process.cwd(), 'styles.css'), 'utf8');
 		const ruleOf = (selector: string): string => {
@@ -1000,16 +1004,73 @@ describe('previous sessions block', () => {
 			expect(start, selector).toBeGreaterThanOrEqual(0);
 			return css.slice(start, css.indexOf('}', start));
 		};
-		const lineGap = /column-gap: ([^;]+);/u.exec(ruleOf('.tyrian-live-session__previous-line'))![1];
+		// (0,2,1): it beats Obsidian's `button:not(.clickable-icon)` and Hebra's host `button` rule without `!important`.
 		const rule = ruleOf('.tyrian-live-session button.tyrian-live-session__summary-link');
-		expect(rule).toContain(`column-gap: ${lineGap ?? ''};`);
-		for (const declaration of ['display: inline-flex;', 'flex-wrap: wrap;', 'align-items: baseline;', 'height: auto;', 'min-height: 0;',
-			'padding: 0;', 'border: 0;', 'background: none;', 'box-shadow: none;', 'color: var(--link-color, var(--text-accent));', 'cursor: pointer;']) {
+		for (const declaration of ['display: inline-flex;', 'height: auto;', 'min-height: 0;', 'padding: 0;', 'border: 0;', 'background: none;',
+			'box-shadow: none;', 'color: var(--link-color, var(--text-accent));', 'font-size: var(--font-ui-small);', 'cursor: pointer;']) {
 			expect(rule).toContain(declaration);
 		}
 		expect(css).toMatch(/\.tyrian-live-session button\.tyrian-live-session__summary-link:hover,[^{]*\{[^}]*text-decoration: underline;/u);
 		expect(css).toMatch(/\.tyrian-live-session button\.tyrian-live-session__summary-link:focus-visible \{[^}]*outline: 2px solid/u);
+		expect(ruleOf('.is-mobile .tyrian-live-session button.tyrian-live-session__summary-link')).toContain('min-height: 44px;');
 		expect(css).not.toMatch(/tyrian-live-session__summary-link[^{]*\{[^}]*!important/u);
+	});
+
+	it('separates the sessions, keeps the tiles small with the quantity under the icon, and draws a missing icon as a chip, not a dashed frame', () => {
+		// A happy-dom test cannot lay out a stylesheet, so the CSS text is what is under test (a `.css` is the contract itself).
+		const css = readFileSync(join(process.cwd(), 'styles.css'), 'utf8');
+		const ruleOf = (selector: string): string => {
+			const start = css.indexOf(`\n${selector} {`);
+			expect(start, selector).toBeGreaterThanOrEqual(0);
+			return css.slice(start, css.indexOf('}', start));
+		};
+		// One session after another: a rule between them, and air inside each one.
+		expect(ruleOf('.tyrian-live-session__previous-row + .tyrian-live-session__previous-row')).toContain('border-top: 1px solid var(--background-modifier-border);');
+		expect(ruleOf('.tyrian-live-session__previous-row')).toMatch(/flex-direction: column;[^}]*padding: var\(--size-4-3\) 0;/u);
+		// Hierarchy: the day is the title, the figures are muted and the value stands out.
+		expect(ruleOf('.tyrian-live-session__previous-when time')).toContain('font-weight: var(--font-semibold);');
+		expect(ruleOf('.tyrian-live-session__previous-figures')).toContain('color: var(--text-muted);');
+		expect(ruleOf('.tyrian-live-session__previous-value')).toMatch(/color: var\(--text-normal\);[^}]*font-weight: var\(--font-semibold\);/u);
+		// Tiles stay `--tyrian-tile` wide in any column (never stretched), the quantity sits under the icon, a loss stays red.
+		expect(ruleOf('.tyrian-live-session__previous-grid, .tyrian-live-session__previous-coins')).toContain('grid-template-columns: repeat(auto-fill, var(--tyrian-tile));');
+		expect(ruleOf('.tyrian-live-session__previous-row .tyrian-live-session__tile')).toContain('grid-template-rows: var(--tyrian-tile) auto;');
+		expect(ruleOf('.tyrian-live-session__previous-row .tyrian-live-session__qty')).toMatch(/position: static;[^}]*text-overflow: ellipsis;/u);
+		expect(ruleOf('.tyrian-live-session__previous-row .tyrian-live-session__tile[data-neg] .tyrian-live-session__qty')).toContain('color: var(--text-error);');
+		// The `+N` is a count chip, and the icon-less placeholder is a filled chip (no dashed border anywhere in it).
+		expect(ruleOf('.tyrian-live-session__previous-row .tyrian-live-session__tile-more')).toContain('border-radius: var(--radius-s);');
+		expect(ruleOf('.tyrian-live-session__missing')).not.toContain('dashed');
+		expect(ruleOf('.tyrian-live-session__missing')).toContain('background: color-mix(in srgb, var(--text-muted) 12%, transparent);');
+		// Theme variables only: no fixed colour in the previous-sessions rules.
+		expect(css).not.toMatch(/tyrian-live-session__previous[^{]*\{[^}]*#[a-f\d]{3,8}/iu);
+	});
+
+	it('names the figures and the tiles for the pointer, and a session of 0 objects is only its title and figures', async () => {
+		const noIcon: LiveSessionPanelActions['getLiveSessionEntity'] = (kind, id) => kind === 'currency' && id === 2 ? { name: 'Karma', icon: null } : { name: `Item ${String(id)}`, icon: 'https://render.guildwars2.com/file/hash/1.png' };
+		const rows = [entry(0, { startedAt: '2026-10-05T06:00:00.000Z', endedAt: '2026-10-05T07:36:07.000Z', itemCount: -58, items: Array.from({ length: 14 }, (_, i) => ({ idNumber: 100 + i, net: i === 0 ? -1_234 : 1 })),
+			currencies: [{ idNumber: 1, net: 12_345 }, { idNumber: 2, net: -1_500 }] }), entry(1, { itemCount: 0 })];
+		for (const [locale, duration, value] of [['es', 'Duración', 'Valor estimado'], ['en', 'Duration', 'Estimated value']] as const) {
+			const h = harness(idleView(), control(), locale, vi.fn(async () => rows), noIcon);
+			open(h.panel);
+			await vi.waitFor(() => expect(rowsOf(h.panel)).toHaveLength(2));
+			const [first, second] = rowsOf(h.panel) as [HTMLElement, HTMLElement];
+			expect(first.querySelector<HTMLElement>('.tyrian-live-session__previous-duration')!.title).toBe(duration);
+			expect(first.querySelector<HTMLElement>('.tyrian-live-session__previous-duration')!.textContent).toBe('1:36:07');
+			expect(first.querySelector<HTMLElement>('.tyrian-live-session__previous-value')!.title).toBe(value);
+			expect(first.querySelector('.tyrian-live-session__previous-objects')!.textContent).toBe(locale === 'es' ? '-58 objetos' : '-58 objects');
+			// Twelve tiles and a chip for the two left out, each one named; a loss is marked.
+			const tiles = Array.from(first.querySelectorAll<HTMLElement>('.tyrian-live-session__previous-grid > li'));
+			expect(tiles).toHaveLength(13);
+			expect(tiles[0]!.title).toBe('Item 100'); expect(tiles[0]!.hasAttribute('data-neg')).toBe(true);
+			expect(tiles[12]!.textContent).toBe('+2'); expect(tiles[12]!.title).toBe(locale === 'es' ? '2 objetos más' : '2 more objects');
+			// A coin without an icon keeps its name in the tooltip and the accessible name, over the placeholder.
+			const karma = first.querySelectorAll<HTMLElement>('.tyrian-live-session__previous-coins > li')[1]!;
+			expect(karma.querySelector('.tyrian-live-session__missing')).not.toBeNull();
+			expect(karma.title).toBe(`Karma, ${(-1_500).toLocaleString(locale)}`);
+			expect(karma.getAttribute('aria-label')).toBe(karma.title);
+			// Nothing under the figures of a session with no objects: no list, no empty slot.
+			expect(second.querySelectorAll('ul')).toHaveLength(0);
+			expect(Array.from(second.children, (part) => part.className)).toEqual(['tyrian-live-session__previous-head', 'tyrian-live-session__previous-line tyrian-live-session__previous-figures']);
+		}
 	});
 
 	it('lists each session in order with day, hours, duration, saved value and objects', async () => {

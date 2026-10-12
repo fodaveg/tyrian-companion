@@ -75,7 +75,8 @@ const SIMPLE_EN = {
  previous: 'Previous sessions', previousLoading: 'Loading sessions…', previousEmpty: 'There are no saved sessions yet.',
  previousFailed: 'The saved sessions could not be read.', retry: 'Retry', showMoreSessions: 'Show 10 more',
  objectsOne: '1 object', objectsMany: '{n} objects',
- previousOpenSummaryLabel: 'Open the summary note of the session of {when}',
+ previousOpenSummary: 'View summary', previousOpenSummaryLabel: 'Open the summary note of the session of {when}',
+ previousDuration: 'Duration',
  previousItemsLabel: 'Objects of the session of {when}', moreObjects: '{n} more objects',
 } as const;
 const SIMPLE_ES: Record<keyof typeof SIMPLE_EN, string> = {
@@ -103,7 +104,8 @@ const SIMPLE_ES: Record<keyof typeof SIMPLE_EN, string> = {
  previous: 'Sesiones anteriores', previousLoading: 'Cargando sesiones…', previousEmpty: 'Todavía no hay sesiones guardadas.',
  previousFailed: 'No se han podido leer las sesiones guardadas.', retry: 'Reintentar', showMoreSessions: 'Ver 10 más',
  objectsOne: '1 objeto', objectsMany: '{n} objetos',
- previousOpenSummaryLabel: 'Abrir la nota resumen de la sesión del {when}',
+ previousOpenSummary: 'Ver resumen', previousOpenSummaryLabel: 'Abrir la nota resumen de la sesión del {when}',
+ previousDuration: 'Duración',
  previousItemsLabel: 'Objetos de la sesión del {when}', moreObjects: '{n} objetos más',
 };
 export type LiveSessionCopyKey = keyof typeof EN | keyof typeof SIMPLE_EN;

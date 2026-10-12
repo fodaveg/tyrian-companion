@@ -476,38 +476,49 @@ export class LiveSessionPanel {
 			if (cached === undefined) { cached = { li: this.node('li', 'tyrian-live-session__previous-row'), sig: '' }; this.previousCache.set(entry.sessionRef, cached); }
 			if (cached.sig !== sig) {
 				cached.sig = sig;
+				// The row is a card: a head (the session's day and hours as its title, and the «View summary» action when
+				// its note exists), one line of figures, then the objects and the coins. The day and hours stay plain text.
 				const started = this.node('time', '', this.dayOf(entry.startedAt));
 				started.setAttribute('datetime', entry.startedAt);
 				const range = this.node('span', '', `${this.timeOfDay(entry.startedAt, false)}–${this.timeOfDay(entry.endedAt, false)}`);
-				const duration = this.node('span', '', this.clock(Date.parse(entry.endedAt) - Date.parse(entry.startedAt)));
-				const when = this.node('span', 'tyrian-live-session__previous-line');
+				const whenText = `${started.textContent ?? ''} ${range.textContent ?? ''}`;
+				const when = this.node('span', 'tyrian-live-session__previous-line tyrian-live-session__previous-when');
+				when.append(started, range);
+				const head = this.node('div', 'tyrian-live-session__previous-head');
+				head.append(when);
 				const summaryPath = entry.summaryPath ?? null;
 				const openSummary = this.actions.openSessionSummaryNote?.bind(this.actions);
 				if (summaryPath !== null && openSummary !== undefined) {
 					// A native button answers Enter and Space by itself; the accessible name says which session it opens.
-					// The session's date and hours are the link text, as in the durable history's rows.
-					const link = this.node('button', 'mod-link tyrian-live-session__summary-link');
+					const link = this.node('button', 'mod-link tyrian-live-session__summary-link', this.copy('previousOpenSummary'));
 					link.setAttribute('type', 'button');
-					link.setAttribute('aria-label', this.copy('previousOpenSummaryLabel').replace('{when}', `${started.textContent ?? ''} ${range.textContent ?? ''}`));
+					link.setAttribute('aria-label', this.copy('previousOpenSummaryLabel').replace('{when}', whenText));
 					link.addEventListener('click', () => { openSummary(summaryPath); });
-					link.append(started, range);
-					when.append(link);
-				} else when.append(started, range);
-				const figures = this.node('span', 'tyrian-live-session__previous-line');
-				figures.append(duration, this.node('b', '', this.money(entry.estimatedValueCopper)), this.node('span', '', objects));
-				const parts: HTMLElement[] = [when, figures];
+					head.append(link);
+				}
+				const duration = this.node('span', 'tyrian-live-session__previous-duration', this.clock(Date.parse(entry.endedAt) - Date.parse(entry.startedAt)));
+				duration.title = this.copy('previousDuration');
+				const value = this.node('b', 'tyrian-live-session__previous-value', this.money(entry.estimatedValueCopper));
+				value.title = this.copy('statValue');
+				const count = this.node('span', 'tyrian-live-session__previous-objects', objects);
+				const figures = this.node('span', 'tyrian-live-session__previous-line tyrian-live-session__previous-figures');
+				figures.append(duration, value, count);
+				const parts: HTMLElement[] = [head, figures];
 				if (tiles.length > 0) {
 					const grid = this.node('ul', 'tyrian-live-session__grid tyrian-live-session__previous-grid');
 					grid.setAttribute('role', 'list');
-					grid.setAttribute('aria-label', this.copy('previousItemsLabel').replace('{when}', `${started.textContent ?? ''} ${range.textContent ?? ''}`));
+					grid.setAttribute('aria-label', this.copy('previousItemsLabel').replace('{when}', whenText));
 					for (const tile of tiles) {
 						const li = this.node('li', 'tyrian-live-session__tile');
 						this.paintTile(li, tile.icon, tile.name, tile.quantity, tile.net < 0);
 						grid.append(li);
 					}
 					if (hidden > 0) {
+						// A count chip, not loose text: it says how many objects the row leaves out, in its tooltip too.
 						const more = this.node('li', 'tyrian-live-session__tile tyrian-live-session__tile-more', `+${this.number(hidden)}`);
-						more.setAttribute('aria-label', this.copy('moreObjects').replace('{n}', this.number(hidden)));
+						const moreLabel = this.copy('moreObjects').replace('{n}', this.number(hidden));
+						more.setAttribute('aria-label', moreLabel);
+						more.title = moreLabel;
 						grid.append(more);
 					}
 					parts.push(grid);
