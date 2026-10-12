@@ -1,9 +1,13 @@
 # Estado
 
-## Candidato 0.6.52: «Ver resumen» y enlaces en Hebra de otro dispositivo (12 oct 2026)
+## Canal 0.6.52 publicado: «Ver resumen» y enlaces en Hebra de otro dispositivo (12 oct 2026)
 
-**Candidato; sin publicar.** Rama `release/0652` sobre el canal 0.6.51 publicado (`bf956bc8`). Detalle en
-[CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.52` = `fb917bd2` (atestación; candidato `fda1c1a2`,
+árbol `bdc6a114`). Gate local verde en macOS (check con 7592 tests a la tercera pasada: las dos primeras, con carga
+media 25-30 en 15 núcleos, fallaron solo por tiempo agotado en tests ajenos al cambio; guardrails 25/25, BRAT PASS);
+CI 38206341265 y Release 38207203974 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets
+descargados (`downloaded-bytes=checked`), release normal. Rama `release/0652` sobre el canal 0.6.51 publicado
+(`bf956bc8`); añade los metadatos de versión. Detalle en [CHANGELOG](CHANGELOG.md).
 
 - Causa medida en el código (12 oct, captura de David en Hebra del Mac sin enlaces): en Hebra `vault.file()` responde
   desde el índice ruta→id de cada dispositivo (`src/host/hebra/vault.ts`, `path-index.ts`), y `canonicalPathFor`
