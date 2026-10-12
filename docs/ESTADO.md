@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.6.53: nota resumen v4, Base «Sesiones» v4 e iconos en las sesiones anteriores (12 oct 2026)
+## Canal 0.6.53 publicado: nota resumen v4, Base «Sesiones» v4 e iconos en las sesiones anteriores (12 oct 2026)
 
-**Candidato; sin publicar.** Rama `release/0653` sobre el canal 0.6.52 publicado (`e4157729`). Detalle en
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.53` = `6b5ae79e` (atestación; candidato `5756e555`,
+árbol `efcf8941`). Gate local verde en macOS (check con 7617 tests, guardrails 25/25, BRAT PASS); CI 38210765855 y
+Release 38211392271 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `release/0653` sobre el canal 0.6.52 publicado (`e4157729`);
+añade los metadatos de versión y `5756e555` (el test de Hebra esperaba la plantilla v3). Detalle en
 [CHANGELOG](CHANGELOG.md).
 
 - `cc18d426` (de `67316671`): captura de David en Hebra del Mac con la 0.6.52, monedas y algunos objetos con «?».
