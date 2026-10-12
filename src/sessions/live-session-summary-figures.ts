@@ -62,6 +62,10 @@ export interface SummaryMapRow {
 	netCopper: number | null;
 	/** That value per hour observed THERE. Null under the 15 observed minutes every live rate needs, or without a value. */
 	perHourCopper: number | null;
+	/** How many item changes were observed on it, priced or not (its stretches added up): zero is a map with no item changes at all. */
+	changes: number;
+	/** An item with a price changed on it: false with `changes` above zero is a map whose changes have no bazaar price. */
+	priced: boolean;
 }
 /** One step of the session's route: the map entered (null: a stretch observed on no identified map) and when. */
 interface SummaryMapVisit { mapId: number | null; at: string }
@@ -140,6 +144,13 @@ interface SummaryFigures {
 	/** Null when no item with a quantity has any bazaar price, or in a selling session: there is no value to state. */
 	netCopper: number | null;
 	positiveCopper: number;
+	/** `netCopper` less `positiveCopper`: what the items with a net decrease and a price take off (never above zero). */
+	negativeCopper: number;
+	/** Items with a price whose net quantity decreased, the biggest value loss first. Bound items are out, as of the value. */
+	decreased: { itemId: number; quantity: number; valueCopper: number }[];
+	/** The identified map with most OBSERVED time (the first entered on a tie) and how many identified maps there are; null / 0 without any. */
+	mapTopId: number | null;
+	mapCount: number;
 	noPrices: boolean;
 	/** Over the OBSERVED item time, never the session's length. `short`: under the 15 observed minutes every live rate needs. */
 	perHour: { copper: number | null; reason: 'short' | null };
@@ -180,13 +191,13 @@ export interface SummaryCharacter { name: string; fromAt: string }
 export interface SummaryEntityIds { readonly itemIds: readonly number[]; readonly currencyIds: readonly number[] }
 
 /**
- * What the note can name: every item that came in (the list, the unpriced and bound lines, the staple),
+ * What the note can name: every item whose net quantity moved (the lists of increases and decreases, the unpriced and bound lines, the staple),
  * the items of the alerts that fired, and every currency that moved except gold, which is written as money.
  */
 export function summaryNamedEntities(session: Pick<StoredLiveSessionPayloadV1, 'totals' | 'journal'>): SummaryEntityIds {
 	const ascending = (ids: number[]): number[] => [...new Set(ids)].sort((a, b) => a - b);
 	const alerted = session.journal.flatMap((entry) => entry.outbox.flatMap((row) => row.state === 'processed' && row.alert !== null ? [row.alert.itemId] : []));
-	return { itemIds: ascending([...session.totals.filter((row) => row.kind === 'item' && row.net > 0).map((row) => row.idNumber), ...alerted]),
+	return { itemIds: ascending([...session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => row.idNumber), ...alerted]),
 		currencyIds: ascending(session.totals.filter((row) => row.kind === 'currency' && row.idNumber !== GOLD_CURRENCY_ID && row.net !== 0).map((row) => row.idNumber)) };
 }
 
@@ -217,6 +228,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const itemTotals = session.totals.filter((row) => row.kind === 'item');
 	const sellable: SummaryItemRow[] = []; const unpriced: SummaryItemRow[] = []; const boundItemIds: number[] = []; const unknownBindingIds: number[] = [];
 	let netCopper = 0; let positiveCopper = 0; let pricedAny = false;
+	const decreased: SummaryFigures['decreased'] = [];
 	// Every item that enters `netCopper`, with what it adds: the map breakdown splits exactly this, and nothing else.
 	const counted = new Map<number, CountedItem>();
 	for (const row of itemTotals) {
@@ -232,12 +244,14 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		const value = unit === undefined || unit === null ? null : basis === 'instant_sell_net' ? unit * row.net : liveItemValueCopper(basis, unit, row.net);
 		const priced = value !== null;
 		if (priced) { netCopper += value; counted.set(row.idNumber, { unitCopper: unit!, net: row.net, valueCopper: value }); if (row.net !== 0) pricedAny = true; }
+		if (priced && row.net < 0) decreased.push({ itemId: row.idNumber, quantity: -row.net, valueCopper: value });
 		if (row.net <= 0) continue;
 		const entry: SummaryItemRow = { itemId: row.idNumber, quantity: row.net, valueCopper: value, container: info?.type === 'Container' };
 		if (priced) { sellable.push(entry); positiveCopper += value; } else unpriced.push(entry);
 	}
 	sellable.sort((a, b) => (b.valueCopper ?? 0) - (a.valueCopper ?? 0) || b.quantity - a.quantity || a.itemId - b.itemId);
 	unpriced.sort((a, b) => b.quantity - a.quantity || a.itemId - b.itemId);
+	decreased.sort((a, b) => a.valueCopper - b.valueCopper || b.quantity - a.quantity || a.itemId - b.itemId);
 
 	const observedMs = session.observedItemsMs;
 	// The one rule of every live rate (`liveItemRateEligible`): 15 observed minutes. How the session ended does not enter: a
@@ -270,6 +284,8 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 		.map((row) => ({ id: row.idNumber, net: row.net })).sort((a, b) => a.id - b.id);
 	const gainedCurrency = currencies.filter((row) => row.net > 0).sort((a, b) => b.net - a.net)[0] ?? null;
 	const hasNewItems = hasNew;
+	const breakdown = mapBreakdown(session, counted, !valueless);
+	const mapTop = breakdown.rows.reduce<SummaryMapRow | null>((best, row) => best === null || row.observedMs > best.observedMs ? row : best, null);
 
 	const alerts = session.journal.flatMap((entry) => entry.outbox.filter((row) => row.state === 'processed' && row.alert !== null)
 		.map((row) => ({ at: entry.observedAt, itemId: row.alert!.itemId, name: row.alert!.name, quantity: row.alert!.quantity, totalCopper: row.alert!.totalCopper })));
@@ -279,7 +295,7 @@ export function computeSummaryFigures(session: StoredLiveSessionPayloadV1, meta:
 	const wholePercent = durationMs > 0 ? Math.min(100, Math.floor(observedMs * 100 / durationMs)) : 0;
 	return { durationMs, observedShare: durationMs > 0 ? Math.min(1, observedMs / durationMs) : 0,
 		observedPercent: stretches.length > 0 ? Math.min(99, wholePercent) : wholePercent,
-		mainMapId: summaryMainMap(session), mapBreakdown: mapBreakdown(session, counted, !valueless), sellable, boundItemIds, unpriced, unknownBindingIds,
+		mainMapId: summaryMainMap(session), mapBreakdown: breakdown, mapTopId: mapTop?.mapId ?? null, mapCount: breakdown.rows.length, decreased, negativeCopper: netCopper - positiveCopper, sellable, boundItemIds, unpriced, unknownBindingIds,
 		netCopper: valueless ? null : netCopper, positiveCopper, noPrices,
 		perHour: { copper: valueless ? null : perHour(netCopper), reason: rateReason }, withoutDominant: valueless ? null : withoutDominant, staple, goldCopper, currencies,
 		dominantCurrency: positiveCopper === 0 ? gainedCurrency : null,
@@ -347,7 +363,7 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 	});
 
 	const rows = new Map<number, SummaryMapRow>(); const visits: SummaryMapVisit[] = []; const stretches: SummaryMapStretch[] = [];
-	const unidentified: SummaryMapRow = { mapId: null, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null };
+	const unidentified: SummaryMapRow = { mapId: null, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null, changes: 0, priced: false };
 	// The stretch each piece belongs to: the pieces of one entry in the route, which is what `visits` lists.
 	const stretchOf: number[] = [];
 	for (const piece of pieces) {
@@ -359,7 +375,7 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 		}
 		const stretch = stretches.at(-1)!;
 		stretch.toAt = iso(piece.to); stretch.observedMs += observedIn(piece.from, piece.to); stretchOf.push(stretches.length - 1);
-		const row = piece.mapId === null ? unidentified : rows.get(piece.mapId) ?? { mapId: piece.mapId, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null };
+		const row = piece.mapId === null ? unidentified : rows.get(piece.mapId) ?? { mapId: piece.mapId, observedMs: 0, netCopper: valued ? 0 : null, perHourCopper: null, changes: 0, priced: false };
 		row.observedMs += observedIn(piece.from, piece.to);
 		if (piece.mapId !== null) rows.set(piece.mapId, row);
 	}
@@ -407,6 +423,11 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 	}
 	// A stretch where nothing priced moved has no value to state, however the session's own value stands: zero would claim a price.
 	for (const stretch of stretches) if (!stretch.priced) stretch.netCopper = null;
+	// A map is its stretches added up: what the map table says of changes and prices is what the stretch table says, row by row.
+	for (const stretch of stretches) {
+		const row = stretch.mapId === null ? unidentified : rows.get(stretch.mapId);
+		if (row !== undefined) { row.changes += stretch.changes; row.priced ||= stretch.priced; }
+	}
 	return { rows: [...rows.values()], unidentified, visits, stretches };
 }
 

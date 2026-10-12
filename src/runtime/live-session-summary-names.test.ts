@@ -121,20 +121,20 @@ describe('names in the summary note of a session closed before this plugin load'
 		expect(core.getLiveSessionEntity('item', 106732)).toBeNull();
 		expect(calls).toEqual([]);
 		// The host says nothing of remote images, as Obsidian, which paints them: each name has the icon of its cache record in front.
-		expect(text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 0g 11s 5c |');
-		expect(text).toContain('| ![Bolsa de botín\\|20](https://render.guildwars2.com/file/9333.png) Bolsa de botín | 1 | 0g 1s 39c |');
-		expect(text).toContain('- Karma: +2940');
-		expect(text).toContain('- Fragmento de espíritu: +1');
+		expect(text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 11s 5c |');
+		expect(text).toContain('| ![Bolsa de botín\\|20](https://render.guildwars2.com/file/9333.png) Bolsa de botín | 1 | 1s 39c |');
+		expect(text).toContain('Karma +2940');
+		expect(text).toContain('Fragmento de espíritu +1');
 		expect(text).toContain('tyrian_summary_top_item: "Fragmento brillante"');
 	});
 
 	it('with an empty cache writes «Objeto <id>» and «Moneda <id>», never the id alone, and still makes no request', async () => {
 		const { text, calls } = await loadedCore();
 		expect(calls).toEqual([]);
-		expect(text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
-		expect(text).toContain('| Objeto 9333 | 1 | 0g 1s 39c |');
-		expect(text).toContain('- Moneda 2: +2940');
-		expect(text).toContain('- Moneda 23: +1');
+		expect(text).toContain('| Objeto 106732 | 1 | 11s 5c |');
+		expect(text).toContain('| Objeto 9333 | 1 | 1s 39c |');
+		expect(text).toContain('Moneda 2 +2940');
+		expect(text).toContain('Moneda 23 +1');
 		expect(text).toContain('tyrian_summary_top_item: "Objeto 106732"');
 		// What the 0.6.13 note wrote: `| 106732 | 1 |`, `- 2: +2940`, `tyrian_summary_top_item: "106732"`.
 		expect(text).not.toMatch(/\| \d+ \| \d+ \|/u);
@@ -144,8 +144,8 @@ describe('names in the summary note of a session closed before this plugin load'
 
 	it('writes the English fallbacks in an English vault', async () => {
 		const { text } = await loadedCore({ language: 'en' });
-		expect(text).toContain('| Item 106732 | 1 | 0g 11s 5c |');
-		expect(text).toContain('- Currency 2: +2940');
+		expect(text).toContain('| Item 106732 | 1 | 11s 5c |');
+		expect(text).toContain('Currency 2 +2940');
 		expect(text).toContain('tyrian_summary_top_item: "Item 106732"');
 	});
 
@@ -153,13 +153,13 @@ describe('names in the summary note of a session closed before this plugin load'
 		// The network is allowed here and the API would answer both names; the summary does not ask.
 		const cold = await loadedCore({ network: true });
 		expect(cold.calls).toEqual([]);
-		expect(cold.text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
-		expect(cold.text).toContain('- Moneda 2: +2940');
+		expect(cold.text).toContain('| Objeto 106732 | 1 | 11s 5c |');
+		expect(cold.text).toContain('Moneda 2 +2940');
 		expect(cold.text).toContain('tyrian_summary_top_item: "Objeto 106732"');
 		const warm = await loadedCore({ network: true, cached: true });
 		expect(warm.calls).toEqual([]);
-		expect(warm.text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 0g 11s 5c |');
-		expect(warm.text).toContain('- Karma: +2940');
+		expect(warm.text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 11s 5c |');
+		expect(warm.text).toContain('Karma +2940');
 		expect(warm.text).toContain('tyrian_summary_top_item: "Fragmento brillante"');
 	});
 
@@ -167,14 +167,14 @@ describe('names in the summary note of a session closed before this plugin load'
 		// Hebra without `markdown.image.remote` declares false: the same cached items, by name alone.
 		const older = await loadedCore({ cached: true, network: true, capabilities: { remoteImages: false } });
 		expect(older.calls).toEqual([]);
-		expect(older.text).toContain('| Fragmento brillante | 1 | 0g 11s 5c |');
+		expect(older.text).toContain('| Fragmento brillante | 1 | 11s 5c |');
 		expect(older.text).not.toContain('![');
 		// Hebra with it declares true, as its host does: the icons, and still no request.
 		const newer = await loadedCore({ cached: true, network: true, capabilities: { remoteImages: true } });
 		expect(newer.calls).toEqual([]);
-		expect(newer.text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 0g 11s 5c |');
+		expect(newer.text).toContain('| ![Fragmento brillante\\|20](https://render.guildwars2.com/file/106732.png) Fragmento brillante | 1 | 11s 5c |');
 		// No cache record, no icon: the name (here its fallback) alone, whatever the host paints.
-		expect((await loadedCore({ capabilities: { remoteImages: true } })).text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
+		expect((await loadedCore({ capabilities: { remoteImages: true } })).text).toContain('| Objeto 106732 | 1 | 11s 5c |');
 	});
 
 	it('with a map on record the only request is the approved one, `maps`, and never while loading', async () => {
@@ -183,7 +183,7 @@ describe('names in the summary note of a session closed before this plugin load'
 		// The title opens with the local day and hour of the start, which is the machine's zone here: only its shape is fixed.
 		const titled = (map: string): RegExp => new RegExp(`^# \\d{4}-\\d\\d-\\d\\d \\d\\d\\.\\d\\d · Resumen · ${map}(?: · |$)`, 'mu');
 		expect(closed.text).toMatch(titled('Mapa de prueba 1633'));
-		expect(closed.text).toContain('| Objeto 106732 | 1 | 0g 11s 5c |');
+		expect(closed.text).toContain('| Objeto 106732 | 1 | 11s 5c |');
 		const loading = await loadedCore({ map: true });
 		expect(loading.calls).toEqual([]);
 		expect(loading.text).toMatch(titled('Mapa 1633'));

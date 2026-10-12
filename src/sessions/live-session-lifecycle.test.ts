@@ -1378,7 +1378,7 @@ describe('passive live session lifecycle', () => {
 		expect(session).toMatchObject({ endedAt: new Date(AT + 1000).toISOString(), mapIntervals: [{ mapId: 866, toMs: AT + 1000 - late }] });
 		const summary = await renderLiveSessionSummary({ session, locale: 'es', outputFolder: 'Tyrian', fullNotePath: 'Tyrian/sessions/live.md', itemMeta: { 12147: { flags: [], type: 'CraftingMaterial' } }, utcOffsetMinutes: () => 120 });
 		if (summary.status !== 'ok') throw new Error(summary.reason);
-		expect(summary.note.content).toContain('- Valor neto de objetos observados: 0g 17s 0c\n');
+		expect(summary.note.content).toContain('| Cambio de valor de objetos | +17s 0c |\n');
 		expect(summary.note.content).toContain('\n## Mapas\n\nMapa 866 · tiempo observado: 1 s\n');
 		expect(summary.note.content).not.toContain('identificado');
 		await f.service.dispose();

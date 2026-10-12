@@ -77,6 +77,9 @@ async function render(options: Parameters<typeof inputFor>[0] = {}) {
 }
 const body = (content: string): string => content.slice(content.indexOf('\n---\n', 4) + 5);
 const total = (kind: 'item' | 'currency', idNumber: number, positive: number, negative = 0) => ({ kind, idNumber, positive, negative, net: positive - negative });
+/** The paragraph under the «Resultado» table, word for word (David approved it on 12 Oct 2026). */
+const RESULT_NOTE_ES = 'Incluye todos los movimientos de bolsas y cartera durante la sesión (depósitos, compras, oro del bazar recogido); no distingue lo farmeado de lo demás. '
+	+ 'Valor de objetos: venta inmediata en el bazar con la comisión descontada. El oro del bazar aparece en la cartera cuando lo recoges, no cuando se vende.';
 const GOLD_WALLET_ON: Mutate = (session) => ({ ...session, valuation: { ...session.valuation, coinNetCopper: 12_345 } });
 const realTimer = (callback: () => void, ms: number): (() => void) => { const handle = setTimeout(callback, ms); return () => { clearTimeout(handle); }; };
 const META = { [STAPLE]: { flags: [], type: 'Trophy' }, [OTHER]: { flags: [], type: 'CraftingMaterial' } };
@@ -113,45 +116,45 @@ describe('live session summary: a normal session', () => {
 
 2026-10-08 · 17:30–18:10 · 40 min · 100 % observado
 
-## Balance observado
+Huecos libres: 8 (bolsas casi llenas)
 
-- Valor neto de objetos observados: 4g 77s 0c
-- Objetos por hora observada: 7g 15s 50c
-- Objetos por hora observada sin Saco grande: 0g 40s 50c (ese objeto es más de la mitad del valor)
-- Cambio de oro observado: +1g 23s 45c
+## Resultado
 
-## Objetos observados de más valor
+| Concepto | Valor |
+|---|---:|
+| **Cambio neto estimado observado** | **+6g 0s 45c** |
+| Cambio de oro | +1g 23s 45c |
+| Cambio de valor de objetos | +4g 77s 0c |
+| **Cambio neto por hora observada** | **9g 0s 68c** |
+| Objetos por hora observada | 7g 15s 50c |
 
-| Objeto | Cantidad | Valor neto de comisión |
+${RESULT_NOTE_ES}
+
+Objetos por hora observada sin Saco grande: 40s 50c (ese objeto es más de la mitad del valor)
+
+## Objetos de más valor
+
+| Objeto | Cantidad | Venta inmediata |
 |---|---:|---:|
 | Saco grande | 30 | 4g 50s 0c |
-| Champiñón | 9 | 0g 27s 0c |
+| Champiñón | 9 | 27s 0c |
+| **Cambio de valor de objetos** | | **4g 77s 0c** |
 
 ## Mapas
 
-| Mapa | Tiempo observado | Valor neto de objetos | Por hora observada |
-|---|---:|---:|---:|
-| Laberinto del Rey Loco | 30 min | 1g 95s 0c | 3g 90s 0c |
-| Bosque de Caledon | 10 min | 2g 82s 0c | — |
+| Mapa | Tiempo observado | Valor de objetos | Parte del valor | Por hora observada |
+|---|---:|---:|---:|---:|
+| Bosque de Caledon | 10 min | 2g 82s 0c | 59 % | — |
+| Laberinto del Rey Loco | 30 min | 1g 95s 0c | 41 % | 3g 90s 0c |
 
-17:30 Laberinto del Rey Loco → 18:00 Bosque de Caledon
-
-Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.
+Solo objetos: el oro de la cartera no se reparte por mapa. Lo que llega durante la carga de un mapa cuenta en el mapa donde se observó.
 
 ## Tramos de mapa
 
-| Mapa | Entrada | Salida | Duración | Valor neto de objetos |
+| Mapa | Entrada | Salida | Duración | Valor de objetos |
 |---|---:|---:|---:|---:|
 | Laberinto del Rey Loco | 17:30 | 18:00 | 30 min | 1g 95s 0c |
 | Bosque de Caledon | 18:00 | 18:10 | 10 min | 2g 82s 0c |
-
-## Al cerrar
-
-- Huecos libres al cerrar: 8
-
-## Cobertura
-
-Sin tramos sin observar.
 
 [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789abcdef|Sesión completa]]
 `);
@@ -184,7 +187,7 @@ Sin tramos sin observar.
 		const meta = Object.fromEntries([106732, 9333, 74328, 3376, 24875, SOLD].map((id) => [id, { flags: [], type: id === 9333 ? 'Container' : 'Trophy' }]));
 		const note = await render({ mutate: real, itemMeta: meta, displayNames: {}, characters: [{ name: 'Rinopopo', fromAt: new Date(START).toISOString() }] });
 		expect(note.content).toBe(`---
-tyrian_summary_version: 3
+tyrian_summary_version: 4
 tyrian_summary_of: ${JSON.stringify(note.sessionRef)}
 tyrian_summary_locale: "es"
 tyrian_summary_started_at: "2026-10-08T07:46:45.000Z"
@@ -208,48 +211,67 @@ tyrian_summary_top_item_id: 106732
 tyrian_summary_map_ids: [1633]
 tyrian_summary_alerts: 0
 tyrian_summary_free_slots: null
+tyrian_summary_total_gold: null
+tyrian_summary_total_per_hour_gold: null
+tyrian_summary_map_top: "Mapa 1633"
+tyrian_summary_map_label: "Mapa 1633"
+tyrian_summary_map_count: 1
+tyrian_summary_out_units: 1
+tyrian_summary_magic_find: null
+tyrian_summary_build: null
 tags: ["gw2/session-summary"]
 ---
 # 2026-10-08 09.46 · Resumen · Mapa 1633 · Rinopopo
 
-2026-10-08 · 09:46–11:42 · 1 h 55 min · 99 % observado
+2026-10-08 · 09:46–11:42 · 1 h 55 min · 99 % observado (23 s sin observar)
 
-## Balance observado
+## Resultado
 
-- Valor neto de objetos observados: 0g 7s 87c
-- Objetos por hora observada: 0g 4s 11c
-- Sin Objeto 106732 el valor neto de objetos observados queda en -0g 3s 18c (ese objeto vale más que todo el valor neto)
+| Concepto | Valor |
+|---|---:|
+| Cambio de valor de objetos | +7s 87c |
+| Objetos por hora observada | 4s 11c |
 
-## Objetos observados de más valor
+Sin cambio de oro observado: no hay total.
 
-| Objeto | Cantidad | Valor neto de comisión |
+${RESULT_NOTE_ES}
+
+Sin Objeto 106732 el valor de objetos queda en -3s 18c (ese objeto vale más que todo el valor de objetos)
+
+## Objetos de más valor
+
+| Objeto | Cantidad | Venta inmediata |
 |---|---:|---:|
-| Objeto 106732 | 1 | 0g 11s 5c |
-| Objeto 9333 (sin abrir) | 1 | 0g 1s 39c |
+| Objeto 106732 | 1 | 11s 5c |
+| Objeto 9333 (sin abrir) | 1 | 1s 39c |
+| **Aumentos netos** | | **12s 44c** |
+| Disminuciones netas valoradas | — | -4s 57c |
+| **Cambio de valor de objetos** | | **7s 87c** |
 
 Sin precio de bazar (fuera del valor): Objeto 74328 ×2, Objeto 3376 ×1, Objeto 24875 ×1
 
-## Cambios de otras monedas
+## Objetos y monedas que disminuyeron
 
-- Moneda 2: +2940
-- Moneda 23: +1
+En el inventario bajó 1 unidad de un objeto; no se distingue si se vendió, se consumió o se depositó.
 
-Salió del inventario 1 unidad de un objeto; no se distingue si se vendió, se consumió o se depositó.
+| Objeto que más disminuyó | Cantidad | Venta inmediata |
+|---|---:|---:|
+| Objeto 19721 | -1 | -4s 57c |
 
 ## Mapas
 
-| Mapa | Tiempo observado | Valor neto de objetos | Por hora observada |
-|---|---:|---:|---:|
-| Mapa 1633 | 1 h 54 min | 0g 7s 87c | 0g 4s 12c |
-| Sin mapa identificado | 20 s | 0g 0s 0c | — |
+| Mapa | Tiempo observado | Valor de objetos | Parte del valor | Por hora observada |
+|---|---:|---:|---:|---:|
+| Mapa 1633 | 1 h 54 min | 7s 87c | 100 % | 4s 12c |
+| Sin mapa identificado | 20 s | 0c | 0 % | — |
 
 09:46 Mapa 1633 → 11:41 sin mapa identificado
 
-Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.
+Solo objetos: el oro de la cartera no se reparte por mapa. Lo que llega durante la carga de un mapa cuenta en el mapa donde se observó.
 
-## Cobertura
+## Otras monedas
 
-8 tramos sin observar, en total 23 s.
+Aumentaron: Moneda 2 +2940 · Moneda 23 +1
 
 [[Tyrian Companion/sessions/2026/2026-10-08 153000Z - 0123456789abcdef|Sesión completa]]
 `);
@@ -295,12 +317,16 @@ Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente,
 	it('writes the English note and names several maps when none passes 70 %', async () => {
 		const { content } = await render({ locale: 'en', itemMeta: META, mutate: GOLD_WALLET_ON });
 		expect(body(content).startsWith('# 2026-10-08 17.30 · Summary · Several maps · Alfa\n\n2026-10-08 · 17:30–18:10 · 40 min · 100 % observed')).toBe(true);
-		expect(content).toContain('## Observed balance\n\n- Net value of observed items: 4g 77s 0c\n- Items per observed hour: 7g 15s 50c\n'
-			+ '- Items per observed hour without Saco grande: 0g 40s 50c (that item is over half the value)\n- Observed gold change: +1g 23s 45c\n');
-		expect(content).toContain('## Most valuable observed items');
-		expect(content).toContain('## Maps\n\n| Map | Observed time | Net item value | Per observed hour |\n|---|---:|---:|---:|\n'
-			+ '| Map 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Map 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Map 866 → 17:50 Map 873\n\n'
-			+ 'What arrives while a map loads, or is opened on the next map, counts on the map where it was observed.\n');
+		expect(content).toContain('## Result\n\n| Figure | Value |\n|---|---:|\n| **Estimated net change observed** | **+6g 0s 45c** |\n| Gold change | +1g 23s 45c |\n'
+			+ '| Item value change | +4g 77s 0c |\n| **Net change per observed hour** | **9g 0s 68c** |\n| Items per observed hour | 7g 15s 50c |\n\n'
+			+ 'Includes every bag and wallet movement during the session (deposits, purchases, bazaar gold collected); it does not tell what was farmed from the rest. '
+			+ 'Item value: instant sale on the bazaar with the fee deducted. Bazaar gold shows up in the wallet when you collect it, not when it sells.\n\n'
+			+ 'Items per observed hour without Saco grande: 40s 50c (that item is over half the value)\n');
+		expect(content).toContain('## Most valuable items');
+		// A tie in value is not an order: the map with more time first, and the table has its share column because no value is negative.
+		expect(content).toContain('## Maps\n\n| Map | Observed time | Item value | Share of the value | Per observed hour |\n|---|---:|---:|---:|---:|\n'
+			+ '| Map 873 | 20 min | 2g 82s 0c | 59 % | 8g 46s 0c |\n| Map 866 | 20 min | 1g 95s 0c | 41 % | 5g 85s 0c |\n\n'
+			+ 'Items only: the wallet gold is not split by map. What arrives while a map loads counts on the map where it was observed.\n');
 		expect(content.trimEnd().split('\n').at(-1)).toMatch(/^\[\[.+\|Full session\]\]$/u);
 		expect(content).toContain('tyrian_summary_main_map: null');
 		expect(content).toContain('tyrian_summary_locale: "en"');
@@ -310,11 +336,11 @@ Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente,
 		const karma: Mutate = (session) => ({ ...session, totals: [...session.totals, total('currency', 2, 800)] });
 		const es = await render({ itemMeta: META, displayNames: {}, mutate: karma });
 		expect(es.content).toContain(`| Objeto ${String(STAPLE)} | 30 | 4g 50s 0c |`);
-		expect(es.content).toContain('- Moneda 2: +800');
+		expect(es.content).toContain('Aumentaron: Moneda 2 +800');
 		expect(es.content).toContain(`tyrian_summary_top_item: "Objeto ${String(STAPLE)}"`);
 		const en = await render({ itemMeta: META, displayNames: {}, locale: 'en', mutate: karma });
 		expect(en.content).toContain(`| Item ${String(STAPLE)} | 30 | 4g 50s 0c |`);
-		expect(en.content).toContain('- Currency 2: +800');
+		expect(en.content).toContain('Increased: Currency 2 +800');
 		expect(en.content).toContain(`tyrian_summary_top_item: "Item ${String(STAPLE)}"`);
 	});
 
@@ -355,11 +381,16 @@ Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente,
 describe('live session summary: figures that must not mislead', () => {
 	it('with fewer than 15 observed minutes there is no per-hour figure', async () => {
 		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, observedItemsMs: 14 * 60_000 }) });
-		expect(content).toContain('- Objetos por hora observada: no disponible (menos de 15 min observados)');
+		expect(content).toContain('| Objetos por hora observada | no disponible (menos de 15 min observados) |');
 		expect(content).not.toContain('por hora observada sin');
 		expect(content).toContain('tyrian_summary_per_hour_copper: null');
-		expect((await render({ itemMeta: META, mutate: (session) => ({ ...session, observedItemsMs: 15 * 60_000 }) })).content).toMatch(/- Objetos por hora observada: \d+g/u);
-		expect((await render({ itemMeta: META, locale: 'en', mutate: (session) => ({ ...session, observedItemsMs: 14 * 60_000 }) })).content).toContain('- Items per observed hour: unavailable (under 15 observed min)');
+		expect((await render({ itemMeta: META, mutate: (session) => ({ ...session, observedItemsMs: 15 * 60_000 }) })).content).toMatch(/\| Objetos por hora observada \| \d+g/u);
+		expect((await render({ itemMeta: META, locale: 'en', mutate: (session) => ({ ...session, observedItemsMs: 14 * 60_000 }) })).content).toContain('| Items per observed hour | unavailable (under 15 observed min) |');
+		// The pace of the total follows the same rule, over the same observed time: with the gold in, neither of the two hourly figures is written.
+		const withGold = await render({ itemMeta: META, mutate: (session) => ({ ...GOLD_WALLET_ON(session), observedItemsMs: 14 * 60_000 }) });
+		expect(withGold.content).toContain('| **Cambio neto por hora observada** | **no disponible (menos de 15 min observados)** |');
+		expect(withGold.content).toContain('tyrian_summary_total_per_hour_gold: null');
+		expect((await render({ itemMeta: META, mutate: (session) => ({ ...GOLD_WALLET_ON(session), observedItemsMs: 15 * 60_000 }) })).content).toMatch(/\| \*\*Cambio neto por hora observada\*\* \| \*\*\d+g/u);
 	});
 
 	it('a session that ended after a disconnection keeps its per-hour figure, over the observed time and not the length', async () => {
@@ -379,8 +410,8 @@ describe('live session summary: figures that must not mislead', () => {
 		expect(computeSummaryFigures({ ...session, observedItemsMs: 10 * 60_000 }, META, []).perHour).toEqual({ copper: null, reason: 'short' });
 
 		const { content } = await render({ itemMeta: META, mutate: disconnected });
-		expect(content).toContain('- Objetos por hora observada: 7g 15s 50c');
-		expect(content).toContain('- Objetos por hora observada sin Saco grande: 0g 40s 50c');
+		expect(content).toContain('| Objetos por hora observada | 7g 15s 50c |');
+		expect(content).toContain('Objetos por hora observada sin Saco grande: 40s 50c');
 		expect(content).toContain('· 45/h)');
 		expect(content).toContain('tyrian_summary_per_hour_copper: 71550');
 		expect(content).toContain('tyrian_summary_per_hour_gold: 7.155');
@@ -390,10 +421,10 @@ describe('live session summary: figures that must not mislead', () => {
 
 	it('with one item over half of the value the per-hour figure comes twice, with and without it', async () => {
 		const { content } = await render({ itemMeta: META });
-		expect(content).toContain('- Objetos por hora observada: 7g 15s 50c');
-		expect(content).toContain('- Objetos por hora observada sin Saco grande: 0g 40s 50c');
+		expect(content).toContain('| Objetos por hora observada | 7g 15s 50c |');
+		expect(content).toContain('Objetos por hora observada sin Saco grande: 40s 50c');
 		const even = await render({ itemMeta: META, mutate: (session) => ({ ...session, valuation: { ...session.valuation, prices: [{ itemId: OTHER, unitCopper: 300 }, { itemId: STAPLE, unitCopper: 90 }] } }) });
-		expect(even.content).toContain('- Objetos por hora observada: ');
+		expect(even.content).toContain('| Objetos por hora observada | ');
 		expect(even.content).not.toContain('por hora observada sin');
 	});
 
@@ -407,14 +438,14 @@ describe('live session summary: figures that must not mislead', () => {
 		expect(figures.netCopper).toBe(44_700);
 		expect(figures.withoutDominant).toEqual({ itemId: STAPLE, netCopper: -300, perHourCopper: null });
 		const es = await render({ itemMeta: meta, mutate: left });
-		expect(es.content).toContain('- Valor neto de objetos observados: 4g 47s 0c');
-		expect(es.content).toContain('- Sin Saco grande el valor neto de objetos observados queda en -0g 3s 0c (ese objeto vale más que todo el valor neto)');
+		expect(es.content).toContain('| Cambio de valor de objetos | +4g 47s 0c |');
+		expect(es.content).toContain('Sin Saco grande el valor de objetos queda en -3s 0c (ese objeto vale más que todo el valor de objetos)');
 		expect(es.content).not.toContain('por hora observada sin');
 		expect(es.content).not.toContain('más de la mitad del valor');
 		// The session's own per-hour figure is untouched.
-		expect(es.content).toContain('- Objetos por hora observada: 6g 70s 50c');
+		expect(es.content).toContain('| Objetos por hora observada | 6g 70s 50c |');
 		const en = await render({ itemMeta: meta, mutate: left, locale: 'en' });
-		expect(en.content).toContain('- Without Saco grande the net value of observed items comes to -0g 3s 0c (that item is worth more than the whole net value)');
+		expect(en.content).toContain('Without Saco grande the item value comes to -3s 0c (that item is worth more than the whole item value)');
 		expect(en.content).not.toContain('per observed hour without');
 	});
 
@@ -422,23 +453,23 @@ describe('live session summary: figures that must not mislead', () => {
 		const only: Mutate = (session) => ({ ...session, valuation: { ...session.valuation, prices: [{ itemId: OTHER, unitCopper: null }, { itemId: STAPLE, unitCopper: 1500 }] } });
 		expect(computeSummaryFigures(only(await payload()), META, []).withoutDominant).toEqual({ itemId: STAPLE, netCopper: 0, perHourCopper: null });
 		const es = await render({ itemMeta: META, mutate: only });
-		expect(es.content).toContain('- Sin Saco grande el valor neto de objetos observados queda en 0g 0s 0c (ese objeto es todo el valor neto)');
+		expect(es.content).toContain('Sin Saco grande el valor de objetos queda en 0c (ese objeto es todo el valor de objetos)');
 		expect(es.content).not.toContain('por hora observada sin');
 		const en = await render({ itemMeta: META, mutate: only, locale: 'en' });
-		expect(en.content).toContain('- Without Saco grande the net value of observed items comes to 0g 0s 0c (that item is the whole net value)');
+		expect(en.content).toContain('Without Saco grande the item value comes to 0c (that item is the whole item value)');
 	});
 
 	it('keeps the per-hour figure without the dominant item, word for word, while something positive is left', async () => {
 		const es = await render({ itemMeta: META });
-		expect(es.content).toContain('- Objetos por hora observada sin Saco grande: 0g 40s 50c (ese objeto es más de la mitad del valor)');
+		expect(es.content).toContain('Objetos por hora observada sin Saco grande: 40s 50c (ese objeto es más de la mitad del valor)');
 		expect(es.content).not.toContain('queda en');
 		const en = await render({ itemMeta: META, locale: 'en' });
-		expect(en.content).toContain('- Items per observed hour without Saco grande: 0g 40s 50c (that item is over half the value)');
+		expect(en.content).toContain('Items per observed hour without Saco grande: 40s 50c (that item is over half the value)');
 	});
 
 	it('puts what has no bazaar price on its own line, outside the value', async () => {
 		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, valuation: { ...session.valuation, prices: [{ itemId: OTHER, unitCopper: null }, { itemId: STAPLE, unitCopper: 1500 }] } }) });
-		expect(content).toContain('- Valor neto de objetos observados: 4g 50s 0c');
+		expect(content).toContain('| Cambio de valor de objetos | +4g 50s 0c |');
 		expect(content).toContain('Sin precio de bazar (fuera del valor): Champiñón ×9');
 		expect(content).not.toContain('| Champiñón |');
 	});
@@ -446,10 +477,16 @@ describe('live session summary: figures that must not mislead', () => {
 	it('writes no value at all for a session without prices and says why in the list', async () => {
 		const { content } = await render({ itemMeta: META, fixture: { prices: false } });
 		// No item has any price: there is no value to state, not a zero that would also enter the average.
-		expect(content).toContain('## Balance observado\n\n- Sin precios de bazar: no hay valor neto de objetos observados.\n');
-		expect(content).not.toContain('- Valor neto de objetos observados:');
+		expect(content).toContain('## Resultado\n\nSin precios de bazar: no hay valor de objetos.\n');
+		expect(content).not.toContain('Cambio de valor de objetos');
 		expect(content).not.toContain('por hora observada');
-		expect((await render({ itemMeta: META, fixture: { prices: false }, locale: 'en' })).content).toContain('- No bazaar prices: there is no net value of observed items.');
+		expect((await render({ itemMeta: META, fixture: { prices: false }, locale: 'en' })).content).toContain('## Result\n\nNo bazaar prices: there is no item value.\n');
+		// With the gold in, the gold stands alone and the note says why there is no total, instead of a total that counts the items as zero.
+		const gold = await render({ itemMeta: META, fixture: { prices: false }, mutate: GOLD_WALLET_ON });
+		expect(gold.content).toContain('| Cambio de oro | +1g 23s 45c |\n\nSin precios de bazar: no hay valor de objetos ni total.\n');
+		expect(gold.content).not.toContain('Cambio neto');
+		expect(gold.content).toContain('tyrian_summary_total_gold: null');
+		expect(gold.content).toContain('tyrian_summary_total_per_hour_gold: null');
 		expect(content).toContain('tyrian_summary_net_copper: null');
 		expect(content).toContain('tyrian_summary_per_hour_copper: null');
 		expect(content).toContain('tyrian_summary_net_gold: null');
@@ -459,7 +496,7 @@ describe('live session summary: figures that must not mislead', () => {
 
 	it('keeps account-bound items out of the list and out of the value', async () => {
 		const { content } = await render({ itemMeta: { ...META, [STAPLE]: { flags: ['AccountBound'], type: 'Trophy' } } });
-		expect(content).toContain('- Valor neto de objetos observados: 0g 27s 0c');
+		expect(content).toContain('| Cambio de valor de objetos | +27s 0c |');
 		expect(content).not.toContain('| Saco grande |');
 		expect(content).toContain('\n\nLigados a cuenta (fuera de la lista y del valor): Saco grande\n');
 		expect((await render({ itemMeta: { ...META, [STAPLE]: { flags: ['SoulbindOnAcquire'], type: 'Trophy' } } })).content).not.toContain('| Saco grande |');
@@ -501,8 +538,8 @@ describe('live session summary: figures that must not mislead', () => {
 		const { content } = await render({ itemMeta: { ...META, [STAPLE]: noSell } });
 		expect(content).toContain('| Saco grande |');
 		// The same net as the item with no flags at all.
-		const net = (text: string): string | undefined => /- Valor neto de objetos observados: (.+)/u.exec(text)?.[1];
-		expect(net(content)).toBe('4g 77s 0c');
+		const net = (text: string): string | undefined => /\| Cambio de valor de objetos \| (.+) \|/u.exec(text)?.[1];
+		expect(net(content)).toBe('+4g 77s 0c');
 		expect(net(content)).toBe(net((await render({ itemMeta: META })).content));
 		expect(content).not.toMatch(/ligados a cuenta/iu);
 	});
@@ -520,9 +557,16 @@ describe('live session summary: figures that must not mislead', () => {
 
 	it('marks the value as an upper bound when the binding of an item is unknown', async () => {
 		const { content } = await render({ itemMeta: { [OTHER]: { flags: [], type: 'CraftingMaterial' } } });
-		expect(content).toContain('- Valor neto de objetos observados: 4g 77s 0c (como máximo: puede incluir objetos ligados a cuenta)');
-		expect(content).toContain('- Objetos por hora observada: 7g 15s 50c (como máximo: puede incluir objetos ligados a cuenta)');
-		expect((await render({ itemMeta: META })).content).not.toContain('como máximo');
+		expect(content).toContain('| Cambio de valor de objetos | +4g 77s 0c |');
+		expect(content).toContain('| Objetos por hora observada | 7g 15s 50c |');
+		// One sentence under the table covers the value, the total and both paces: an item the plugin could not read may be bound to the account.
+		const warning = 'Como máximo: el valor de objetos, el total y sus tasas por hora pueden incluir objetos ligados a cuenta, porque no se pudo leer cuáles lo eran.';
+		expect(content).toContain(`\n\n${warning}\n`);
+		expect((await render({ itemMeta: { [OTHER]: { flags: [], type: 'CraftingMaterial' } }, locale: 'en', mutate: GOLD_WALLET_ON })).content)
+			.toContain('\n\nAt most: the item value, the total and their hourly paces may include account-bound items, because it could not be read which ones were.\n');
+		expect((await render({ itemMeta: META })).content).not.toContain('Como máximo');
+		// Without a value of items there is no upper bound to state.
+		expect((await render({ itemMeta: { [OTHER]: { flags: [], type: 'CraftingMaterial' } }, fixture: { prices: false } })).content).not.toContain('Como máximo');
 	});
 
 	it('marks unopened containers only when the catalog says they are containers', async () => {
@@ -536,8 +580,11 @@ describe('live session summary: figures that must not mislead', () => {
 		const many = await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [...session.totals, ...[101, 102, 103, 104, 105].map((id) => total('item', id, 1))],
 			valuation: { ...session.valuation, prices: [...session.valuation.prices, ...[101, 102, 103, 104, 105].map((id) => ({ itemId: id, unitCopper: id }))] } }) });
 		// The rows of the items table alone: the note has another table, the one of the maps.
-		const items = body(many.content).split('## Objetos observados de más valor\n\n')[1]!.split('\n\n')[0]!;
-		expect(items.split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('| Objeto |') && !line.startsWith('|---')).length).toBe(5);
+		const items = body(many.content).split('## Objetos de más valor\n\n')[1]!.split('\n\n')[0]!;
+		const rows = items.split('\n').filter((line) => line.startsWith('| ') && !line.startsWith('| Objeto |') && !line.startsWith('|---'));
+		expect(rows.slice(0, 5).map((line) => line.split(' | ')[0])).toEqual(['| Saco grande', '| Champiñón', '| Objeto 105', '| Objeto 104', '| Objeto 103']);
+		// What the five leave out is one row of the increases that adds up with them to the total: 101 c + 102 c = 2s 3c.
+		expect(rows.slice(5)).toEqual(['| Resto de aumentos netos | — | 2s 3c |', '| **Cambio de valor de objetos** | | **4g 82s 15c** |']);
 	});
 });
 
@@ -547,78 +594,82 @@ describe('live session summary: rules that change the note', () => {
 			observations: [{ version: 1 as const, id: `x${String(index)}`, source: 'nexus_inventory' as const, epoch: EPOCH, cursor: 10 + index, kind: 'item' as const, idNumber: STAPLE,
 				before: 0, after: 3, delta: 3, observedAt: iso(1), windowStartAt: iso(0), sourceElapsedMs: 0, cause: 'unknown' as const, coverage: 'observed_interval' as const }] }));
 		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, journal: [...session.journal, ...entries] }) });
-		expect(content).toContain('- Lo que más entró: Saco grande ×30 (entró 12 veces · 45/h)');
-		expect((await render({ itemMeta: META })).content).not.toContain('Lo que más entró');
+		expect(content).toContain('\n\nLo que más aumentó: Saco grande ×30 (aumentó 12 veces · 45/h)\n');
+		expect((await render({ itemMeta: META })).content).not.toContain('Lo que más aumentó');
 	});
 
-	it('headlines the gold gained in a selling session (gold up, inventory down)', async () => {
-		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, valuation: { ...session.valuation, coinNetCopper: 250_000 },
-			totals: [total('item', OTHER, 0, 40), total('currency', 1, 250_000)] }) });
-		const balance = body(content).split('## Balance observado\n\n')[1]!.split('\n');
-		expect(balance[0]).toBe('- **Cambio de oro observado: +25g 0s 0c**');
-		// The gold is written once: the bold headline, not that and a second plain line.
-		expect(content.match(/Cambio de oro observado/gu)).toHaveLength(1);
-		// What left the inventory is not a yield: no net and no per-hour figure (nor in the frontmatter).
-		expect(content).not.toContain('Valor neto de objetos observados');
+	it('shows the gold alone, and why there is no total, in a selling session (gold up, inventory down)', async () => {
+		const selling: Mutate = (session) => ({ ...session, valuation: { ...session.valuation, coinNetCopper: 250_000 }, totals: [total('item', OTHER, 0, 40), total('currency', 1, 250_000)] });
+		const { content } = await render({ itemMeta: META, mutate: selling });
+		expect(body(content).split('## Resultado\n\n')[1]!.split('\n\n')[0]).toBe('| Concepto | Valor |\n|---|---:|\n| Cambio de oro | +25g 0s 0c |');
+		// The gold is written once, and what left the inventory is not a yield: no value of items, no total and no pace (nor in the frontmatter).
+		expect(content.match(/Cambio de oro/gu)).toHaveLength(1);
+		expect(content).toContain('| Cambio de oro | +25g 0s 0c |\n\nSin objetos nuevos con valor observado: no hay valor de objetos ni total.\n');
+		expect(content).not.toContain('Cambio de valor de objetos');
+		expect(content).not.toContain('Cambio neto');
 		expect(content).not.toContain('por hora observada');
 		expect(content).toContain('tyrian_summary_net_copper: null');
 		expect(content).toContain('tyrian_summary_per_hour_copper: null');
+		expect(content).toContain('tyrian_summary_total_gold: null');
 		expect(content).toContain('tyrian_summary_wallet_gold: 25');
-		expect(content).toContain('Salieron del inventario 40 unidades de 1 tipo de objeto; no se distingue si se vendieron, se consumieron o se depositaron.');
-		const en = await render({ itemMeta: META, locale: 'en', mutate: (session) => ({ ...session, valuation: { ...session.valuation, coinNetCopper: 250_000 },
-			totals: [total('item', OTHER, 0, 40), total('currency', 1, 250_000)] }) });
-		expect(body(en.content).split('## Observed balance\n\n')[1]!.split('\n')[0]).toBe('- **Observed gold change: +25g 0s 0c**');
+		expect(content).toContain('En el inventario bajaron 40 unidades de 1 tipo de objeto; no se distingue si se vendieron, se consumieron o se depositaron.');
+		const en = await render({ itemMeta: META, locale: 'en', mutate: selling });
+		expect(body(en.content).split('## Result\n\n')[1]!.split('\n\n')[0]).toBe('| Figure | Value |\n|---|---:|\n| Gold change | +25g 0s 0c |');
+		expect(en.content).toContain('No new items with an observed value: there is no item value and no total.');
 	});
 
 	it('counts the units that left the inventory and the item types they are of, in both languages', async () => {
 		const left = (...units: number[]): Mutate => (session) => ({ ...session, totals: [...session.totals, ...units.map((count, index) => total('item', 777 + index, 0, count))] });
 		const oneEs = body((await render({ mutate: left(1) })).content);
-		expect(oneEs).toContain('\n\nSalió del inventario 1 unidad de un objeto; no se distingue si se vendió, se consumió o se depositó.\n\n');
+		expect(oneEs).toContain('\n\nEn el inventario bajó 1 unidad de un objeto; no se distingue si se vendió, se consumió o se depositó.\n\n');
 		expect(oneEs).not.toContain('1 unidades');
 		const oneEn = body((await render({ mutate: left(1), locale: 'en' })).content);
-		expect(oneEn).toContain('\n\n1 unit of one item left the inventory; it cannot tell whether it was sold, consumed or deposited.\n\n');
+		expect(oneEn).toContain('\n\n1 unit of one item went down in the inventory; it cannot tell whether it was sold, consumed or deposited.\n\n');
 		expect(oneEn).not.toContain('1 units');
 		// Two units of ONE item: the units in the plural, the type in the singular.
 		const twoEs = body((await render({ mutate: left(2) })).content);
-		expect(twoEs).toContain('\n\nSalieron del inventario 2 unidades de 1 tipo de objeto; no se distingue si se vendieron, se consumieron o se depositaron.\n\n');
+		expect(twoEs).toContain('\n\nEn el inventario bajaron 2 unidades de 1 tipo de objeto; no se distingue si se vendieron, se consumieron o se depositaron.\n\n');
 		const twoEn = body((await render({ mutate: left(2), locale: 'en' })).content);
-		expect(twoEn).toContain('\n\n2 units of 1 item type left the inventory; it cannot tell whether they were sold, consumed or deposited.\n\n');
+		expect(twoEn).toContain('\n\n2 units of 1 item type went down in the inventory; it cannot tell whether they were sold, consumed or deposited.\n\n');
 		// One unit each of two different items is two units of two types.
-		expect(body((await render({ mutate: left(1, 1) })).content)).toContain('Salieron del inventario 2 unidades de 2 tipos de objeto;');
+		expect(body((await render({ mutate: left(1, 1) })).content)).toContain('En el inventario bajaron 2 unidades de 2 tipos de objeto;');
 		// The real session of 9 Oct 2026: 1 + 1 + 1 + 2 units, which the note used to call «5 objetos».
-		expect(body((await render({ mutate: left(1, 1, 1, 2) })).content)).toContain('Salieron del inventario 5 unidades de 4 tipos de objeto;');
-		expect(body((await render({ mutate: left(1, 1, 1, 2), locale: 'en' })).content)).toContain('5 units of 4 item types left the inventory;');
+		expect(body((await render({ mutate: left(1, 1, 1, 2) })).content)).toContain('En el inventario bajaron 5 unidades de 4 tipos de objeto;');
+		expect(body((await render({ mutate: left(1, 1, 1, 2), locale: 'en' })).content)).toContain('5 units of 4 item types went down in the inventory;');
 		// An item that went out and came back in (net 0) still went out: its units and its type count.
 		const back: Mutate = (session) => ({ ...session, totals: [...session.totals, total('item', 777, 1, 1), total('item', 778, 0, 2)] });
-		expect(body((await render({ mutate: back })).content)).toContain('Salieron del inventario 3 unidades de 2 tipos de objeto;');
+		expect(body((await render({ mutate: back })).content)).toContain('En el inventario bajaron 3 unidades de 2 tipos de objeto;');
 		// Nothing left: no line at all.
-		expect(body((await render()).content)).not.toMatch(/del inventario/u);
+		expect(body((await render()).content)).not.toContain('que disminuyeron');
 	});
 
 	it('puts a non-gold currency in the balance when it was the main result', async () => {
 		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [total('currency', 2, 800)], valuation: { ...session.valuation, prices: [] } }) });
-		expect(content).toContain('## Balance observado\n\n- **Karma: +800** (lo principal de la sesión)\n');
-		expect(content).toContain('## Cambios de otras monedas\n\n- Karma: +800\n');
-		expect(content).not.toMatch(/Cambio de oro observado:.*Karma/u);
+		expect(content).toContain('## Resultado\n\n**Karma: +800** (lo principal de la sesión)\n');
+		expect(content).toContain('## Otras monedas\n\nAumentaron: Karma +800\n');
+		expect(content).not.toContain('Cambio de oro');
 		expect((await render({ itemMeta: META, locale: 'en', mutate: (session) => ({ ...session, totals: [total('currency', 2, 800)], valuation: { ...session.valuation, prices: [] } }) })).content)
-			.toContain('## Other currency changes\n\n- Karma: +800\n');
+			.toContain('## Other currencies\n\nIncreased: Karma +800\n');
 	});
 
 	it('never adds another currency to the gold', async () => {
 		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [...session.totals, total('currency', 2, 800)],
 			valuation: { ...session.valuation, coinNetCopper: 10_000 } }) });
-		expect(content).toContain('- Cambio de oro observado: +1g 0s 0c');
-		expect(content).toContain('- Karma: +800');
-		expect(content).not.toContain('Karma: +1g');
+		expect(content).toContain('| Cambio de oro | +1g 0s 0c |');
+		expect(content).toContain('Aumentaron: Karma +800');
+		expect(content).not.toContain('Karma +1g');
+		// The total is the gold and the items only: the karma is not money.
+		expect(content).toContain('| **Cambio neto estimado observado** | **+5g 77s 0c** |');
 	});
 
-	it('with no new items writes only header, currencies and coverage', async () => {
+	it('with no new items writes only header, result and currencies', async () => {
 		const { content } = await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [total('currency', 2, 50)], valuation: { ...session.valuation, prices: [] } }) });
 		const text = body(content);
-		expect(text).not.toContain('## Objetos observados de más valor');
-		expect(text).not.toContain('alor neto de objetos observados');
-		expect(text).toContain('## Cambios de otras monedas');
-		expect(text).toContain('## Cobertura');
+		expect(text).not.toContain('## Objetos de más valor');
+		expect(text).not.toContain('Cambio de valor de objetos');
+		expect(text).toContain('## Otras monedas');
+		// Observed in full: the header says it, and the section is not written.
+		expect(text).not.toContain('## Cobertura');
 		expect(text.startsWith('# ')).toBe(true);
 	});
 
@@ -633,12 +684,17 @@ describe('live session summary: rules that change the note', () => {
 
 	it('writes magic find and free slots only when the data arrived', async () => {
 		const verified = await render({ mutate: (session) => ({ ...session, magicFind: { value: 312, source: 'verified' } }) });
-		expect(verified.content).toContain('- Hallazgo mágico: 312');
+		expect(verified.content).toContain('\n\nHuecos libres: 8 (bolsas casi llenas) · Hallazgo mágico: 312\n');
 		expect((await render({ mutate: (session) => ({ ...session, magicFind: { value: 312, source: 'manual' } }) })).content).not.toContain('Hallazgo mágico');
-		expect(verified.content).toContain('- Huecos libres al cerrar: 8');
+		// From eleven free slots on the bags are not called almost full; and with no data there is no line.
+		const roomy = await render({ mutate: (session) => ({ ...session, coverage: { ...session.coverage, freeSlots: 11 } }) });
+		expect(roomy.content).toContain('\n\nHuecos libres: 11\n');
+		expect(roomy.content).toContain('tyrian_summary_free_slots: 11');
 		const none = await render({ mutate: (session) => ({ ...session, coverage: { ...session.coverage, freeSlots: null } }) });
 		expect(none.content).not.toContain('Huecos libres');
-		expect(none.content).not.toContain('## Al cerrar');
+		expect(none.content).not.toContain('Hallazgo mágico');
+		expect(none.content).toContain('tyrian_summary_free_slots: null');
+		expect((await render({ locale: 'en', mutate: (session) => ({ ...session, magicFind: { value: 312, source: 'verified' } }) })).content).toContain('\n\nFree slots: 8 (bags almost full) · Magic find: 312\n');
 	});
 });
 
@@ -694,12 +750,12 @@ describe('live session summary: the figures of the session by map', () => {
 
 	it('gives each map its observed time, the value observed there and its own pace, one row per map in the order they were entered', async () => {
 		const run = await byMap(trip);
-		expect(run.rows).toEqual([
+		expect(run.rows).toMatchObject([
 			// 25 observed minutes of the first 30 and the last 10: the changes of minutes 20 and 80.
 			{ mapId: 866, observedMs: 35 * MIN, netCopper: 33_000, perHourCopper: Math.round(33_000 * 60 / 35) },
 			// 15 observed minutes of its 20: the change of minute 40.
 			{ mapId: 873, observedMs: 15 * MIN, netCopper: 28_200, perHourCopper: 112_800 }]);
-		expect(run.unidentified).toEqual({ mapId: null, observedMs: 20 * MIN, netCopper: 1_500, perHourCopper: 4_500 });
+		expect(run.unidentified).toMatchObject({ mapId: null, observedMs: 20 * MIN, netCopper: 1_500, perHourCopper: 4_500 });
 		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: 873, at: at(30) }, { mapId: null, at: at(50) }, { mapId: 866, at: at(70) }]);
 		expect(run.figures.netCopper).toBe(62_700);
 		adds(run);
@@ -719,7 +775,7 @@ describe('live session summary: the figures of the session by map', () => {
 		const short: Mutate = (session) => ({ ...session, mapIntervals: [on(866, 0, 20), on(873, 20, 35), on(866, 35, 80)], gaps: [unobserved(34, 35)], observedItemsMs: 79 * MIN });
 		const run = await byMap(short);
 		// 14 observed minutes on 873, where nothing came in: no pace, and with the 15th observed (below) the pace of nothing is zero.
-		expect(run.rows[1]).toEqual({ mapId: 873, observedMs: 14 * MIN, netCopper: 0, perHourCopper: null });
+		expect(run.rows[1]).toMatchObject({ mapId: 873, observedMs: 14 * MIN, netCopper: 0, perHourCopper: null });
 		expect(run.rows[0]).toMatchObject({ mapId: 866, observedMs: 65 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 65) });
 		const exact = await byMap((session) => ({ ...short(session), gaps: [], observedItemsMs: 80 * MIN }));
 		expect(exact.rows[1]).toMatchObject({ observedMs: 15 * MIN, perHourCopper: 0 });
@@ -730,7 +786,7 @@ describe('live session summary: the figures of the session by map', () => {
 		// The fixture as it comes: 866 up to minute 20 and 873 from there to the end, changes observed exactly at minutes 20 and 40.
 		const run = await byMap((session) => session, {});
 		expect(run.rows.map((row) => [row.mapId, row.netCopper])).toEqual([[866, 19_500], [873, 28_200]]);
-		expect(run.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
+		expect(run.unidentified).toMatchObject({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
 		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: 873, at: at(20) }]);
 		adds(run);
 	});
@@ -740,15 +796,15 @@ describe('live session summary: the figures of the session by map', () => {
 		// which is where the published session ends. That edge is the map's, with the change in it: one row, all the value, no other step.
 		for (const late of [1, 5, 400]) {
 			const run = await byMap((session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN - late }] }), {});
-			expect(run.rows, String(late)).toEqual([{ mapId: 866, observedMs: 40 * MIN, netCopper: 47_700, perHourCopper: 71_550 }]);
-			expect(run.unidentified, String(late)).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
+			expect(run.rows, String(late)).toMatchObject([{ mapId: 866, observedMs: 40 * MIN, netCopper: 47_700, perHourCopper: 71_550 }]);
+			expect(run.unidentified, String(late)).toMatchObject({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
 			expect(run.visits).toEqual([{ mapId: 866, at: at(0) }]);
 			adds(run);
 		}
 		// A whole second observed after the map closed is no edge: it is a stretch on no identified map, with what was observed in it.
 		const stretch = await byMap((session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN - 1_000 }] }), {});
-		expect(stretch.rows).toEqual([{ mapId: 866, observedMs: 40 * MIN - 1_000, netCopper: 19_500, perHourCopper: Math.round(19_500 * 3_600_000 / (40 * MIN - 1_000)) }]);
-		expect(stretch.unidentified).toEqual({ mapId: null, observedMs: 1_000, netCopper: 28_200, perHourCopper: null });
+		expect(stretch.rows).toMatchObject([{ mapId: 866, observedMs: 40 * MIN - 1_000, netCopper: 19_500, perHourCopper: Math.round(19_500 * 3_600_000 / (40 * MIN - 1_000)) }]);
+		expect(stretch.unidentified).toMatchObject({ mapId: null, observedMs: 1_000, netCopper: 28_200, perHourCopper: null });
 		expect(stretch.visits).toEqual([{ mapId: 866, at: at(0) }, { mapId: null, at: new Date(AT + 40 * MIN - 1_000).toISOString() }]);
 		adds(stretch);
 	});
@@ -759,7 +815,7 @@ describe('live session summary: the figures of the session by map', () => {
 		const edges: Mutate = (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT + 999, toMs: AT + 20 * MIN - 500 }, { mapId: 873, fromMs: AT + 20 * MIN, toMs: AT + 40 * MIN }] });
 		const run = await byMap(edges, {});
 		expect(run.rows.map((row) => [row.mapId, row.observedMs, row.netCopper])).toEqual([[866, 20 * MIN, 19_500], [873, 20 * MIN, 28_200]]);
-		expect(run.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
+		expect(run.unidentified).toMatchObject({ mapId: null, observedMs: 0, netCopper: 0, perHourCopper: null });
 		expect(run.visits).toEqual([{ mapId: 866, at: new Date(AT + 999).toISOString() }, { mapId: 873, at: at(20) }]);
 		adds(run);
 		// One millisecond more at each and both are stretches: one measure for the row and for the route, which now steps on them.
@@ -779,7 +835,7 @@ describe('live session summary: the figures of the session by map', () => {
 
 	it('takes two intervals of one map with nothing observed between them as one visit: what a restart leaves', async () => {
 		const run = await byMap((session) => ({ ...session, observedItemsMs: 64 * MIN, gaps: [unobserved(42, 58)], mapIntervals: [on(866, 0, 42), on(866, 58, 80)] }));
-		expect(run.rows).toEqual([{ mapId: 866, observedMs: 64 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 64) }]);
+		expect(run.rows).toMatchObject([{ mapId: 866, observedMs: 64 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 64) }]);
 		expect(run.unidentified.observedMs).toBe(0);
 		expect(run.visits).toEqual([{ mapId: 866, at: at(0) }]);
 		adds(run);
@@ -788,8 +844,8 @@ describe('live session summary: the figures of the session by map', () => {
 	it('leaves on no identified map what no interval holds: all of it without intervals, and an interval of an unknown map is none', async () => {
 		for (const mapIntervals of [[], [on(null, 0, 80)]]) {
 			const run = await byMap((session) => ({ ...session, mapIntervals }));
-			expect(run.rows).toEqual([]);
-			expect(run.unidentified).toEqual({ mapId: null, observedMs: 80 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 80) });
+			expect(run.rows).toMatchObject([]);
+			expect(run.unidentified).toMatchObject({ mapId: null, observedMs: 80 * MIN, netCopper: 62_700, perHourCopper: Math.round(62_700 * 60 / 80) });
 			expect(run.visits).toEqual([{ mapId: null, at: at(0) }]);
 			adds(run);
 		}
@@ -799,7 +855,7 @@ describe('live session summary: the figures of the session by map', () => {
 		adds(bare);
 		// It is the one way no identified map holds value with no time: both maps cover the session, and the units still have no hour.
 		const covered = await byMap((session) => ({ ...session, journal: [] }), {});
-		expect(covered.unidentified).toEqual({ mapId: null, observedMs: 0, netCopper: 47_700, perHourCopper: null });
+		expect(covered.unidentified).toMatchObject({ mapId: null, observedMs: 0, netCopper: 47_700, perHourCopper: null });
 		expect(covered.visits.map((visit) => visit.mapId)).toEqual([866, 873]);
 		adds(covered);
 	});
@@ -819,6 +875,22 @@ describe('live session summary: the figures of the session by map', () => {
 		expect(unpriced.figures.netCopper).toBeNull();
 		for (const row of [...unpriced.rows, unpriced.unidentified]) expect([row.netCopper, row.perHourCopper]).toEqual([null, null]);
 		expect(unpriced.rows.map((row) => row.observedMs)).toEqual([35 * MIN, 15 * MIN]);
+	});
+
+	it('counts the item changes of each map and whether any of them has a price: a value of zero is no proof of «nothing happened»', async () => {
+		// Changes at minutes 20 (two items), 40 (two), 60 (one) and 80 (one): 866 holds the first and the last, 873 the second, and no identified map the third.
+		const run = await byMap(trip);
+		expect([...run.rows, run.unidentified].map((row) => [row.mapId, row.changes, row.priced])).toEqual([[866, 3, true], [873, 2, true], [null, 1, true]]);
+		// The change of minute 60 is of the item that is bound to the account: it is a change, and it has no price.
+		const bound = await byMap(trip, LONG, { ...META, [STAPLE]: { flags: ['AccountBound'], type: 'Trophy' } });
+		expect([...bound.rows, bound.unidentified].map((row) => [row.mapId, row.changes, row.priced])).toEqual([[866, 3, true], [873, 2, true], [null, 1, false]]);
+		expect(bound.unidentified.netCopper).toBe(0);
+		// No prices at all: the changes are there and none is priced, whatever the note states of the value.
+		const unpriced = await byMap(trip, { ...LONG, prices: false });
+		expect([...unpriced.rows, unpriced.unidentified].map((row) => [row.changes, row.priced])).toEqual([[3, false], [2, false], [1, false]]);
+		// A map where nothing changed has no changes, and the stretch table says the same of it.
+		const quiet = await byMap((session) => ({ ...session, mapIntervals: [on(866, 0, 10), on(873, 10, 80)] }));
+		expect(quiet.rows.map((row) => [row.mapId, row.changes])).toEqual([[866, 0], [873, 6]]);
 	});
 
 	it('adds up to the net value with a gross price too, where the commission is over each sale and the parts alone do not add up', async () => {
@@ -861,23 +933,36 @@ describe('live session summary: coverage and character changes', () => {
 		({ version: 1 as const, fromAt: iso(fromStep), toAt: iso(toStep), reason, channels: [channel] });
 	/** The coverage section as written: from under its heading to the link that closes the note. */
 	const coverageOf = (content: string, heading = 'Cobertura'): string => body(content).split(`## ${heading}\n\n`)[1]!.split('\n\n[[')[0]!;
-	it('folds the coverage into one line while observed time stays at or above 90 %', async () => {
+	it('folds the coverage into the header while observed time stays at or above 90 %: what was not observed in brackets, and no section', async () => {
 		const { content } = await render({ mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect')] }) });
-		expect(content).toContain('1 tramo sin observar, en total 2 min.');
+		expect(body(content)).toContain('· 40 min · 95 % observado (2 min sin observar)\n');
 		// One cut seen by two channels is still one stretch, with the minutes of the union.
 		const both = await render({ mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect'), gap(0.2, 0.3, 'disconnect', 'currencies')] }) });
-		expect(both.content).toContain('1 tramo sin observar, en total 2 min.');
+		expect(body(both.content)).toContain('95 % observado (2 min sin observar)\n');
 		// Two records that touch (the real session of 9 Oct 2026 has a pair 9.6 s + 0.5 s long) are one stretch as well.
 		const touching = await render({ mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.25, 'disconnect'), gap(0.25, 0.3, 'context_changed')] }) });
-		expect(touching.content).toContain('1 tramo sin observar, en total 2 min.');
+		expect(body(touching.content)).toContain('95 % observado (2 min sin observar)\n');
 		for (const folded of [content, both.content, touching.content]) {
+			expect(folded).not.toContain('## Cobertura');
 			expect(folded).not.toContain('Sin observar:');
-			expect(body(folded).split('## Cobertura\n\n')[1]!.split('\n').filter((line) => line.startsWith('- '))).toEqual([]);
 		}
+		expect(body((await render({ locale: 'en', mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect')] }) })).content)).toContain('95 % observed (2 min unobserved)\n');
+	});
+
+	it('says the wallet was out for longer than the items when it was, even at or above 90 %: the percent is of items, not of the gold', async () => {
+		// Items observed in full, currencies out for 2 minutes: 99 % of items, and the gold may be short.
+		const wallet: Mutate = (session) => ({ ...session, observedItemsMs: 40 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect', 'currencies')] });
+		const { content } = await render({ mutate: wallet });
+		expect(content).toContain('\n\nLas monedas estuvieron 2 min sin observar mientras los objetos sí se observaban: el cambio de oro y de otras monedas puede estar incompleto.\n');
+		expect((await render({ locale: 'en', mutate: wallet })).content).toContain('\n\nCurrencies went unobserved for 2 min while items were observed: the change of gold and of other currencies may be incomplete.\n');
+		// Not when the wallet was out only where the items were out too, nor below 90 % (the coverage section says it there).
+		expect((await render({ mutate: (session) => ({ ...session, observedItemsMs: 38 * 60_000, gaps: [gap(0.2, 0.3, 'disconnect'), gap(0.2, 0.3, 'disconnect', 'currencies')] }) })).content).not.toContain('Las monedas estuvieron');
+		expect((await render({ mutate: (session) => ({ ...session, observedItemsMs: 30 * 60_000, gaps: [gap(0.25, 0.5, 'disconnect'), gap(0.6, 0.7, 'disconnect', 'currencies')] }) })).content).not.toContain('Las monedas estuvieron');
 	});
 
 	it('below 90 % says how long was observed and how long was not, then lists the stretches with their length and reason', async () => {
 		const short: Mutate = (session) => ({ ...session, observedItemsMs: 30 * 60_000, gaps: [gap(0.25, 0.5, 'disconnect')] });
+		expect(body((await render({ mutate: short })).content)).toContain('· 75 % observado\n');
 		expect(coverageOf((await render({ mutate: short })).content)).toBe(`Objetos observados durante 30 min de una sesión de 40 min: 75 %.
 Sin observar: 5 min, en 1 tramo.
 - 17:35–17:40 · 5 min · desconexión`);
@@ -1066,17 +1151,17 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 		const shaped = (minutes: number, observedMs: number, stretches: readonly [number, number][], channel: 'items' | 'currencies' = 'items'): Mutate => (session) => ({ ...session,
 			endedAt: new Date(AT + minutes * MIN).toISOString(), observedItemsMs: observedMs,
 			gaps: stretches.map(([from, length]) => ({ version: 1 as const, fromAt: new Date(AT + from).toISOString(), toAt: new Date(AT + from + length).toISOString(), reason: 'disconnect' as const, channels: [channel] })) });
-		const percentOf = (content: string): { header: number; frontmatter: number } => ({ header: Number(/· (\d+) % (?:observado|observed)\n/u.exec(body(content))![1]),
+		const percentOf = (content: string): { header: number; frontmatter: number } => ({ header: Number(/· (\d+) % (?:observado|observed)(?: \([^)]*\))?\n/u.exec(body(content))![1]),
 			frontmatter: Number(/^tyrian_summary_observed_percent: (\d+)$/mu.exec(content)![1]) });
 
 		it('does not say 100 % for the first real note: 115 minutes with 8 unobserved stretches, 23 s in all', async () => {
 			const stretches = Array.from({ length: 8 }, (_, index): [number, number] => [index * 10 * MIN, index === 7 ? 2_000 : 3_000]);
 			const { content } = await render({ mutate: shaped(115, 115 * MIN - 23_000, stretches) });
-			expect(body(content)).toContain('· 1 h 55 min · 99 % observado\n');
+			expect(body(content)).toContain('· 1 h 55 min · 99 % observado (23 s sin observar)\n');
 			expect(content).toContain('tyrian_summary_observed_percent: 99');
-			expect(content).toContain('8 tramos sin observar, en total 23 s.');
+			expect(content).not.toContain('## Cobertura');
 			expect(content).not.toContain('100 %');
-			expect(body((await render({ mutate: shaped(115, 115 * MIN - 23_000, stretches), locale: 'en' })).content)).toContain('· 99 % observed\n');
+			expect(body((await render({ mutate: shaped(115, 115 * MIN - 23_000, stretches), locale: 'en' })).content)).toContain('· 99 % observed (23 s unobserved)\n');
 		});
 
 		it('truncates and never rounds up: 89.9 % is 89 %, and the list of intervals says the same figure', async () => {
@@ -1090,17 +1175,22 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 		it('is at most 99 % with any unobserved stretch, even one of another channel over fully observed items', async () => {
 			const { content } = await render({ mutate: shaped(40, 40 * MIN, [[5 * MIN, 30_000]], 'currencies') });
 			expect(percentOf(content)).toEqual({ header: 99, frontmatter: 99 });
-			expect(content).toContain('1 tramo sin observar, en total 30 s.');
+			// Over 90 % the header says what was not observed; and the wallet, out where the items were not, is said on its own.
+			expect(body(content)).toContain('· 99 % observado (30 s sin observar)\n');
+			expect(content).toContain('Las monedas estuvieron 30 s sin observar mientras los objetos sí se observaban');
 		});
 
 		it('is 100 % only for a session observed in full, and only then says there is no unobserved interval', async () => {
 			const full = await render({ mutate: shaped(40, 40 * MIN, []) });
 			expect(percentOf(full.content)).toEqual({ header: 100, frontmatter: 100 });
-			expect(full.content).toContain('## Cobertura\n\nSin tramos sin observar.\n');
+			// Nothing to fold: neither the section nor the brackets of the header.
+			expect(full.content).not.toContain('## Cobertura');
+			expect(body(full.content)).toContain('· 40 min · 100 % observado\n');
 			// Observed time short of the session's length with no stretch on record: the truncated figure, and a line that agrees with it.
 			const short = await render({ mutate: shaped(40, 40 * MIN - 1, []) });
 			expect(percentOf(short.content)).toEqual({ header: 99, frontmatter: 99 });
-			expect(short.content).toContain('## Cobertura\n\nSe observó el 99 % de la sesión; ningún tramo sin observar quedó registrado.\n');
+			expect(short.content).not.toContain('## Cobertura');
+			expect(body(short.content)).toContain('· 99 % observado\n');
 			expect(short.content).not.toContain('Sin tramos sin observar.');
 			const half = await render({ mutate: shaped(80, 40 * MIN, []), locale: 'en' });
 			expect(percentOf(half.content)).toEqual({ header: 50, frontmatter: 50 });
@@ -1116,16 +1206,19 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 					const observedMs = Math.max(0, 40 * MIN - Math.max(unobserved, lost));
 					const { content } = await render({ mutate: shaped(40, observedMs, stretches) });
 					const { header, frontmatter } = percentOf(content);
-					const coverage = body(content).split('## Cobertura\n\n')[1]!;
+					const coverage = body(content).split('## Cobertura\n\n')[1];
 					expect(frontmatter).toBe(header);
 					expect(header).toBeLessThanOrEqual(Math.floor(observedMs * 100 / (40 * MIN)));
 					if (stretches.length > 0) expect(header).toBeLessThanOrEqual(99);
-					expect(coverage.startsWith('Sin tramos sin observar.')).toBe(header === 100);
 					expect(header === 100).toBe(stretches.length === 0 && observedMs === 40 * MIN);
+					// From 90 % observed the header carries everything and there is no section; below it, the section states the header's percent.
+					expect(coverage === undefined).toBe(observedMs >= 0.9 * 40 * MIN);
+					if (coverage === undefined) continue;
 					// Whichever sentence states a percent (no stretch on record, or the list below 90 %) states the header's.
 					const stated = /Se observó el (\d+) %|de una sesión de [^:\n]+: (\d+) %\./u.exec(coverage);
-					if (stated !== null) { expect(Number(stated[1] ?? stated[2])).toBe(header); statedForms.add(stated[1] === undefined ? 'list' : 'no stretch'); }
-					expect(stated !== null || header === 100 || coverage.includes('sin observar, en total')).toBe(true);
+					expect(stated).not.toBeNull();
+					expect(Number(stated![1] ?? stated![2])).toBe(header);
+					statedForms.add(stated![1] === undefined ? 'list' : 'no stretch');
 				}
 			}
 			// Both sentences were really met: a regex that stopped matching would otherwise leave the comparison unrun.
@@ -1146,33 +1239,38 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 		/** A 40-minute session, all observed: `first` minutes on map 866, then `second` on map 873 (0 leaves one map), with or without a hole in the map record. */
 		const maps = (first: number, second: number, partial: boolean): Mutate => (session) => ({ ...session, mapCoveragePartial: partial,
 			mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + first * MIN }, ...(second > 0 ? [{ mapId: 873, fromMs: AT + first * MIN, toMs: AT + (first + second) * MIN }] : [])] });
-		const mapsOf = (content: string, heading = 'Mapas'): string => body(content).split(`## ${heading}\n\n`)[1]!.split('\n\n## ')[0]!;
-		const HEAD = '| Mapa | Tiempo observado | Valor neto de objetos | Por hora observada |\n|---|---:|---:|---:|\n';
-		const LIMIT = 'Lo que llega durante la carga de un mapa, o lo que se abre en el mapa siguiente, cuenta en el mapa donde se observó.';
+		const mapsOf = (content: string, heading = 'Mapas'): string => body(content).split(`## ${heading}\n\n`)[1]!.split('\n\n## ')[0]!.split('\n\n[[')[0]!;
+		const HEAD = '| Mapa | Tiempo observado | Valor de objetos | Parte del valor | Por hora observada |\n|---|---:|---:|---:|---:|\n';
+		const LIMIT = 'Solo objetos: el oro de la cartera no se reparte por mapa. Lo que llega durante la carga de un mapa cuenta en el mapa donde se observó.';
 
-		it('writes one row per map, then the route and the limit of the split, each in its own paragraph', async () => {
-			// The changes of minute 20 (1g 95s) fall on 866 and those of minute 40 (2g 82s) on 873: the two rows are the 4g 77s of the balance.
+		it('writes one row per map, the one that yields most first, and the limit of the split in its own paragraph', async () => {
+			// The changes of minute 20 (1g 95s) fall on 866 and those of minute 40 (2g 82s) on 873: the two rows are the 4g 77s of the result.
 			const es = await render({ mutate: maps(20, 20, false) });
-			expect(mapsOf(es.content)).toBe(`${HEAD}| Mapa 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Mapa 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Mapa 866 → 17:50 Mapa 873\n\n${LIMIT}`);
+			expect(mapsOf(es.content)).toBe(`${HEAD}| Mapa 873 | 20 min | 2g 82s 0c | 59 % | 8g 46s 0c |\n| Mapa 866 | 20 min | 1g 95s 0c | 41 % | 5g 85s 0c |\n\n${LIMIT}`);
+			// The route is in the stretches below, and is not written twice.
+			expect(es.content).not.toContain('17:30 Mapa 866 →');
+			expect(es.content).toContain('| Mapa 866 | 17:30 | 17:50 | 20 min | 1g 95s 0c |');
 			expect(glued(es.content)).toEqual([]);
 			const en = await render({ mutate: maps(20, 20, false), locale: 'en' });
-			expect(mapsOf(en.content, 'Maps')).toBe('| Map | Observed time | Net item value | Per observed hour |\n|---|---:|---:|---:|\n| Map 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n'
-				+ '| Map 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Map 866 → 17:50 Map 873\n\nWhat arrives while a map loads, or is opened on the next map, counts on the map where it was observed.');
+			expect(mapsOf(en.content, 'Maps')).toBe('| Map | Observed time | Item value | Share of the value | Per observed hour |\n|---|---:|---:|---:|---:|\n| Map 873 | 20 min | 2g 82s 0c | 59 % | 8g 46s 0c |\n'
+				+ '| Map 866 | 20 min | 1g 95s 0c | 41 % | 5g 85s 0c |\n\nItems only: the wallet gold is not split by map. What arrives while a map loads counts on the map where it was observed.');
 			expect(glued(en.content)).toEqual([]);
 		});
 
 		it('adds the row of no identified map from one observed second on it, and says nothing else of a map that may be missing', async () => {
 			// 30 minutes on two maps of 40 observed: the other 10 are a row, with what was observed in them (the changes of minute 40).
 			for (const partial of [true, false]) {
-				expect(mapsOf((await render({ mutate: maps(20, 10, partial) })).content)).toBe(`${HEAD}| Mapa 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Mapa 873 | 10 min | 0g 0s 0c | — |\n`
-					+ `| Sin mapa identificado | 10 min | 2g 82s 0c | — |\n\n17:30 Mapa 866 → 17:50 Mapa 873 → 18:00 sin mapa identificado\n\n${LIMIT}`);
+				expect(mapsOf((await render({ mutate: maps(20, 10, partial) })).content)).toBe(`${HEAD}| Sin mapa identificado | 10 min | 2g 82s 0c | 59 % | — |\n| Mapa 866 | 20 min | 1g 95s 0c | 41 % | 5g 85s 0c |\n`
+					+ `| Mapa 873 | 10 min | 0c | 0 % | — |\n\n${LIMIT}`);
 			}
 			const en = mapsOf((await render({ mutate: maps(20, 10, true), locale: 'en' })).content, 'Maps');
-			expect(en).toContain('\n| No identified map | 10 min | 2g 82s 0c | — |\n\n17:30 Map 866 → 17:50 Map 873 → 18:00 no identified map\n\n');
+			expect(en).toContain('\n| No identified map | 10 min | 2g 82s 0c | 59 % | — |\n');
+			// The step on no identified map is a stretch of its own, with the hours it ran.
+			expect((await render({ mutate: maps(20, 10, true) })).content).toContain('| Sin mapa identificado | 18:00 | 18:10 | 10 min | 2g 82s 0c |');
 			// Under a second it is two clocks disagreeing, not a stretch: no row and no step of the route.
 			const late = (ms: number): Mutate => (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT + ms, toMs: AT + 20 * MIN }, { mapId: 873, fromMs: AT + 20 * MIN, toMs: AT + 40 * MIN }] });
 			expect(mapsOf((await render({ mutate: late(999) })).content)).not.toContain('identificado');
-			expect(mapsOf((await render({ mutate: late(1_000) })).content)).toContain('\n| Sin mapa identificado | 1 s | 0g 0s 0c | — |\n\n17:30 sin mapa identificado → 17:30 Mapa 866 → 17:50 Mapa 873\n\n');
+			expect(mapsOf((await render({ mutate: late(1_000) })).content)).toContain('\n| Sin mapa identificado | 1 s | 0c | 0 % | — |\n\n');
 			// The sentence that the list may be incomplete is gone whatever the hole in the map record: the row is what says it.
 			for (const partial of [true, false]) for (const locale of ['es', 'en'] as const) {
 				expect((await render({ mutate: maps(20, 10, partial), locale })).content).not.toMatch(/incompleta|incomplete|Tiempo con mapa identificado|Time on an identified map/u);
@@ -1183,7 +1281,7 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			// Minutes 10 to 16 unobserved, inside the first map: 14 observed minutes of its 20, and so no pace of its own.
 			const cut: Mutate = (session) => ({ ...maps(20, 20, false)(session), observedItemsMs: 34 * MIN, gaps: [gap(0.5, 0.8, 'disconnect')] });
 			const { content } = await render({ mutate: cut });
-			expect(mapsOf(content)).toContain('| Mapa 866 | 14 min | 1g 95s 0c | — |\n| Mapa 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n');
+			expect(mapsOf(content)).toContain('| Mapa 873 | 20 min | 2g 82s 0c | 59 % | 8g 46s 0c |\n| Mapa 866 | 14 min | 1g 95s 0c | 41 % | — |\n');
 			expect(content).toContain('Objetos observados durante 34 min de una sesión de 40 min: 85 %.');
 		});
 
@@ -1192,7 +1290,7 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			expect(mapsOf((await render({ mutate: maps(40, 0, false), locale: 'en' })).content, 'Maps')).toBe('Map 866 · observed time: 40 min');
 			// One map and time outside it is two rows: a table, with its route.
 			const short = await render({ mutate: maps(25, 0, true) });
-			expect(mapsOf(short.content)).toBe(`${HEAD}| Mapa 866 | 25 min | 1g 95s 0c | 4g 68s 0c |\n| Sin mapa identificado | 15 min | 2g 82s 0c | 11g 28s 0c |\n\n17:30 Mapa 866 → 17:55 sin mapa identificado\n\n${LIMIT}`);
+			expect(mapsOf(short.content)).toBe(`${HEAD}| Sin mapa identificado | 15 min | 2g 82s 0c | 59 % | 11g 28s 0c |\n| Mapa 866 | 25 min | 1g 95s 0c | 41 % | 4g 68s 0c |\n\n17:30 Mapa 866 → 17:55 sin mapa identificado\n\n${LIMIT}`);
 			expect(glued(short.content)).toEqual([]);
 		});
 
@@ -1207,13 +1305,14 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			// Both maps cover the session and the journal is gone (no saved session is like this): the value has no map to go to, and
 			// without that row the column would not add up to the balance.
 			const { content } = await render({ mutate: (session) => ({ ...maps(20, 20, false)(session), journal: [] }) });
-			expect(mapsOf(content)).toBe(`${HEAD}| Mapa 866 | 20 min | 0g 0s 0c | 0g 0s 0c |\n| Mapa 873 | 20 min | 0g 0s 0c | 0g 0s 0c |\n`
-				+ `| Sin mapa identificado | 0 s | 4g 77s 0c | — |\n\n17:30 Mapa 866 → 17:50 Mapa 873\n\n${LIMIT}`);
+			// The two maps have no item change at all, so they are one row (and that row has no pace to show: nothing was observed on the other).
+			expect(mapsOf(content)).toBe('| Mapa | Tiempo observado | Valor de objetos | Parte del valor |\n|---|---:|---:|---:|\n| Sin mapa identificado | 0 s | 4g 77s 0c | 100 % |\n'
+				+ `| 2 mapas sin cambios de objetos | 40 min | 0c | 0 % |\n\n${LIMIT} Sin cambios de objetos: Mapa 866 y Mapa 873.`);
 		});
 
 		it('names a map whose name arrived empty by its id, in the table, in the route, in the title and in the frontmatter', async () => {
 			const { content } = await render({ mutate: maps(20, 20, false), mapNames: { '866': '', '873': '   ' } });
-			expect(mapsOf(content)).toContain('| Mapa 866 | 20 min | 1g 95s 0c | 5g 85s 0c |\n| Mapa 873 | 20 min | 2g 82s 0c | 8g 46s 0c |\n\n17:30 Mapa 866 → 17:50 Mapa 873\n\n');
+			expect(mapsOf(content)).toContain('| Mapa 873 | 20 min | 2g 82s 0c | 59 % | 8g 46s 0c |\n| Mapa 866 | 20 min | 1g 95s 0c | 41 % | 5g 85s 0c |\n\n');
 			expect(mapsOf(content)).not.toMatch(/ {2}|\| \|/u);
 			const main = await render({ mutate: maps(40, 0, false), mapNames: { '866': '' } });
 			expect(body(main.content).startsWith('# 2026-10-08 17.30 · Resumen · Mapa 866 · Alfa\n')).toBe(true);
@@ -1224,18 +1323,18 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 
 		it('writes the time alone, with no value columns and no limit, when the note states no net value of items', async () => {
 			const { content } = await render({ fixture: { prices: false }, mutate: maps(20, 20, false) });
-			expect(content).toContain('Sin precios de bazar: no hay valor neto de objetos observados.');
-			expect(mapsOf(content)).toBe('| Mapa | Tiempo observado |\n|---|---:|\n| Mapa 866 | 20 min |\n| Mapa 873 | 20 min |\n\n17:30 Mapa 866 → 17:50 Mapa 873');
+			expect(content).toContain('Sin precios de bazar: no hay valor de objetos.');
+			expect(mapsOf(content)).toBe('| Mapa | Tiempo observado |\n|---|---:|\n| Mapa 866 | 20 min |\n| Mapa 873 | 20 min |');
 			expect(glued(content)).toEqual([]);
 		});
 
-		it('gives a map entered twice one row and both entries in the route, with the local hour of each', async () => {
+		it('gives a map entered twice one row and each entry its own stretch, with the local hour of each', async () => {
 			const back: Mutate = (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 10 * MIN }, { mapId: 873, fromMs: AT + 10 * MIN, toMs: AT + 25 * MIN },
 				{ mapId: 866, fromMs: AT + 25 * MIN, toMs: AT + 40 * MIN }] });
 			const { content } = await render({ mutate: back, mapNames: { '866': 'Laberinto | del Rey Loco' }, utcOffsetMinutes: () => -480 });
 			// 866 holds minutes 0 to 10 and 25 to 40 (the changes of minute 40); 873 holds the changes of minute 20. A name cannot break the table.
-			expect(mapsOf(content)).toBe(`${HEAD}| Laberinto \\| del Rey Loco | 25 min | 2g 82s 0c | 6g 76s 80c |\n| Mapa 873 | 15 min | 1g 95s 0c | 7g 80s 0c |\n\n`
-				+ `07:30 Laberinto \\| del Rey Loco → 07:40 Mapa 873 → 07:55 Laberinto \\| del Rey Loco\n\n${LIMIT}`);
+			expect(mapsOf(content)).toBe(`${HEAD}| Laberinto \\| del Rey Loco | 25 min | 2g 82s 0c | 59 % | 6g 76s 80c |\n| Mapa 873 | 15 min | 1g 95s 0c | 41 % | 7g 80s 0c |\n\n${LIMIT}`);
+			expect(content).toMatch(/\| Laberinto \\\| del Rey Loco \| 07:30 \| 07:40 \|.*\n\| Mapa 873 \| 07:40 \| 07:55 \|.*\n\| Laberinto \\\| del Rey Loco \| 07:55 \| 08:10 \|/u);
 		});
 	});
 
@@ -1260,10 +1359,10 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 				characters: [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.9) }] });
 			const text = body(note.content);
 			// Every section is there, so each of its joints is checked.
-			for (const heading of locale === 'es' ? ['## Balance observado', '## Objetos observados de más valor', 'Sin precio de bazar', 'Ligados a cuenta', '## Cambios de otras monedas', '## Lo bueno', 'Salieron del inventario', '## Mapas',
-				'| Sin mapa identificado | 26 min |', 'cuenta en el mapa donde se observó.', '## Al cerrar', '## Cobertura', 'Sin observar: 9 min, en 9 tramos.', 'Y 4 tramos más, en total 4 min.', '|Sesión completa]]']
-				: ['## Observed balance', '## Most valuable observed items', 'No bazaar price', 'Account-bound', '## Other currency changes', '## The good', 'left the inventory', '## Maps',
-					'| No identified map | 26 min |', 'counts on the map where it was observed.', '## At close', '## Coverage', 'Unobserved: 9 min, in 9 intervals.', 'And 4 more intervals, 4 min in total.', '|Full session]]']) expect(text).toContain(heading);
+			for (const heading of locale === 'es' ? ['## Resultado', '## Objetos de más valor', 'Sin precio de bazar', 'Ligados a cuenta', '## Objetos y monedas que disminuyeron', 'En el inventario bajaron', '## Otras monedas', '## Lo bueno', '## Mapas',
+				'| Sin mapa identificado | 26 min |', 'cuenta en el mapa donde se observó.', '## Tramos de mapa', 'Huecos libres: 8 (bolsas casi llenas) · Hallazgo mágico: 312', '## Cobertura', 'Sin observar: 9 min, en 9 tramos.', 'Y 4 tramos más, en total 4 min.', '|Sesión completa]]']
+				: ['## Result', '## Most valuable items', 'No bazaar price', 'Account-bound', '## Items and currencies that decreased', 'went down in the inventory', '## Other currencies', '## The good', '## Maps',
+					'| No identified map | 26 min |', 'counts on the map where it was observed.', '## Map stretches', 'Free slots: 8 (bags almost full) · Magic find: 312', '## Coverage', 'Unobserved: 9 min, in 9 intervals.', 'And 4 more intervals, 4 min in total.', '|Full session]]']) expect(text).toContain(heading);
 			expect(glued(note.content)).toEqual([]);
 			// With more bound types than are named and cuts next to the long stretches, the joints of those two forms hold as well.
 			const more = await render({ locale, itemMeta: { ...META, ...Object.fromEntries([201, 202, 203, 204, 205, 206].map((id) => [id, { flags: ['AccountBound'], type: 'Trophy' }])) },
@@ -1302,7 +1401,7 @@ describe('live session summary: the average of similar sessions', () => {
 	const mainMap: Mutate = (session) => ({ ...session, mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * 60_000 }] });
 	it('is written from three comparable sessions and omitted with fewer', async () => {
 		const three = await render({ itemMeta: META, mutate: mainMap, comparablePerHour: [60_000, 70_000, 80_000] });
-		expect(three.content).toContain('- Tu media en sesiones parecidas: 7g 0s 0c/h (3 sesiones en este mapa)');
+		expect(three.content).toContain('\n\nTu media en sesiones parecidas (objetos por hora): 7g 0s 0c/h (3 sesiones en este mapa)\n');
 		expect((await render({ itemMeta: META, mutate: mainMap, comparablePerHour: [60_000, 70_000] })).content).not.toContain('Tu media');
 		expect((await render({ itemMeta: META, comparablePerHour: [60_000, 70_000, 80_000] })).content).not.toContain('Tu media');
 	});
@@ -1415,11 +1514,12 @@ const ICON_STAPLE = 'https://render.guildwars2.com/file/E6017363449406DEE3DD3B80
 const ICON_OTHER = 'https://render.guildwars2.com/file/1C8B6A8A5C1B4B0E3F2D9E7A6B5C4D3E2F1A0B9C/66524.png';
 const WITH_ICONS: SummaryItemMetaMap = { [STAPLE]: { flags: [], type: 'Trophy', icon: ICON_STAPLE }, [OTHER]: { flags: [], type: 'CraftingMaterial', icon: ICON_OTHER } };
 const HEBRA_TARGET = 'id:f27d387d-7245-430a-bb8d-ffda023154c4';
-/** The rows of the item table (its alignment line is the only one with three columns), as written. */
+/** The rows of the items of the item table (its alignment line is the first with three columns), as written: not the rows that add them up. */
 const itemRows = (content: string): string[] => {
 	const lines = body(content).split('\n'); const start = lines.indexOf('|---|---:|---:|');
 	if (start < 0) throw new Error('no item table');
-	const end = lines.indexOf('', start); return lines.slice(start + 1, end < 0 ? undefined : end);
+	const end = lines.indexOf('', start);
+	return lines.slice(start + 1, end < 0 ? undefined : end).filter((row) => !/^\| (?:\*\*|Resto de aumentos|Disminuciones netas|Other net increases|Priced net decreases)/u.test(row));
 };
 /** A row split into cells as a GFM table does: on the bars that are not escaped, and then `\|` is a bar of the cell's text. */
 const cellsOf = (row: string): string[] => row.slice(1, -1).split(/(?<!\\)\|/u).map((cell) => cell.trim().replace(/\\\|/gu, '|'));
@@ -1441,7 +1541,7 @@ describe('live session summary: item icons in the table (N5)', () => {
 		const note = await render({ itemMeta: WITH_ICONS, inlineIcons: true });
 		expect(itemRows(note.content)).toEqual([
 			`| ![Saco grande\\|20](${ICON_STAPLE}) Saco grande | 30 | 4g 50s 0c |`,
-			`| ![Champiñón\\|20](${ICON_OTHER}) Champiñón | 9 | 0g 27s 0c |`]);
+			`| ![Champiñón\\|20](${ICON_OTHER}) Champiñón | 9 | 27s 0c |`]);
 		// Read as a table reads it: three cells, and in the first one the image (the name, 20 px, the icon) and then the name.
 		const [first] = itemRows(note.content);
 		expect(cellsOf(first!)).toHaveLength(3);
@@ -1463,7 +1563,7 @@ describe('live session summary: item icons in the table (N5)', () => {
 	it('in a Hebra without `markdown.image.remote` it writes the names alone, and so it does when nobody says', async () => {
 		for (const inlineIcons of [false, undefined]) {
 			const { content } = await render({ itemMeta: WITH_ICONS, fullNoteLinkTarget: HEBRA_TARGET, ...(inlineIcons === undefined ? {} : { inlineIcons }) });
-			expect(itemRows(content), String(inlineIcons)).toEqual(['| Saco grande | 30 | 4g 50s 0c |', '| Champiñón | 9 | 0g 27s 0c |']);
+			expect(itemRows(content), String(inlineIcons)).toEqual(['| Saco grande | 30 | 4g 50s 0c |', '| Champiñón | 9 | 27s 0c |']);
 			expect(body(content), String(inlineIcons)).not.toContain('![');
 			expect(body(content), String(inlineIcons)).not.toContain('|20');
 		}
@@ -1471,10 +1571,10 @@ describe('live session summary: item icons in the table (N5)', () => {
 
 	it('an item with no icon in the cache, or no cache record at all, keeps its name alone next to one that has it', async () => {
 		const noIcon = await render({ inlineIcons: true, itemMeta: { ...WITH_ICONS, [OTHER]: { flags: [], type: 'CraftingMaterial' } } });
-		expect(itemRows(noIcon.content)).toEqual([`| ![Saco grande\\|20](${ICON_STAPLE}) Saco grande | 30 | 4g 50s 0c |`, '| Champiñón | 9 | 0g 27s 0c |']);
+		expect(itemRows(noIcon.content)).toEqual([`| ![Saco grande\\|20](${ICON_STAPLE}) Saco grande | 30 | 4g 50s 0c |`, '| Champiñón | 9 | 27s 0c |']);
 		const noRecord = await render({ inlineIcons: true, itemMeta: { [STAPLE]: WITH_ICONS[STAPLE] } });
-		expect(itemRows(noRecord.content)[1]).toBe('| Champiñón | 9 | 0g 27s 0c |');
-		expect(itemRows((await render({ inlineIcons: true })).content)).toEqual(['| Saco grande | 30 | 4g 50s 0c |', '| Champiñón | 9 | 0g 27s 0c |']);
+		expect(itemRows(noRecord.content)[1]).toBe('| Champiñón | 9 | 27s 0c |');
+		expect(itemRows((await render({ inlineIcons: true })).content)).toEqual(['| Saco grande | 30 | 4g 50s 0c |', '| Champiñón | 9 | 27s 0c |']);
 	});
 
 	it('escapes a `|` or a `]` of the name, so the cell does not split and the image ends where it should', async () => {
@@ -1482,7 +1582,7 @@ describe('live session summary: item icons in the table (N5)', () => {
 		const { content } = await render({ itemMeta: WITH_ICONS, inlineIcons: true, displayNames: names });
 		expect(itemRows(content)).toEqual([
 			`| ![Saco \\[grande\\] \\| raro\\|20](${ICON_STAPLE}) Saco [grande] \\| raro | 30 | 4g 50s 0c |`,
-			`| ![Champi\\]ñón\\|20](${ICON_OTHER}) Champi]ñón | 9 | 0g 27s 0c |`]);
+			`| ![Champi\\]ñón\\|20](${ICON_OTHER}) Champi]ñón | 9 | 27s 0c |`]);
 		for (const [row, name, src] of [[itemRows(content)[0]!, 'Saco [grande] | raro', ICON_STAPLE], [itemRows(content)[1]!, 'Champi]ñón', ICON_OTHER]] as const) {
 			expect(cellsOf(row), name).toHaveLength(3);
 			expect(imageOf(cellsOf(row)[0]!), name).toEqual({ alt: name, size: 20, src, text: name });
@@ -1493,7 +1593,7 @@ describe('live session summary: item icons in the table (N5)', () => {
 		const rows = await namedRows('Foo`s', 'Pago $5 y $6');
 		expect(rows).toEqual([
 			'| ![Foo\\`s\\|20](' + ICON_STAPLE + ') Foo\\`s | 30 | 4g 50s 0c |',
-			'| ![Pago \\$5 y \\$6\\|20](' + ICON_OTHER + ') Pago \\$5 y \\$6 | 9 | 0g 27s 0c |']);
+			'| ![Pago \\$5 y \\$6\\|20](' + ICON_OTHER + ') Pago \\$5 y \\$6 | 9 | 27s 0c |']);
 		// Unescaped, the two backticks would make a code span of «s\|20](url) Foo» and the image would not be painted.
 		expect(bare(rows[0]!, '`')).toBe(0);
 		expect(bare(rows[1]!, '$')).toBe(0);
@@ -1508,7 +1608,7 @@ describe('live session summary: item icons in the table (N5)', () => {
 		const rows = await namedRows('Saco\ngrande\tazul', 'Champiñón\\');
 		expect(rows).toEqual([
 			`| ![Saco grande azul\\|20](${ICON_STAPLE}) Saco grande azul | 30 | 4g 50s 0c |`,
-			`| ![Champiñón\\\\\\|20](${ICON_OTHER}) Champiñón\\\\ | 9 | 0g 27s 0c |`]);
+			`| ![Champiñón\\\\\\|20](${ICON_OTHER}) Champiñón\\\\ | 9 | 27s 0c |`]);
 		for (const [row, name, src] of [[rows[0]!, 'Saco grande azul', ICON_STAPLE], [rows[1]!, 'Champiñón\\', ICON_OTHER]] as const) {
 			expect(cellsOf(row), name).toHaveLength(3);
 			expect(imageOf(cellsOf(row)[0]!), name).toEqual({ alt: name, size: 20, src, text: name });
@@ -1519,7 +1619,7 @@ describe('live session summary: item icons in the table (N5)', () => {
 		const rows = await namedRows('¡Saco! *grande*', 'Champi_ñón_');
 		expect(rows).toEqual([
 			`| ![¡Saco! *grande*\\|20](${ICON_STAPLE}) ¡Saco! *grande* | 30 | 4g 50s 0c |`,
-			`| ![Champi_ñón_\\|20](${ICON_OTHER}) Champi_ñón_ | 9 | 0g 27s 0c |`]);
+			`| ![Champi_ñón_\\|20](${ICON_OTHER}) Champi_ñón_ | 9 | 27s 0c |`]);
 		expect(imageOf(cellsOf(rows[0]!)[0]!)).toEqual({ alt: '¡Saco! *grande*', size: 20, src: ICON_STAPLE, text: '¡Saco! *grande*' });
 		expect(imageOf(cellsOf(rows[1]!)[0]!)).toEqual({ alt: 'Champi_ñón_', size: 20, src: ICON_OTHER, text: 'Champi_ñón_' });
 	});
@@ -1529,9 +1629,9 @@ describe('live session summary: item icons in the table (N5)', () => {
 			displayNames: { ...NAMES, [`item:${String(STAPLE)}`]: '', [`item:${String(OTHER)}`]: '  \t ' } });
 		expect(itemRows(content)).toEqual([
 			`| ![Objeto ${String(STAPLE)}\\|20](${ICON_STAPLE}) Objeto ${String(STAPLE)} | 30 | 4g 50s 0c |`,
-			`| ![Objeto ${String(OTHER)}\\|20](${ICON_OTHER}) Objeto ${String(OTHER)} | 9 | 0g 27s 0c |`]);
+			`| ![Objeto ${String(OTHER)}\\|20](${ICON_OTHER}) Objeto ${String(OTHER)} | 9 | 27s 0c |`]);
 		expect(content).not.toMatch(/!\[\s*\\\|20\]/u);
-		expect(content).toContain(`- Objetos por hora observada sin Objeto ${String(STAPLE)}: `);
+		expect(content).toContain(`Objetos por hora observada sin Objeto ${String(STAPLE)}: `);
 		expect(content).toContain(`tyrian_summary_top_item: "Objeto ${String(STAPLE)}"`);
 	});
 
@@ -1706,7 +1806,7 @@ describe('live session summary service', () => {
 		await h.service.observe();
 		const text = h.vault.contents.get(h.summaries()[0]!)!;
 		expect(text).toContain('| Mapa 866 | 20 min |');
-		expect(text).toContain('como máximo');
+		expect(text).toContain('Como máximo');
 		// Each missing optional part leaves a diagnostic: the error class and which part, nothing from the user.
 		expect(h.failures).toEqual([{ status: 'optional_item_meta', reason: 'Error', attempt: 1 }, { status: 'optional_map_names', reason: 'Error', attempt: 1 }]);
 	});
@@ -1746,9 +1846,9 @@ describe('live session summary service', () => {
 		await h.service.observe();
 		const text = h.text();
 		expect(text).toContain('| Saco grande | 30 | 4g 50s 0c |');
-		expect(text).toContain('| Champiñón | 9 | 0g 27s 0c |');
-		expect(text).toContain('- Objetos por hora observada sin Saco grande:');
-		expect(text).toContain('- Karma: +800');
+		expect(text).toContain('| Champiñón | 9 | 27s 0c |');
+		expect(text).toContain('Objetos por hora observada sin Saco grande:');
+		expect(text).toContain('Karma +800');
 		expect(text).toContain('tyrian_summary_top_item: "Saco grande"');
 		// One cache read for what the note names (gold is written as money, so it is not asked).
 		expect(h.nameCalls).toEqual([{ itemIds: [OTHER, STAPLE], currencyIds: [2] }]);
@@ -1759,9 +1859,9 @@ describe('live session summary service', () => {
 		await h.service.observe();
 		const text = h.text();
 		expect(text).toContain(`| Objeto ${String(STAPLE)} | 30 | 4g 50s 0c |`);
-		expect(text).toContain(`| Objeto ${String(OTHER)} | 9 | 0g 27s 0c |`);
-		expect(text).toContain(`- Objetos por hora observada sin Objeto ${String(STAPLE)}:`);
-		expect(text).toContain('- Moneda 2: +800');
+		expect(text).toContain(`| Objeto ${String(OTHER)} | 9 | 27s 0c |`);
+		expect(text).toContain(`Objetos por hora observada sin Objeto ${String(STAPLE)}:`);
+		expect(text).toContain('Moneda 2 +800');
 		expect(text).toContain(`tyrian_summary_top_item: "Objeto ${String(STAPLE)}"`);
 		// No line and no frontmatter value is an id on its own.
 		expect(text).not.toMatch(/\| \d+ \| \d+ \|/u);
@@ -1774,7 +1874,7 @@ describe('live session summary service', () => {
 		await h.service.observe();
 		expect(h.text()).toContain('| Champiñón | 9 |');
 		expect(h.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
-		expect(h.text()).toContain('- Karma: +800');
+		expect(h.text()).toContain('Karma +800');
 		// Only what memory lacks is read from the cache.
 		expect(h.nameCalls).toEqual([{ itemIds: [STAPLE], currencyIds: [2] }]);
 	});
@@ -1786,7 +1886,7 @@ describe('live session summary service', () => {
 		expect(h.mapCalls).toEqual([true]);
 		expect(h.text()).toContain('| Champiñón | 9 |');
 		expect(h.text()).toContain(`| Objeto ${String(STAPLE)} | 30 |`);
-		expect(h.text()).toContain('- Moneda 2: +800');
+		expect(h.text()).toContain('Moneda 2 +800');
 		// With every name already in memory, as right after a session that named its loot, not even the cache is read.
 		const named = harness({ network: true }); await named.service.observe();
 		expect(named.nameCalls).toEqual([]);
@@ -1837,15 +1937,20 @@ describe('live session summary: frontmatter for a Base', () => {
 		const note = await render({ itemMeta: META, characters: [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.9) }],
 			mapNames: { '866': 'Laberinto del Rey Loco' }, mutate: (session) => ({ ...GOLD_WALLET_ON(session), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * 60_000 }] }) });
 		const fm = parse(note.content);
-		expect(fm).toMatchObject({ tyrian_summary_version: 3, tyrian_summary_date: '2026-10-08', tyrian_summary_map: 'Laberinto del Rey Loco',
+		expect(fm).toMatchObject({ tyrian_summary_version: 4, tyrian_summary_date: '2026-10-08', tyrian_summary_map: 'Laberinto del Rey Loco',
 			tyrian_summary_characters: ['Alfa', 'Beta'], tyrian_summary_duration_minutes: 40, tyrian_summary_observed_percent: 100,
 			tyrian_summary_net_gold: 4.77, tyrian_summary_per_hour_gold: 7.155, tyrian_summary_wallet_gold: 1.2345,
 			tyrian_summary_top_item: 'Saco grande', tyrian_summary_top_item_count: 30, tyrian_summary_alerts: 0, tyrian_summary_free_slots: 8,
-			tyrian_summary_net_copper: 47700, tyrian_summary_per_hour_copper: 71550, tyrian_summary_main_map: 866 });
+			tyrian_summary_net_copper: 47700, tyrian_summary_per_hour_copper: 71550, tyrian_summary_main_map: 866,
+			// Version 4: the total (gold plus items) and its pace in gold with two decimals, and the map that the Base shows and groups by.
+			tyrian_summary_total_gold: 6, tyrian_summary_total_per_hour_gold: 9.01, tyrian_summary_map_top: 'Laberinto del Rey Loco',
+			tyrian_summary_map_label: 'Laberinto del Rey Loco', tyrian_summary_map_count: 1, tyrian_summary_out_units: 0, tyrian_summary_magic_find: null, tyrian_summary_build: null });
 		// The same figures the body states.
-		expect(note.content).toContain('- Valor neto de objetos observados: 4g 77s 0c');
-		expect(note.content).toContain('- Objetos por hora observada: 7g 15s 50c');
-		expect(note.content).toContain('- Cambio de oro observado: +1g 23s 45c');
+		expect(note.content).toContain('| **Cambio neto estimado observado** | **+6g 0s 45c** |');
+		expect(note.content).toContain('| **Cambio neto por hora observada** | **9g 0s 68c** |');
+		expect(note.content).toContain('| Cambio de valor de objetos | +4g 77s 0c |');
+		expect(note.content).toContain('| Objetos por hora observada | 7g 15s 50c |');
+		expect(note.content).toContain('| Cambio de oro | +1g 23s 45c |');
 		expect(Object.keys(fm).every((key) => key === 'tags' || key.startsWith('tyrian_summary_'))).toBe(true);
 	});
 	it('writes null exactly where the body leaves the figure out', async () => {
@@ -1854,6 +1959,12 @@ describe('live session summary: frontmatter for a Base', () => {
 		expect(short.tyrian_summary_net_gold).toBe(4.77);
 		const noGold = parse((await render({ itemMeta: META, mutate: (session) => ({ ...session, coverage: { ...session.coverage, freeSlots: null } }) })).content);
 		expect(noGold.tyrian_summary_wallet_gold).toBeNull(); expect(noGold.tyrian_summary_free_slots).toBeNull();
+		// Version 4 keys follow the same rule: no gold, no total; under 15 observed minutes, no pace of the total.
+		expect(short.tyrian_summary_total_gold).toBeNull(); expect(short.tyrian_summary_total_per_hour_gold).toBeNull();
+		const shortWithGold = parse((await render({ itemMeta: META, mutate: (session) => ({ ...GOLD_WALLET_ON(session), observedItemsMs: 10 * 60_000 }) })).content);
+		expect(shortWithGold.tyrian_summary_total_gold).toBe(6); expect(shortWithGold.tyrian_summary_total_per_hour_gold).toBeNull();
+		const unknownMap = parse((await render({ itemMeta: META, mutate: (session) => ({ ...session, mapIntervals: [] }) })).content);
+		expect(unknownMap.tyrian_summary_map_top).toBeNull(); expect(unknownMap.tyrian_summary_map_label).toBeNull(); expect(unknownMap.tyrian_summary_map_count).toBe(0);
 		const nothing = parse((await render({ itemMeta: META, mutate: (session) => ({ ...session, totals: [total('currency', 2, 50)] }) })).content);
 		expect(nothing.tyrian_summary_top_item).toBeNull(); expect(nothing.tyrian_summary_top_item_count).toBeNull(); expect(nothing.tyrian_summary_net_gold).toBeNull();
 	});
@@ -1912,7 +2023,7 @@ describe('the changes of map and the readable full note', () => {
 			const content = await summaryOf(threeMaps());
 			expect(content).toContain(`## Tramos de mapa
 
-| Mapa | Entrada | Salida | Duración | Valor neto de objetos |
+| Mapa | Entrada | Salida | Duración | Valor de objetos |
 |---|---:|---:|---:|---:|
 | Laberinto del Rey Loco | 17:30 | 17:50 | 20 min | 1g 80s 0c |
 | Bosque de Caledon | 17:50 | 18:10 | 20 min | sin precios de bazar |
@@ -1923,9 +2034,9 @@ describe('the changes of map and the readable full note', () => {
 			const quiet = fixture({ staple: [0, 12, 12, 12, 12], other: [0, 0, 0, 0, 0] });
 			quiet.record.mapIntervals = threeMaps().record.mapIntervals;
 			const content = await summaryOf({ ...quiet, utcOffsetMinutes: OFFSET }, 'en');
-			expect(content).toContain('## Map stretches\n\n| Map | Entered | Left | Length | Net value of items |\n|---|---:|---:|---:|---:|\n');
+			expect(content).toContain('## Map stretches\n\n| Map | Entered | Left | Length | Item value |\n|---|---:|---:|---:|---:|\n');
 			expect(content).toContain('| Bosque de Caledon | 17:50 | 18:10 | 20 min | no item changes |');
-			expect(content.slice(content.indexOf('## Map stretches'), content.indexOf('## Coverage'))).not.toContain('0g 0s 0c');
+			expect(content.slice(content.indexOf('## Map stretches'))).not.toMatch(/\| 0c \|/u);
 		});
 		it('adds nothing to a session on one map, or on none', async () => {
 			const single = fixture(); single.record.mapIntervals = [{ mapId: 866, fromMs: AT, toMs: AT + 2 * STEP_MS }];
@@ -1944,7 +2055,7 @@ describe('the changes of map and the readable full note', () => {
 			const input = fixture({ staple: [0, 10, 0, 0], other: [0, 0, 0, 5] });
 			input.record.mapIntervals = [{ mapId: 866, fromMs: AT, toMs: AT + 40 * MIN }, { mapId: 873, fromMs: AT + 40 * MIN, toMs: AT + 60 * MIN }];
 			const content = await summaryOf({ ...input, utcOffsetMinutes: OFFSET });
-			expect(content).toContain('| Laberinto del Rey Loco | 17:30 | 18:10 | 40 min | 0g 0s 0c |');
+			expect(content).toContain('| Laberinto del Rey Loco | 17:30 | 18:10 | 40 min | 0c |');
 			expect(content).not.toContain('sin precios de bazar');
 			const { note } = await fullOf({ ...input, utcOffsetMinutes: OFFSET });
 			expect(note.blocks.results.content).toContain('| Mapa 866 | 2026-10-08 17:30:00 | 2026-10-08 18:10:00 | 40 min | 0 c |');
