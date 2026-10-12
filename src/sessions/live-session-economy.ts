@@ -59,6 +59,8 @@ export class LiveSessionEconomy {
 	private readonly wantedCurrencies = new Set<number>();
 	private readonly triedCurrencies = new Set<number>();
 	private readonly currencyAskedAt = new Map<number,number>();
+	/** When an item a panel showed was last asked of the public catalog (coins share `currencyAskedAt` with `enrich()`): spaces the retry of an id nobody could name. */
+	private readonly itemAskedAt = new Map<number,number>();
 	private readonly unquotedAskedAt = new Map<number,number>();
 	/** When the price of each item was last asked of the trading post, by any pass and whatever came back: what spaces a retry pass. */
 	private readonly priceAskedAt = new Map<number,number>();
@@ -94,10 +96,16 @@ export class LiveSessionEconomy {
 	private want(kind: 'item'|'currency', id: number): void {
 		const wanted = kind === 'item' ? this.wanted : this.wantedCurrencies;
 		if (this.disposed || wanted.has(id)) return;
-		if ((kind === 'item' ? this.tried : this.triedCurrencies).has(id)) return;
+		if ((kind === 'item' ? this.tried : this.triedCurrencies).has(id)) {
+			// A miss the public catalog could not settle is looked at again once its retry window has passed (a render triggers it).
+			const asked = this.askedAtOf(kind).get(id);
+			if (asked === undefined || this.options.now() - asked < CURRENCY_RETRY_MS) return;
+			(kind === 'item' ? this.tried : this.triedCurrencies).delete(id);
+		}
 		wanted.add(id);
 		this.lookup ??= Promise.resolve().then(async () => await this.resolveWanted());
 	}
+	private askedAtOf(kind: 'item'|'currency'): Map<number,number> { return kind === 'item' ? this.itemAskedAt : this.currencyAskedAt; }
 	private async resolveWanted(): Promise<void> {
 		const ids = [...this.wanted]; this.wanted.clear();
 		const currencyIds = [...this.wantedCurrencies]; this.wantedCurrencies.clear(); this.lookup = null;
@@ -111,6 +119,7 @@ export class LiveSessionEconomy {
 				let changed = false;
 				for (const currency of Object.values(metadata)) if (!this.currencyEntities.has(currency.id)) { this.currencyEntities.set(currency.id,{name:currency.name,icon:currency.icon}); changed = true; }
 				if (changed) this.options.onChange();
+				await this.askPublic('currency',currencyIds); // what the cache lacked; its failure is as cosmetic as the read's
 			} catch { /* A cosmetic lookup that fails keeps "Currency <id>" until `enrich()` resolves it. */ }
 		}
 		if (ids.length === 0) return;
@@ -120,7 +129,26 @@ export class LiveSessionEconomy {
 			let changed = false;
 			for (const item of Object.values(metadata)) if (!this.entities.has(item.id)) { this.entities.set(item.id,{name:item.name,icon:item.icon ?? null}); changed = true; }
 			if (changed) this.options.onChange();
+			await this.askPublic('item',ids); // what the cache lacked; its failure is as cosmetic as the read's
 		} catch { /* A cosmetic lookup that fails (offline, no catalog) keeps "Item <id>" until `enrich()` resolves it. */ }
+	}
+	/**
+	 * What the local cache did not have, asked of the PUBLIC catalog (`/v2/currencies` or `/v2/items`, no key, only the ids a
+	 * panel is showing). A device that never recorded the session (consult mode, a session synced from another machine) has an
+	 * empty cache for them and nobody else asks, so without this a saved session's tiles stay a «?». An id the API does not
+	 * know, a rate limit or a failed request leaves the placeholder, and the same id is asked again at most every `CURRENCY_RETRY_MS`.
+	 * A failed request throws to `resolveWanted`, whose cosmetic `catch` swallows it.
+	 */
+	private async askPublic(kind: 'item'|'currency', candidates: readonly number[]): Promise<void> {
+		const known = kind === 'item' ? this.entities : this.currencyEntities; const now = this.options.now();
+		const ids = candidates.filter((id) => !known.has(id) && now - (this.askedAtOf(kind).get(id) ?? -Infinity) >= CURRENCY_RETRY_MS);
+		if (this.disposed || ids.length === 0 || this.options.rateLimit.status().active) return;
+		for (const id of ids) this.askedAtOf(kind).set(id,now);
+		const found: Record<string,{id:number;name:string;icon?: string | null}> = kind === 'item' ? await this.options.catalog(ids) : (await this.options.currencies(ids)).currencies;
+		if (this.disposed) return;
+		let changed = false;
+		for (const entity of Object.values(found)) if (!known.has(entity.id)) { known.set(entity.id,{name:entity.name,icon:entity.icon ?? null}); changed = true; }
+		if (changed) this.options.onChange();
 	}
 	/** Raw public quote kept for `price2`; only the Halloween bag is retained, and a restored net quote is not one (the session valuation keeps its fees; `price2` never uses them). */
 	rawQuote(itemId: number): BagRawQuote | null {

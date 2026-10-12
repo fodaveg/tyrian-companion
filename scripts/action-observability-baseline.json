@@ -11496,9 +11496,9 @@
 				{
 					"id": "6da786e576775b7c2e3ed234b8938537bc00c519",
 					"kind": "callback_registration",
-					"line": 99,
+					"line": 106,
 					"column": 19,
-					"endLine": 99,
+					"endLine": 106,
 					"endColumn": 81,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11513,9 +11513,9 @@
 				{
 					"id": "efbf0ddfbe72bb6eacc679d633319116351a2ab4",
 					"kind": "catch_clause",
-					"line": 114,
+					"line": 123,
 					"column": 6,
-					"endLine": 114,
+					"endLine": 123,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11529,9 +11529,9 @@
 				{
 					"id": "13f11b1f72058fec1ecf4face6a0357a4e0dd50b",
 					"kind": "catch_clause",
-					"line": 123,
+					"line": 133,
 					"column": 5,
-					"endLine": 123,
+					"endLine": 133,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11545,9 +11545,9 @@
 				{
 					"id": "23ce41e36cabde480f26ef553c79938035b83fdd",
 					"kind": "callback_registration",
-					"line": 143,
+					"line": 171,
 					"column": 17,
-					"endLine": 143,
+					"endLine": 171,
 					"endColumn": 78,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11562,9 +11562,9 @@
 				{
 					"id": "6e6f93c2627ab6796b1ca97ce58b1035dd7d9b98",
 					"kind": "promise_catch",
-					"line": 143,
+					"line": 171,
 					"column": 17,
-					"endLine": 144,
+					"endLine": 172,
 					"endColumn": 64,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11579,9 +11579,9 @@
 				{
 					"id": "0a198fd3d0049e30a87db2053bdab4ade0cbe833",
 					"kind": "callback_registration",
-					"line": 143,
+					"line": 171,
 					"column": 17,
-					"endLine": 145,
+					"endLine": 173,
 					"endColumn": 51,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -11596,9 +11596,9 @@
 				{
 					"id": "24291414c5202d3035464401844b23468d7b76f4",
 					"kind": "catch_clause",
-					"line": 151,
+					"line": 179,
 					"column": 3,
-					"endLine": 154,
+					"endLine": 182,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11612,9 +11612,9 @@
 				{
 					"id": "45540b035538247e4cc76dbc9b51d1eb68435de0",
 					"kind": "callback_registration",
-					"line": 175,
+					"line": 203,
 					"column": 17,
-					"endLine": 175,
+					"endLine": 203,
 					"endColumn": 71,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11629,9 +11629,9 @@
 				{
 					"id": "e864f8564a714574d9e79c070e64e7d181e2471c",
 					"kind": "promise_catch",
-					"line": 175,
+					"line": 203,
 					"column": 17,
-					"endLine": 175,
+					"endLine": 203,
 					"endColumn": 131,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11646,9 +11646,9 @@
 				{
 					"id": "a0a1d6efc36cbc99db32b204cd615bb6eaa07893",
 					"kind": "catch_clause",
-					"line": 214,
+					"line": 242,
 					"column": 5,
-					"endLine": 214,
+					"endLine": 242,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11662,9 +11662,9 @@
 				{
 					"id": "29ba669d4e944d4b8e61ae2f7bb3e8a133fdd651",
 					"kind": "catch_clause",
-					"line": 249,
+					"line": 277,
 					"column": 5,
-					"endLine": 252,
+					"endLine": 280,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {

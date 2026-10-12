@@ -21,6 +21,8 @@ import { parseCatalogCurrency, parseCatalogItem } from '../catalog/public-catalo
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
 const AT = Date.parse('2026-10-06T20:00:00.000Z');
+const CATALOG_QUERY = '&lang=en&v=2024-07-20T01%3A00%3A00.000Z';
+const ITEMS_REQUEST_ALL = `items?ids=12147,12334,19620${CATALOG_QUERY}`;
 const ITEMS = [{ id: 12334, name: 'Portobello Mushroom', qty: 3 }, { id: 12147, name: 'Mushroom', qty: 7 }, { id: 19620, name: 'Dandelion Sprout', qty: 1 }];
 
 function appendElement(parent: HTMLElement, tag: string, options: { text?: string; cls?: string; attr?: Record<string, string> }): HTMLElement {
@@ -155,31 +157,31 @@ describe('entity names and icons of a live session restored after a plugin reloa
 		expect(names.some((name) => name?.startsWith('Item '))).toBe(false);
 	});
 
-	it('an empty cache keeps "Item <id>" with the marker, and load, restore and repeated renders make zero requests', async () => {
+	it('an empty cache that the public catalog cannot fill keeps "Item <id>" with the marker, asking the public catalog once for the three ids however often it renders', async () => {
 		const { tiles, content, view, catalog } = await restoredPlugin(true);
 		await settle(); view.render(); view.render(); await settle();
-		expect(catalog.calls).toEqual([]);
+		expect(catalog.calls).toEqual([ITEMS_REQUEST_ALL]);
 		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(['Item 12147, 7', 'Item 12334, 3', 'Item 19620, 1']);
 		expect(content.querySelectorAll('.tyrian-live-session__missing')).toHaveLength(3);
 	});
 
-	it('a partly cached session names what is cached and leaves the rest as a placeholder, still without a request', async () => {
+	it('a partly cached session names what is cached and leaves the rest as a placeholder; the public catalog is asked only for the ids the cache lacks', async () => {
 		const { tiles, catalog } = await restoredPlugin(true, { cached: [12147] });
 		await settle();
-		expect(catalog.calls).toEqual([]);
+		expect(catalog.calls).toEqual([`items?ids=12334,19620${CATALOG_QUERY}`]);
 		expect(tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(['Mushroom, 7', 'Item 12334, 3', 'Item 19620, 1']);
 	});
 
-	it('consult mode behaves the same: names from the cache, zero requests', async () => {
+	it('consult mode behaves the same: names from the cache with no request, and only the public catalog (never an account call) for what the cache lacks', async () => {
 		const warm = await restoredPlugin(true, { cached: ALL, consult: true }); await settle();
 		expect(warm.catalog.calls).toEqual([]);
 		expect(warm.tiles().map((tile) => tile.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['Mushroom, 7']));
 		const cold = await restoredPlugin(true, { consult: true }); await settle();
-		expect(cold.catalog.calls).toEqual([]);
+		expect(cold.catalog.calls).toEqual([ITEMS_REQUEST_ALL]);
 		expect(cold.content.querySelectorAll('.tyrian-live-session__missing')).toHaveLength(3);
 	});
 
-	it('coins come back the same way: name and icon from the local cache, an uncached coin stays unresolved, zero requests', async () => {
+	it('coins come back the same way: name and icon from the local cache, an uncached coin is asked of the public catalog alone and stays unresolved when that fails', async () => {
 		const { core, catalog } = await restoredPlugin(true, { cachedCurrencies: [1] });
 		expect(core.getLiveSessionEntity('currency', 1)).toBeNull(); // the first read only schedules the cache lookup
 		expect(core.getLiveSessionEntity('currency', 23)).toBeNull();
@@ -187,10 +189,11 @@ describe('entity names and icons of a live session restored after a plugin reloa
 		expect(core.getLiveSessionEntity('currency', 1)).toEqual({ name: 'Coin 1', icon: 'https://render.guildwars2.com/file/c1.png' });
 		expect(core.getLiveSessionEntity('currency', 23)).toBeNull();
 		expect(core.getLiveSessionEntity('item', 1)).toBeNull(); // a coin id is not an item id
-		expect(catalog.calls).toEqual([]);
+		await settle();
+		expect(catalog.calls.filter((path) => path.startsWith('currencies'))).toEqual([`currencies?ids=23${CATALOG_QUERY}`]); // coin 1 came from the cache, so only 23 was asked
 	});
 
-	it('objects of OTHER (saved) sessions are asked in one batched local cache read, never over the network, and a miss is not asked twice', async () => {
+	it('objects of OTHER (saved) sessions are asked in one batched local cache read and then one batched public read, and a miss is not asked twice', async () => {
 		const read = vi.spyOn(PublicCatalogService.prototype, 'readCachedItems');
 		try {
 			const { core, catalog } = await restoredPlugin(true, { cached: ALL });
@@ -204,7 +207,7 @@ describe('entity names and icons of a live session restored after a plugin reloa
 			for (let round = 0; round < 5; round++) for (const id of others) core.getLiveSessionEntity('item', id);
 			await settle();
 			expect(read.mock.calls.length - before).toBe(1);
-			expect(catalog.calls).toEqual([]);
+			expect(catalog.calls.filter((path) => path.startsWith(`items?ids=${others.join(',')}`))).toHaveLength(1);
 		} finally { read.mockRestore(); }
 	});
 });
