@@ -1,5 +1,27 @@
 # Changelog
 
+## Release beta 0.6.53 - Nota resumen v4, Base «Sesiones» nueva e iconos en las sesiones anteriores
+
+Se actualiza desde la 0.6.52 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Nota resumen de sesión. El titular pasa a ser el cambio neto estimado observado: cambio de oro de la cartera más
+  cambio de valor de los objetos, con las dos partes a la vista y su tasa por hora (con 15 minutos observados o más).
+  Una frase aclara que incluye todos los movimientos de bolsas y cartera y que el oro del bazar cuenta al recogerlo.
+  «Objetos de más valor» separa aumentos, disminuciones y total, y cuadra con el cambio de valor de objetos. Hay una
+  sección para los objetos y monedas que disminuyeron. «Mapas» se ordena por valor, con la parte del valor de cada
+  mapa, y agrupa en una fila las visitas sin cambios de objetos; un mapa con cambios sin valor de bazar no muestra un
+  ritmo de cero. El dinero se escribe sin ceros delante («98s 4c»), «Cobertura» solo aparece con menos del 90 %
+  observado y las otras monedas van en una línea. «Tramos de mapa» y la comparación con tus sesiones del mismo mapa
+  principal, en objetos por hora, no cambian. Las notas ya escritas no se reescriben.
+- Base «Sesiones». Columnas Nota, Fecha, Mapas (el mapa con más tiempo y cuántos más), Personajes, Duración, Cambio
+  neto, Por hora, Oro, Objetos, Icono, Objeto destacado y % observado, y dos vistas nuevas: «Mejores por hora» y
+  «Por mapa». En las notas anteriores el cambio neto se calcula con una fórmula. Una Base instalada sin editar se
+  actualiza sola; una editada no se toca.
+- Sesiones anteriores. En un dispositivo que no grabó la sesión (modo consulta, o sesiones llegadas por
+  sincronización), las monedas salían como «?» y algunos objetos también. Ahora el plugin pide al catálogo público de
+  la API el nombre y el icono de los que no tiene guardados, solo esos y como mucho una vez cada 5 minutos.
+
 ## Release beta 0.6.52 - «Ver resumen» en las sesiones anteriores, también en Hebra de otro dispositivo
 
 Se actualiza desde la 0.6.51 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.

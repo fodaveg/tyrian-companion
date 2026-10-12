@@ -1,5 +1,25 @@
 # Estado
 
+## Candidato 0.6.53: nota resumen v4, Base «Sesiones» v4 e iconos en las sesiones anteriores (12 oct 2026)
+
+**Candidato; sin publicar.** Rama `release/0653` sobre el canal 0.6.52 publicado (`e4157729`). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- `cc18d426` (de `67316671`): captura de David en Hebra del Mac con la 0.6.52, monedas y algunos objetos con «?».
+  Causa: `LiveSessionEconomy.entity()` (`src/sessions/live-session-economy.ts`) solo leía la caché local, que llena
+  `enrich()` al grabar; un dispositivo en consulta no graba. Ahora `resolveWanted` pide al catálogo público
+  (`resolveCurrencies`/`resolveItems`) solo los ids que faltan, en lote, sin pedir con rate limit activo y como mucho
+  cada 5 min por id. Test nuevo `src/sessions/live-session-economy-saved-panel.test.ts` (2 de 3 rojos sin el arreglo).
+  `69615cf9` (de `3a383b8d`): justificaciones del censo de esos dos `catch`, con script y validador.
+- `bb49085a` (de `a0ee693f`) y `176f93b3` (de `126ba03d`): plantilla v4 del resumen
+  (`src/sessions/live-session-summary-note.ts`, `live-session-summary-figures.ts`) y Base `session-summaries-base.ts`
+  en `contentVersion` 4 (`published-base-hashes.ts` regenerado con su script). Propuesta del agente de GW2, revisión
+  de Codex «visto bueno con cambios», muestra aprobada por David (nota de Hebra «Tyrian Companion - Propuesta de nota
+  resumen (12 oct 2026)») y revisión de código (un fallo: ritmo «0c» en un mapa sin valor, corregido en `176f93b3`).
+  Claves nuevas `tyrian_summary_*` v4, ninguna `tc_`. Fórmulas de la Base evaluadas con el motor de Hebra.
+- Sin verificar: el aspecto en Hebra y Obsidian reales; las dos sesiones de los tests son reconstrucciones desde las
+  cifras de las notas v3 (no guardan el diario).
+
 ## Canal 0.6.52 publicado: «Ver resumen» y enlaces en Hebra de otro dispositivo (12 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.52` = `fb917bd2` (atestación; candidato `fda1c1a2`,
