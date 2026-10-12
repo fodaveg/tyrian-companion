@@ -1,5 +1,18 @@
 # Changelog
 
+## Release beta 0.6.52 - «Ver resumen» en las sesiones anteriores, también en Hebra de otro dispositivo
+
+Se actualiza desde la 0.6.51 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesiones anteriores en Hebra. En un dispositivo que recibe las sesiones por sincronización (por ejemplo, el Mac
+  cuando se jugó en Fedora), ninguna sesión enlazaba a su nota resumen: el plugin no reconocía esas notas como suyas.
+  Ahora las reconoce al arrancar, también las ya sincronizadas, sin hacer nada.
+- Sesiones anteriores. La fecha y las horas vuelven a ser texto y cada sesión con nota resumen lleva un «Ver resumen».
+  Cada sesión tiene ahora su título (día y horas), una línea con duración, valor y objetos, y una separación con la
+  siguiente. Los iconos de objetos y monedas tienen tamaño fijo con la cantidad debajo, el «+N» de los que no caben es
+  un recuento, y un objeto o moneda sin icono sale como un hueco neutro con «?» en vez de un recuadro discontinuo.
+
 ## Release beta 0.6.51 - El enlace de cada sesión anterior se ve como texto
 
 Se actualiza desde la 0.6.50 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.

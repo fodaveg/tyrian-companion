@@ -1,5 +1,27 @@
 # Estado
 
+## Candidato 0.6.52: «Ver resumen» y enlaces en Hebra de otro dispositivo (12 oct 2026)
+
+**Candidato; sin publicar.** Rama `release/0652` sobre el canal 0.6.51 publicado (`bf956bc8`). Detalle en
+[CHANGELOG](CHANGELOG.md).
+
+- Causa medida en el código (12 oct, captura de David en Hebra del Mac sin enlaces): en Hebra `vault.file()` responde
+  desde el índice ruta→id de cada dispositivo (`src/host/hebra/vault.ts`, `path-index.ts`), y `canonicalPathFor`
+  (`src/runtime/canonical-path.ts`) no reconocía las notas resumen, que a propósito no llevan claves `tc_`. Un
+  dispositivo que las recibía por sync nunca las indexaba y `listLiveSessionHistory` no ponía `summaryPath`.
+- `4cce6d05` (de `af40277b`): `liveSessionSummaryPathIdentity` (`src/sessions/live-session-summary-note.ts`) lee
+  `tyrian_summary_of` y `tyrian_summary_started_at`, y `canonicalPathFor` responde la ruta de
+  `liveSessionSummaryRelativePath`. No cuentan como sesión ni como nota sin adoptar. Tests: `canonical-path.test.ts`
+  (nuevo) y un e2e en `src/host/hebra/hebra-live-session-note.test.ts` con un segundo dispositivo e índice vacío,
+  rojo sin el arreglo.
+- `c283e061` (de `db74f9e3`): «Ver resumen» / «View summary» junto al título de la fila, fecha y horas como texto,
+  línea de cifras, separador entre sesiones, iconos de tamaño fijo con la cantidad debajo, chip «+N» y
+  `.tyrian-live-session__missing` como chip relleno (compartido con la sesión en vivo). `src/ui/live-session-panel.ts`,
+  `src/ui/live-session-copy.ts`, `styles.css`, tests en `src/ui/live-session-panel.test.ts`.
+- Sin verificar: el aspecto en Hebra y Obsidian reales; la adopción con un índice ya guardado sale de leer la siembra
+  con `reconcile`, ningún test la ejecuta. El historial duradero (`session-history-panel.ts`) sigue con la fecha como
+  enlace.
+
 ## Canal 0.6.51 publicado: el enlace de cada sesión anterior se ve como texto (11 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.51` = `17888291` (atestación; candidato `52fe0ebe`,
