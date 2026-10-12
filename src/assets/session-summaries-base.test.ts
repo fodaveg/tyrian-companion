@@ -280,8 +280,9 @@ tyrian_summary_top_item_icon: "https://render.guildwars2.com/file/7AF3232140CB5D
 tyrian_summary_alerts: 0
 tyrian_summary_free_slots: null`;
 		/**
-		 * The same two sessions as the renderer writes them in version 4 (the keys the Base reads; `live-session-summary-v4.test.ts` checks that whole frontmatter
-		 * against the renderer, so these cannot drift from what it writes).
+		 * The keys the Base reads of the two sessions as the renderer writes them in version 4, copied by hand. `live-session-summary-v4.test.ts` compares the whole
+		 * frontmatter of the 11 Oct note with the renderer's output and the main keys of the 10 Oct one; this file cannot import those fixtures (the action-observability
+		 * census would count a support file as production), so a change of the renderer's keys has to be copied here too.
 		 */
 		const V4_11_OCT = `tyrian_summary_version: 4
 tyrian_summary_main_map: null

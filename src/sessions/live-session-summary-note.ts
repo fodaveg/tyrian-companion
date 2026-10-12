@@ -150,7 +150,9 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const heading = `${liveSessionTitleStamp(session.startedAt, offset)} · ${label('Resumen', 'Summary')} · ${mapHeading}${characters.length === 1 ? ` · ${escapeMarkdown(characters[0]!.name)}` : ''}`;
 		// From 90 % observed the header carries what was not observed and the «Coverage» section is not written (version 4).
 		const folded = f.observedShare >= SUMMARY_FOLD_COVERAGE;
-		const unobserved = folded && f.gapStretches > 0 ? ` (${minutesSeconds(f.gapsMs)} ${label('sin observar', 'unobserved')})` : '';
+		// Of ITEMS, the channel the percent is of: a cut of the wallet alone has its own sentence below.
+		const itemsUnobservedMs = Math.max(0, f.gapsMs - f.gapsCurrencyOnlyMs);
+		const unobserved = folded && f.gapStretches > 0 && Math.round(itemsUnobservedMs / 1000) > 0 ? ` (${minutesSeconds(itemsUnobservedMs)} ${label('sin observar', 'unobserved')})` : '';
 		const out: string[] = [`# ${heading}`, '',
 			`${day(session.startedAt)} · ${clock(session.startedAt)}–${clock(session.endedAt)} · ${duration(f.durationMs)} · ${String(f.observedPercent)} % ${label('observado', 'observed')}${unobserved}`];
 		// What the bags and the build looked like at the close, in one line: it answers «do I have to sell now?» and is written only when it is known.
@@ -292,7 +294,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 					...(valued && paced ? [{ heading: label('Por hora observada', 'Per observed hour'), align: '---:' as const }] : [])];
 				const line = (cells: string[]): string => `| ${cells.join(' | ')} |`;
 				const tableRow = (row: SummaryMapRow): string => line([mapLabel(row), duration(row.observedMs),
-					...(valued ? [unpricedRow(row) ? label('sin precio de bazar', 'no bazaar price') : money(row.netCopper ?? 0)] : []),
+					...(valued ? [unpricedRow(row) ? label('sin valor de bazar', 'no trading post value') : money(row.netCopper ?? 0)] : []),
 					...(valued && parts ? [unpricedRow(row) ? '—' : share(row.netCopper ?? 0)] : []),
 					...(valued && paced ? [row.perHourCopper === null ? '—' : money(row.perHourCopper)] : [])]);
 				out.push(line(columns.map((column) => column.heading)), `|${columns.map((column) => column.align).join('|')}|`, ...shown.map(tableRow),

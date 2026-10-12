@@ -428,6 +428,8 @@ function mapBreakdown(session: StoredLiveSessionPayloadV1, counted: ReadonlyMap<
 		const row = stretch.mapId === null ? unidentified : rows.get(stretch.mapId);
 		if (row !== undefined) { row.changes += stretch.changes; row.priced ||= stretch.priced; }
 	}
+	// A map whose changes have no price (or are all bound to the account) has no value to state, so no pace either: its zero is not a measured zero.
+	for (const row of [...rows.values(), unidentified]) if (row.changes > 0 && !row.priced) row.perHourCopper = null;
 	return { rows: [...rows.values()], unidentified, visits, stretches };
 }
 

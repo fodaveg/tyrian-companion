@@ -1176,7 +1176,8 @@ Y 11 cortes de menos de 30 s, en total 1 min 23 s.`);
 			const { content } = await render({ mutate: shaped(40, 40 * MIN, [[5 * MIN, 30_000]], 'currencies') });
 			expect(percentOf(content)).toEqual({ header: 99, frontmatter: 99 });
 			// Over 90 % the header says what was not observed; and the wallet, out where the items were not, is said on its own.
-			expect(body(content)).toContain('· 99 % observado (30 s sin observar)\n');
+			// A cut of the wallet alone is not time without items: no brackets in the header (they are of items, like the percent).
+			expect(body(content)).toContain('· 99 % observado\n');
 			expect(content).toContain('Las monedas estuvieron 30 s sin observar mientras los objetos sí se observaban');
 		});
 

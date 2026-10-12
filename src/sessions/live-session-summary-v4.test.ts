@@ -275,7 +275,7 @@ Sin precio de bazar (fuera del valor): Esquirla de rubí ×1, Fósil de hoja ×1
 | Fractales de la Niebla | 6 min 42 s | 63s 67c | 65 % | — |
 | Resplandor del Fuego | 2 min 18 s | 31s 52c | 32 % | — |
 | Hondonadas del Manantial de Ley | 16 min 15 s | 2s 85c | 3 % | 10s 53c |
-| Oasis de Cristal | 2 min 21 s | sin precio de bazar | — | — |
+| Oasis de Cristal | 2 min 21 s | sin valor de bazar | — | — |
 | 2 mapas sin cambios de objetos | 3 min | 0c | 0 % | — |
 
 Solo objetos: el oro de la cartera no se reparte por mapa. Lo que llega durante la carga de un mapa cuenta en el mapa donde se observó. Sin cambios de objetos: Santuario del Bloqueo de la Niebla y Arco del León.
@@ -388,7 +388,6 @@ describe('summary note, version 4: the two real sessions', () => {
 		expect(content).toContain('| **Cambio neto estimado observado** | **+64s 33c** |');
 		expect(content).toContain('| Cambio de valor de objetos | -1g 32s 15c |');
 		// The table of items adds up: 17s 59c of net increases less 1g 49s 74c of priced decreases is the -1g 32s 15c above.
-		expect(1_759 - 14_974).toBe(-13_215);
 		// A negative map takes the share column away, and a map with no change is not grouped when it is alone.
 		expect(section(content, 'Mapas')).not.toContain('Parte del valor');
 		expect(section(content, 'Mapas')).toContain('| Santuario del Bloqueo de la Niebla | 7 min 16 s | 0c | — |');
@@ -483,7 +482,7 @@ describe('summary note, version 4: maps with no item changes', () => {
 	it('groups only the maps where no item changed, and a map whose changes have no price keeps its own row', async () => {
 		const content = await render(real);
 		// Oasis de Cristal changed (two items, none with a bazaar price) and its value is a zero that says nothing: its own row, last of the valued ones.
-		expect(rowOf(content, 'Oasis de Cristal')).toBe('| Oasis de Cristal | 2 min 21 s | sin precio de bazar | — | — |');
+		expect(rowOf(content, 'Oasis de Cristal')).toBe('| Oasis de Cristal | 2 min 21 s | sin valor de bazar | — | — |');
 		expect(rowOf(content, 'Santuario del Bloqueo de la Niebla')).toBeUndefined();
 		expect(section(content, 'Mapas')).toContain('| 2 mapas sin cambios de objetos | 3 min | 0c | 0 % | — |');
 	});
@@ -496,6 +495,21 @@ describe('summary note, version 4: maps with no item changes', () => {
 		expect(section(arco, 'Mapas')).not.toContain('mapas sin cambios de objetos');
 		expect(rowOf(arco, 'Santuario del Bloqueo de la Niebla')).toBe('| Santuario del Bloqueo de la Niebla | 2 min 1 s | 0c | 0 % | — |');
 		expect(rowOf(arco, 'Arco del León')).toContain('| 59 s |');
+	});
+
+	it('writes no pace for a long map whose changes have no price: a zero there would be a measured zero it is not', async () => {
+		// Oasis de Cristal for 30 minutes with only unpriced items, and a priced item whose units have no hour (they go to no identified map).
+		const long = (session: StoredLiveSessionPayloadV1): StoredLiveSessionPayloadV1 => ({ ...session, observedItemsMs: 1_800_000, gaps: [],
+			mapIntervals: [{ mapId: 1210, fromMs: Date.parse(session.startedAt), toMs: Date.parse(session.startedAt) + 1_800_000 }], endedAt: new Date(Date.parse(session.startedAt) + 1_800_000).toISOString(),
+			journal: session.journal.map((entry) => ({ ...entry, observations: entry.observations.filter((row) => row.idNumber === 83_001 || row.idNumber === 83_002) })).filter((entry) => entry.observations.length > 0),
+			totals: session.totals.filter((row) => [83_001, 83_002, 75_919].includes(row.idNumber)) });
+		const figures = computeSummaryFigures(long(real.session), real.itemMeta, real.characters);
+		const oasis = figures.mapBreakdown.rows.find((row) => row.mapId === 1210)!;
+		expect([oasis.observedMs, oasis.changes, oasis.priced, oasis.perHourCopper]).toEqual([1_800_000, 2, false, null]);
+		const content = await render(real, { mutate: long });
+		expect(section(content, 'Mapas').split('\n')[0]).toBe('| Mapa | Tiempo observado | Valor de objetos | Parte del valor |');
+		expect(section(content, 'Mapas')).toMatch(/\| Oasis de Cristal \| 30 min \| sin valor de bazar \| — \|/u);
+		expect(section(content, 'Mapas')).not.toMatch(/Oasis de Cristal[^\n]*0c/u);
 	});
 
 	it('counts the changes of each map as the stretches below say them', async () => {
