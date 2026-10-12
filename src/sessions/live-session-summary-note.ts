@@ -86,6 +86,25 @@ export function liveSessionSummaryRelativePath(startedAt: string, sessionRef: st
 	return `${LIVE_SESSION_SUMMARY_FOLDER}/${date} ${time} - ${sessionRef.slice(0, 16)} - summary.md`;
 }
 
+/**
+ * The identity a summary note carries for its path, read from its own frontmatter (`tyrian_summary_of`: the full session ref;
+ * `tyrian_summary_started_at`), or null when the text is no summary or either value is unusable. A host that names notes by id (Hebra)
+ * adopts a summary it did not write with this: the path it answers is the one `liveSessionSummaryRelativePath` writes.
+ */
+export function liveSessionSummaryPathIdentity(text: string): { sessionRef: string; startedAt: string } | null {
+	if (!text.startsWith('---\n')) return null;
+	const end = text.indexOf('\n---\n', 4);
+	if (end < 0) return null;
+	const frontmatter = text.slice(4, end);
+	const read = (key: string): string | null => {
+		// Both values are written with `JSON.stringify` and hold no character that would be escaped, so a plain quoted string is the only valid form.
+		return new RegExp(`^tyrian_summary_${key}: "([^"\\\\]+)"[ \\t]*$`, 'mu').exec(frontmatter)?.[1] ?? null;
+	};
+	const sessionRef = read('of'); const startedAt = read('started_at');
+	if (sessionRef === null || startedAt === null || !/^[a-f0-9]{64}$/u.test(sessionRef) || !Number.isFinite(Date.parse(startedAt))) return null;
+	return { sessionRef, startedAt };
+}
+
 export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): Promise<
 	{ status: 'ok'; note: RenderedLiveSessionSummary } | { status: 'invalid'; reason: string }> {
 	try {

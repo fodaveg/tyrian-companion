@@ -13,6 +13,11 @@
  * - collector status (R1b): frontmatter `tc_kind: gw2_collector_status`, the one fixed path
  *   `Collector status.md`. A second collector has to find it by path to see the first one.
  *
+ * - live-session summary: frontmatter `tyrian_summary_of` + `tyrian_summary_started_at` (NO `tc_` key on purpose, see
+ *   `live-session-summary-note.ts`), the path `summaries/<stamp> - <ref16> - summary.md` its writer builds. Without it a device that
+ *   receives the summaries by sync never indexes them and the history shows no link to them. It is recognized here, and not by a
+ *   `tc_kind`, so it never counts as a session nor as a Tyrian note the seed could not place (`tyrianFamilyOf` does not know it).
+ *
  * Not families: Halloween writes no notes (its vault port only reads session notes); the notes a
  * `tyrian-price-history` block lives in are the inventory notes above, or the user's own; the
  * pilot-metrics and session-history exports are `.json`/`.csv`, not notes; managed Bases and
@@ -23,6 +28,7 @@ import type { CanonicalPathFor } from '../host/tyrian-host';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import { inventoryNotePositionId, inventoryNoteRelativePath } from '../inventory/inventory-vault-sync';
 import { COLLECTOR_STATUS_NOTE_RELATIVE_PATH, parseCollectorStatusNote } from './collector-status';
+import { liveSessionSummaryPathIdentity, liveSessionSummaryRelativePath } from '../sessions/live-session-summary-note';
 import { sessionNotePathIdentity, sessionNoteRelativePaths } from '../sessions/session-note-renderer';
 import { walletNoteCurrencyId, walletNoteRelativePath } from '../wallet/wallet-vault-sync';
 
@@ -45,5 +51,7 @@ export const canonicalPathFor: CanonicalPathFor = (root, noteText) => {
 	const currencyId = walletNoteCurrencyId(text);
 	if (currencyId !== null) return [walletNoteRelativePath(currencyId)];
 	if (parseCollectorStatusNote(text) !== null) return [COLLECTOR_STATUS_NOTE_RELATIVE_PATH];
+	const summary = liveSessionSummaryPathIdentity(text);
+	if (summary !== null) return [liveSessionSummaryRelativePath(summary.startedAt, summary.sessionRef)];
 	return [];
 };

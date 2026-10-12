@@ -40,6 +40,7 @@ interface LiveCore {
 	liveSessions: LiveSessionLifecycle;
 	getProductActionController(): ProductActionController;
 	getLiveSessionView(): LiveSessionViewV1;
+	listLiveSessionHistory(): Promise<{ sessionRef: string; summaryPath?: string }[]>;
 	getCollectorMode(): string;
 	whenRuntimeReady(): Promise<void>;
 	runtimeReady: boolean;
@@ -111,6 +112,22 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(summaryNotes(test), 'a deleted summary is not recreated at load').toHaveLength(0);
 		await reloaded.cleanup();
+	}, 30_000);
+
+	it('a device that receives the session and its summary by sync links the summary from the history', async () => {
+		const test = collectorHebra();
+		// Device A writes both notes; device B shares the library but its path index (IndexedDB) is its own and empty.
+		const written = await activate(test, new IDBFactory());
+		await playUntilGameExit(written.core, 'a', FIRST_EPOCH);
+		await vi.waitFor(() => { expect(summaryNotes(test), 'the summary follows the full note').toHaveLength(1); });
+		await written.cleanup();
+
+		now += 60_000;
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		const history = await core.listLiveSessionHistory();
+		expect(history, 'the session of the other device is listed').toHaveLength(1);
+		expect(history[0]!.summaryPath, 'and its row links to the summary the seed adopted').toMatch(/^Tyrian Companion\/summaries\/.+ - summary\.md$/u);
+		await cleanup();
 	}, 30_000);
 
 	it('a finished session left without its note is saved when the plugin loads, and the next connection starts a new session', async () => {
