@@ -11522,9 +11522,9 @@
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
 						"scope": "resolveWanted",
-						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder coin name when the cosmetic local currency-cache read fails; it makes no request, and no measurement or alert depends on it."
+						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder coin name when the cosmetic currency lookup fails: the local currency-cache read, then a public catalog request for only the coin ids the cache lacked (at most once per id every 5 minutes, none while a rate limit is active); no measurement or alert depends on it."
 					},
-					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder coin name when the cosmetic local currency-cache read fails; it makes no request, and no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
+					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder coin name when the cosmetic currency lookup fails: the local currency-cache read, then a public catalog request for only the coin ids the cache lacked (at most once per id every 5 minutes, none while a rate limit is active); no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
 				},
 				{
 					"id": "13f11b1f72058fec1ecf4face6a0357a4e0dd50b",
@@ -11538,9 +11538,9 @@
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
 						"scope": "resolveWanted",
-						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic local catalog-cache read fails; it makes no request, and no measurement or alert depends on it."
+						"justification": "The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic item lookup fails: the local catalog-cache read, then a public catalog request for only the item ids the cache lacked (at most once per id every 5 minutes, none while a rate limit is active); no measurement or alert depends on it."
 					},
-					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic local catalog-cache read fails; it makes no request, and no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
+					"reason": "Allowlisted catch_clause: The \"resolveWanted\" \"intentional_noop\" boundary keeps the placeholder name when the cosmetic item lookup fails: the local catalog-cache read, then a public catalog request for only the item ids the cache lacked (at most once per id every 5 minutes, none while a rate limit is active); no measurement or alert depends on it. Verified recovery: \"intentional_noop\" in \"resolveWanted\"."
 				},
 				{
 					"id": "23ce41e36cabde480f26ef553c79938035b83fdd",
