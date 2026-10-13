@@ -224,7 +224,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		if (resultBlocks.length > 0) out.push('', `## ${label('Resultado', 'Result')}`, ...resultBlocks.flatMap((block) => ['', ...block]));
 
 		// Version 5: the value over time, as a Mermaid block (text, not an image) right after the result; fewer than two points, no section.
-		const chart = renderSummaryChart({ points: liveSessionChartFromStored(session), startedAt: session.startedAt, endedAt: session.endedAt, locale: input.locale });
+		const chart = renderSummaryChart({ points: liveSessionChartFromStored(session), startedAt: session.startedAt, endedAt: session.endedAt, gaps: session.gaps, locale: input.locale });
 		if (chart !== null) out.push('', `## ${label('Valor durante la sesión', 'Value during the session')}`, '', ...chart);
 
 		if (f.hasNewItems) {

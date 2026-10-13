@@ -1,4 +1,4 @@
-import type { LiveChartPointV1 } from './live-session-model';
+import type { LiveChartPointV1, LiveGapV1 } from './live-session-model';
 
 /**
  * The value chart of the summary note (David, 13 Oct 2026): a Mermaid `xychart-beta` block, text and not an image, that draws the same
@@ -15,6 +15,8 @@ export const MAX_CHART_POINTS = 120;
 /** The gaps named under the chart; the rest is counted. */
 const MAX_LISTED_CHART_GAPS = 5;
 const MINUTE_MS = 60_000;
+/** A gap shorter than this is not seen in a chart by minutes. */
+const MIN_CHART_GAP_MS = 60_000;
 const COPPER_PER_GOLD = 10_000;
 const NICE_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
 
@@ -23,6 +25,8 @@ export interface SummaryChartInput {
 	/** When the session started; the horizontal axis begins there (or at the first point if that is earlier, as the panel does). */
 	startedAt: string;
 	endedAt: string;
+	/** The stored coverage gaps of the session (both channels count; the series adds wallet gold and items). The source of the gap line. */
+	gaps: readonly LiveGapV1[];
 	locale: 'es' | 'en';
 }
 
@@ -44,13 +48,24 @@ function niceCeil(value: number): number {
 
 function numberText(value: number): string { return String(value === 0 ? 0 : value); }
 
+/** Sorts spans and joins those that overlap or touch. */
+function mergeSpans(spans: readonly { from: number; to: number }[]): { from: number; to: number }[] {
+	const merged: { from: number; to: number }[] = [];
+	for (const span of [...spans].sort((x, y) => x.from - y.from || x.to - y.to)) {
+		const last = merged[merged.length - 1];
+		if (last !== undefined && span.from <= last.to) last.to = Math.max(last.to, span.to);
+		else merged.push({ ...span });
+	}
+	return merged;
+}
+
 /**
  * The lines of the chart section (heading excluded), or null when there are fewer than two valid points: no section, no empty block.
  * Only the output is a contract; nothing here depends on the host.
  */
 export function renderSummaryChart(input: SummaryChartInput): string[] | null {
 	const es = input.locale === 'es';
-	const valid = input.points.map((point) => ({ at: Date.parse(point.observedAt), copper: pointCopper(point), breakBefore: point.breakBefore }))
+	const valid = input.points.map((point) => ({ at: Date.parse(point.observedAt), copper: pointCopper(point) }))
 		.filter((point) => Number.isFinite(point.at) && Number.isFinite(point.copper));
 	if (valid.length < 2) return null;
 	valid.sort((a, b) => a.at - b.at);
@@ -75,13 +90,16 @@ export function renderSummaryChart(input: SummaryChartInput): string[] | null {
 	const lines = ['```mermaid', 'xychart-beta', `    title "${text('Valor estimado del botín (oro)', 'Estimated loot value (gold)')}"`,
 		`    x-axis "${text('Minutos', 'Minutes')}" 0 --> ${String(minutes)}`, `    y-axis "${text('Oro', 'Gold')}" ${numberText(yMin)} --> ${numberText(yMax)}`,
 		`    line [${values.map(numberText).join(', ')}]`, '```'];
-	// A reading gap is the stretch before a point that breaks the line, from the previous point.
-	const gaps: { from: number; to: number }[] = [];
-	for (let index = 1; index < valid.length; index += 1) {
-		if (!valid[index]!.breakBefore) continue;
-		const from = Math.floor((valid[index - 1]!.at - t0) / MINUTE_MS); const to = Math.ceil((valid[index]!.at - t0) / MINUTE_MS);
-		gaps.push({ from, to: Math.max(to, from + 1) });
+	// The gaps come from the stored coverage, not from `breakBefore`: the journal is sparse and the series is thinned, so the previous
+	// point can be minutes before the last valid datum. Clip to the chart, merge in milliseconds, drop the invisible, then round out.
+	const spans: { from: number; to: number }[] = [];
+	for (const gap of input.gaps) {
+		const from = Math.max(Date.parse(gap.fromAt), t0);
+		const to = Math.min(gap.toAt === null ? t1 : Date.parse(gap.toAt), t1);
+		if (Number.isFinite(from) && Number.isFinite(to) && to > from) spans.push({ from, to });
 	}
+	const gaps = mergeSpans(mergeSpans(spans).filter((span) => span.to - span.from >= MIN_CHART_GAP_MS)
+		.map((span) => ({ from: Math.floor((span.from - t0) / MINUTE_MS), to: Math.ceil((span.to - t0) / MINUTE_MS) })));
 	if (gaps.length > 0) {
 		const listed = gaps.slice(0, MAX_LISTED_CHART_GAPS).map((gap) => es ? `Sin datos entre el minuto ${String(gap.from)} y el ${String(gap.to)}.`
 			: `No data between minute ${String(gap.from)} and ${String(gap.to)}.`);

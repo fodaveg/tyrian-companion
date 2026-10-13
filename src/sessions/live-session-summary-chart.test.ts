@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LiveChartPointV1 } from './live-session-model';
+import type { LiveChartPointV1, LiveGapV1 } from './live-session-model';
 import { MAX_CHART_POINTS, renderSummaryChart } from './live-session-summary-chart';
 import { readComparablePerHour } from './live-session-summary-history';
 import { liveSessionSummaryPathIdentity, liveSessionSummaryRelativePath } from './live-session-summary-note';
@@ -10,8 +10,11 @@ const MINUTE = 60_000;
 const at = (minute: number): string => new Date(START + minute * MINUTE).toISOString();
 const point = (minute: number, gold: number, breakBefore = false): LiveChartPointV1 => ({ observedAt: at(minute), itemQuantityNet: 0,
 	netItemValueKnownCopper: gold * 10_000, knownNetValueCopper: gold * 10_000, breakBefore });
-const chart = (points: LiveChartPointV1[], endMinute: number, locale: 'es' | 'en' = 'es'): string[] | null =>
-	renderSummaryChart({ points, startedAt: at(0), endedAt: at(endMinute), locale });
+const gap = (fromMin: number, toMin: number | null, channel: 'items' | 'currencies' = 'items'): LiveGapV1 =>
+	({ version: 1, fromAt: at(fromMin), toAt: toMin === null ? null : at(toMin), reason: 'partial_inventory', channels: [channel] });
+const chart = (points: LiveChartPointV1[], endMinute: number, locale: 'es' | 'en' = 'es', gaps: LiveGapV1[] = []): string[] | null =>
+	renderSummaryChart({ points, startedAt: at(0), endedAt: at(endMinute), gaps, locale });
+const gapLine = (lines: string[]): string | undefined => lines.find((entry) => /^(?:Sin datos|No data|Y \d|And \d)/u.test(entry));
 const lineOf = (lines: string[]): number[] => {
 	const row = lines.find((entry) => entry.trim().startsWith('line ['));
 	if (row === undefined) throw new Error('no line');
@@ -85,7 +88,7 @@ describe('summary chart: the Mermaid block', () => {
 	});
 
 	it('keeps the last value inside a gap and says which minutes have no data, only when there are gaps', () => {
-		const lines = chart([point(0, 0), point(10, 2), point(12, 2.5), point(18, 4, true), point(20, 5)], 20)!;
+		const lines = chart([point(0, 0), point(10, 2), point(12, 2.5), point(18, 4, true), point(20, 5)], 20, 'es', [gap(12, 18)])!;
 		const values = lineOf(lines);
 		expect(values.slice(12, 18).every((value) => value === 2.5)).toBe(true);
 		expect(values[18]).toBe(4);
@@ -97,9 +100,49 @@ describe('summary chart: the Mermaid block', () => {
 		expect(clean.join('\n')).not.toContain('Sin datos');
 	});
 
+	it('takes the gaps from the stored coverage: a sparse journal with a break 8 minutes after the previous point makes no 8 minute gap', () => {
+		const lines = chart([point(0, 0), point(2, 1), point(10, 3, true), point(12, 4)], 12, 'es', [gap(9.5, 10)])!;
+		expect(gapLine(lines)).toBeUndefined();
+		expect(chart([point(0, 0), point(2, 1), point(10, 3, true), point(12, 4)], 12)!.at(-1)).toBe('```');
+		expect(gapLine(chart([point(0, 0), point(2, 1), point(10, 3, true), point(12, 4)], 12, 'es', [gap(9, 10)])!)).toBe('Sin datos entre el minuto 9 y el 10.');
+	});
+
+	it('merges overlapping gaps, from both channels, into one', () => {
+		const lines = chart([point(0, 0), point(30, 1)], 30, 'es', [gap(2, 6), gap(4, 9, 'currencies'), gap(3, 5)])!;
+		expect(gapLine(lines)).toBe('Sin datos entre el minuto 2 y el 9.');
+	});
+
+	it('merges gaps that touch', () => {
+		const lines = chart([point(0, 0), point(30, 1)], 30, 'es', [gap(2, 5), gap(5, 8, 'currencies')])!;
+		expect(gapLine(lines)).toBe('Sin datos entre el minuto 2 y el 8.');
+	});
+
+	it('does not list a gap of 20 seconds, and lists 59 s plus a contiguous 30 s as one of 89 s', () => {
+		const sec = (seconds: number): string => new Date(START + seconds * 1000).toISOString();
+		const raw = (from: number, to: number | null): LiveGapV1 => ({ version: 1, fromAt: sec(from), toAt: to === null ? null : sec(to), reason: 'disconnect', channels: ['items'] });
+		const points = [point(0, 0), point(30, 1)];
+		const run = (gaps: LiveGapV1[]): string[] => renderSummaryChart({ points, startedAt: at(0), endedAt: at(30), gaps, locale: 'es' })!;
+		expect(gapLine(run([raw(300, 320)]))).toBeUndefined();
+		expect(gapLine(run([raw(300, 359)]))).toBeUndefined();
+		expect(gapLine(run([raw(300, 359), raw(359, 389)]))).toBe('Sin datos entre el minuto 5 y el 7.');
+	});
+
+	it('ends an open gap at the end of the chart and clips gaps to the chart interval', () => {
+		const open = chart([point(0, 0), point(20, 1)], 20, 'es', [gap(15, null)])!;
+		expect(gapLine(open)).toBe('Sin datos entre el minuto 15 y el 20.');
+		const clipped = chart([point(0, 0), point(20, 1)], 20, 'es', [gap(-5, 3), gap(18, 40)])!;
+		expect(gapLine(clipped)).toBe('Sin datos entre el minuto 0 y el 3. Sin datos entre el minuto 18 y el 20.');
+	});
+
+	it('merges again after rounding to minutes', () => {
+		const lines = chart([point(0, 0), point(30, 1)], 30, 'es', [gap(2, 3.2), gap(3.5, 5)])!;
+		expect(gapLine(lines)).toBe('Sin datos entre el minuto 2 y el 5.');
+	});
+
 	it('names at most five gaps and counts the rest', () => {
-		const points = [point(0, 0), ...Array.from({ length: 7 }, (_, index) => [point(index * 10 + 1, index), point(index * 10 + 5, index + 1, true)]).flat()];
-		const text = chart(points, 80, 'en')!.at(-1)!;
+		const points = [point(0, 0), point(80, 1)];
+		const gaps = Array.from({ length: 7 }, (_, index) => gap(index * 10 + 1, index * 10 + 5));
+		const text = gapLine(chart(points, 80, 'en', gaps)!)!;
 		expect(text.match(/No data between/gu)).toHaveLength(5);
 		expect(text).toContain('And 2 more intervals without data.');
 	});
