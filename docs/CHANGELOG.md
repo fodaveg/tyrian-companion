@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.55 - Los huecos de la gráfica de la nota resumen salen de la cobertura real
+
+Se actualiza desde la 0.6.54 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Nota resumen de sesión. La frase «Sin datos entre el minuto…» bajo la gráfica de valor listaba tramos solapados,
+  repetidos o falsos: los sacaba del punto anterior de la gráfica, que puede estar minutos antes del último dato
+  válido. Ahora sale de los huecos de cobertura que guarda la sesión, fusiona los que se solapan o se tocan y no
+  nombra los de menos de un minuto. La gráfica no cambia.
+
 ## Release beta 0.6.54 - La nota resumen lleva la gráfica de valor de la sesión
 
 Se actualiza desde la 0.6.53 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.

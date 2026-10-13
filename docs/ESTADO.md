@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.55: los huecos de la gráfica salen de la cobertura real (13 oct 2026)
+
+**Candidato; sin publicar.** Rama `release/0655` sobre el canal 0.6.54 publicado (`e9421919`). Detalle en
+[CHANGELOG](CHANGELOG.md). Hotfix de la 0.6.54, dentro de la excepción a la congelación de Halloween.
+
+- Medido sobre las 11 sesiones reales de la biblioteca de Hebra de David: con la 0.6.54, 10 de 11 notas llevaban
+  una línea de huecos con tramos solapados o falsos («entre el minuto 0 y el 9», «entre el 8 y el 14», «entre el 13 y
+  el 14» repetido). Causa: `renderSummaryChart` tomaba como inicio del hueco el punto anterior a cada `breakBefore`,
+  pero el diario v2 no guarda muestras sin cambios y la serie va reducida a 600 puntos.
+- `0ef7b6c2`: `src/sessions/live-session-summary-chart.ts` toma los huecos de `payload.gaps` (los dos canales),
+  recortados al eje, fusionados en milisegundos, sin los de menos de 60 s y redondeados hacia fuera a minutos;
+  `live-session-summary-note.ts` le pasa `session.gaps`. `docs/SPEC-live-loot.md` actualizado. Tests nuevos en
+  `live-session-summary-chart.test.ts`; prueba negativa: sin fusión 4 rojos, derivando de `breakBefore` 7 rojos.
+- Con este código, las 11 notas resumen ya escritas en la biblioteca de Hebra recibieron la sección de la gráfica a
+  petición de David (lote `20261013T064838Z-a7529a` de `hebra-mcp apply`, solo adiciones); quedan 2 con línea de
+  huecos.
+- Sin verificar: el aspecto en Hebra y Obsidian reales.
+
 ## Canal 0.6.54 publicado: la nota resumen lleva la gráfica de valor (13 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.54` = `90661582` (atestación; candidato `025b3c18`,
