@@ -1431,6 +1431,39 @@ describe('Inventory Advisor view', () => {
 		expect(onRemoveKeepException).toHaveBeenCalledWith('exception-100');
 	});
 
+	it('keeps the undo on a row the advisor decides `keep` because of the user\'s own exception (re-analysis after "Conservar")', () => {
+		const onRemoveKeepException = vi.fn();
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Material seguro', action: 'keep', reasonCodes: ['user_keep_exception'] })] }],
+		};
+		const mount = render(model, 'es', {
+			onKeepItem: vi.fn(), onRemoveKeepException,
+			preferences: { status: 'ready', goals: [], keepExceptions: [
+				{ version: 1, exceptionId: 'exception-100', itemId: 100, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' },
+			] },
+		});
+		const keptButton = only(find(mount.elements(), 'button')
+			.filter((candidate) => candidate.attributes.get('aria-label') === 'Conservado. Clic para dejar de conservar Material seguro'));
+		expect(keptButton.attributes.get('aria-pressed')).toBe('true');
+		expect(text(mount.elements())).not.toContain('la reserva manda');
+		keptButton.dispatch('click');
+		expect(onRemoveKeepException).toHaveBeenCalledWith('exception-100');
+	});
+
+	it('still says "la reserva manda" on a `keep` row without a user exception', () => {
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Material seguro', action: 'keep' })] }],
+		};
+		const mount = render(model, 'es', {
+			onKeepItem: vi.fn(), onRemoveKeepException: vi.fn(),
+			preferences: { status: 'ready', goals: [], keepExceptions: [] },
+		});
+		expect(text(mount.elements())).toContain('la reserva manda');
+		expect(find(mount.elements(), 'button').filter((candidate) => candidate.attributes.get('aria-pressed') !== undefined)).toHaveLength(0);
+	});
+
 	it('does not read the emptied list of a refused "stop keeping" as done', () => {
 		let preferences: InventoryPreferencesEditorState = { status: 'ready', goals: [], keepExceptions: [
 			{ version: 1, exceptionId: 'exception-100', itemId: 100, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' },

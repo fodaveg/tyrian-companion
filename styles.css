@@ -2092,12 +2092,27 @@
 	gap: var(--size-2-2);
 }
 
+.tyrian-inventory__keep button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-2-3);
+}
+
+.tyrian-inventory__keep button > .svg-icon {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+}
+
 .tyrian-inventory__keep button[aria-pressed='true'] {
 	box-shadow: 0 0 0 1.5px var(--interactive-accent);
 	font-weight: var(--font-semibold);
 }
 
 .tyrian-inventory__keep small {
+	/* Block, or `min-height` is ignored on an inline <small> and the row grows when the note appears. */
+	display: block;
 	min-height: 1.3em;
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);

@@ -1401,12 +1401,14 @@ interface RowKeepContext {
  */
 function keepControl(row: InventoryAdvisorViewRow, translator: Translator, keep: RowKeepContext | null): HTMLElement | null {
 	if (keep === null) return null;
-	if (row.action === 'keep') {
+	const kept = keep.kept.get(row.itemId) ?? null;
+	// The user's own keep exception makes the classifier decide `keep` (`user_keep_exception`), so
+	// the row must offer the undo before it reads `keep` as "a reservation decides".
+	if (row.action === 'keep' && kept === null) {
 		const note = createEl('small');
 		note.textContent = translator.t('advisor.view.keep.reservationRules');
 		return note;
 	}
-	const kept = keep.kept.get(row.itemId) ?? null;
 	const button = createEl('button');
 	button.type = 'button';
 	button.disabled = keep.busy;
