@@ -240,7 +240,7 @@ describe('session summaries Base', () => {
 			expect([...referenced].filter((key) => !(key in fm))).toEqual([]);
 		}
 		expect(fm.tags).toEqual(['gw2/session-summary']);
-		expect(fm.tyrian_summary_version).toBe(4);
+		expect(fm.tyrian_summary_version).toBe(5);
 		// No key of the summary starts with `tc_`: the history of sessions reads every note of the vault and takes such a key for a session note.
 		expect(Object.keys(fm).filter((key) => key.startsWith('tc_'))).toEqual([]);
 	});

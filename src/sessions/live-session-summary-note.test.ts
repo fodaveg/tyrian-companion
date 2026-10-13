@@ -75,6 +75,8 @@ async function render(options: Parameters<typeof inputFor>[0] = {}) {
 	if (result.status !== 'ok') throw new Error(result.reason);
 	return result.note;
 }
+/** The chart section has its own tests (`live-session-summary-chart.test.ts`); the whole-note texts below are about everything else. */
+const withoutChart = (content: string): string => content.replace(/## (?:Valor durante la sesión|Value during the session)\n\n```mermaid\n[\s\S]*?\n```\n\n/u, '');
 const body = (content: string): string => content.slice(content.indexOf('\n---\n', 4) + 5);
 const total = (kind: 'item' | 'currency', idNumber: number, positive: number, negative = 0) => ({ kind, idNumber, positive, negative, net: positive - negative });
 /** The paragraph under the «Resultado» table, word for word (David approved it on 12 Oct 2026). */
@@ -112,7 +114,7 @@ describe('live session summary: a normal session', () => {
 	it('writes the whole note in Spanish, local time, with the figures that hold', async () => {
 		const note = await render({ itemMeta: META, mapNames: { '866': 'Laberinto del Rey Loco', '873': 'Bosque de Caledon' },
 			mutate: (session) => ({ ...GOLD_WALLET_ON(session), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 30 * 60_000 }, { mapId: 873, fromMs: AT + 30 * 60_000, toMs: AT + 40 * 60_000 }] }) });
-		expect(body(note.content)).toBe(`# 2026-10-08 17.30 · Resumen · Laberinto del Rey Loco · Alfa
+		expect(body(withoutChart(note.content))).toBe(`# 2026-10-08 17.30 · Resumen · Laberinto del Rey Loco · Alfa
 
 2026-10-08 · 17:30–18:10 · 40 min · 100 % observado
 
@@ -186,8 +188,8 @@ Solo objetos: el oro de la cartera no se reparte por mapa. Lo que llega durante 
 				{ itemId: 74328, unitCopper: null }, { itemId: 3376, unitCopper: null }, { itemId: 24875, unitCopper: null }] } });
 		const meta = Object.fromEntries([106732, 9333, 74328, 3376, 24875, SOLD].map((id) => [id, { flags: [], type: id === 9333 ? 'Container' : 'Trophy' }]));
 		const note = await render({ mutate: real, itemMeta: meta, displayNames: {}, characters: [{ name: 'Rinopopo', fromAt: new Date(START).toISOString() }] });
-		expect(note.content).toBe(`---
-tyrian_summary_version: 4
+		expect(withoutChart(note.content)).toBe(`---
+tyrian_summary_version: 5
 tyrian_summary_of: ${JSON.stringify(note.sessionRef)}
 tyrian_summary_locale: "es"
 tyrian_summary_started_at: "2026-10-08T07:46:45.000Z"
@@ -1938,7 +1940,7 @@ describe('live session summary: frontmatter for a Base', () => {
 		const note = await render({ itemMeta: META, characters: [{ name: 'Alfa', fromAt: iso(0) }, { name: 'Beta', fromAt: iso(0.9) }],
 			mapNames: { '866': 'Laberinto del Rey Loco' }, mutate: (session) => ({ ...GOLD_WALLET_ON(session), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 40 * 60_000 }] }) });
 		const fm = parse(note.content);
-		expect(fm).toMatchObject({ tyrian_summary_version: 4, tyrian_summary_date: '2026-10-08', tyrian_summary_map: 'Laberinto del Rey Loco',
+		expect(fm).toMatchObject({ tyrian_summary_version: 5, tyrian_summary_date: '2026-10-08', tyrian_summary_map: 'Laberinto del Rey Loco',
 			tyrian_summary_characters: ['Alfa', 'Beta'], tyrian_summary_duration_minutes: 40, tyrian_summary_observed_percent: 100,
 			tyrian_summary_net_gold: 4.77, tyrian_summary_per_hour_gold: 7.155, tyrian_summary_wallet_gold: 1.2345,
 			tyrian_summary_top_item: 'Saco grande', tyrian_summary_top_item_count: 30, tyrian_summary_alerts: 0, tyrian_summary_free_slots: 8,
@@ -2237,5 +2239,29 @@ describe('the changes of map and the readable full note', () => {
 			expect(await linkFullNoteToSummary(vault, { fullNotePath: 'Tyrian Companion/plain.md', summaryPath: SUMMARY, sessionRef: session.sessionRef, locale: 'es' })).toBe('skipped');
 			expect(vault.contents.get('Tyrian Companion/plain.md')).toBe('# algo\n');
 		});
+	});
+});
+
+describe('live session summary: the value chart (version 5)', () => {
+	it('writes the Mermaid block after the result and before the items, in the note of a session with a priced journal', async () => {
+		const note = await render({ itemMeta: META, mutate: GOLD_WALLET_ON });
+		const text = body(note.content);
+		const block = /## Valor durante la sesión\n\n```mermaid\nxychart-beta\n {4}title "Valor estimado del botín \(oro\)"\n {4}x-axis "Minutos" 0 --> 40\n {4}y-axis "Oro" 0 --> \d+(?:\.\d+)?\n {4}line \[[-\d., ]+\]\n```\n/u;
+		expect(text).toMatch(block);
+		expect(text.indexOf('## Resultado')).toBeLessThan(text.indexOf('## Valor durante la sesión'));
+		expect(text.indexOf('## Valor durante la sesión')).toBeLessThan(text.indexOf('## Objetos de más valor'));
+		expect(note.content).toContain('tyrian_summary_version: 5\n');
+		// One value per minute of the 40 of the session, ending above 0.
+		const values = /line \[([-\d., ]+)\]/u.exec(text)![1]!.split(', ').map(Number);
+		expect(values).toHaveLength(41);
+		expect(values.at(-1)).toBeGreaterThan(0);
+	});
+
+	it('writes the titles in English, and no chart when the session has no journal to draw', async () => {
+		const en = await render({ locale: 'en', itemMeta: META });
+		expect(body(en.content)).toContain('## Value during the session\n\n```mermaid\nxychart-beta\n    title "Estimated loot value (gold)"');
+		const empty = await render({ mutate: (session) => ({ ...session, journal: [] }) });
+		expect(empty.content).not.toContain('xychart-beta');
+		expect(empty.content).not.toContain('## Valor durante la sesión');
 	});
 });

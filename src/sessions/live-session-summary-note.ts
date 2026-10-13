@@ -4,6 +4,8 @@ import { computeSummaryFigures, formatSummaryDuration as duration, SUMMARY_FOLD_
 	type SummaryCharacter, type SummaryItemMetaMap, type SummaryMapRow, type SummaryMapStretch } from './live-session-summary-figures';
 import { liveSessionLocalTime, liveSessionTitleStamp, systemUtcOffsetMinutes, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { LIVE_RATE_MIN_OBSERVED_MS } from './live-session-model';
+import { liveSessionChartFromStored } from './live-session-history';
+import { renderSummaryChart } from './live-session-summary-chart';
 import { MAX_SUMMARIES_READ } from './live-session-summary-history';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import type { SessionNoteVault } from './session-note-writer';
@@ -221,6 +223,10 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 			...(missing !== null ? [[missing]] : []), ...afterResult.map((paragraph) => [paragraph])];
 		if (resultBlocks.length > 0) out.push('', `## ${label('Resultado', 'Result')}`, ...resultBlocks.flatMap((block) => ['', ...block]));
 
+		// Version 5: the value over time, as a Mermaid block (text, not an image) right after the result; fewer than two points, no section.
+		const chart = renderSummaryChart({ points: liveSessionChartFromStored(session), startedAt: session.startedAt, endedAt: session.endedAt, locale: input.locale });
+		if (chart !== null) out.push('', `## ${label('Valor durante la sesión', 'Value during the session')}`, '', ...chart);
+
 		if (f.hasNewItems) {
 			const top = f.sellable.slice(0, TOP_ITEMS);
 			// Not «to sell now»: the note is a record of what changed, and it does not know what is still in the bags when it is read.
@@ -389,7 +395,7 @@ export async function renderLiveSessionSummary(input: LiveSessionSummaryInput): 
 		const topMap = f.mapTopId === null ? null : rawMapName(f.mapTopId);
 		const centsOfGold = (copper: number | null): string => copper === null ? 'null' : String(Number((copper / 10_000).toFixed(2)));
 		const buildLabel = session.declaredBuild?.label ?? null;
-		const fm = ['---', 'tyrian_summary_version: 4', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
+		const fm = ['---', 'tyrian_summary_version: 5', `tyrian_summary_of: ${JSON.stringify(session.sessionRef)}`,
 			`tyrian_summary_locale: ${JSON.stringify(input.locale)}`, `tyrian_summary_started_at: ${JSON.stringify(session.startedAt)}`,
 			`tyrian_summary_ended_at: ${JSON.stringify(session.endedAt)}`, `tyrian_summary_main_map: ${f.mainMapId === null ? 'null' : String(f.mainMapId)}`,
 			`tyrian_summary_net_copper: ${shownNet === null ? 'null' : String(shownNet)}`, `tyrian_summary_per_hour_copper: ${shownPerHour === null ? 'null' : String(shownPerHour)}`,

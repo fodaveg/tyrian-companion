@@ -2,7 +2,7 @@ import { buildLiveSessionComparison, type LiveSessionComparison, type LiveSessio
 export type { LiveSessionSetAside } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
 import { buildLiveChart, GOLD_CURRENCY_ID, liveItemValueCopper } from './live-session-reducer';
-import type { LivePriceBasis, LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
+import type { LiveChartPointV1, LivePriceBasis, LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
 import { inspectLiveHistoryNote, type LiveHistoryNoteOutcome, type SessionHistoryFile, type SessionHistoryVault, type SessionNoteReads,
 	type SharedNoteRead } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
@@ -174,6 +174,12 @@ export async function findSealedLiveNotes(vault: Pick<SessionHistoryVault, 'mark
 	return found;
 }
 
+/** The chart of a saved session, rebuilt from its journal in at most 600 points; the summary note draws the same series. */
+export function liveSessionChartFromStored(payload: StoredLiveSessionPayloadV1): LiveChartPointV1[] {
+	return buildLiveChart(payload.journal,{ prices: payload.valuation.prices,priceCapturedAt: payload.valuation.capturedAt,
+		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [],priceBasis: payload.valuation.priceBasis },600,payload.coverage.lastObservationAt);
+}
+
 /** Frozen history is never a live source; current time cannot renew its last capture. */
 export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _now: number, offset = 0, limit = 200): LiveSessionViewV1 {
 	const all = payload.journal.flatMap((entry) => entry.observations);
@@ -182,8 +188,7 @@ export function liveSessionViewFromStored(payload: StoredLiveSessionPayloadV1, _
 	// Same criterion as the live chart: the whole session in at most 600 points.
 	// The line ends at the session's last sample, which a version 2 journal may not have an entry for.
 	// Every point is valued in the basis the saved valuation states, so the last one is the value saved with the session.
-	const chart = buildLiveChart(payload.journal,{ prices: payload.valuation.prices,priceCapturedAt: payload.valuation.capturedAt,
-		currencyTrackedIds: payload.valuation.coinNetCopper !== null ? [GOLD_CURRENCY_ID] : [],priceBasis: payload.valuation.priceBasis },600,payload.coverage.lastObservationAt);
+	const chart = liveSessionChartFromStored(payload);
 	return { version: 1,sessionId: payload.sessionRef,phase: 'complete',connection: 'disconnected',sourceState: 'unavailable',
 		sourceReason: 'source_missing',source: 'nexus_inventory',startedAt: payload.startedAt,endedAt: payload.endedAt,
 		elapsedMs: Date.parse(payload.endedAt) - Date.parse(payload.startedAt),observedItemsMs: payload.observedItemsMs,

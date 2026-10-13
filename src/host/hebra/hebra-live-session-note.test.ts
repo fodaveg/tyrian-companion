@@ -99,7 +99,7 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH);
 		expect(core.getLiveSessionView(), 'the session is finished').toMatchObject({ phase: 'complete', sessionId: first });
 		await vi.waitFor(() => { expect(summaryNotes(test), 'the summary note follows the full note').toHaveLength(1); });
-		expect(summaryNotes(test)[0]!.body).toContain('tyrian_summary_version: 4');
+		expect(summaryNotes(test)[0]!.body).toContain('tyrian_summary_version: 5');
 		expect(core.liveSessions.isSummaryWritten(), 'the written mark is persisted').toBe(true);
 		const [summary] = summaryNotes(test);
 		await cleanup();

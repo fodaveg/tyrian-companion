@@ -200,9 +200,12 @@ async function render(real: RealSession, options: Options = {}): Promise<string>
 }
 const section = (content: string, heading: string): string => body(content).split(`## ${heading}\n\n`)[1]!.split('\n\n## ')[0]!.split('\n\n[[')[0]!;
 
-/** 11 Oct 2026, written by the code, whole: frontmatter included. */
+/** The chart section has its own tests (`live-session-summary-chart.test.ts`); the whole-note texts below are about everything else. */
+const withoutChart = (content: string): string => content.replace(/## (?:Valor durante la sesión|Value during the session)\n\n```mermaid\n[\s\S]*?\n```\n\n/u, '');
+
+/** 11 Oct 2026, written by the code, whole: frontmatter included (the chart section aside). */
 const NOTE_11_OCT = String.raw`---
-tyrian_summary_version: 4
+tyrian_summary_version: 5
 tyrian_summary_of: "e1ea992093602bfbf04eaddfe073d88467c8ae0268aa9de1ea5796b3ddc3f781"
 tyrian_summary_locale: "es"
 tyrian_summary_started_at: "2026-10-11T12:42:55.649Z"
@@ -378,12 +381,12 @@ Aumentaron: Magia volátil +114 · Reconocimiento astral +65 · Magia liberada +
 
 describe('summary note, version 4: the two real sessions', () => {
 	it('writes the 11 Oct session (+2g 0s 26c in six maps) as David approved it', async () => {
-		expect(await render(realSession11Oct())).toBe(NOTE_11_OCT);
+		expect(withoutChart(await render(realSession11Oct()))).toBe(NOTE_11_OCT);
 	});
 
 	it('writes the 10 Oct session (items down, gold up, Karma down): the increases, the decreases and the total apart, and the decreases in a section', async () => {
 		const content = await render(realSession10Oct());
-		expect(body(content)).toBe(BODY_10_OCT);
+		expect(body(withoutChart(content))).toBe(BODY_10_OCT);
 		// The headline is positive though the items are negative: what the old note could not say.
 		expect(content).toContain('| **Cambio neto estimado observado** | **+64s 33c** |');
 		expect(content).toContain('| Cambio de valor de objetos | -1g 32s 15c |');
@@ -395,7 +398,7 @@ describe('summary note, version 4: the two real sessions', () => {
 
 	it('keeps the keys of the table in step with the body', async () => {
 		const fm = frontmatter(await render(realSession11Oct()));
-		expect(fm).toMatchObject({ tyrian_summary_version: 4, tyrian_summary_net_copper: 9804, tyrian_summary_per_hour_copper: 19227, tyrian_summary_wallet_gold: 1.0222,
+		expect(fm).toMatchObject({ tyrian_summary_version: 5, tyrian_summary_net_copper: 9804, tyrian_summary_per_hour_copper: 19227, tyrian_summary_wallet_gold: 1.0222,
 			tyrian_summary_total_gold: 2, tyrian_summary_total_per_hour_gold: 3.93, tyrian_summary_map_top: 'Hondonadas del Manantial de Ley',
 			tyrian_summary_map_label: 'Hondonadas del Manantial de Ley +5', tyrian_summary_map_count: 6, tyrian_summary_out_units: 0, tyrian_summary_main_map: null,
 			tyrian_summary_map: 'Varios mapas' });
