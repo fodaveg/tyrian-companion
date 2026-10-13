@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.56: «Conservado» se puede deshacer tras volver a analizar (13 oct 2026)
+
+**Candidato; sin publicar.** Rama `release/0656` sobre el canal 0.6.55 publicado (`20a4d064`). Detalle en
+[CHANGELOG](CHANGELOG.md). Publicación pedida por David el 13 oct («si»), dentro de la excepción a la congelación de
+Halloween.
+
+- Reportado por David en su Obsidian: tras pulsar «Conservar» en una fila del asesor de inventario y volver a analizar,
+  la fila mostraba «la reserva manda» en vez del botón «Conservado», sin forma de deshacerlo desde la fila. Causa:
+  `keepControl` (`src/ui/inventory-advisor-view.ts`) devolvía esa nota para toda fila `keep` antes de mirar la
+  excepción del usuario, y la propia excepción hace que el clasificador decida `keep` (`user_keep_exception`).
+- `c4cdaedd`: `keepControl` mira primero la excepción del usuario; «la reserva manda» queda para filas `keep` sin
+  ella. Tests nuevos en `inventory-advisor-view.test.ts` (fila `keep` con excepción ofrece «Conservado» y su clic la
+  quita; fila `keep` sin excepción sigue con la nota); prueba negativa: sin el arreglo, 1 rojo.
+- `c4cdaedd`, `styles.css`: icono y texto del botón centrados (`.tyrian-inventory__keep button` en `inline-flex`) y la
+  nota de debajo en `display: block`, para que su `min-height` reserve el hueco y la fila no cambie de alto entre
+  «Conservar» y «Conservado». La desalineación se corrigió leyendo el CSS, sin captura.
+- Sin verificar: el aspecto del botón en Obsidian real.
+
 ## Canal 0.6.55 publicado: los huecos de la gráfica salen de la cobertura real (13 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.55` = `138bf8f0` (atestación; candidato `53caa214`,

@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.56 - «Conservado» se puede deshacer desde la fila
+
+Se actualiza desde la 0.6.55 publicada. No se ha visto todavía en un Obsidian real.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Asesor de inventario. Al conservar un objeto y volver a analizar, su fila decía «la reserva manda» y no dejaba
+  deshacerlo. Ahora un objeto que conservaste tú muestra siempre el botón «Conservado», y al pulsarlo vuelve a
+  evaluarse para la venta. «La reserva manda» solo sale cuando lo conserva una reserva.
+- El icono del botón «Conservar» queda centrado con su texto, y la fila ya no cambia de alto al pulsarlo.
+
 ## Release beta 0.6.55 - Los huecos de la gráfica de la nota resumen salen de la cobertura real
 
 Se actualiza desde la 0.6.54 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
