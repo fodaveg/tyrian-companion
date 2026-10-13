@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.6.54: la nota resumen lleva la gráfica de valor (13 oct 2026)
+
+**Candidato; sin publicar.** Rama `release/0654` sobre el canal 0.6.53 publicado (`c6f4afb3`). Detalle en
+[CHANGELOG](CHANGELOG.md). Excepción a la congelación del evento de Halloween pedida por David el 13 oct («publica»).
+
+- Formato elegido con notas de prueba en Hebra y Obsidian (David, 13 oct): bloque `xychart-beta` con eje horizontal
+  numérico en minutos; una etiqueta de hora por punto se pisaba con 31 puntos.
+- `7179f766`: `src/sessions/live-session-summary-chart.ts` (nuevo) genera el bloque: serie
+  `knownNetValueCopper ?? netItemValueKnownCopper` como el panel (`renderChart`), remuestreada a un punto por minuto
+  con tope de 120, eje del oro redondeado hacia fuera e incluyendo negativos, huecos (`breakBefore`) en una frase.
+  `liveSessionChartFromStored` (`src/sessions/live-session-history.ts`) es el mismo camino que la vista de historial.
+  `live-session-summary-note.ts` añade la sección y pasa `tyrian_summary_version` a 5; la Base filtra `>= 2` y no
+  cambia. `docs/SPEC-live-loot.md`: apartado «Gráfica de valor de la nota resumen (plantilla v5)». Test nuevo
+  `live-session-summary-chart.test.ts` (11); prueba negativa sin remuestreo: 4 rojos.
+- Sin verificar: la gráfica de una nota real en Hebra y Obsidian (las notas de prueba eran a mano).
+
 ## Canal 0.6.53 publicado: nota resumen v4, Base «Sesiones» v4 e iconos en las sesiones anteriores (12 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.53` = `6b5ae79e` (atestación; candidato `5756e555`,

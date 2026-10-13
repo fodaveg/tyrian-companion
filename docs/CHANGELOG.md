@@ -1,5 +1,17 @@
 # Changelog
 
+## Release beta 0.6.54 - La nota resumen lleva la gráfica de valor de la sesión
+
+Se actualiza desde la 0.6.53 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Nota resumen de sesión (plantilla v5). Después de «Resultado» hay una sección «Valor durante la sesión» con la misma
+  gráfica que el panel muestra durante la sesión: el valor estimado acumulado (oro de la cartera más objetos cuando se
+  conocen los dos). Va como un bloque Mermaid de texto, no como imagen, con el eje horizontal en minutos; Hebra y
+  Obsidian lo dibujan. Como mucho 120 puntos: en una sesión larga cada punto cubre varios minutos. El eje del oro baja
+  de cero si la sesión perdió valor. Si faltan datos en un tramo, la línea sigue plana y una frase debajo dice en qué
+  minutos. Con menos de dos puntos no hay sección. Las notas ya escritas no se reescriben.
+
 ## Release beta 0.6.53 - Nota resumen v4, Base «Sesiones» nueva e iconos en las sesiones anteriores
 
 Se actualiza desde la 0.6.52 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
