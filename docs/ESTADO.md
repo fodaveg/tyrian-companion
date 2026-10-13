@@ -1,10 +1,36 @@
 # Estado
 
-## Candidato 0.6.56: «Conservado» se puede deshacer tras volver a analizar (13 oct 2026)
+## Candidato 0.6.57: el plugin acepta el ejecutable de la build 208574 de GW2 (13 oct 2026)
 
-**Candidato; sin publicar.** Rama `release/0656` sobre el canal 0.6.55 publicado (`20a4d064`). Detalle en
-[CHANGELOG](CHANGELOG.md). Publicación pedida por David el 13 oct («si»), dentro de la excepción a la congelación de
-Halloween.
+**Candidato; sin publicar.** Rama `release/0657` sobre el canal 0.6.56 publicado (`35c2ce8f`). Detalle en
+[CHANGELOG](CHANGELOG.md). Arreglo urgente pedido por David el 13 oct («lo necesito corregido ya»), dentro de la
+excepción a la congelación de Halloween.
+
+- Medido: GW2 se parcheó el 13 oct a las 18:01 CEST (Nexus `LastGameBuild: 208574`); el `Gw2-64.exe` nuevo tiene
+  sha256 `c9a6caca…606cfb` y el addon de Nexus 0.8.8 solo lee con `27d179bf…802c`. La última sesión con muestras
+  acabó a las 18:00:45; las tres siguientes tienen 0 muestras y `build: null`. El plugin no cambió entre unas y otras
+  (0.6.55 desde las 09:16).
+- `662c7a81`: `src/sessions/live-session-model.ts` añade `NEXUS_LIVE_BUILDS` (conjunto cerrado: la build anterior y la
+  208574) e `isNexusLiveBuild`; lo usan `live-session-lifecycle.ts` y `runtime/alert-runtime.ts` (`open`),
+  `live-session-reducer.ts`, `live-session-validation.ts` y `live-session-note-model.ts`. Las notas y sesiones
+  guardadas con la build anterior siguen validando; un hash desconocido sigue rechazado.
+- `662c7a81`: `LiveSessionLifecycle.gap` ya no descarta `live_status{epoch:null, reason:'unsupported_build'}` de un
+  lector que no llegó a abrir época: el hueco abierto pasa de `source_missing` a `unsupported_build`, y la pestaña
+  Sesión dice «Versión del juego no compatible» en vez de «Falta la fuente del lector». Prueba negativa: sin el
+  arreglo, 1 rojo en `live-session-lifecycle.test.ts`.
+- **Esta release sola no devuelve las muestras.** Hace falta el addon de Nexus recertificado para la build 208574
+  (repo `tyrian-companion-nexus`, rama `fix/build-208574`, en curso). Aceptar el hash no certifica el perfil.
+- Sin verificar: una sesión real con el addon recertificado; el texto nuevo en Hebra y Obsidian reales; que el
+  `live_status` del lector llega a `gap()` por el canal real (deducido de `live-loot-channel.ts`, probado en
+  `getView()`).
+
+## Canal 0.6.56 publicado: «Conservado» se puede deshacer tras volver a analizar (13 oct 2026)
+
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.56` = `35c2ce8f` (atestación; candidato `14f1a07d`).
+Gate local verde (check con 7640 tests, guardrails 25/25, BRAT PASS); CI 38428469211 y Release 38428472021 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=not-checked`), release normal. Rama `release/0656` sobre el
+canal 0.6.55 publicado (`20a4d064`). Detalle en [CHANGELOG](CHANGELOG.md). Publicación pedida por David el 13 oct
+(«si»), dentro de la excepción a la congelación de Halloween.
 
 - Reportado por David en su Obsidian: tras pulsar «Conservar» en una fila del asesor de inventario y volver a analizar,
   la fila mostraba «la reserva manda» en vez del botón «Conservado», sin forma de deshacerlo desde la fila. Causa:

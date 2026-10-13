@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.6.57 - El plugin acepta la versión de Guild Wars 2 del 13 de octubre
+
+Se actualiza desde la 0.6.56 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Sesión en vivo. El parche del juego del 13 de octubre cambió su ejecutable y las sesiones dejaron de recibir el
+  inventario. El plugin acepta ahora también ese ejecutable. Para volver a contar hace falta además la versión del
+  addon de Nexus que lo lee.
+- Cuando el addon no reconoce la versión del juego, la pestaña Sesión lo dice («Versión del juego no compatible») en
+  vez de «Falta la fuente del lector».
+
 ## Release beta 0.6.56 - «Conservado» se puede deshacer desde la fila
 
 Se actualiza desde la 0.6.55 publicada. No se ha visto todavía en un Obsidian real.
