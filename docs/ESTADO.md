@@ -1,10 +1,12 @@
 # Estado
 
-## Candidato 0.6.57: el plugin acepta el ejecutable de la build 208574 de GW2 (13 oct 2026)
+## Canal 0.6.57 publicado: el plugin acepta el ejecutable de la build 208574 de GW2 (13 oct 2026)
 
-**Candidato; sin publicar.** Rama `release/0657` sobre el canal 0.6.56 publicado (`35c2ce8f`). Detalle en
-[CHANGELOG](CHANGELOG.md). Arreglo urgente pedido por David el 13 oct («lo necesito corregido ya»), dentro de la
-excepción a la congelación de Halloween.
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.57` = `2211305d` (atestación; candidato `a323af8a`).
+Gate local verde (check con 7643 tests, guardrails 25/25, BRAT PASS); CI 38431571386 y Release 38431574726 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=not-checked`), release normal. Rama `release/0657` sobre el
+canal 0.6.56 publicado (`35c2ce8f`). Detalle en [CHANGELOG](CHANGELOG.md). Arreglo urgente pedido por David el 13 oct
+(«lo necesito corregido ya»), dentro de la excepción a la congelación de Halloween.
 
 - Medido: GW2 se parcheó el 13 oct a las 18:01 CEST (Nexus `LastGameBuild: 208574`); el `Gw2-64.exe` nuevo tiene
   sha256 `c9a6caca…606cfb` y el addon de Nexus 0.8.8 solo lee con `27d179bf…802c`. La última sesión con muestras
@@ -18,10 +20,18 @@ excepción a la congelación de Halloween.
   lector que no llegó a abrir época: el hueco abierto pasa de `source_missing` a `unsupported_build`, y la pestaña
   Sesión dice «Versión del juego no compatible» en vez de «Falta la fuente del lector». Prueba negativa: sin el
   arreglo, 1 rojo en `live-session-lifecycle.test.ts`.
-- **Esta release sola no devuelve las muestras.** Hace falta el addon de Nexus recertificado para la build 208574
-  (repo `tyrian-companion-nexus`, rama `fix/build-208574`, en curso). Aceptar el hash no certifica el perfil.
-- Sin verificar: una sesión real con el addon recertificado; el texto nuevo en Hebra y Obsidian reales; que el
-  `live_status` del lector llega a `gap()` por el canal real (deducido de `live-loot-channel.ts`, probado en
+- **Esta release sola no devuelve las muestras.** Hace falta el addon de Nexus 0.8.9 (repo `tyrian-companion-nexus`,
+  etiqueta `0.8.9` = `e463cc3`, publicado el 13 oct), que lee con el ejecutable de la build 208574 y ya no con el del
+  6 oct. Aceptar el hash en el plugin no certifica el perfil: eso lo hace el addon.
+- Visto por David bajo Proton, en Hebra con la 0.6.57 y el código de lectura del addon 0.8.9: el inventario se lee y la
+  sesión cuenta; el Magic Find se leyó sin cortes 4 min 20 s con 111 efectos activos, uno de 52 modificadores.
+- Magic Find sin dato en el panel del juego, medido en el log de Nexus: `Bounds`, primero por un efecto de 52
+  registros (el tope era 32) y después por el presupuesto de 65536 bytes con 170 a 200 efectos en un zerg. El addon
+  0.8.9 admite 256 registros por efecto, 262144 bytes por pasada y una tabla de 1024 huecos, y anota en el log de
+  Nexus, con líneas que empiezan por `reader: `, cada cambio de resultado de la lectura de bolsas y de Magic Find.
+- Sin verificar: Windows nativo; el Magic Find con más de 200 efectos tras el último cambio; el texto «Versión del
+  juego no compatible» en la pestaña Sesión (el addon nuevo se cargó antes de probarlo); Obsidian real con la 0.6.57;
+  que el `live_status` del lector llega a `gap()` por el canal real (deducido de `live-loot-channel.ts`, probado en
   `getView()`).
 
 ## Canal 0.6.56 publicado: «Conservado» se puede deshacer tras volver a analizar (13 oct 2026)
