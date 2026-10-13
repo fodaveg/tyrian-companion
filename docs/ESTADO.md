@@ -1,9 +1,13 @@
 # Estado
 
-## Candidato 0.6.55: los huecos de la gráfica salen de la cobertura real (13 oct 2026)
+## Canal 0.6.55 publicado: los huecos de la gráfica salen de la cobertura real (13 oct 2026)
 
-**Candidato; sin publicar.** Rama `release/0655` sobre el canal 0.6.54 publicado (`e9421919`). Detalle en
-[CHANGELOG](CHANGELOG.md). Hotfix de la 0.6.54, dentro de la excepción a la congelación de Halloween.
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.55` = `138bf8f0` (atestación; candidato `53caa214`,
+árbol `bd8b73ab`). Gate local verde (check con 7636 tests, guardrails 25/25, BRAT PASS); CI 38359392510 y Release
+38360685256 en verde; `release:brat-verify` PASS con 8 assets, también sobre los assets descargados
+(`downloaded-bytes=checked`), release normal. Rama `release/0655` sobre el canal 0.6.54 publicado (`e9421919`);
+añade los metadatos de versión (`manifest.json`, `package.json`, la raíz de `package-lock.json` y `versions.json`,
+mínimo de Obsidian 1.11.4). Detalle en [CHANGELOG](CHANGELOG.md). Hotfix de la 0.6.54, dentro de la excepción a la congelación de Halloween.
 
 - Medido sobre las 11 sesiones reales de la biblioteca de Hebra de David: con la 0.6.54, 10 de 11 notas llevaban
   una línea de huecos con tramos solapados o falsos («entre el minuto 0 y el 9», «entre el 8 y el 14», «entre el 13 y
@@ -17,6 +21,7 @@
   petición de David (lote `20261013T064838Z-a7529a` de `hebra-mcp apply`, solo adiciones); quedan 2 con línea de
   huecos.
 - Sin verificar: el aspecto en Hebra y Obsidian reales.
+- Pendiente: terminar una sesión real con la 0.6.55 y ver su nota resumen en los dos hosts.
 
 ## Canal 0.6.54 publicado: la nota resumen lleva la gráfica de valor (13 oct 2026)
 
