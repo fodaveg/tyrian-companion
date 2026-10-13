@@ -7,7 +7,7 @@ import { sessionAuthorityFromLease } from './session-state-machine';
 import type { SessionRuntimeStore } from './session-runtime-store';
 import { identicalJournal, type LiveSessionPersistence } from './live-session-persistence';
 import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
-import { LIVE_SOURCE_STALE_MS, NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE,
+import { LIVE_SOURCE_STALE_MS, isNexusLiveBuild, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionFormat, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
 import { createLiveChart, isEmptySample, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
@@ -346,7 +346,7 @@ export class LiveSessionLifecycle {
 	async open(source: LiveSessionSourceInput): Promise<'ready' | 'source_conflict' | 'unsupported_build' | 'not_gameplay'> {
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.record?.phase !== 'active' || source.context.state !== 'gameplay') return 'not_gameplay';
-			if (source.build !== NEXUS_LIVE_BUILD || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
+			if (!isNexusLiveBuild(source.build) || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
 			if (this.record.sourceInstance !== null && this.record.sourceInstance !== source.sourceInstance) return 'source_conflict';
 			// `live_ready` has no status for storage: while it is down this answers as before.
 			if (await this.ready() !== 'owned') return 'source_conflict';
@@ -407,6 +407,8 @@ export class LiveSessionLifecycle {
 
 	async gap(event: { sourceInstance: string; epoch: string | null; reason: LiveGapV1['reason']; observedAt: string }): Promise<void> {
 		return await this.enqueue(async () => {
+			if (this.record?.phase === 'active' && this.record.sourceInstance === null && this.record.epoch === null
+				&& event.epoch === null && event.reason === 'unsupported_build') { await this.sourceRefused(event.reason); return; }
 			if (this.record?.phase !== 'active' || this.record.sourceInstance !== event.sourceInstance || event.epoch !== null && this.record.epoch !== null && event.epoch !== this.record.epoch) return;
 			const disconnectedAt = event.reason === 'disconnect' ? new Date(Math.min(this.options.now(),Date.parse(event.observedAt))).toISOString() : null;
 			// Storage that refuses the gap must not make this throw: the bridge would hold the producer's
@@ -434,6 +436,22 @@ export class LiveSessionLifecycle {
 			// Written: a gap held back during an earlier loss is older than this one and no longer waits for a reclaim.
 			this.record = next; this.lostGap = null; this.options.onStateChange();
 		});
+	}
+
+	/**
+	 * A reader that refused to open an epoch (`live_status{epoch:null, reason:'unsupported_build'}`) never became the session's
+	 * source, so the gap above ignores it. What the tab says while no source has been seen is `source_missing`, which hides
+	 * the cause: the gaps already open for that absence are given the reason the reader reports, with the same start, and no
+	 * other state changes. Best effort: when the write is refused the placeholder stays.
+	 */
+	private async sourceRefused(reason: LiveGapV1['reason']): Promise<void> {
+		if (this.record === null || await this.ready() !== 'owned') return;
+		const next = structuredClone(this.record);
+		let changed = false;
+		for (const gap of next.gaps) if (gap.toAt === null && gap.reason === 'source_missing') { gap.reason = reason; changed = true; }
+		if (!changed && next.sourceReason === reason) return;
+		next.sourceReason = reason; next.persistedAt = this.options.now();
+		if (await this.persist(next) === 'saved') { this.record = next; this.options.onStateChange(); }
 	}
 
 	/** Presence remains independent from source freshness; disconnect only closes after the marker's grace. */

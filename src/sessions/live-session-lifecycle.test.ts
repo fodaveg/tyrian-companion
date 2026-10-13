@@ -154,6 +154,32 @@ describe('passive live session lifecycle', () => {
 		expect(await f.store.readLiveJournal('session')).toHaveLength(2);
 		await f.service.dispose();
 	});
+	it('accepts the build 208574 executable and the previous one, and refuses any other hash', async () => {
+		const f = fixture(); await f.service.start('Test');
+		await expect(f.service.open({ ...f.source, build: 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb' })).resolves.toBe('ready');
+		await f.service.dispose();
+		const g = fixture(); await g.service.start('Test');
+		await expect(g.service.open({ ...g.source, build: 'a'.repeat(64) })).resolves.toBe('unsupported_build');
+		await expect(g.service.open(g.source)).resolves.toBe('ready');
+		await g.service.dispose();
+	});
+	it('a stored record carrying either accepted build stays valid, an unknown one does not', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
+		const record = f.service.getRuntime()!;
+		expect(isLiveSessionRuntimeRecord(record)).toBe(true);
+		expect(isLiveSessionRuntimeRecord({ ...record, build: 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb' })).toBe(true);
+		expect(isLiveSessionRuntimeRecord({ ...record, build: 'a'.repeat(64) })).toBe(false);
+		await f.service.dispose();
+	});
+	it('an unsupported_build status with no epoch reaches the view as the reason of the open gap', async () => {
+		const f = fixture(); await f.service.start('Test');
+		expect(f.service.getView()).toMatchObject({ sourceReason: 'source_missing' });
+		await f.service.gap({ sourceInstance: INSTANCE, epoch: null, reason: 'unsupported_build', observedAt: new Date(AT).toISOString() });
+		const view = f.service.getView();
+		expect(view.sourceReason).toBe('unsupported_build');
+		expect(view.gaps.filter((gap) => gap.toAt === null).map((gap) => gap.reason)).toEqual(['unsupported_build']);
+		await f.service.dispose();
+	});
 	it('a second source never replaces the selected producer, and a lost lease never publishes', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
 		await expect(f.service.open({ ...f.source, sourceInstance: 'AwMDAwMDAwMDAwMDAwMDAw' })).resolves.toBe('source_conflict');

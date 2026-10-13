@@ -9,7 +9,15 @@ import type { AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
 import type { IngameBridgeClient } from '../alerts/alert-ingame-protocol';
 
+/** `Gw2-64.exe` before the 13 oct 2026 patch (build 208574). Saved sessions and notes carry it, so it stays valid. */
 export const NEXUS_LIVE_BUILD = '27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c';
+/** `Gw2-64.exe` of build 208574, the one the recertified Nexus addon reads. */
+export const NEXUS_LIVE_BUILD_208574 = 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb';
+/** Closed set of executables the plugin accepts: never «any 64-hex hash». */
+export const NEXUS_LIVE_BUILDS: readonly string[] = [NEXUS_LIVE_BUILD, NEXUS_LIVE_BUILD_208574];
+export function isNexusLiveBuild(build: unknown): build is string {
+	return typeof build === 'string' && NEXUS_LIVE_BUILDS.includes(build);
+}
 export const NEXUS_LIVE_PROFILE = 'owned-bags-v3' as const;
 export const LIVE_SOURCE_STALE_MS = 5_000;
 /**

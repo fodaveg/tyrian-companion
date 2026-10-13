@@ -4,7 +4,7 @@ import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, type FarmingGoalV1 } from './farming-goal';
 import { isFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
 import { isLiveSessionFormat } from './live-session-format';
-import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1, type LiveObservationV1, type LivePriceBasis,
+import { isNexusLiveBuild, NEXUS_LIVE_PROFILE, type LiveGapV1, type LiveJournalEntryV1, type LiveObservationV1, type LivePriceBasis,
 	type LiveSessionFormat, type LiveSessionPayloadVersion, type LiveSessionRuntimeRecord, type LivePriceV1, type LiveTotalV1, type LiveValuationV1 } from './live-session-model';
 import { bounded, date, GOLD_CURRENCY_ID, isEmptySample, isLiveGap, keys, natural, nonce, record, valueLiveTotals } from './live-session-reducer';
 import { isLiveObservation } from './live-session-validation';
@@ -225,7 +225,7 @@ function validPublicLiveSession(value: unknown, snapshot: boolean): boolean {
 		'preparation','farmingGoal','groupContext','mapIntervals','mapCoveragePartial',...('declaredBuild' in value ? ['declaredBuild'] : []),...(snapshot ? ['capturedAt','exportState'] : [])]) || value.version !== 1 && value.version !== 2
 		|| value.source !== 'nexus_inventory' || value.accountRef !== null || typeof value.sessionRef !== 'string'
 		|| !/^[a-f0-9]{64}$/u.test(value.sessionRef) || !date(value.startedAt)
-		|| value.build !== null && value.build !== NEXUS_LIVE_BUILD || value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE
+		|| value.build !== null && !isNexusLiveBuild(value.build) || value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE
 		|| (value.build === null) !== (value.profile === null) || !natural(value.observationCount) || !natural(value.sampleCount)
 		|| !natural(value.observedItemsMs) || !natural(value.observedCurrenciesMs)
 		|| !isFarmingPreparationSettings(value.preparation) || value.farmingGoal !== null && !isFarmingGoal(value.farmingGoal)
