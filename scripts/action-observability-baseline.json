@@ -12156,6 +12156,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/sessions/live-session-summary-chart.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file: a pure generator of the summary note's Mermaid chart block, with no catch, no Promise, no detached void, no registered callback, no I/O and no logging; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/sessions/live-session-summary-figures.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
