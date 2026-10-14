@@ -308,7 +308,11 @@ function fencedStorage(storage: LocalDebugStoragePort, current: () => WriterOper
 	};
 }
 
-/** Retains only complete, individually valid JSON lines and discovers their maximum sequence. */
+/**
+ * Retains only complete, individually valid JSON lines and discovers their maximum sequence. An invalid line is
+ * skipped, not a stopping point: a cut append that was followed by later appends leaves garbage in the middle of
+ * the file, and everything valid after it must survive the restart.
+ */
 function recoverJsonl(content: string): { content: string; maxSequence: number } {
 	let safe = '';
 	let maxSequence = 0;
@@ -316,11 +320,11 @@ function recoverJsonl(content: string): { content: string; maxSequence: number }
 		if (line.length === 0) continue;
 		try {
 			const parsed: unknown = JSON.parse(line);
-			if (!isRecord(parsed) || !isPositiveInteger(parsed.sequence)) break;
+			if (!isRecord(parsed) || !isPositiveInteger(parsed.sequence)) continue;
 			maxSequence = Math.max(maxSequence, parsed.sequence);
 			safe += `${line}\n`;
 		} catch {
-			break;
+			continue;
 		}
 	}
 	return { content: safe, maxSequence };

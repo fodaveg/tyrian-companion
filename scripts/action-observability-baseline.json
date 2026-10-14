@@ -3874,9 +3874,9 @@
 				{
 					"id": "3e11c181637082b19934aeaade172ad73e1e83c7",
 					"kind": "catch_clause",
-					"line": 322,
+					"line": 326,
 					"column": 5,
-					"endLine": 324,
+					"endLine": 328,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

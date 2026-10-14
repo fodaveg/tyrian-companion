@@ -199,6 +199,22 @@ describe('LocalDebugJsonlWriter', () => {
 		]);
 	});
 
+	it('keeps the valid records that follow a corrupt line in the middle of a file', async () => {
+		const storage = new MemoryStorage();
+		const directory = TEST_LOG_DIRECTORY;
+		storage.directories.add(directory);
+		// A cut append followed by later appends glues the cut text to the next record: both lines are invalid, the ones after are not.
+		storage.files.set(`${directory}/debug.jsonl`, [
+			JSON.stringify(baseRecord(41)), '{"sequence":42{"sequence":43}', 'not json', '{"level":"info"}',
+			JSON.stringify(baseRecord(44)), JSON.stringify(baseRecord(45)),
+		].join('\n') + '\n');
+		const writer = createWriter(storage);
+		await expect(writer.initialize()).resolves.toMatchObject({ recoveredTails: 1, maxSequence: 45 });
+		expect(storage.files.get(`${directory}/debug.jsonl`)).toBe(
+			[41, 44, 45].map((sequence) => `${JSON.stringify(baseRecord(sequence))}\n`).join(''),
+		);
+	});
+
 	it('repairs a truncated tail and resumes sequence discovery after restart', async () => {
 		const storage = new MemoryStorage();
 		const directory = TEST_LOG_DIRECTORY;
