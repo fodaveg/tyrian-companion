@@ -228,6 +228,19 @@ describe('the price block of one row', () => {
 		expect(pressed(harness.block.element)).toEqual(['3 months']);
 	});
 
+	it('a refreshed seed with the same first day, last day and count but another day in the middle repaints the chart', () => {
+		const harness = block({ enabled: true, seed: seeded(300) });
+		const before = texts(only(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__summary'))).join(' ');
+
+		const refreshed = seeded(300);
+		const middle = refreshed.days[250]!;
+		harness.seed.current = { ...refreshed, days: refreshed.days.map((day) => day === middle ? { ...day, askCopper: 9_999_999 } : day) };
+		harness.block.update();
+
+		const after = texts(only(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__summary'))).join(' ');
+		expect(after).not.toBe(before);
+	});
+
 	it('repaints each state exactly once: loading, then the chart when the seed lands', () => {
 		const harness = block({ enabled: true, seed: idle() });
 		expect(walk(harness.block.element).filter((element) => element.tag === 'svg')).toHaveLength(0);
@@ -375,6 +388,24 @@ describe('the price block inside the Inventory tab', () => {
 
 			windowButton(harness.block.element, '3 months').dispatch('click');
 			expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.legend'));
+		});
+
+		it('an hourly series with the same last hour and count but another hour in the middle repaints the chart', async () => {
+			const answer = Promise.resolve();
+			const harness = block({ enabled: true, seed: seeded(300), hourly: { ensure: () => answer } });
+			const point = (hour: number, ask: number) => ({ hourUtc: `2026-10-14T0${String(hour)}:00:00.000Z`, askCopper: ask });
+			harness.hourlyState.current = { status: 'ready', points: [point(2, 300), point(3, 318), point(4, 323)] };
+			windowButton(harness.block.element, '1 week').dispatch('click');
+			await answer;
+			await Promise.resolve();
+			expect(pressed(harness.block.element)).toEqual(['1 week']);
+			const summaryOf = (): string => texts(only(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__summary'))).join(' ');
+			const before = summaryOf();
+
+			harness.hourlyState.current = { status: 'ready', points: [point(2, 300), point(3, 999), point(4, 323)] };
+			harness.block.update();
+
+			expect(summaryOf()).not.toBe(before);
 		});
 	});
 });

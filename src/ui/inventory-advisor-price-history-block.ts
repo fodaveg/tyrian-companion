@@ -220,14 +220,32 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 function stateKey(state: BlockState, locale: string, itemName: string, hourly: PriceHourlyState | undefined): string {
 	const base = `${state.kind}:${locale}:${itemName}`;
 	if (state.kind === 'ready') {
-		const hourlyKey = hourly === undefined ? '-' : `${hourly.status}/${String(hourly.points.length)}/${hourly.points.at(-1)?.hourUtc ?? ''}`;
-		const first = state.days[0]?.dayUtc ?? '';
-		const last = state.days.at(-1)?.dayUtc ?? '';
-		return `${base}:${first}:${last}:${String(state.days.length)}:${String(state.stale)}:${hourlyKey}`;
+		const hourlyKey = hourly === undefined
+			? '-'
+			: `${hourly.status}/${String(hourly.points.length)}/${seriesDigest(hourly.points.map((point) => [point.hourUtc, point.askCopper]))}`;
+		const daysKey = `${String(state.days.length)}/${seriesDigest(state.days.map((day) => [day.dayUtc, day.bidCopper, day.askCopper]))}`;
+		return `${base}:${daysKey}:${String(state.stale)}:${hourlyKey}`;
 	}
 	if (state.kind === 'off') return `${base}:${String(state.consultOnly)}:${String(state.busy)}:${String(state.offerVisible)}`;
 	if (state.kind === 'failed') return `${base}:${String(state.storage)}`;
 	return base;
+}
+
+/**
+ * A short FNV-1a digest of every value of a series, so a key changes when ANY point does: comparing
+ * only the ends and the count missed a refresh that revised a day or an hour in the middle.
+ */
+function seriesDigest(rows: readonly (readonly (string | number | null)[])[]): string {
+	let hash = 0x811c9dc5;
+	for (const row of rows) {
+		for (const value of row) {
+			const text = `${String(value)}|`;
+			for (let index = 0; index < text.length; index += 1) {
+				hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193) >>> 0;
+			}
+		}
+	}
+	return hash.toString(36);
 }
 
 function statusLine(text: string, role: 'status' | 'alert'): HTMLElement {

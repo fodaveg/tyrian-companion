@@ -6712,11 +6712,11 @@
 					"reason": "Allowlisted callback_registration: The \"commit\" then (\"then\") settles the picker on success and, on rejection, calls deps.report before settling, so a failed onSelect is reported. Verified registration: \"then\" in \"commit\"."
 				},
 				{
-					"id": "6b38c33d18abf87aa0f19c7be55641ec70cb14ac",
+					"id": "abe600c59ebbc2a494c2f9356e694887751ac2c8",
 					"kind": "callback_registration",
-					"line": 281,
+					"line": 285,
 					"column": 3,
-					"endLine": 288,
+					"endLine": 292,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6729,11 +6729,11 @@
 					"reason": "Allowlisted callback_registration: The \"loadPaths\" then (\"then\") only paints the loaded folder list; a throw in it falls into the .catch that follows and reaches deps.report. Verified registration: \"then\" in \"loadPaths\"."
 				},
 				{
-					"id": "c37c7b55a59828c6bb3ded3aa73673438eeb17d7",
+					"id": "90a33c9e215a3099a0be093cb5974e600c0f7704",
 					"kind": "promise_catch",
-					"line": 281,
+					"line": 285,
 					"column": 3,
-					"endLine": 289,
+					"endLine": 293,
 					"endColumn": 64,
 					"registration": "catch",
 					"classification": "allowlisted",

@@ -173,6 +173,32 @@ describe('folder picker', () => {
 		expect(stop).toHaveBeenCalledOnce();
 	});
 
+	it('an older folder listing that arrives after a newer one does not replace it', async () => {
+		const resolvers: ((paths: readonly string[]) => void)[] = [];
+		let notify: (() => void) | null = null;
+		const input = createEl('input');
+		input.value = 'Tyrian Companion';
+		document.body.append(input);
+		const off = attachFolderPicker({
+			folderPaths: () => new Promise<readonly string[]>((resolve) => { resolvers.push(resolve); }),
+			onFoldersChange: (listener) => { notify = listener; return () => undefined; },
+			report: vi.fn(),
+			translator: () => createTranslator('es'),
+		}, input, vi.fn());
+		const note = (input.nextElementSibling as HTMLElement).querySelector<HTMLElement>('.hebra-module-folder-note')!;
+		notify!();
+		expect(resolvers).toHaveLength(2);
+
+		// The second request (after the folder was created) answers first; the first, stale one answers last.
+		resolvers[1]!([...PATHS, 'Tyrian Companion']);
+		await vi.waitFor(() => expect(note.hidden).toBe(true));
+		resolvers[0]!(PATHS);
+		await settle();
+
+		expect(note.hidden).toBe(true);
+		off();
+	});
+
 	it('a saved folder that does not exist stays in the field with its warning and never changes on its own', async () => {
 		const { field, note, input, onSelect, options, type } = await mountPicker('Tyrian Companion');
 		await vi.waitFor(() => expect(note.hidden).toBe(false));
