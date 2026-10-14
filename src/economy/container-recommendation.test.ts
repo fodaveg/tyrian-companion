@@ -622,6 +622,49 @@ describe('recommendContainerDisposition', () => {
 		expect(result.explanation?.caveats).toContain('excluded_outcomes_not_valued');
 	});
 
+	// Audit fix (14 oct 2026): the excluded tail is disclosure only. A tail that cannot be valued
+	// (here an itemized jackpot quoted at the largest safe integer, which overflows) is reported as
+	// no tail; it used to turn the whole recommendation into `invalid/arithmetic_overflow`, even on
+	// the immediate basis that never shows a tail.
+	it('treats an unvaluable excluded tail as no tail instead of invalidating the recommendation', () => {
+		const value = input();
+		value.model.sample.observations += 2;
+		value.model.excluded = [{
+			category: 'Jackpot', sampleUnits: 2, reason: 'super_rare_jackpot', items: [{ id: 2, label: 'Jackpot', sampleUnits: 2 }],
+		}];
+		value.model.uncertainty.rareDropTreatment = 'excluded';
+		value.modelReview.modelFingerprint = containerModelFingerprint(value.model)!;
+		value.market.quotes.push({
+			itemId: 2, whitelisted: true, bidUnitCopper: Number.MAX_SAFE_INTEGER, askUnitCopper: Number.MAX_SAFE_INTEGER,
+		});
+		value.market.depth!.requestedItemIds = [2, ITEM_ID];
+		value.market.depth!.items = [{
+			itemId: 2, coverage: 'complete',
+			buys: [{ unitCopper: Number.MAX_SAFE_INTEGER, quantity: 1 }],
+			sells: [{ unitCopper: Number.MAX_SAFE_INTEGER, quantity: 1 }],
+		}, ...value.market.depth!.items];
+		withHold(value, []);
+
+		const result = ready(value);
+		expect(result.explanation?.tail).toBeNull();
+		expect(result.explanation?.routes[0]?.openIncludingTail).toBeNull();
+		expect(result.economicDecision).toEqual(ready(input()).economicDecision);
+
+		const kernel = calculateContainerDispositionKernel({
+			version: 1, asOf: value.asOf, quantity: 1, container: value.container, model: value.model,
+			market: value.market,
+			policy: {
+				version: value.policy.version, openAdvantageBps: value.policy.openAdvantageBps,
+				maxPriceAgeMs: value.policy.maxPriceAgeMs, maxFutureSkewMs: value.policy.maxFutureSkewMs,
+				saleBasis: 'immediate_and_listing',
+			},
+		});
+		expect(kernel.status).toBe('ready');
+		if (kernel.status !== 'ready') return;
+		expect(kernel.explanation.tail).toBeNull();
+		expect(kernel.explanation.routes.every((route) => route.openIncludingTail === null)).toBe(true);
+	});
+
 	it('does not let an excluded jackpot change EV or the resulting decision', () => {
 		const baseline = ready(input({ modelEvMicro: 102_300_000 }));
 		const withJackpot = input({ modelEvMicro: 102_300_000 });

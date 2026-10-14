@@ -249,9 +249,10 @@ export function calculateContainerDispositionKernel(value: unknown): ContainerDi
 		const tailResult = calculateContainerTailValuation(
 			input.model, input.market.quotes, input.container.tradingAccess,
 		);
-		if (tailResult.status === 'invalid') return invalid(tailResult.reason === 'arithmetic_overflow'
-			? 'arithmetic_overflow' : 'model_ev_inconsistent');
-		const tail = input.policy.saleBasis === 'immediate_and_listing' ? tailResult.value : null;
+		// The tail is disclosure only: the decision never reads it. A tail that cannot be valued
+		// (a jackpot quoted past the safe range) is shown as no tail, never as a broken recommendation.
+		const tailValue = tailResult.status === 'ok' ? tailResult.value : null;
+		const tail = input.policy.saleBasis === 'immediate_and_listing' ? tailValue : null;
 
 		const immediateOpen = openAtDepth(
 			input.model, input.market.quotes, input.container.tradingAccess, input.market.depth, input.quantity,
@@ -265,15 +266,15 @@ export function calculateContainerDispositionKernel(value: unknown): ContainerDi
 		const routes: ContainerDispositionRoute[] = [];
 		const immediateRoute = immediateSell === null || !isOpenTotal(immediateOpen) ? null : buildRoute(
 			'immediate', 'guaranteed_buyer', immediateSell, immediateOpen, input, ev.value,
-			tailResult.value.immediate.evPerContainerMicroCopper,
-			tailResult.value.immediate.deviationPerContainerMicroCopper, tail !== null,
+			tail?.immediate.evPerContainerMicroCopper ?? 0,
+			tail?.immediate.deviationPerContainerMicroCopper ?? 0, tail !== null,
 		);
 		if (immediateRoute === 'invalid') return invalid('arithmetic_overflow');
 		if (immediateRoute !== null) routes.push(immediateRoute);
 		const listingRoute = listingSell === null || !isOpenTotal(listingOpen) ? null : buildRoute(
 			'listing', 'reference_listing', listingSell, listingOpen, input, ev.value,
-			tailResult.value.listing.evPerContainerMicroCopper,
-			tailResult.value.listing.deviationPerContainerMicroCopper, tail !== null,
+			tail?.listing.evPerContainerMicroCopper ?? 0,
+			tail?.listing.deviationPerContainerMicroCopper ?? 0, tail !== null,
 		);
 		if (listingRoute === 'invalid') return invalid('arithmetic_overflow');
 		if (listingRoute !== null) routes.push(listingRoute);
