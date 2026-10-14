@@ -8,7 +8,7 @@
  * Where Hebra has no server (`api.has('tcp')` is false: web, iPhone, Android) the host uses
  * `unavailableTcpServerPort`, which refuses with a clear reason and without reaching Hebra.
  */
-import type { PluginTcp, PluginTcpEvent } from 'hebra-plugin-api';
+import type { PluginTcp, PluginTcpEvent } from 'hebra-plugin-api/v2';
 
 import type { TyrianTcpConnection, TyrianTcpListenError, TyrianTcpServer, TyrianTcpServerPort } from '../tyrian-host';
 

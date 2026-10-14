@@ -11,7 +11,7 @@
  * line) and `styles.css` hangs from them; `tyrian-host.css` maps them to Hebra's tokens. Each call
  * returns the same row or control, so they chain as in Obsidian.
  */
-import type { PluginUi } from 'hebra-plugin-api';
+import type { PluginUi } from 'hebra-plugin-api/v2';
 
 import { createTranslator, isLocale, type Locale, type Translator } from '../../core/i18n';
 import { resolveHostLanguage } from '../../core/settings';

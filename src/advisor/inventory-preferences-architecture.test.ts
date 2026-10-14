@@ -16,7 +16,9 @@ const ALLOWED_CORE_IMPORTS = new Map<string, readonly string[]>([
 	['inventory-preferences-runtime.ts', ['../core/local-debug-action-runner']],
 	// `../core/indexed-db-open` is reviewed in: it imports nothing at all and holds
 	// only the shared open handshake, so it widens no capability this boundary guards.
-	['inventory-preferences-store.ts', ['../core/indexed-db-open', '../core/local-debug-persistence']],
+	// `../core/idb-key-range` likewise imports nothing: it only says which `IDBKeyRange` goes with the host's factory
+	// (Hebra's plugin API 2.0 serves its own), so it widens nothing either.
+	['inventory-preferences-store.ts', ['../core/indexed-db-open', '../core/idb-key-range', '../core/local-debug-persistence']],
 ]);
 
 describe('inventory preferences architecture', () => {

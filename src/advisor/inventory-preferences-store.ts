@@ -28,6 +28,7 @@ import {
 	startIndexedDbTransaction,
 	withIndexedDbReopen,
 } from '../core/indexed-db-open';
+import { idbKeyRange } from '../core/idb-key-range';
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 /** Lets composition classify read and write persistence under their real actions. */
@@ -350,7 +351,7 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
  * as `vaultKeys` of `runtime/vault-relocation.ts`. `IDBKeyRange` is the engine's, from the same document as the factory.
  */
 function vaultKeys(vaultId: string): IDBKeyRange {
-	return IDBKeyRange.bound(`${vaultId}\u0000`, `${vaultId}\u0001`, false, true);
+	return idbKeyRange().bound(`${vaultId}\u0000`, `${vaultId}\u0001`, false, true);
 }
 
 function parseRecord(raw: unknown, scope: InventoryPreferenceScope):

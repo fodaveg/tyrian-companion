@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { IDBFactory } from 'fake-indexeddb';
-import type { HebraPluginModule } from 'hebra-plugin-api';
+import type { HebraPluginModule } from 'hebra-plugin-api/v2';
 import { describe, expect, it } from 'vitest';
 
 import { createTyrianTestApi, TYRIAN_CAPABILITIES } from '../../test/hebra-plugin-fakes';

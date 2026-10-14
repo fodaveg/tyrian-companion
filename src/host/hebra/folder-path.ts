@@ -6,7 +6,7 @@
  * Hebra folder names match case-insensitively here (the same rule Hebra applies to Bases): two
  * sibling folders that differ only in case count as one for Tyrian (a rare case, not resolved).
  */
-import type { PluginFolder, PluginVault } from 'hebra-plugin-api';
+import type { PluginFolder, PluginVault } from 'hebra-plugin-api/v2';
 
 export type TyrianFolderLibrary = Pick<PluginVault, 'foldersList' | 'folderCreate'>;
 

@@ -51,7 +51,6 @@ describe('Tyrian in Hebra: the Assets row explains a press that wrote nothing', 
 			window: Object.assign(Object.create(window) as Window, {
 				matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 			}),
-			document,
 			createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
 		});
 		for (let waited = 0; test.fake.recorded.settingsPanels.length === 0 && waited < 2_000; waited += 1) await settle(1);
@@ -272,7 +271,6 @@ async function start(test: TyrianTestApi): Promise<{ core: RowCore; panel: HTMLE
 		window: Object.assign(Object.create(window) as Window, {
 			matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 		}),
-		document,
 		createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
 	});
 	await settle(50);

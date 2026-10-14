@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { PluginMainViewDefinition, PluginUi } from 'hebra-plugin-api';
+import type { PluginMainViewDefinition, PluginUi } from 'hebra-plugin-api/v2';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TyrianSectionsViewRegistration, TyrianViewSectionRegistration } from '../tyrian-host';

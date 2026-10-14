@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // (a `window` for the timers, `window.setTimeout`, as in Hebra's webview)
-import type { PluginTcp, PluginTcpEvent } from 'hebra-plugin-api';
+import type { PluginTcp, PluginTcpEvent } from 'hebra-plugin-api/v2';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TyrianTcpConnection } from '../tyrian-host';

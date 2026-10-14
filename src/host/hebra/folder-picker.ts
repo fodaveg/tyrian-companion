@@ -15,6 +15,7 @@
  * `tyrian-host.css`, section 5.
  */
 import { formatCount, type HebraTranslator } from './setting-row';
+import { isDomElement } from './surface';
 
 /** Suggestions painted at most; the rest are summed up in one line. */
 export const FOLDER_SUGGESTION_LIMIT = 50;
@@ -261,8 +262,9 @@ export function attachFolderPicker(
 	// `mousedown`, not `click`: the field loses focus (and `blur` undoes the text) before the click.
 	const onListMousedown = (event: MouseEvent): void => {
 		event.preventDefault();
-		const target = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
-		const path = target instanceof HTMLElement ? target.dataset.path : undefined;
+		// Not `instanceof`: in Hebra 2.0 the list lives in a surface frame, another realm with its own `Element`.
+		const target = isDomElement(event.target) ? event.target.closest('[role="option"]') : null;
+		const path = target?.getAttribute('data-path') ?? undefined;
 		if (path !== undefined) commit(path);
 	};
 

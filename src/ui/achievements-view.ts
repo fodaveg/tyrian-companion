@@ -305,8 +305,9 @@ export class AchievementsView {
 		// Every wiki link of the list (the achievement's, its elements') opens through the host when it
 		// has one; registered once here, so repainting an item adds no listener.
 		this.trackedList.addEventListener('click', (event) => {
-			const target = event.target instanceof Element ? event.target : null;
-			const anchor = target?.closest('a[href]') ?? null;
+			// Not `instanceof Element`: in Hebra 2.0 the list lives in a surface frame, whose `Element` is another realm's.
+			const target = event.target as Partial<Element> | null;
+			const anchor = typeof target?.closest === 'function' ? target.closest('a[href]') : null;
 			if (anchor === null || this.actions.openExternal === undefined) return;
 			event.preventDefault();
 			this.actions.openExternal(anchor.getAttribute('href') ?? '');

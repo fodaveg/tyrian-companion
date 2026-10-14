@@ -21,7 +21,6 @@ describe('C-2 cleanup after a failed stop', () => {
 		const env: HebraRuntimeEnvironment = {
 			indexedDB: new IDBFactory(),
 			window: Object.assign(Object.create(window) as Window, { matchMedia: () => coarse }),
-			document,
 			failures: { report: vi.fn(), subscribe: vi.fn(() => () => undefined) },
 			createRuntime: (host) => ({
 				start: async () => { host.secrets.set('tyrian-alert-ingame-secret', 'new-token'); },
@@ -51,7 +50,6 @@ describe('C-2 cleanup after a failed stop', () => {
 		const env: HebraRuntimeEnvironment = {
 			indexedDB: new IDBFactory(),
 			window: Object.assign(Object.create(window) as Window, { matchMedia: () => coarse }),
-			document,
 			failures: { report: vi.fn(), subscribe: vi.fn(() => () => undefined) },
 			createRuntime: (host) => ({
 				start: async () => {

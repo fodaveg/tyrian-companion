@@ -413,7 +413,6 @@ async function activate(test: TyrianTestApi, factory: IDBFactory): Promise<{ cor
 		window: Object.assign(Object.create(window) as Window, {
 			matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 		}),
-		document,
 		failures,
 		createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
 	});

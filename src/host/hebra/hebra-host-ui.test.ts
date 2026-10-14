@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import type { PluginMountFn } from 'hebra-plugin-api';
-import { createFakePluginApi } from 'hebra-plugin-api/testing';
+import type { PluginMountFn, PluginPointerInfo } from 'hebra-plugin-api/v2';
+import { createFakePluginApiV2 } from 'hebra-plugin-api/v2/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../../core/i18n';
+import { surfacedV2Api } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
 import type { TyrianViewRegistration } from '../tyrian-host';
 import { createHebraTyrianUi, TYRIAN_COMMAND_PREFIX } from './hebra-host-ui';
@@ -12,14 +13,16 @@ import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
 // Ported from Hebra's `src/lib/modules/tyrian/hebra-host-ui.test.ts`. Hebra ran it over its REAL
 // `ModuleHostRegistry` (it rendered the dialog, menu, notice and icon); a plugin only sees `api.ui`,
 // so here every port of `TyrianUiPort` is checked against what reaches `api.ui` (the package's fake
-// records it), and Hebra's rendering stays tested in Hebra.
+// records it), and Hebra's rendering stays tested in Hebra. The API is the 2.0 fake's; its surfaces
+// (`ui`, `editor.registerCodeBlock`), which the published fake does not serve, are its 1.x host's.
 
 async function setup() {
-	const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
+	const v2 = createFakePluginApiV2({ id: 'tyrian-companion', capabilities: ['editor'] });
+	const fake = v2.host;
 	const report = vi.fn();
 	const openNote = vi.fn();
 	const ui = createHebraTyrianUi({
-		api: fake.api,
+		api: surfacedV2Api(v2),
 		translator: () => createTranslator('es'),
 		secrets: await createPreloadedSecrets(createMemorySecretsBackend()),
 		folderPaths: async () => ['Juegos', 'Juegos/GW2'],
@@ -113,18 +116,39 @@ describe('commands, ribbon, code block and settings panel', () => {
 		expect(fake.recorded.notices).toEqual(['Haz una vista previa válida primero.', '«Null» no está disponible ahora.']);
 	});
 
-	it('ribbon: live title and pending flag, and the click arrives with its event', async () => {
+	it('ribbon: live title and pending flag, and Hebra 2.0\'s serialized click reaches the core as a MouseEvent at that point', async () => {
 		const { fake, ui } = await setup();
 		const onClick = vi.fn();
 		const handle = ui.ribbon({ icon: 'compass', title: 'Session', onClick });
 		handle.setTitle('Session open');
 		handle.setPending(true);
 		expect(fake.recorded.ribbon).toMatchObject([{ title: 'Session open', pending: true }]);
-		const event = new MouseEvent('click', { clientX: 10, clientY: 20 });
-		fake.recorded.ribbon[0]?.onClick(event);
-		expect(onClick).toHaveBeenCalledWith(event);
+		const pointer: PluginPointerInfo = { x: 10, y: 20, button: 0, alt: false, ctrl: true, meta: false, shift: false };
+		(fake.recorded.ribbon[0]?.onClick as ((event?: PluginPointerInfo) => void) | undefined)?.(pointer);
+		const event = onClick.mock.calls[0]?.[0] as MouseEvent;
+		expect(event).toBeInstanceOf(MouseEvent);
+		expect({ x: event.clientX, y: event.clientY, ctrl: event.ctrlKey, target: event.target }).toEqual({ x: 10, y: 20, ctrl: true, target: null });
 		fake.recorded.ribbon[0]?.onClick();
 		expect(onClick.mock.calls[1]?.[0]).toBeInstanceOf(MouseEvent);
+	});
+
+	it('openMenu from the ribbon\'s click: Hebra\'s window coordinates as they came, with no element', async () => {
+		const { fake, ui } = await setup();
+		const openMenu = vi.spyOn(fake.api.ui, 'openMenu');
+		ui.ribbon({ icon: 'compass', title: 'Session', onClick: (event) => ui.openMenu([{ kind: 'separator' }], event) });
+		(fake.recorded.ribbon[0]?.onClick as ((event?: PluginPointerInfo) => void) | undefined)?.({ x: 300, y: 12, button: 0, alt: false, ctrl: false, meta: false, shift: false });
+		expect(openMenu.mock.calls[0]?.[1]).toEqual({ x: 300, y: 12 });
+	});
+
+	it('openMenu from a click inside a surface names the element, so Hebra adds that frame\'s position (another realm\'s element too)', async () => {
+		const { fake, ui } = await setup();
+		const openMenu = vi.spyOn(fake.api.ui, 'openMenu');
+		const surface = document.implementation.createHTMLDocument('surface');
+		const button = surface.body.appendChild(surface.createElement('button'));
+		const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+		Object.defineProperty(event, 'currentTarget', { value: button });
+		ui.openMenu([{ kind: 'separator' }], event);
+		expect(openMenu.mock.calls[0]?.[1]).toEqual({ x: 5, y: 6, element: button });
 	});
 
 	it('registerCodeBlock goes through api.editor: Hebra\'s order (el, source) to the core\'s (source, el, context) with the frontmatter as it is', async () => {
@@ -182,7 +206,7 @@ describe('commands, ribbon, code block and settings panel', () => {
 	});
 
 	it('the 1.4.0 fake refuses a status item whose id is still registered', () => {
-		const { api } = createFakePluginApi({ id: 'tyrian-companion' });
+		const { api } = createFakePluginApiV2({ id: 'tyrian-companion' }).host;
 		const item = api.ui.registerStatusBarItem({ id: 'tyrian-status', text: 'T' });
 
 		expect(() => api.ui.registerStatusBarItem({ id: 'tyrian-status', text: 'T' })).toThrow(/createFakePluginApi: /u);

@@ -27,8 +27,8 @@ import type {
 	PluginViewDefinition,
 	PluginViewSection,
 	PluginViewSectionMount,
-} from 'hebra-plugin-api';
-import type { FakePluginApi } from 'hebra-plugin-api/testing';
+} from 'hebra-plugin-api/v2';
+import type { FakePluginApi } from './hebra-plugin-fakes';
 
 export interface RealHostOptions {
 	readonly document?: Document;

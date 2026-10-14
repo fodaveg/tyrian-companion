@@ -2,6 +2,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { idbKeyRange } from '../../core/idb-key-range';
 import { createTyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { trackedIndexedDb } from '../../test/indexed-db-connections';
 import type { TyrianHost, TyrianRuntime } from '../tyrian-host';
@@ -27,7 +28,6 @@ function environment(overrides: Partial<HebraRuntimeEnvironment> = {}): HebraRun
 	return {
 		indexedDB: new IDBFactory(),
 		window: Object.assign(Object.create(window) as Window, { matchMedia: () => coarse }),
-		document,
 		createRuntime: (host): TyrianRuntime => {
 			runtime.host = host;
 			return {
@@ -61,17 +61,34 @@ describe('activateTyrian', () => {
 		await cleanup();
 	});
 
-	it('puts is-mobile on an iPhone, and the cleanup removes it, stops the core and flushes the keychain', async () => {
+	it('puts is-mobile on an iPhone on the surfaces only (none on the plugin\'s own hidden document), and the cleanup removes it, stops the core and flushes the keychain and the device storage', async () => {
 		const keychain = new Map<string, string>();
 		const test = createTyrianTestApi({ platform: 'ios', keychain });
+		const flush = vi.spyOn(test.api.storage.device, 'flush');
 		const env = environment();
 		const cleanup = await activateTyrian(test.api, env);
+		expect(document.body.classList.contains('is-mobile'), 'nothing before a surface is mounted').toBe(false);
+		env.runtime.host?.ui.settingsPanel({ mount: vi.fn(), unmount: vi.fn() });
+		test.fake.recorded.settingsPanels.at(-1)?.(document.body.appendChild(document.createElement('div')));
 		expect(document.body.classList.contains('is-mobile')).toBe(true);
 		env.runtime.host?.secrets.set('gw2-api', 'KEY');
 		await cleanup();
 		expect(document.body.classList.contains('is-mobile')).toBe(false);
 		expect(env.runtime.stopped).toBe(1);
 		expect(keychain.size).toBe(1);
+		expect(flush).toHaveBeenCalledTimes(1);
+	});
+
+	it('builds every key range with the IDBKeyRange it was given while the plugin runs, and puts the global one back on cleanup', async () => {
+		const given = { bound: vi.fn(), only: vi.fn() } as unknown as typeof IDBKeyRange;
+		const env = environment({ IDBKeyRange: given });
+		const cleanup = await activateTyrian(createTyrianTestApi({ platform: 'ios' }).api, env);
+		expect(idbKeyRange()).toBe(given);
+		await cleanup();
+		// The global one, or none at all where the test environment has no IndexedDB of its own.
+		let after: unknown = null;
+		try { after = idbKeyRange(); } catch { /* no global IDBKeyRange here */ }
+		expect(after).not.toBe(given);
 	});
 
 	it('the cleanup closes the IndexedDB connections of the path index and the local files, after the core stopped', async () => {

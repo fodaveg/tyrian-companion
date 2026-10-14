@@ -1019,6 +1019,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const sessionStorage = new SessionStorageScope(indexedDB, vaultId);
 		const coordinator = new ActiveSessionLeaseCoordinator({
 			databaseName: async () => await sessionStorage.coordinationDatabaseName(),
+			// The host's factory, never the page's own: in Hebra 2.0 they are not the same storage.
+			indexedDb: indexedDB,
 			diagnostics: this.persistenceDiagnostics('session', 'session_lease'), locks: host.kv.locks ?? null,
 		});
 		// One shared cooldown: a 429 seen by session capture, assisted detection,
@@ -1028,7 +1030,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// Opened on the first session that has to be valued, not on load: a vault that never closes
 		// a session never pays for the catalog database.
 		this.sessionCatalogFactory = async () => new PublicCatalogService(
-			publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
+			publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics, indexedDb: indexedDB }),
 		);
 		// M4: only ever invoked by the settings panel's own button (`SettingsTab`), never here at
 		// load. Cached for the plugin's lifetime once it succeeds; a failure is not cached, so the
@@ -1047,7 +1049,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 						ids.push(entry as number);
 					}
 					this.sessionCatalogFactory ??= async () => new PublicCatalogService(
-						publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
+						publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics, indexedDb: indexedDB }),
 					);
 					this.sessionCatalog ??= await this.sessionCatalogFactory();
 					const items = await this.sessionCatalog.resolveItems(ids, this.settings.language);

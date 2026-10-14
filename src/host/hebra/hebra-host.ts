@@ -1,6 +1,6 @@
 /**
  * `HebraHost`: the `TyrianHost` Tyrian gives its core inside Hebra, written against Hebra's public
- * plugin API (`hebra-plugin-api` v1, SPEC-PLUGINS-EXTERNOS.md §5) and nothing internal to Hebra.
+ * plugin API (`hebra-plugin-api/v2`, SPEC-PLUGINS-EXTERNOS.md §5 and §5.5) and nothing internal to Hebra.
  * It moved here from Hebra's `src/lib/modules/tyrian/` when Tyrian became an external plugin
  * (§2.1: each plugin ships its own adapter, so a change of `TyrianHost` never needs a Hebra build).
  *
@@ -27,16 +27,21 @@
  * - `priceHistory` uses the core's own IndexedDB databases on THIS device;
  * - `tcpServer` (R4) is Hebra's byte server through `api.tcp`; without it (web, iPhone) it refuses
  *   with `EHEBRA_NO_BRIDGE`. `notify.system` uses Hebra's system notifications when it has them and
- *   the browser `Notification` otherwise; with `notify.urgency` (API 1.5) it also asks for the same
+ *   is `unavailable` otherwise (API 2.0: a browser `Notification` from the plugin's frame, another
+ *   origin, is not to be trusted); with `notify.urgency` it also asks for the same
  *   `silent`/`urgency` options as the Obsidian banner (critical on Linux, so GNOME shows it over a
  *   full-screen game). `instance.lock` (true only on Linux desktop) confirms the `flock` of the
  *   instance, but Tyrian's own life lock stays as it is (HP-02) and the plugin does not read it;
+ * - API 2.0 (the plugin runs in a hidden frame of its own origin): the chime is played by Hebra
+ *   (`notify.sound`, `hebra-alert-sound.ts`), the clipboard is written by Hebra (`api.clipboard`,
+ *   which refuses with `user-activation-required` without a click: the core's callers already show
+ *   the text or a notice when a copy is refused), and each surface is readied before the core
+ *   paints into it (`surface.ts`);
  * - `environment.onUncaughtError` only lets Tyrian's errors through, not Hebra's.
  */
-import type { HebraPluginApi, PluginSystemNotifyInput } from 'hebra-plugin-api';
+import type { HebraPluginApi, PluginSystemNotifyInput } from 'hebra-plugin-api/v2';
 
-import { browserAlertAudioContextFactory, closeBrowserAlertAudio, playAlertSound } from '../../alerts/alert-sound';
-import { hostSystemNotificationConstructor, showSystemNotification, systemNotificationOptions } from '../../alerts/alert-system-notification';
+import { systemNotificationOptions } from '../../alerts/alert-system-notification';
 import { MANAGED_ASSETS_MANIFEST } from '../../assets/managed-assets-model';
 import type { Translator } from '../../core/i18n';
 import { localDebugDirectory } from '../../core/local-debug-contract';
@@ -52,6 +57,7 @@ import type {
 	TyrianVault,
 } from '../tyrian-host';
 import { createLibraryFolderPath, libraryFolderPaths, resolveFolderPath } from './folder-path';
+import { createHebraAlertSound, type OfflineChimeContextConstructor } from './hebra-alert-sound';
 import { createHebraTyrianUi } from './hebra-host-ui';
 import { hebraHasMainView } from './hebra-main-view';
 import { createTyrianHttpPort } from './http';
@@ -67,17 +73,23 @@ import type { TyrianPathIndexKv } from './path-index-kv';
 import { createPreloadedSecrets, type TyrianSecretsBackend } from './secrets';
 import { refreshUnadoptedNotes, seedTyrianPathIndex, type TyrianSeedLibrary, type TyrianSeedResult, type TyrianUnadoptedNote } from './seed';
 import { createHebraTranslator, type HebraTranslator } from './setting-row';
+import { createHebraSurfaces } from './surface';
 import { createTcpServerPort, unavailableTcpServerPort } from './tcp-port';
 import { createHebraTyrianVault, HEBRA_TYRIAN_CONFIG_DIR, relativeToOutputFolder } from './vault';
 import { createTyrianVaultPort } from './vault-port';
 
 export const TYRIAN_PLUGIN_ID = 'tyrian-companion';
 
-/** The window events and objects `environment`, `clipboard` and the notification fallback read
- *  (injectable for tests). */
+/** What the host reads of the plugin's (hidden) frame window: the error events `environment` listens
+ *  to and the `OfflineAudioContext` the chime is rendered with (injectable for tests). */
 export type HebraHostWindow = Pick<Window, 'addEventListener' | 'removeEventListener'> & {
-	readonly navigator: Pick<Navigator, 'clipboard'>;
+	readonly OfflineAudioContext?: unknown;
 };
+
+/** The frame's `OfflineAudioContext`, or null where the webview has none. */
+function offlineAudioContextOf(win: HebraHostWindow): OfflineChimeContextConstructor | null {
+	return typeof win.OfflineAudioContext === 'function' ? win.OfflineAudioContext as OfflineChimeContextConstructor : null;
+}
 
 /**
  * Where the adapter's own failures go. Production code here may not print logs of its own (the
@@ -619,7 +631,15 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	const secrets = await createPreloadedSecrets(deps.secretsBackend, (error) => deps.report(error, 'keychain.write'));
 	const kv: TyrianKvPort = { indexedDB: deps.indexedDB, locks: deps.locks ?? null, storage: deps.storage ?? null };
 	const background = createBackground(deps);
-	const win = deps.window;
+	// Each surface Hebra hands over (a frame of its own, API 2.0) gets Obsidian's helpers, `is-mobile` and web links.
+	const surfaces = createHebraSurfaces({
+		appleMobile: api.env.appleMobile(),
+		openExternal: (url) => {
+			api.ui.openExternal(url).catch((error: unknown) => deps.report(error, 'openExternal'));
+		},
+		report: deps.report,
+	});
+	const sound = createHebraAlertSound({ api, OfflineAudioContext: offlineAudioContextOf(deps.window), report: deps.report });
 	// Asked once: the main view of the plugin API 1.3.0. A Hebra before it answers false, and one
 	// that fails to answer is taken as not having it.
 	const mainView = hebraHasMainView(api, (error) => deps.report(error, 'has ui.view.main'));
@@ -643,24 +663,23 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			? createTcpServerPort(api.tcp, deps.report)
 			: unavailableTcpServerPort('the TCP bridge only exists in the desktop app (macOS, Linux, Windows)'),
 		notify: {
+			// No browser `Notification` fallback: from the plugin's frame (another origin) it is not to be trusted.
 			system: (input) => (api.has('notify.system')
 				? api.notify.system(hebraSystemNotifyInput(api, input, deps.platform))
-				: showSystemNotification(hostSystemNotificationConstructor(win), {
-					...input,
-					platform: deps.platform === 'linux' ? 'linux' : 'other',
-				})),
-			sound: () => playAlertSound(browserAlertAudioContextFactory(win)),
+				: 'unavailable'),
+			sound,
 		},
 		clipboard: {
-			writeText: async (text) => {
-				await win.navigator.clipboard.writeText(text);
-			},
+			// Hebra writes it, only with the activation of the click that asked; without one it rejects with
+			// `user-activation-required`, and the core's callers show the text or a notice instead.
+			writeText: (text) => api.clipboard.writeText(text),
 		},
 		// No file system of its own (`basePath()` is null): there is no folder to open.
 		shell: { openPath: async () => false },
 		ui: createHebraTyrianUi({
 			api,
 			mainView,
+			surfaces,
 			translator,
 			secrets,
 			folderPaths: async () => libraryFolderPaths(await api.vault.foldersList(), libraryRootId),
@@ -718,8 +737,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 				vaultPort?.dispose();
 				background.dispose();
 			} finally {
-				// Last, but not skipped when an earlier dispose throws: a live AudioContext outlives a reload.
-				closeBrowserAlertAudio(win);
+				// Last, but not skipped when an earlier dispose throws: the `is-mobile` class and the link listeners.
+				surfaces.dispose();
 			}
 		},
 		closeStorage: () => {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { PluginCleanup } from 'hebra-plugin-api';
+import type { PluginCleanup } from 'hebra-plugin-api/v2';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createBootTrace } from '../../core/boot-trace';
@@ -143,7 +143,6 @@ async function bootWithEngine(
 		window: Object.assign(Object.create(window) as Window, {
 			matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 		}),
-		document,
 		bootTrace: createBootTrace(() => clock.nowMs, 0),
 		createRuntime: (host) => { const runtime = createTyrianRuntime(host); plugin.core = runtime as unknown as BootCore; return runtime; },
 	}).then((done) => { plugin.cleanup = done; }, (error: unknown) => { plugin.failure = error; });

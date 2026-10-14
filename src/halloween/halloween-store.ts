@@ -29,6 +29,7 @@ import {
 	openIndexedDb,
 	startIndexedDbTransaction,
 } from '../core/indexed-db-open';
+import { idbKeyRange } from '../core/idb-key-range';
 import {
 	EMITTED_ALERT_RETENTION,
 	isEmittedAlertRecord,
@@ -426,7 +427,7 @@ export class IndexedDbHalloweenStore {
 						return;
 					}
 				} catch (error) { reject(error); tx.abort(); return; }
-			const request = episodes.getAll(IDBKeyRange.bound(
+			const request = episodes.getAll(idbKeyRange().bound(
 				[vaultId, accountRef, episodeId, 0],
 				[vaultId, accountRef, episodeId, Number.MAX_SAFE_INTEGER],
 			));
@@ -492,7 +493,7 @@ export class IndexedDbHalloweenStore {
 	readLatestComparison(vaultId: string, accountRef: string): Promise<HalloweenComparisonRecord | null> {
 		return this.run([HALLOWEEN_COMPARISON_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_COMPARISON_STORE).index('by-scope-observed').openCursor(
-				IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']), 'prev',
+				idbKeyRange().bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']), 'prev',
 			);
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {
@@ -568,7 +569,7 @@ export class IndexedDbHalloweenStore {
 	readPriceNotices(vaultId: string, accountRef: string): Promise<HalloweenPriceNoticeV1[]> {
 		return this.run([HALLOWEEN_PRICE_NOTICE_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_PRICE_NOTICE_STORE).index('by-scope-observed')
-				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']));
+				.getAll(idbKeyRange().bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']));
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {
 				try {
@@ -610,7 +611,7 @@ export class IndexedDbHalloweenStore {
 			const store = tx.objectStore(HALLOWEEN_EMITTED_ALERT_STORE);
 			store.put(structuredClone(record));
 			const upperBound = String.fromCharCode(0xff_ff);
-			const scope = IDBKeyRange.bound(
+			const scope = idbKeyRange().bound(
 				[record.vaultId, record.accountRef, ''], [record.vaultId, record.accountRef, upperBound],
 			);
 			const request = store.index('by-scope-emitted').getAllKeys(scope);
@@ -634,7 +635,7 @@ export class IndexedDbHalloweenStore {
 		return this.run([HALLOWEEN_ALERT_DELIVERY_STORE], 'readwrite', (tx, resolve, reject) => {
 			const store = tx.objectStore(HALLOWEEN_ALERT_DELIVERY_STORE);
 			store.put(structuredClone(record));
-			const scope = IDBKeyRange.bound(
+			const scope = idbKeyRange().bound(
 				[record.vaultId, record.accountRef, ''], [record.vaultId, record.accountRef, String.fromCharCode(0xff_ff)],
 			);
 			const request = store.index('by-scope-emitted').getAllKeys(scope);
@@ -652,7 +653,7 @@ export class IndexedDbHalloweenStore {
 	readAlertDeliveries(vaultId: string, accountRef: string): Promise<AlertDeliveryRecordV1[]> {
 		return this.run([HALLOWEEN_ALERT_DELIVERY_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_ALERT_DELIVERY_STORE).index('by-scope-emitted')
-				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, String.fromCharCode(0xff_ff)]));
+				.getAll(idbKeyRange().bound([vaultId, accountRef, ''], [vaultId, accountRef, String.fromCharCode(0xff_ff)]));
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {
 				try {
@@ -670,7 +671,7 @@ export class IndexedDbHalloweenStore {
 	readEmittedAlerts(vaultId: string, accountRef: string): Promise<EmittedAlertRecordV1[]> {
 		return this.run([HALLOWEEN_EMITTED_ALERT_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_EMITTED_ALERT_STORE).index('by-scope-emitted')
-				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, String.fromCharCode(0xff_ff)]));
+				.getAll(idbKeyRange().bound([vaultId, accountRef, ''], [vaultId, accountRef, String.fromCharCode(0xff_ff)]));
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {
 				try {
@@ -685,7 +686,7 @@ export class IndexedDbHalloweenStore {
 	readNotices(vaultId: string, accountRef: string): Promise<HalloweenNoticeV1[]> {
 		return this.run([HALLOWEEN_NOTICE_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_NOTICE_STORE).index('by-scope-observed')
-				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']));
+				.getAll(idbKeyRange().bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']));
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {
 				try {
@@ -699,7 +700,7 @@ export class IndexedDbHalloweenStore {
 	readRecentItemIds(vaultId: string, accountRef: string, limit = 400): Promise<number[]> {
 		return this.run([HALLOWEEN_SEEN_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_SEEN_STORE).getAll(
-				IDBKeyRange.bound([vaultId, accountRef, 0], [vaultId, accountRef, Number.MAX_SAFE_INTEGER]),
+				idbKeyRange().bound([vaultId, accountRef, 0], [vaultId, accountRef, Number.MAX_SAFE_INTEGER]),
 			);
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '../../core/i18n';
 import { DEFAULT_SETTINGS } from '../../core/settings';
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
-import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
+import { createTyrianTestApi, hebraSettingsKey, userActivationRequired, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { installDomHelpers } from '../dom-polyfill';
 import type { CanonicalPathFor } from '../tyrian-host';
 import {
@@ -625,36 +625,87 @@ describe('createHebraHost: the other ports', () => {
 		expect(system).toHaveBeenCalledWith({ title: 'T', body: 'B' });
 	});
 
-	it('dispose closes the AudioContext the sound channel opened', async () => {
-		const closed: number[] = [];
+	// API 2.0 (P10): Hebra plays the chime; the plugin renders it offline once and never opens an AudioContext of its own.
+	it('notify.sound: renders the chime to a WAV once, registers it with Hebra and asks Hebra to play it; muted is no failure', async () => {
 		const param = { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined };
-		class FakeAudioContext {
-			currentTime = 0; destination = {}; state = 'running';
+		const rendered: number[] = [];
+		class FakeOfflineAudioContext {
+			destination = {};
+			constructor(_channels: number, private readonly length: number, private readonly sampleRate: number) {}
 			createOscillator() { return { type: '', frequency: param, connect: () => undefined, start: () => undefined, stop: () => undefined }; }
 			createGain() { return { gain: param, connect: () => undefined }; }
-			close() { closed.push(1); }
+			async startRendering() {
+				rendered.push(this.length);
+				return { sampleRate: this.sampleRate, getChannelData: () => new Float32Array(this.length).fill(0.1) };
+			}
 		}
-		const test = createTyrianTestApi();
+		class AudioContextMustNotBeUsed { constructor() { throw new Error('an AudioContext in the plugin frame'); } }
+		const test = createTyrianTestApi({ soundOutcome: 'muted' });
+		const report = vi.fn();
 		const handle = await createHebraHost(deps(test, {
-			window: Object.assign(Object.create(window) as Window, { AudioContext: FakeAudioContext }),
+			report,
+			window: Object.assign(Object.create(window) as Window, { OfflineAudioContext: FakeOfflineAudioContext, AudioContext: AudioContextMustNotBeUsed }),
 		}));
-		expect(handle.host.notify.sound()).toBe('played');
-		expect(closed).toEqual([]);
-		handle.dispose();
-		expect(closed, 'the AudioContext stayed open after dispose').toEqual([1]);
+
+		expect(handle.host.notify.sound()).toBe('pending');
+		await vi.waitFor(() => { expect(test.sounds.plays).toHaveLength(1); });
+		// While that chime would still sound, another alert of the same sample is the same sound.
+		expect(handle.host.notify.sound()).toBe('pending');
+		await new Promise((resolve) => { window.setTimeout(resolve, 400); });
+		expect(handle.host.notify.sound()).toBe('pending');
+		await vi.waitFor(() => { expect(test.sounds.plays).toHaveLength(2); });
+
+		const [id, sound] = [...test.sounds.registered][0] ?? [];
+		expect({ id, mime: sound?.mime, riff: new TextDecoder().decode(sound?.bytes.slice(0, 4)), wave: new TextDecoder().decode(sound?.bytes.slice(8, 12)) })
+			.toEqual({ id: 'tyrian-alert-chime', mime: 'audio/wav', riff: 'RIFF', wave: 'WAVE' });
+		expect(rendered, 'rendered once, then only played').toHaveLength(1);
+		expect(test.sounds.plays).toEqual([{ id: 'tyrian-alert-chime', volume: 1 }, { id: 'tyrian-alert-chime', volume: 1 }]);
+		expect(report, 'muted is the user\'s choice, not a failure').not.toHaveBeenCalled();
 	});
 
-	it('notify.system without Hebra notifications (iPhone, the web) uses the browser Notification', async () => {
+	it('notify.sound without the capability, or without OfflineAudioContext in the frame, is unavailable and asks Hebra nothing', async () => {
+		const without = createTyrianTestApi({ capabilities: ['vault.read', 'vault.write', 'editor'] });
+		const handle = await createHebraHost(deps(without, { window: Object.assign(Object.create(window) as Window, { OfflineAudioContext: class {} }) }));
+		expect(handle.host.notify.sound()).toBe('unavailable');
+		const noAudio = createTyrianTestApi();
+		const silent = await createHebraHost(deps(noAudio, { window: Object.assign(Object.create(window) as Window, { OfflineAudioContext: undefined }) }));
+		expect(silent.host.notify.sound()).toBe('unavailable');
+		expect([...without.sounds.registered, ...noAudio.sounds.registered]).toEqual([]);
+	});
+
+	it('notify.system without Hebra notifications (iPhone, the web) is unavailable: no browser Notification from the plugin frame', async () => {
 		const created: string[] = [];
 		class FakeNotification {
 			static permission = 'granted';
 			constructor(title: string) { created.push(title); }
 		}
+		vi.stubGlobal('Notification', FakeNotification);
 		const handle = await createHebraHost(deps(createTyrianTestApi({ platform: 'web' }), {
 			window: Object.assign(Object.create(window) as Window, { Notification: FakeNotification }),
 		}));
-		expect(handle.host.notify.system({ title: 'Web', body: 'B' })).toBe('shown');
-		expect(created).toEqual(['Web']);
+		expect(handle.host.notify.system({ title: 'Web', body: 'B' })).toBe('unavailable');
+		expect(created).toEqual([]);
+		vi.unstubAllGlobals();
+	});
+
+	// API 2.0 (requirement 2 of §5.5.6): Hebra writes the clipboard, only with the click's activation.
+	it('clipboard goes through api.clipboard, never the frame\'s navigator, and a write without a gesture rejects as user-activation-required', async () => {
+		const frameClipboard = vi.fn(async () => undefined);
+		vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: frameClipboard } });
+		try {
+			const test = createTyrianTestApi();
+			const handle = await createHebraHost(deps(test));
+			await handle.host.clipboard.writeText('copied');
+			expect(test.clipboardWrites).toEqual(['copied']);
+
+			const refused = createTyrianTestApi({ clipboard: async () => { throw userActivationRequired(); } });
+			const refusing = await createHebraHost(deps(refused));
+			const error = await refusing.host.clipboard.writeText('later').catch((caught: unknown) => caught);
+			expect(refused.api.isError(error, 'user-activation-required')).toBe(true);
+			expect(frameClipboard).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('background.hold holds Hebra while ANY owner holds it, releases with the last one; twice is once', async () => {

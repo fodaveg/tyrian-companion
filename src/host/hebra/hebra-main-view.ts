@@ -4,9 +4,9 @@
  * of Hebra's API.
  *
  * - detection: `api.has('ui.view.main')`. It is a feature of the host, not a capability the plugin
- *   declares: it is in neither `hebra.json` nor `capabilities.required`, and the plugin still asks
- *   for no more than API `^1.0.0`. On a Hebra without it (1.2.0 and before) it answers false and
- *   nothing below is ever called (two of those methods do not exist there);
+ *   declares: it is in neither `hebra.json` nor `capabilities.required`. Every Hebra with the API
+ *   2.x this plugin asks for has it; the check stays for a host that answers false, where nothing
+ *   below is ever called (two of those methods did not exist before 1.3.0);
  * - the view registers with `retainSections`: Hebra mounts each section once, on its first visit,
  *   and from then on hides it instead of unmounting it, telling the section when it is hidden and
  *   when it is shown again (never right after mounting it, never before unmounting it);
@@ -14,7 +14,7 @@
  *   its own lane, as each view has in `hebra-host-ui.ts`: an `unmount` never overtakes the `mount`
  *   before it, and a first synchronous `mount` that throws still reaches Hebra.
  */
-import type { HebraPluginApi, PluginHostFeature, PluginMainViewDefinition, PluginUi, PluginViewSectionPatch } from 'hebra-plugin-api';
+import type { HebraPluginApi, PluginHostFeature, PluginMainViewDefinition, PluginUi, PluginViewSectionPatch } from 'hebra-plugin-api/v2';
 
 import type { ScreenAwake } from './hebra-screen-awake';
 import type { TyrianSectionsViewRegistration, TyrianViewSectionPatch } from '../tyrian-host';
@@ -31,6 +31,8 @@ export interface HebraMainViewDeps {
 	report(error: unknown, where: string): void;
 	/** The screen hold (`hebra-screen-awake.ts`); absent, a section asking for it is painted without it. */
 	screenAwake?: ScreenAwake;
+	/** Readies the surface a section is mounted into (API 2.0, `surface.ts`), before the core paints it. */
+	prepare?(el: HTMLElement): void;
 }
 
 /**
@@ -68,6 +70,7 @@ export function registerHebraMainView(deps: HebraMainViewDeps, view: TyrianSecti
 			if (section === undefined) return undefined;
 			const run = deps.lane((error) => deps.report(error, `section ${view.type}/${sectionId}`));
 			const awake = section.keepScreenAwake === true ? deps.screenAwake : undefined;
+			deps.prepare?.(el);
 			run(() => section.mount(el));
 			// Hebra mounts a section on its first visit, so it is on screen now.
 			awake?.request(view.type, true);

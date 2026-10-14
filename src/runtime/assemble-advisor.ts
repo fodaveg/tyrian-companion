@@ -168,7 +168,7 @@ function createInventoryAdvisorRuntime(
 		diagnostics: diagnostics ?? undefined,
 		capture: { capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) => {
 			if (inventoryEvidence === null) {
-				const catalogCache = await createCatalogCacheAdapter({ diagnostics: input.catalogPersistence });
+				const catalogCache = await createCatalogCacheAdapter({ diagnostics: input.catalogPersistence, indexedDb: input.factory });
 				inventoryCatalogCache = catalogCache;
 				inventoryEvidence = new InventoryAdvisorEvidenceService(
 					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,

@@ -19,22 +19,62 @@
  */
 import { createHash } from 'node:crypto';
 
-import type {
-	HebraPluginApi,
-	PluginCapability,
-	PluginFile,
-	PluginFolder,
-	PluginHttpRequest,
-	PluginHttpResponse,
-	PluginNote,
-	PluginNotesScope,
-	PluginPlatform,
-	PluginSecrets,
-	PluginStorage,
-	PluginVault,
-	PluginVaultChange,
-} from 'hebra-plugin-api';
-import { createFakePluginApi, type FakePluginApi } from 'hebra-plugin-api/testing';
+import { IDBFactory as FakeIdbFactory, IDBKeyRange as FakeIdbKeyRange } from 'fake-indexeddb';
+import {
+	isPluginApiError,
+	type HebraPluginApi,
+	type PluginApiErrorCode,
+	type PluginCapability,
+	type PluginClipboard,
+	type PluginFile,
+	type PluginFolder,
+	type PluginHttpRequest,
+	type PluginHttpResponse,
+	type PluginNote,
+	type PluginNotesScope,
+	type PluginPlatform,
+	type PluginSecrets,
+	type PluginSoundMime,
+	type PluginSoundOutcome,
+	type PluginStorage,
+	type PluginUi,
+	type PluginVault,
+	type PluginVaultChange,
+} from 'hebra-plugin-api/v2';
+import { createFakePluginApiV2, type FakePluginApiV2 } from 'hebra-plugin-api/v2/testing';
+
+/** The package's 1.x host under the 2.0 fake: its library, its `ui` that mounts in the test's page, and what it recorded. */
+export type FakePluginApi = FakePluginApiV2['host'];
+
+/** A copy of a frozen object of the 2.0 API whose properties a test may replace (getters stay live). */
+function thawed<T extends object>(source: T): T {
+	const descriptors = Object.getOwnPropertyDescriptors(source);
+	for (const descriptor of Object.values(descriptors)) {
+		descriptor.configurable = true;
+		if ('value' in descriptor) descriptor.writable = true;
+	}
+	return Object.defineProperties({}, descriptors) as T;
+}
+
+/**
+ * The 2.0 fake's API with the surfaces of its 1.x host. The published fake (`createFakePluginApiV2`) serves
+ * no surface frame yet: its `ui` registrations answer `capability-not-available` and its `has` says no to
+ * the main view, which needs one (`visual`). Hebra 2.x does serve them, so here `ui`,
+ * `editor.registerCodeBlock` and `has('ui.view.main')` are the 1.x host's, which mounts in the test's page
+ * and records what it got (the same as JDex Manager's tests do). The rest is the 2.0 fake's, thawed so a
+ * test can still wrap a piece of it.
+ */
+export function surfacedV2Api(v2: FakePluginApiV2): HebraPluginApi {
+	const host = v2.host.api;
+	const namespaces = Object.fromEntries(Object.entries(v2.api)
+		.map(([key, value]) => [key, typeof value === 'object' && value !== null ? thawed(value as object) : value])) as unknown as HebraPluginApi;
+	return {
+		...namespaces,
+		has: (name) => (name === 'ui.view.main' ? host.has(name) : v2.api.has(name)),
+		ui: host.ui as unknown as PluginUi,
+		editor: { ...v2.api.editor, registerCodeBlock: (language, render) => host.editor.registerCodeBlock(language, render) },
+	};
+}
 
 export const FAKE_LIBRARY_ID = 'library-1';
 export const FAKE_ROOT_ID = 'root';
@@ -398,10 +438,25 @@ function parseJson(raw: string | undefined): unknown {
 	}
 }
 
-/** `api.storage` with Hebra's key layout over `local`, a `Map` standing for `localStorage`. */
-export function createHebraStorage(local: Map<string, string>, pluginId: string, libraryId: string): PluginStorage {
+/** The IndexedDB Hebra 2.0 serves the plugin (`api.storage.indexedDB` and its `IDBKeyRange`). */
+export interface FakeHebraIndexedDb {
+	readonly indexedDB: IDBFactory;
+	readonly IDBKeyRange: typeof IDBKeyRange;
+}
+
+/**
+ * `api.storage` with Hebra's key layout over `local`, a `Map` standing for the device storage (the same
+ * keys in the 1.x `localStorage` and in the 2.0 mirror, which Hebra saves after the fact: `flush` resolves
+ * at once here). `indexedDB` is the factory Hebra serves; by default a fresh `fake-indexeddb` engine of its
+ * own, made the first time it is read, never the page's `indexedDB`.
+ */
+export function createHebraStorage(local: Map<string, string>, pluginId: string, libraryId: string, served?: FakeHebraIndexedDb): PluginStorage {
 	const settingsKey = hebraSettingsKey(pluginId, libraryId);
+	let idb = served ?? null;
+	const engine = (): FakeHebraIndexedDb => (idb ??= { indexedDB: new FakeIdbFactory(), IDBKeyRange: FakeIdbKeyRange });
 	return {
+		get indexedDB() { return engine().indexedDB; },
+		get IDBKeyRange() { return engine().IDBKeyRange; },
 		settings: {
 			load: async <T>() => parseJson(local.get(settingsKey)) as T | null,
 			save: async (value: unknown) => {
@@ -418,6 +473,7 @@ export function createHebraStorage(local: Map<string, string>, pluginId: string,
 				else local.set(storageKey, JSON.stringify(value));
 			},
 			remove: (key: string) => { local.delete(hebraDeviceKey(pluginId, libraryId, key)); },
+			flush: async () => undefined,
 		},
 		indexedDbName: (name: string) => LEGACY_INDEXED_DB_NAMES[pluginId]?.[name] ?? `hebra-plugin-${pluginId}-${name}`,
 	};
@@ -467,6 +523,29 @@ export interface TyrianTestApiOptions {
 	 * `instance.lock`) and ignores `urgency` and `silent`. Default: what the package's fake answers (true).
 	 */
 	notifyUrgency?: boolean;
+	/** The IndexedDB Hebra serves (`api.storage.indexedDB`); by default a fresh fake engine of its own. */
+	indexedDb?: FakeHebraIndexedDb;
+	/**
+	 * What Hebra does with `api.clipboard.writeText` (2.0): by default it takes the text, as after a click.
+	 * A test of a write without a gesture rejects with `userActivationRequired()`.
+	 */
+	clipboard?: PluginClipboard['writeText'];
+	/** What `api.notify.sound.play` answers (2.0), when `notify.sound` is declared: by default `played`. */
+	soundOutcome?: PluginSoundOutcome;
+}
+
+/**
+ * An error of the 2.0 API as the plugin receives it: `name`, `code` and `message`, what
+ * `isPluginApiError` recognizes. (Over the real port it is a plain object, which the adapter must not
+ * tell apart from this: it only reads those three fields.)
+ */
+export function pluginApiError(code: PluginApiErrorCode, message: string): Error & { name: 'PluginApiError'; code: PluginApiErrorCode } {
+	return Object.assign(new Error(message), { name: 'PluginApiError' as const, code });
+}
+
+/** The error Hebra 2.0 rejects `clipboard.writeText` with when it sees no user gesture. */
+export function userActivationRequired(): Error & { name: 'PluginApiError'; code: PluginApiErrorCode } {
+	return pluginApiError('user-activation-required', 'Escribir en el portapapeles necesita un gesto del usuario.');
 }
 
 /**
@@ -498,7 +577,14 @@ export function asHebraWithoutMainView(api: HebraPluginApi): HebraPluginApi {
 
 export interface TyrianTestApi {
 	api: HebraPluginApi;
+	/** The 1.x host under the 2.0 fake: what it recorded (views, commands, notices…) and its `ui`. */
 	fake: FakePluginApi;
+	/** The package's 2.0 fake itself (`createFakePluginApiV2`): environment, events, the port. */
+	v2: FakePluginApiV2;
+	/** Every text Hebra accepted through `api.clipboard.writeText`, in order. */
+	clipboardWrites: string[];
+	/** What reached `api.notify.sound`: the sounds registered and every `play`. */
+	sounds: { registered: Map<string, { bytes: Uint8Array; mime: PluginSoundMime }>; plays: Array<{ id: string; volume?: number }> };
 	library: FakeLibrary;
 	local: Map<string, string>;
 	openedNotes: string[];
@@ -514,12 +600,27 @@ export interface TyrianTestApi {
 
 /** The capabilities `hebra.json` declares for Tyrian. */
 export const TYRIAN_CAPABILITIES: readonly PluginCapability[] = [
-	'vault.read', 'vault.write', 'editor', 'http', 'secrets', 'tcp', 'notify.system', 'background',
+	'vault.read', 'vault.write', 'editor', 'http', 'secrets', 'tcp', 'notify.system', 'background', 'screen.awake', 'notify.sound',
 ];
 
+/**
+ * A whole 2.0 `HebraPluginApi` for `tyrian-companion`. Built on the package's 2.0 fake
+ * (`createFakePluginApiV2`): `has`, `env`, `http`, `tcp`, `notify.system`, `background`, `markdown`,
+ * `workspace` and `isError` are the plugin's side of the port, with Hebra's side served by the 1.x
+ * fake under it, so their answers and errors arrive as they do in a frame (cloned, errors as plain
+ * `PluginApiError` shapes). What the published fake does not serve yet is filled in here:
+ *
+ * - the surfaces (`ui` and `editor.registerCodeBlock`): the package's fake has no surface frames
+ *   (they answer `capability-not-available`), so its 1.x host's `ui` mounts views, panels, modals and
+ *   note blocks in the test's own page and records them, as JDex Manager's tests do;
+ * - `clipboard` (records, or rejects as `options.clipboard` says) and `notify.sound` (records the
+ *   registered sounds and every play; `has('notify.sound')` answers what `capabilities` declares);
+ * - `storage` with Hebra's key layout and the IndexedDB Hebra serves (`createHebraStorage`), and the
+ *   library, keychain and workspace doubles above.
+ */
 export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianTestApi {
 	const capabilities = options.capabilities ?? TYRIAN_CAPABILITIES;
-	const fake = createFakePluginApi({
+	const v2 = createFakePluginApiV2({
 		id: 'tyrian-companion',
 		version: options.version ?? '0.2.21',
 		platform: options.platform ?? 'macos',
@@ -530,13 +631,45 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 		...(options.confirmUserHost === undefined ? {} : { confirmUserHost: options.confirmUserHost }),
 		...(options.appleMobile === undefined ? {} : { appleMobile: options.appleMobile }),
 	});
+	const fake = v2.host;
 	const library = options.library ?? createFakeLibrary();
 	const local = options.local ?? new Map<string, string>();
 	const keychain = options.keychain === undefined ? new Map<string, string>() : options.keychain;
 	const openedNotes: string[] = [];
 	const restarts = { count: 0, result: true };
 	const secretsAvailable = keychain !== null && capabilities.includes('secrets');
-	const hebra = options.mainView === true ? fake.api : asHebraWithoutMainView(fake.api);
+	const soundAvailable = capabilities.includes('notify.sound');
+	const clipboardWrites: string[] = [];
+	const sounds: TyrianTestApi['sounds'] = { registered: new Map(), plays: [] };
+	// The 1.x host's `ui` (the surfaces) has the 1.x ribbon, whose click is a `MouseEvent`; in the 2.0 Hebra
+	// sends a `PluginPointerInfo`, and a test clicks a recorded ribbon with whichever it means to.
+	const notSurface: HebraPluginApi = {
+		...surfacedV2Api(v2),
+		clipboard: {
+			writeText: async (text) => {
+				if (options.clipboard !== undefined) await options.clipboard(text);
+				clipboardWrites.push(text);
+			},
+		},
+		notify: {
+			system: (input) => v2.api.notify.system(input),
+			sound: {
+				register: async (id, sound) => {
+					if (!soundAvailable) throw pluginApiError('capability-not-declared', 'notify.sound');
+					sounds.registered.set(id, { bytes: new Uint8Array(sound.bytes), mime: sound.mime });
+				},
+				play: async (id, playOptions) => {
+					if (!soundAvailable) throw pluginApiError('capability-not-declared', 'notify.sound');
+					if (!sounds.registered.has(id)) throw pluginApiError('invalid-argument', `no sound ${id}`);
+					sounds.plays.push(playOptions?.volume === undefined ? { id } : { id, volume: playOptions.volume });
+					return options.soundOutcome ?? 'played';
+				},
+				unregister: async (id) => { sounds.registered.delete(id); },
+			},
+		},
+		isError: (error, code) => isPluginApiError(error, code),
+	};
+	const hebra = options.mainView === true ? notSurface : asHebraWithoutMainView(notSurface);
 	// The undo functions of the registrations, which Hebra calls when it unloads the plugin.
 	const registrations: Array<() => void> = [];
 	const tracked = <T extends unknown[]>(register: (...args: T) => () => void) => (...args: T): (() => void) => {
@@ -558,14 +691,15 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 	const api: HebraPluginApi = {
 		...hebra,
 		has: (capability) => (capability === 'secrets' ? secretsAvailable
-			: capability === 'markdown.image.remote' && options.remoteImages === false ? false
-				: (capability === 'notify.urgency' || capability === 'instance.lock') && options.notifyUrgency === false ? false
-					: hebra.has(capability)),
+			: capability === 'notify.sound' ? soundAvailable
+				: capability === 'markdown.image.remote' && options.remoteImages === false ? false
+					: (capability === 'notify.urgency' || capability === 'instance.lock') && options.notifyUrgency === false ? false
+						: hebra.has(capability)),
 		vault: library,
-		storage: createHebraStorage(local, 'tyrian-companion', library.libraryId()),
-		secrets: keychain === null ? fake.api.secrets : createFakeSecrets(keychain),
+		storage: createHebraStorage(local, 'tyrian-companion', library.libraryId(), options.indexedDb),
+		secrets: keychain === null ? v2.api.secrets : createFakeSecrets(keychain),
 		workspace: {
-			...fake.api.workspace,
+			...v2.api.workspace,
 			openNote: (id) => { openedNotes.push(id); },
 			restart: async () => {
 				restarts.count += 1;
@@ -576,5 +710,5 @@ export function createTyrianTestApi(options: TyrianTestApiOptions = {}): TyrianT
 	const unloadPlugin = (): void => {
 		for (const undo of registrations.splice(0).reverse()) undo();
 	};
-	return { api, fake, library, local, openedNotes, restarts, unloadPlugin };
+	return { api, fake, v2, clipboardWrites, sounds, library, local, openedNotes, restarts, unloadPlugin };
 }

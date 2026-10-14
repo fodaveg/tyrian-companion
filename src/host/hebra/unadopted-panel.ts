@@ -11,7 +11,7 @@
  * The rows use the same classes as `ui.setting` (`setting-row.ts`), so they look like the rest of
  * the panel without CSS of their own.
  */
-import type { PluginUi, PluginUnregister } from 'hebra-plugin-api';
+import type { PluginUi, PluginUnregister } from 'hebra-plugin-api/v2';
 
 import type { Translator, TranslationKey } from '../../core/i18n';
 import type { TyrianNoteFamily, TyrianUnadoptedNote } from './path-index';

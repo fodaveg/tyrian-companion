@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-import { IDBDatabase as FakeIdbDatabase } from 'fake-indexeddb';
-import type { PluginCleanup } from 'hebra-plugin-api';
+import { IDBDatabase as FakeIdbDatabase, IDBKeyRange as FakeIdbKeyRange } from 'fake-indexeddb';
+import type { PluginCleanup } from 'hebra-plugin-api/v2';
+import { Window as HappyDomWindow } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../../core/i18n';
+import { idbKeyRange } from '../../core/idb-key-range';
 import { LocalDebugActionRunner } from '../../core/local-debug-action-runner';
 import type { LocalDebugRecordInput } from '../../core/local-debug-contract';
 import { LocalDebugLogger } from '../../core/local-debug-logger';
@@ -18,8 +20,9 @@ import { activate } from './entry';
 
 /**
  * GR-05, the Hebra half: `entry.ts`'s own `activate(api)`, the function `hebra-main.mjs` exports, run from source over
- * `createTyrianTestApi` instead of through the built bundle (`bundle.test.ts` needs the `host-esm` build). It reads
- * the page's `window.indexedDB` and `navigator.locks` itself and starts the real core over the real `HebraHost`.
+ * `createTyrianTestApi` instead of through the built bundle (`bundle.test.ts` needs the `host-esm` build). It takes
+ * the IndexedDB Hebra serves (`api.storage`, API 2.0) and the frame's `navigator.locks`, and starts the real core over
+ * the real `HebraHost`.
  *
  * Only what Hebra itself could see: what the plugin registered (`fake.recorded`), what its Sale view paints once
  * mounted in a page, the diagnostics journal, and the fake engine's connections. `activate` hands back no core.
@@ -40,6 +43,18 @@ interface ActivatedPlugin {
 	openConnections(): readonly string[];
 }
 
+/** The frame's own IndexedDB, which a 2.0 plugin must never touch: every call throws and is counted. */
+const frameIndexedDbUses: string[] = [];
+const frameIndexedDb = new Proxy({}, {
+	get: (_target, key) => () => {
+		frameIndexedDbUses.push(String(key));
+		throw new Error(`the frame's window.indexedDB.${String(key)} was used`);
+	},
+});
+
+/** The `IDBKeyRange` of the factory Hebra serves (`api.storage.IDBKeyRange`). */
+class HebraKeyRange extends FakeIdbKeyRange {}
+
 /** The plugin a test activated and did not deactivate itself; deactivated after it, pass or fail. */
 let active: ActivatedPlugin | null = null;
 
@@ -57,9 +72,10 @@ afterEach(async () => {
 
 async function activatePlugin(): Promise<ActivatedPlugin> {
 	const tracked = trackedIndexedDb();
-	// Under happy-dom `window` is the global object: this is the `window.indexedDB` `entry.ts` reads.
-	vi.stubGlobal('indexedDB', tracked.factory);
-	const test = createTyrianTestApi();
+	// API 2.0: the databases are the ones Hebra serves (`api.storage.indexedDB`). The frame's own `window.indexedDB` does
+	// not persist everywhere, so here it refuses every use: a plugin that touched it would fail to boot.
+	vi.stubGlobal('indexedDB', frameIndexedDb);
+	const test = createTyrianTestApi({ indexedDb: { indexedDB: tracked.factory, IDBKeyRange: HebraKeyRange } });
 
 	const records: LocalDebugRecordInput[] = [];
 	// eslint-disable-next-line @typescript-eslint/unbound-method -- Called through with the spied instance as `this` below.
@@ -150,20 +166,50 @@ describe('the Hebra plugin activated through entry.ts', { timeout: 15_000 }, () 
 			.toEqual({ failures: [], connections: [] });
 	});
 
-	// DU-13 (10 Oct 2026): `entry.ts` hands over the page's `navigator.storage`, and the core asks it once per load.
-	it('asks the page\'s storage manager once not to evict the origin, and journals its answer', async () => {
+	// API 2.0 (§5.5.4): Hebra keeps the plugin's data, so the frame's storage manager has nothing to persist (DU-13 was the 1.x).
+	it('never asks the frame\'s storage manager to persist, and uses no IndexedDB but the one Hebra serves', async () => {
 		const persist = vi.fn(async () => false);
 		Object.defineProperty(window.navigator, 'storage', { configurable: true, value: { persist } });
+		frameIndexedDbUses.length = 0;
 		try {
 			const activated = await activatePlugin();
 			await activated.booted();
 
-			expect(persist).toHaveBeenCalledTimes(1);
-			expect(activated.records.filter(({ details }) => (details as Record<string, unknown> | undefined)?.store === 'origin_storage')
-				.map(({ phase, code, details }) => [phase, code, (details as Record<string, unknown>).result]))
-				.toEqual([['start', 'ok', undefined], ['skip', 'permission_denied', 'denied']]);
+			expect({
+				persist: persist.mock.calls.length,
+				frameIndexedDb: frameIndexedDbUses,
+				served: activated.tracked.connections.length > 0,
+				keyRange: idbKeyRange(),
+			}).toEqual({ persist: 0, frameIndexedDb: [], served: true, keyRange: HebraKeyRange });
 		} finally {
 			delete (window.navigator as { storage?: unknown }).storage;
+		}
+	});
+
+	// API 2.0 (§5.5.2): a view is mounted in a surface frame, another realm with its own document and prototypes.
+	it('paints Sale into a surface of ANOTHER realm (its own document, window and prototypes), with nothing put in the plugin\'s own document', async () => {
+		const surfaceWindow = new HappyDomWindow({ url: 'https://tyrian-companion.plugins.hebra.test/__hebra/surface.html' });
+		try {
+			const activated = await activatePlugin();
+			const view = activated.test.fake.recorded.views.find(({ id }) => id === SALE_VIEW_TYPE);
+			if (view === undefined) throw new Error(`No view «${SALE_VIEW_TYPE}» was registered.`);
+			const surfaceDocument = surfaceWindow.document as unknown as Document;
+			const el = surfaceDocument.body.appendChild(surfaceDocument.createElement('div'));
+			// Limit: happy-dom shares element classes between windows, so this is another document and window, not
+			// separate prototypes; a real Hebra surface frame is measured only in Hebra.
+			const ownBefore = document.body.innerHTML;
+			view.mount(el);
+			await activated.booted();
+
+			expect({
+				consult: el.textContent?.includes(es.t('sale.view.consultEmpty')),
+				helpers: typeof (el as { createDiv?: unknown }).createDiv,
+				ownDocument: document.body.innerHTML === ownBefore,
+				// Every node it painted belongs to the surface's document.
+				foreign: Array.from(el.querySelectorAll('*')).filter((node) => node.ownerDocument !== surfaceDocument).length,
+			}).toEqual({ consult: true, helpers: 'function', ownDocument: true, foreign: 0 });
+		} finally {
+			await surfaceWindow.happyDOM.close();
 		}
 	});
 });

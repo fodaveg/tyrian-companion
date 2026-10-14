@@ -139,6 +139,16 @@ function scheduleTones(createContext: AlertAudioContextFactory, context: AlertAu
 	if (previous !== undefined && previous.context === context && context.currentTime < previous.endsAt) return 'played';
 	const start = context.currentTime;
 	chimes.set(createContext, { context, endsAt: start + alertSoundDurationMs() / 1_000 });
+	scheduleAlertTones(context, start);
+	return 'played';
+}
+
+/**
+ * The two tones of the chime on `context`, from `start` on its clock. Shared by the live context above
+ * and by a host that renders the same chime ahead of time (Hebra 2.0 renders it into a WAV with an
+ * `OfflineAudioContext` and has Hebra play it, `host/hebra/hebra-alert-sound.ts`).
+ */
+export function scheduleAlertTones(context: Pick<AlertAudioContext, 'createOscillator' | 'createGain' | 'destination'>, start: number): void {
 	for (const tone of TONES) {
 		const oscillator = context.createOscillator();
 		const envelope = context.createGain();
@@ -156,7 +166,6 @@ function scheduleTones(createContext: AlertAudioContextFactory, context: AlertAu
 		oscillator.start(toneStart);
 		oscillator.stop(toneEnd);
 	}
-	return 'played';
 }
 
 /** Total scheduled length, in milliseconds, including the release tail. */

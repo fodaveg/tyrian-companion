@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import type { PluginMainViewDefinition } from 'hebra-plugin-api';
-import { createFakePluginApi } from 'hebra-plugin-api/testing';
+import type { PluginMainViewDefinition } from 'hebra-plugin-api/v2';
+import { createFakePluginApiV2 } from 'hebra-plugin-api/v2/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../../core/i18n';
-import { asHebraWithoutMainView } from '../../test/hebra-plugin-fakes';
+import { asHebraWithoutMainView, surfacedV2Api } from '../../test/hebra-plugin-fakes';
 import { withRealHostBehaviour } from '../../test/hebra-real-host';
 import type { TyrianSectionsViewRegistration, TyrianViewSectionRegistration } from '../tyrian-host';
 import { createHebraTyrianUi } from './hebra-host-ui';
@@ -20,10 +20,17 @@ import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
 /** The id every test here registers its main view with. */
 const MAIN = 'tyrian-main-view';
 
+/** The 2.0 fake, with its 1.x host's `ui` for the surfaces (the published fake serves none). */
+function surfacedFake() {
+	const v2 = createFakePluginApiV2({ id: 'tyrian-companion', capabilities: ['editor'] });
+	const api = surfacedV2Api(v2);
+	return { fake: v2.host, api };
+}
+
 /** A Hebra before the main view (plugin API 1.2.0 and earlier): `has` says no and the newer methods are not there. */
 async function olderHebra() {
-	const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
-	const api = asHebraWithoutMainView(fake.api);
+	const { fake, api: surfaced } = surfacedFake();
+	const api = asHebraWithoutMainView(surfaced);
 	const mainView = hebraHasMainView(api);
 	const ui = createHebraTyrianUi({ api, mainView, ...await rest() });
 	return { fake, api, ui, mainView };
@@ -31,8 +38,8 @@ async function olderHebra() {
 
 /** A Hebra with the main view. */
 async function hebra(mount: 'sync' | 'deferred' = 'sync') {
-	const fake = createFakePluginApi({ id: 'tyrian-companion', capabilities: ['editor'] });
-	const widened = withRealHostBehaviour({ fake, api: fake.api }, { mount });
+	const { fake, api } = surfacedFake();
+	const widened = withRealHostBehaviour({ fake, api }, { mount });
 	hosts.push(widened);
 	const report = vi.fn();
 	const ui = createHebraTyrianUi({ api: widened.api, mainView: hebraHasMainView(widened.api), ...await rest(), report });

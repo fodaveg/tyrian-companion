@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { PluginModalOptions, PluginMountFn } from 'hebra-plugin-api';
+import type { PluginModalOptions, PluginMountFn } from 'hebra-plugin-api/v2';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../../core/i18n';

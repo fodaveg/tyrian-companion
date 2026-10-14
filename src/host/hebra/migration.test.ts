@@ -78,7 +78,6 @@ describe('migration from the module compiled into Hebra (§11.2): nothing is cop
 		const cleanup = await activateTyrian(test.api, {
 			indexedDB: factory,
 			window,
-			document,
 			createRuntime: (built) => {
 				host = built;
 				return { start: async () => undefined, stop: async () => undefined };
@@ -115,7 +114,7 @@ describe('migration from the module compiled into Hebra (§11.2): nothing is cop
 		const keychain = new Map([[TYRIAN_KEYCHAIN_ACCOUNT, 'BARE-KEY']]);
 		let host: TyrianHost | null = null;
 		const cleanup = await activateTyrian(createTyrianTestApi({ keychain }).api, {
-			indexedDB: new IDBFactory(), window, document,
+			indexedDB: new IDBFactory(), window,
 			createRuntime: (built) => { host = built; return { start: async () => undefined, stop: async () => undefined }; },
 		});
 		expect((host as TyrianHost | null)?.secrets.get('tyrian-api-key')).toBe('BARE-KEY');

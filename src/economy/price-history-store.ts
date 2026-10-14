@@ -23,6 +23,7 @@ import {
 	openIndexedDb,
 	startIndexedDbTransaction,
 } from '../core/indexed-db-open';
+import { idbKeyRange } from '../core/idb-key-range';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -346,7 +347,7 @@ export class IndexedDbPriceHistoryStore {
 		return this.readIndexAll(
 			PRICE_HISTORY_DAILY_STORE,
 			'by-vault-item-day',
-			IDBKeyRange.bound([vaultId, itemId, fromDayUtc], [vaultId, itemId, '\uffff']),
+			idbKeyRange().bound([vaultId, itemId, fromDayUtc], [vaultId, itemId, '\uffff']),
 			parseDaily,
 		).then((daily) => daily.sort((left, right) => left.dayUtc.localeCompare(right.dayUtc)));
 	}
@@ -435,7 +436,7 @@ export class IndexedDbPriceHistoryStore {
 				const metaStore = transaction.objectStore(PRICE_HISTORY_META_STORE);
 				const startMs = dayStartMs(dayUtc);
 				const snapshotRequest = snapshotsStore.index('by-vault-captured').getAll(capturedRange(vaultId, startMs, startMs + DAY_MS));
-				const dailyRequest = dailyStore.index('by-vault-day').getAll(IDBKeyRange.only([vaultId, dayUtc]));
+				const dailyRequest = dailyStore.index('by-vault-day').getAll(idbKeyRange().only([vaultId, dayUtc]));
 				let raw: PriceHistorySnapshotV1[] | null = null;
 				let existingDaily: PriceHistoryDailyV1[] | null = null;
 				const continueWhenReady = (): void => {
@@ -482,7 +483,7 @@ export class IndexedDbPriceHistoryStore {
 		return this.pruneByCursor(
 			PRICE_HISTORY_DAILY_STORE,
 			'by-vault-day',
-			IDBKeyRange.bound([vaultId, ''], [vaultId, beforeDayUtc], false, true),
+			idbKeyRange().bound([vaultId, ''], [vaultId, beforeDayUtc], false, true),
 			parseDaily,
 		);
 	}
@@ -607,11 +608,11 @@ export class IndexedDbPriceHistoryStore {
 }
 
 function keyRangeForVault(vaultId: string): IDBKeyRange {
-	return IDBKeyRange.bound([vaultId], [vaultId, []]);
+	return idbKeyRange().bound([vaultId], [vaultId, []]);
 }
 
 function capturedRange(vaultId: string, fromMs: number, toMs: number): IDBKeyRange {
-	return IDBKeyRange.bound([vaultId, fromMs], [vaultId, toMs], false, true);
+	return idbKeyRange().bound([vaultId, fromMs], [vaultId, toMs], false, true);
 }
 
 function dayStartMs(dayUtc: string): number {
@@ -627,7 +628,7 @@ function dirtyDayMeta(vaultId: string, dayUtc: string): PriceHistoryDirtyDayMeta
 }
 
 function dirtyDayRange(vaultId: string): IDBKeyRange {
-	return IDBKeyRange.bound([vaultId, COMPACTION_DIRTY_PREFIX], [vaultId, `${COMPACTION_DIRTY_PREFIX}\uffff`]);
+	return idbKeyRange().bound([vaultId, COMPACTION_DIRTY_PREFIX], [vaultId, `${COMPACTION_DIRTY_PREFIX}\uffff`]);
 }
 
 function parseDirtyDayMeta(value: unknown, vaultId: string): PriceHistoryDirtyDayMetaV1 {

@@ -1,4 +1,4 @@
-import { isPluginApiError, type PluginHttpRequest } from 'hebra-plugin-api';
+import { isPluginApiError, type PluginHttpRequest } from 'hebra-plugin-api/v2';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTyrianTestApi } from '../../test/hebra-plugin-fakes';

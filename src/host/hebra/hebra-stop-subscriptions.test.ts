@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { HebraPluginApi } from 'hebra-plugin-api';
+import type { HebraPluginApi } from 'hebra-plugin-api/v2';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +24,7 @@ describe('Hebra: what the core subscribes outside api.ui does not survive the st
 			onVisibilityChange: () => { subscriptions.visibility += 1; return () => { subscriptions.visibility -= 1; }; },
 		});
 		const api: HebraPluginApi = { ...test.api, env };
-		const stop = await activateTyrian(api, { indexedDB: new IDBFactory(), window: win, document, createRuntime: (host) => createTyrianRuntime(host) });
+		const stop = await activateTyrian(api, { indexedDB: new IDBFactory(), window: win, createRuntime: (host) => createTyrianRuntime(host) });
 		await new Promise((resolve) => { window.setTimeout(resolve, 50); });
 		// The core subscribed to all three while it ran.
 		expect(live.get('error')?.size ?? 0).toBeGreaterThan(0);

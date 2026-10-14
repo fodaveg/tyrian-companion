@@ -15,7 +15,7 @@
  * Where Hebra has no plugin HTTP (`api.has('http')` false: the web until its relay exists), every
  * request refuses at once with `module-http-unavailable`, without reaching Hebra.
  */
-import type { HebraPluginApi, PluginHttpRequest } from 'hebra-plugin-api';
+import type { HebraPluginApi, PluginHttpRequest } from 'hebra-plugin-api/v2';
 
 import type { TyrianHttpPort, TyrianHttpRequest } from '../tyrian-host';
 

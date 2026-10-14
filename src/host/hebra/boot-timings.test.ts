@@ -42,7 +42,6 @@ async function start(test: TyrianTestApi, bootTrace = steppedTrace()): Promise<(
 		window: Object.assign(Object.create(window) as Window, {
 			matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 		}),
-		document,
 		createRuntime: (host) => createTyrianRuntime(host),
 		bootTrace,
 	});

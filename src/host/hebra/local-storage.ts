@@ -14,8 +14,9 @@
  *   advisor capture receipt, the support package). They are not notes: they go to an IndexedDB
  *   database of their own (`api.storage.indexedDbName('local-files')`), not to the synced library.
  */
-import type { PluginStorage } from 'hebra-plugin-api';
+import type { PluginStorage } from 'hebra-plugin-api/v2';
 
+import { idbKeyRange } from '../../core/idb-key-range';
 import { openIndexedDb, startIndexedDbTransaction, withIndexedDbReopen } from '../../core/indexed-db-open';
 import { DEFAULT_SETTINGS, isNewerSettingsSchema } from '../../core/settings';
 import type { LocalDebugStoragePort } from '../../core/local-debug-writer';
@@ -290,7 +291,7 @@ export function createIndexedDbFileBackend(factory: IDBFactory, databaseName: st
 		delete: async (key) => { await run('readwrite', (store) => store.delete(key)); },
 		keys: async (prefix) => (await run('readonly', (store) => store.getAllKeys(
 			// `\uffff` sorts after every character a key can continue with.
-			prefix === undefined ? undefined : IDBKeyRange.bound(prefix, `${prefix}\uffff`),
+			prefix === undefined ? undefined : idbKeyRange().bound(prefix, `${prefix}\uffff`),
 		))).map(String),
 		close: () => {
 			const entry = cached;

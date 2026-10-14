@@ -22,7 +22,7 @@
  * note: Hebra never hands its text to a plugin (`locked`, SPEC-PLUGINS-EXTERNOS.md §5.2), so the
  * core could not read it anyway. Seeding again is idempotent.
  */
-import type { PluginVault } from 'hebra-plugin-api';
+import type { PluginVault } from 'hebra-plugin-api/v2';
 
 import type { CanonicalPathFor } from '../tyrian-host';
 import { folderRelativePaths } from './folder-path';

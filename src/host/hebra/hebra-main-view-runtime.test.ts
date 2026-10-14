@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { HebraPluginApi } from 'hebra-plugin-api';
+import type { HebraPluginApi } from 'hebra-plugin-api/v2';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,6 +71,7 @@ async function start(options: {
 			},
 			set: (key: string, value: unknown) => { device.set(key, value); },
 			remove: (key: string) => { device.remove(key); },
+			flush: () => device.flush(),
 		} } }
 		: test.api;
 	const hebra = options.mainView ? withRealHostBehaviour({ fake: test.fake, api: base }, { mount: options.mount ?? 'sync' }) : null;
@@ -82,7 +83,6 @@ async function start(options: {
 		window: Object.assign(Object.create(window) as Window, {
 			matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 		}),
-		document,
 		createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
 	});
 	// The boot's fire-and-forget work (IndexedDB, the first reads) settles first.
@@ -154,7 +154,7 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 	it('registers ONE view on the main screen with Session, Inventory and Sale in that order, retained', async () => {
 		const started = await start({ mainView: true });
 		const { test, hebra, core } = started;
-		expect(test.api.apiVersion).toBe('1.5.0');
+		expect(test.api.apiVersion).toBe('2.2.0');
 		expect(core.mainViewSupported()).toBe(true);
 
 		// What Hebra's own fake recorded: one main view and none of the three views of their own.

@@ -43,6 +43,7 @@ import {
 	INVENTORY_PREFERENCES_STORE_NAME,
 } from '../advisor/inventory-preferences-model';
 import { openIndexedDb } from '../core/indexed-db-open';
+import { idbKeyRange } from '../core/idb-key-range';
 import type { CollectorMode } from '../core/settings';
 import type { TyrianLocalStoragePort } from '../host/tyrian-host';
 import { readStoredCollectorMode } from './collector-instance';
@@ -252,7 +253,7 @@ function openPreferences(factory: IDBFactory): Promise<IDBDatabase> {
 
 /** The keys of one vault are `<vaultId>\0<accountId>`; this range holds exactly that vault's. */
 function vaultKeys(vaultId: string): IDBKeyRange {
-	return IDBKeyRange.bound(`${vaultId}\u0000`, `${vaultId}\u0001`, false, true);
+	return idbKeyRange().bound(`${vaultId}\u0000`, `${vaultId}\u0001`, false, true);
 }
 
 async function countPreferences(factory: IDBFactory, vaultId: string): Promise<number> {

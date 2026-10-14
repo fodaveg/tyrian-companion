@@ -18,7 +18,7 @@
  * which rejects with `capability-not-available`), the backend is memory: the key is lost on reload,
  * which is enough for consultation mode.
  */
-import type { HebraPluginApi } from 'hebra-plugin-api';
+import type { HebraPluginApi } from 'hebra-plugin-api/v2';
 
 import type { TyrianSecretsPort } from '../tyrian-host';
 

@@ -20,17 +20,22 @@
  * - the main view (`hebra-main-view.ts`) exists only where Hebra has it (`deps.mainView`): on any
  *   other Hebra the three methods of it are not even on the port;
  * - `setIcon` also puts Obsidian's `svg-icon` class on the `<svg>`: Tyrian's selectors look for it
- *   (`docs/HEBRA-CSS-VARIABLES.md` §6).
+ *   (`docs/HEBRA-CSS-VARIABLES.md` §6);
+ * - API 2.0: every `el` Hebra hands over (view, section, settings panel, modal, note block) is in a
+ *   surface frame of its own, so it goes through `surfaces.prepare` before the core paints into it
+ *   (`surface.ts`), and a click Hebra paints (the ribbon) arrives as a `PluginPointerInfo` in Hebra's
+ *   window coordinates, not as a `MouseEvent`.
  *
  * The look comes from `tyrian-host.css` (shipped inside `hebra-styles.css`): nothing is marked here.
  */
-import type { HebraPluginApi, PluginMenuEntry } from 'hebra-plugin-api';
+import type { HebraPluginApi, PluginMenuEntry, PluginMenuPosition, PluginPointerInfo } from 'hebra-plugin-api/v2';
 
 import type { TyrianMenuEntry, TyrianSecretsPort, TyrianUiPort, TyrianViewRegistration } from '../tyrian-host';
 import { attachFolderPicker } from './folder-picker';
 import { createScreenAwake, type ScreenAwake } from './hebra-screen-awake';
 import { registerHebraMainView, revealHebraMainViewSection, updateHebraMainViewSection } from './hebra-main-view';
 import { createSecretControl, createSettingRow, type HebraTranslator } from './setting-row';
+import { isDomElement, type HebraSurfaces } from './surface';
 
 /** Prefix of Tyrian's commands in the palette (Obsidian puts the plugin id). */
 export const TYRIAN_COMMAND_PREFIX = 'tyrian-companion:';
@@ -56,6 +61,8 @@ export interface HebraTyrianUiDeps {
 	onFolderSettled?(): void;
 	/** Whether this Hebra has the main view (`hebraHasMainView`). Absent or false: the port has none of its methods. */
 	mainView?: boolean;
+	/** Readies each surface before the core paints into it (`surface.ts`). Absent: the element is used as it comes. */
+	surfaces?: Pick<HebraSurfaces, 'prepare'>;
 }
 
 type Step = () => void | Promise<void>;
@@ -89,7 +96,8 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 		title: view.title(),
 		icon: view.icon,
 		placement: view.placement ?? 'column',
-		mount(el) {
+		mount(el: HTMLElement) {
+			deps.surfaces?.prepare(el);
 			mounted = el;
 			if (view.keepScreenAwake === true) screenAwake.request(view.type, true);
 			run(() => view.mount(el));
@@ -110,15 +118,36 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 	};
 }
 
-function menuPosition(event: MouseEvent | undefined): { x: number; y: number } {
-	if (event && (event.clientX !== 0 || event.clientY !== 0)) return { x: event.clientX, y: event.clientY };
-	// Keyboard (Enter on the button): no coordinates, under the button itself.
+/**
+ * Where Hebra opens a menu for `event`. A click inside one of the plugin's surfaces names its element,
+ * so Hebra adds that frame's position to coordinates of the surface's own document; a click Hebra
+ * painted (the ribbon, `ribbonClickEvent`) has no element and is already in Hebra's window. The element
+ * check works across frames (`isDomElement`): `instanceof Element` is false for a surface's element.
+ */
+function menuPosition(event: MouseEvent | undefined): PluginMenuPosition {
 	const target = event?.currentTarget ?? event?.target;
-	if (target instanceof Element) {
-		const rect = target.getBoundingClientRect();
-		return { x: rect.left, y: rect.bottom };
+	const element = isDomElement(target) ? target as HTMLElement : undefined;
+	if (event && (event.clientX !== 0 || event.clientY !== 0)) {
+		return element === undefined ? { x: event.clientX, y: event.clientY } : { x: event.clientX, y: event.clientY, element };
+	}
+	// Keyboard (Enter on the button): no coordinates, under the button itself.
+	if (element !== undefined) {
+		const rect = element.getBoundingClientRect();
+		return { x: rect.left, y: rect.bottom, element };
 	}
 	return { x: 0, y: 0 };
+}
+
+/**
+ * The core's ribbon handler takes a `MouseEvent` (Obsidian's); Hebra 2.0 sends the click serialized, in
+ * its window's coordinates. This event carries them, with no target, so `menuPosition` hands them back
+ * to Hebra as they came. Without a click (a keyboard press Hebra reports without one), coordinates 0.
+ */
+function ribbonClickEvent(pointer: PluginPointerInfo | undefined): MouseEvent {
+	return new MouseEvent('click', pointer === undefined ? {} : {
+		clientX: pointer.x, clientY: pointer.y, button: pointer.button,
+		altKey: pointer.alt, ctrlKey: pointer.ctrl, metaKey: pointer.meta, shiftKey: pointer.shift,
+	});
 }
 
 function toMenuEntries(entries: readonly TyrianMenuEntry[]): PluginMenuEntry[] {
@@ -147,6 +176,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 			registerSectionsView: (view) => {
 				const unregister = registerHebraMainView({
 					ui, lane: createLane, report: (error, where) => deps.report(error, where), screenAwake,
+					...(deps.surfaces === undefined ? {} : { prepare: (el: HTMLElement) => deps.surfaces?.prepare(el) }),
 				}, view);
 				setMainView(view.type);
 				mainTitles.set(view.type, () => view.title());
@@ -193,7 +223,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 			const make = () => ui.ribbonItem({
 				icon: ribbon.icon,
 				title: shown.title,
-				onClick: (event) => ribbon.onClick(event ?? new MouseEvent('click')),
+				onClick: (pointer) => ribbon.onClick(ribbonClickEvent(pointer)),
 				...(shown.pending ? { pending: true } : {}),
 				...(mainViewId === null ? {} : { viewId: mainViewId }),
 			});
@@ -213,13 +243,16 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 				},
 			};
 		},
+		// API 2.0: `el` is a surface of its own inside the note's block, and Hebra sizes it to what is painted.
 		registerCodeBlock: (language, render) => editor.registerCodeBlock(language, (el, source, context) => {
+			deps.surfaces?.prepare(el);
 			// The frontmatter of the note holding the block, shaped like Obsidian's: the core reads
 			// `tc_item_name` from it.
 			Promise.resolve(render(source, el, { frontmatter: context.frontmatter }))
 				.catch((error: unknown) => deps.report(error, `block ${language}`));
 		}),
 		settingsPanel: (panel) => ui.settingsPanel((el) => {
+			deps.surfaces?.prepare(el);
 			panel.mount(el);
 			return () => panel.unmount(el);
 		}),
@@ -236,7 +269,10 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 				if (handle) handle.close();
 				else closeRequested = true;
 			};
-			handle = ui.openModal((content) => request.mount(content, close), {
+			handle = ui.openModal((content) => {
+				deps.surfaces?.prepare(content);
+				request.mount(content, close);
+			}, {
 				...(request.title === undefined ? {} : { title: request.title }),
 				onClosed: () => request.onClose?.(),
 			});

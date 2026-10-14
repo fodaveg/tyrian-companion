@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { join } from 'node:path';
 
-import type { HebraPluginApi } from 'hebra-plugin-api';
+import type { HebraPluginApi } from 'hebra-plugin-api/v2';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -239,7 +239,6 @@ async function start(options: { mainView: boolean; appLocale?: string; language?
 		window: Object.assign(Object.create(window) as Window, {
 			matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
 		}),
-		document,
 		createRuntime: (host) => { core = createTyrianRuntime(host); return core; },
 	});
 	await new Promise((resolve) => { window.setTimeout(resolve, 50); });

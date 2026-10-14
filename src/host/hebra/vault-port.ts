@@ -19,7 +19,7 @@
  * OUTSIDE this file on purpose: `configDir`, `canonicalIdentity`, `basePath`, `fullPath`,
  * `adapter`, `listFiles` (`vault.ts` answers them) and every port that is not `vault`.
  */
-import type { PluginNote, PluginVault, PluginVaultChange } from 'hebra-plugin-api';
+import type { PluginNote, PluginVault, PluginVaultChange } from 'hebra-plugin-api/v2';
 
 import type { TyrianDisposer, TyrianVault, TyrianVaultChange, TyrianVaultFile, TyrianVaultTrashResult } from '../tyrian-host';
 import { vaultFailure, vaultWriteFailure } from '../../core/vault-failure-cause';
