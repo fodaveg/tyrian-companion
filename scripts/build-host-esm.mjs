@@ -154,6 +154,11 @@ export function hebraStyleSheet(root = REPOSITORY_ROOT) {
 const HEBRA_1X_SLOT_SELECTOR = /\.(?:lv1-[\w-]+|hebra-module-view[\w-]*|hebra-module-modal-content|cm-hebra-module-code-block|markdown-editor)(?![\w-])/gu;
 /** The base rule every surface needs: the root with Hebra's interface font (`--ui`), which no 2.x surface document gives. */
 const HEBRA_SURFACE_ROOT_BASE = /\[id='hebra-surface-root'\]\s*\{[^}]*font-family:\s*var\(--ui\)/u;
+/**
+ * The root without an outer margin, by id (1,0,0) so no class of the core on the root outweighs it: Hebra sizes the
+ * frame to the root's border-box and a margin there is clipped (Tyrian 0.7.0: 12 px and the bottom border of the note block).
+ */
+const HEBRA_SURFACE_ROOT_NO_MARGIN = /(?:^|[}\s])#hebra-surface-root\s*\{[^}]*margin:\s*0\s*[;}]/u;
 
 /**
  * What would leave `hebra-styles.css` unapplied in a 2.x surface: a rule scoped to a 1.x slot (it matches
@@ -165,6 +170,7 @@ export function hebraStylesScopeViolations(css) {
 	const violations = [...new Set(code.match(HEBRA_1X_SLOT_SELECTOR) ?? [])]
 		.map((selector) => `hebra-styles.css scopes a rule to the 1.x slot ${selector}, which no 2.x surface has`);
 	if (!HEBRA_SURFACE_ROOT_BASE.test(code)) violations.push("hebra-styles.css has no [id='hebra-surface-root'] rule with font-family: var(--ui)");
+	if (!HEBRA_SURFACE_ROOT_NO_MARGIN.test(code)) violations.push("hebra-styles.css has no #hebra-surface-root { margin: 0 } rule: a margin on the root is clipped by Hebra's frame sizing");
 	return violations;
 }
 

@@ -53,4 +53,13 @@ describe('hebra-styles.css in a plugin API 2.x surface', () => {
 		expect({ color: style.borderTopColor, width: style.borderTopWidth, style: style.borderTopStyle })
 			.toEqual({ color: 'rgb(1, 2, 3)', width: '1px', style: 'solid' });
 	});
+
+	it('leaves the root of the price-history note block without an outer margin, so Hebra\'s border-box height keeps its bottom border', () => {
+		// Measured in Tyrian 0.7.0 (Chromium, Hebra 2.x): `.tyrian-price-history-note { margin-block: 12px }` on the root left
+		// it between top 12 and bottom 84 of a 72 px frame (Hebra sizes it to the root's border-box), cutting 12 px and its border.
+		const { win, root } = surface();
+		root.className = 'tyrian-hebra-surface--code-block tyrian-price-history-note';
+		const style = win.getComputedStyle(root as never);
+		expect({ top: style.marginTop, bottom: style.marginBottom }).toEqual({ top: '0px', bottom: '0px' });
+	});
 });

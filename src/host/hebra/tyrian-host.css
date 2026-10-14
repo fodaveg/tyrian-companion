@@ -158,10 +158,22 @@
    eran el inspector, el diálogo, la sección de la pantalla principal y el panel de Ajustes;
    el modal y el bloque no lo llevaban porque su ancho salía del contenido, y en la 2.x el
    ancho de cualquier marco lo pone Hebra, así que lo llevan todos. Sin el margen por defecto
-   del `<body>` (8 px): Hebra ajusta el alto del marco a la raíz y ese margen recortaba el borde
-   inferior del bloque de la nota (arnés C1 de Hebra, 14 oct 2026: hueco 72 px, body 96). */
+   del `<body>` (8 px), que Hebra ajusta al alto de la raíz y no al del documento. */
 [data-hebra-surface] > body {
   container-type: inline-size;
+  margin: 0;
+}
+
+/* La raíz de CUALQUIER superficie 2.x no lleva margen exterior. Hebra da al marco el alto
+   `Math.ceil(root.getBoundingClientRect().height)`, el border-box de la raíz SIN márgenes, y
+   un margen en la propia raíz no cuenta: el bloque `tyrian-price-history-note` lleva
+   `margin-block: 12px` (styles.css) en la raíz, el marco medía 72 px, la raíz quedaba entre
+   top 12 y bottom 84 y se recortaban 12 px abajo con el borde inferior (Tyrian 0.7.0, arnés de
+   Hebra, 14 oct 2026; html y body medían 96). El `margin: 0` del `<body>` de arriba no lo
+   arreglaba: el margen no estaba en el body. Con `#` (1,0,0) gana a cualquier clase que el
+   núcleo ponga en la raíz, esté antes o después en la hoja. Si una clase necesita aire, que lo
+   dé su `padding`. En Obsidian no se aplica: esta hoja solo la carga Hebra. */
+#hebra-surface-root {
   margin: 0;
 }
 
