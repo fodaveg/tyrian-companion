@@ -28,6 +28,8 @@ export interface TyrianSectionDescriptor {
 	readonly icon: string;
 	/** A short mark beside the label where a host lists the sections (the count of followed achievements); null shows nothing. */
 	badge?(): string | number | null;
+	/** The host keeps the device screen on while the section is on screen (where it can). */
+	readonly keepScreenAwake?: boolean;
 }
 
 /**
@@ -57,6 +59,7 @@ export function sectionViewDescriptor(section: TyrianSectionDescriptor, slot: Ty
 		title: () => section.title(),
 		icon: section.icon,
 		...(slot.placement === undefined ? {} : { placement: slot.placement }),
+		...(section.keepScreenAwake === true ? { keepScreenAwake: true } : {}),
 	};
 }
 
@@ -87,6 +90,7 @@ export function sectionsViewRegistration(
 			icon: section.icon,
 			// Only a section with a mark lists one: the host paints nothing for a section without the entry.
 			...(section.badge === undefined ? {} : { badge: () => section.badge!() }),
+			...(section.keepScreenAwake === true ? { keepScreenAwake: true } : {}),
 			mount: (container) => section.mount(container),
 			unmount: (container) => section.unmount(container),
 			setVisible: (container, visible) => { section.setVisible?.(container, visible); },
@@ -103,6 +107,7 @@ function viewRegistration(
 		title: () => view.title(),
 		icon: view.icon,
 		...(view.placement === undefined ? {} : { placement: view.placement }),
+		...(view.keepScreenAwake === true ? { keepScreenAwake: true } : {}),
 		mount: (container) => mounting.mount(container),
 		unmount: (container) => mounting.unmount(container),
 	};
@@ -127,6 +132,7 @@ export class MountedViews<T extends MountableView> {
 			label: () => section.label(),
 			icon: section.icon,
 			...(section.badge === undefined ? {} : { badge: () => section.badge!() }),
+			...(section.keepScreenAwake === true ? { keepScreenAwake: true } : {}),
 			mount: (container) => this.open(container),
 			unmount: (container) => this.close(container),
 			setVisible: (container, visible) => { this.byContainer.get(container)?.setVisible?.(visible); },

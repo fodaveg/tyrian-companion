@@ -98,7 +98,7 @@ function testHebraManifestIsGenerated() {
 		styles: 'hebra-styles.css',
 		icon: 'sword',
 		iconImage: `data:image/png;base64,${readFileSync(ICON_FILE).toString('base64')}`,
-		capabilities: { required: ['vault.read', 'vault.write', 'editor'], optional: ['http', 'secrets', 'tcp', 'notify.system', 'background'] },
+		capabilities: { required: ['vault.read', 'vault.write', 'editor'], optional: ['http', 'secrets', 'tcp', 'notify.system', 'background', 'screen.awake'] },
 		network: { hosts: ['api.guildwars2.com', 'api.datawars2.ie'], userHosts: true },
 		shared: {},
 		files: { 'hebra-main.mjs': sha('hebra-main.mjs'), 'hebra-styles.css': sha('hebra-styles.css') },

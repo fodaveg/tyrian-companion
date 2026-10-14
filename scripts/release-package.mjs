@@ -65,7 +65,7 @@ export const HEBRA_PLUGIN_DECLARATION = Object.freeze({
 	icon: 'sword',
 	capabilities: Object.freeze({
 		required: Object.freeze(['vault.read', 'vault.write', 'editor']),
-		optional: Object.freeze(['http', 'secrets', 'tcp', 'notify.system', 'background']),
+		optional: Object.freeze(['http', 'secrets', 'tcp', 'notify.system', 'background', 'screen.awake']),
 	}),
 	network: Object.freeze({ hosts: Object.freeze(['api.guildwars2.com', 'api.datawars2.ie']), userHosts: true }),
 	shared: Object.freeze({}),
