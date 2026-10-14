@@ -227,6 +227,18 @@ describe('festival anchors table', () => {
 		expect(isFestivalAnchorsTable(missingSource)).toBe(false);
 	});
 
+	// Audit fix (14 oct 2026): `Date.parse` normalises an impossible day (31 February becomes
+	// 3 March), and nothing tied `startsOn` to the edition `year` it is filed under.
+	it('rejects an impossible calendar day and a start date outside the entry\'s own year', () => {
+		for (const startsOn of ['2026-02-31', '2026-04-31', '2026-02-29']) {
+			expect(isFestivalAnchorsTable(halloweenAnchorsWith([{ year: 2026, startsOn, sourceId: 'src' }]))).toBe(false);
+		}
+		expect(isFestivalAnchorsTable(halloweenAnchorsWith([{ year: 2028, startsOn: '2028-02-29', sourceId: 'src' }])))
+			.toBe(true);
+		expect(isFestivalAnchorsTable(halloweenAnchorsWith([{ year: 2027, startsOn: '2026-10-13', sourceId: 'src' }])))
+			.toBe(false);
+	});
+
 	it('reads a covered year and declares an uncovered one null, rather than guessing', () => {
 		const table = halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }]);
 		expect(festivalAnchorStartMs(table, 2026)).toBe(Date.parse('2026-10-13T00:00:00.000Z'));

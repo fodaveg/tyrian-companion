@@ -199,7 +199,8 @@ function isFestivalAnchorSource(value: unknown): value is FestivalAnchorSourceV1
 
 function isFestivalAnchorEntry(value: unknown): value is FestivalAnchorEntryV1 {
 	return record(value) && exactKeys(value, ['year', 'startsOn', 'sourceId'])
-		&& festivalYear(value.year) && fullDate(value.startsOn) && identifier(value.sourceId);
+		&& festivalYear(value.year) && fullDate(value.startsOn) && identifier(value.sourceId)
+		&& Number.parseInt(value.startsOn.slice(0, 4), 10) === value.year;
 }
 
 export function isFestivalAnchorsTable(value: unknown): value is FestivalAnchorsTableV1 {
@@ -249,9 +250,11 @@ function isoDay(value: unknown): value is string {
 	return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 }
 
+/** A real UTC calendar day: `Date.parse` normalises `2026-02-31` to 3 March, so it must round-trip. */
 function fullDate(value: unknown): value is string {
-	return typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/u.test(value)
-		&& Number.isFinite(Date.parse(`${value}T00:00:00.000Z`));
+	if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/u.test(value)) return false;
+	const parsed = Date.parse(`${value}T00:00:00.000Z`);
+	return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
 }
 
 /**
