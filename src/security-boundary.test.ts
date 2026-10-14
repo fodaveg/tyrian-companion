@@ -81,6 +81,11 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/core/local-debug-error-details.ts',
 	'src/economy/commerce-listings-capture.ts',
 	'src/economy/price-history-capture.ts',
+	// «1 semana» button. Reviewed: one unauthenticated GET per item to the public datawars2 API
+	// through the closed `price_history_hourly` endpoint of `src/core/http.ts`; it sends a public
+	// item id and nothing else (no key, no account id, no snapshot), reads at most 1 MiB, and only
+	// runs when the reader presses the button with the price history on.
+	'src/economy/price-hourly-source.ts',
 	// H9.1 panel overlay, approved 2026-09-03. Owns `fetchPriceSeed`'s lifecycle for
 	// whichever item the price-history panel is showing (`price-seed-source.ts` is
 	// the actual outbound call, reviewed below). Deferred to the panel's own load
