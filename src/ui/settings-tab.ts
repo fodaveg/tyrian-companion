@@ -574,6 +574,20 @@ export class TyrianCompanionSettingTab {
 			},
 			{
 				group: 'main',
+				name: this.t('settings.livePanel.name'), desc: this.t('settings.livePanel.desc'),
+				render: (setting, save) => {
+					setting.addToggle((toggle) => {
+						toggle.toggleEl.setAttr('aria-label', this.t('settings.livePanel.name'));
+						return toggle.setValue(this.plugin.settings.livePanelEnabled).onChange(async (livePanelEnabled) => {
+							toggle.setDisabled(true);
+							await save({ livePanelEnabled });
+							toggle.setDisabled(false);
+						});
+					});
+				},
+			},
+			{
+				group: 'main',
 				name: this.t('settings.legendary.targets.name'), desc: this.t('settings.legendary.targets.desc'),
 				render: (setting, save) => {
 					const status = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });

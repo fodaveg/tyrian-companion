@@ -315,12 +315,12 @@ describe('Settings i18n projection', () => {
 });
 
 describe('settings information architecture', () => {
-	// 6 oct 2026: one page, no tabs. The rows a person sees are the seven below plus the in-game
+	// 6 oct 2026: one page, no tabs. The rows a person sees are the eight below plus the in-game
 	// token while the bridge is on; diagnostics, history and managed assets sit in "Maintenance".
 	// Every other setting keeps its saved value and its feature, only its row is gone.
 	const MAIN_ROWS = [
 		'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)',
-		'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
+		'Alert me about a drop from', 'Alert webhook (optional)', 'Live panel for your phone', 'Legendary targets',
 	];
 	const MAINTENANCE_ROWS = ['Durable history', 'Local price history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets'];
 
@@ -337,7 +337,7 @@ describe('settings information architecture', () => {
 
 		expect(tab.getMountedSettingNames('main')).toEqual([
 			'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)', 'Addon token',
-			'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
+			'Alert me about a drop from', 'Alert webhook (optional)', 'Live panel for your phone', 'Legendary targets',
 		]);
 		expect(tab.getMountedSettingNames('maintenance')).toEqual(MAINTENANCE_ROWS);
 	});
@@ -452,6 +452,30 @@ describe('settings information architecture', () => {
 		await listener(true);
 
 		expect(updates).toEqual([{ priceHistoryEnabled: true }]);
+	});
+
+	it('writes the live panel toggle as a partial update of its own key', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Live panel for your phone');
+		if (definition === undefined) throw new Error('Expected the live panel setting.');
+		let shown: unknown; let listener: (value: boolean) => Promise<void> = async () => undefined;
+		const toggle = {
+			toggleEl: { setAttr: () => undefined },
+			setValue: (value: boolean) => { shown = value; return toggle; },
+			setDisabled: () => toggle,
+			onChange: (next: typeof listener) => { listener = next; return toggle; },
+		};
+		definition.render({ addToggle: (build: (control: typeof toggle) => unknown) => { build(toggle); } } as never);
+		expect(shown).toBe(true);
+
+		await listener(false);
+
+		expect(updates).toEqual([{ livePanelEnabled: false }]);
 	});
 
 	it('announces saving, saved and blocked/error writes without swallowing the last result', async () => {

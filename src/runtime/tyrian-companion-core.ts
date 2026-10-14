@@ -142,6 +142,7 @@ import { SessionStoreRetry } from './session-store-retry';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
+import { LivePanelRuntime, livePanelSnapshot } from './live-panel-runtime';
 import { CollectorReadUnansweredError, loadCollectorMode } from './collector-instance';
 import type { VaultRelocation } from './vault-relocation';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
@@ -625,6 +626,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private readonly ingame: IngameSessionRuntime = new IngameSessionRuntime(TyrianCompanionCore.ingameSessionRuntimePort(this));
 	/** R1b: the collector's footprint in the status note. Running only while this installation collects. */
 	private collectorHeartbeat: CollectorHeartbeat | null = null;
+	/** The live panel note (`Live panel.md`): written by the collector while a session runs, stopped on unload. */
+	private livePanel: LivePanelRuntime | null = null;
 	/**
 	 * R1b: this DEVICE's mode, kept in local `kv` (`runtime/collector-instance.ts`), never in
 	 * `data.json`. The seed on load, this device's stored mode once `initializeRuntime` reads it;
@@ -1483,6 +1486,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.liveSummaryNetwork = true;
 		this.liveEconomy = this.notes.createLiveEconomy(this.liveSessions, publicClient, rateLimitCoordinator);
 		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
+		// The live panel note: the collector's, from the LIVE session (not a saved one the player browses); a failed write is only logged.
+		const lifecycle = this.liveSessions;
+		this.livePanel = new LivePanelRuntime({
+			vault: labelledVault(host.vault, 'Live panel note'), root: () => this.configuredNotesRoot(),
+			enabled: () => this.settings.livePanelEnabled, collector: () => !consulting(this), locale: () => this.settings.language,
+			writable: () => this.settings.legacyOutputFolder === null && this.settings.legacyManagedAssetsRoot === null,
+			read: () => livePanelSnapshot({ locale: this.settings.language, view: lifecycle.getView(0, 1), alerts: lifecycle.getAlerts(),
+				loot: this.liveSessionLoot.getState(), itemName: (id) => this.liveEconomy?.entity('item', id)?.name ?? null }),
+			setTimeout: (callback, ms) => window.setTimeout(callback, ms), clearTimeout: (handle) => { window.clearTimeout(handle); },
+			run: (write) => { fireAndForgetLocal(this.localDebugActions, { component: 'vault', action: 'vault_write', state: 'live_panel' }, write); },
+		});
+		this.livePanel.start();
 		this.pendingProposals = sessionServices.pendingProposals;
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
 		fireAndForgetLocal(this.localDebugActions,
@@ -1815,6 +1830,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.ingameSessionMarker = null;
 		this.collectorHeartbeat?.stop();
 		this.collectorHeartbeat = null;
+		// Writes the panel's final state; it never rejects, and it reads the live session, which is disposed further down.
+		await this.livePanel?.stop();
+		this.livePanel = null;
 		this.alerts.disposeIngamePresence();
 		this.startModal?.close();
 		this.discardModal?.close();
@@ -3467,7 +3485,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	/** Coalesced to one repaint per microtask (`LiveViewRuntime`). */
-	private renderViews(): void { this.liveView.renderViews(); }
+	private renderViews(): void { this.liveView.renderViews(); this.livePanel?.notify(); }
 
 	private renderInventoryAdvisorViews(): void { this.liveView.renderInventoryAdvisorViews(); }
 

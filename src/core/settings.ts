@@ -223,6 +223,8 @@ export interface TyrianSettings {
 	alertIngamePort: number;
 	/** H18.23: name of the `SecretStorage` entry every addon must present in its `hello`, never the value. */
 	alertIngameSecret: string;
+	/** The collector keeps the live panel note (`Live panel.md`) up to date during a session. On by default. */
+	livePanelEnabled: boolean;
 	/** Local bid-vs-p90 alert. It cannot activate price history. */
 	halloweenPriceAlertEnabled: boolean;
 	halloweenPriceAlertMinimumAboveP90Bps: number;
@@ -282,6 +284,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	alertIngameEnabled: false,
 	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
 	alertIngameSecret: '',
+	livePanelEnabled: true,
 	halloweenPriceAlertEnabled: false,
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
@@ -401,6 +404,8 @@ export function migrateSettings(data: unknown, configDir?: string, hostLocale?: 
 		alertIngameEnabled: data.alertIngameEnabled === true,
 		alertIngamePort: alertIngamePortValue(data.alertIngamePort),
 		alertIngameSecret: stringOrDefault(data.alertIngameSecret, DEFAULT_SETTINGS.alertIngameSecret),
+		// Absent on any earlier install, which gets the default (on) without a schema bump; only an explicit false turns it off.
+		livePanelEnabled: data.livePanelEnabled !== false,
 		halloweenPriceAlertEnabled: data.halloweenPriceAlertEnabled === true,
 		halloweenPriceAlertMinimumAboveP90Bps: boundedNonNegativeInteger(
 			data.halloweenPriceAlertMinimumAboveP90Bps, DEFAULT_SETTINGS.halloweenPriceAlertMinimumAboveP90Bps, 100_000,

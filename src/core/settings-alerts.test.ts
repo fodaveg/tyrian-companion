@@ -78,6 +78,16 @@ describe('H13.3 and H13.4 settings', () => {
 	});
 });
 
+describe('live panel setting', () => {
+	it('is on by default, on for an install that never saw it, and off only when explicitly false', () => {
+		expect(DEFAULT_SETTINGS.livePanelEnabled).toBe(true);
+		expect(migrateSettings({}).livePanelEnabled).toBe(true);
+		expect(migrateSettings({ schemaVersion: 16, outputFolder: 'Games/GW2' }).livePanelEnabled).toBe(true);
+		expect(migrateSettings({ livePanelEnabled: false }).livePanelEnabled).toBe(false);
+		expect(migrateSettings({ livePanelEnabled: 'no' }).livePanelEnabled).toBe(true);
+	});
+});
+
 describe('H13.9/H13.15 in-game alert settings', () => {
 	it('ships the in-game bridge off, with the default port', () => {
 		expect(DEFAULT_SETTINGS.alertIngameEnabled).toBe(false);
