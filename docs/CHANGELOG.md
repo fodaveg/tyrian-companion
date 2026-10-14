@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.63 - El panel «En vivo» mantiene la pantalla encendida en iPhone y iPad
+
+Se actualiza desde la 0.6.62 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- En Hebra para iPhone e iPad, mientras la sección «En vivo» está a la vista, la pantalla no se apaga. Al cambiar de
+  sección, salir de la vista o pasar a segundo plano, se apaga como siempre.
+- Necesita un Hebra con la API de plugins 1.8. En un Hebra anterior el panel funciona igual que hoy, pero al actualizar
+  Tyrian te vuelve a pedir permiso por la capacidad nueva «screen.awake», que es opcional.
+
 ## Release beta 0.6.62 - Arreglos de dos revisiones de bugs
 
 Se actualiza desde la 0.6.61 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.

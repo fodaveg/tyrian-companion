@@ -1,5 +1,20 @@
 # Estado
 
+## Candidato 0.6.63: el panel «En vivo» mantiene la pantalla encendida en iPhone y iPad (14 oct 2026)
+
+**Candidato; sin publicar.** `main` sobre el canal 0.6.62 publicado (`92007b83`). Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 14 oct (tarea de Lumbre b368b2f6), coordinado con la sesión de Hebra; excepción a la congelación de
+Halloween solo para este cambio. Alcance: solo iPhone e iPad, solo la API de plugins 1.x.
+
+- `src/host/hebra/hebra-screen-awake.ts`: único fichero que usa `api.ui.keepScreenOn(viewId, on)` de Hebra 1.8
+  (`main` de Hebra `640ce876`). Detección con `api.has('screen.awake')`; idempotente; un fallo se reporta y no rompe.
+- La sección «En vivo» pide la pantalla encendida al verse y la suelta al ocultarse, desmontarse o quitar la vista
+  (`hebra-main-view.ts`; en un Hebra sin vista principal, `hebra-host-ui.ts`).
+- `screen.awake` va en `capabilities.optional` del `hebra.json`. El pin sigue en `hebra-plugin-api#v1.5.0` con un tipo
+  local, porque la 1.8 del paquete no está publicada.
+- Censo de observabilidad: los tres puntos nuevos revisados y firmados por David el 14 oct.
+- Sin verificar: nada en iPhone ni iPad reales; el QA es de David con el TestFlight de Hebra que trae la 1.8.
+
 ## Canal 0.6.62 publicado: arreglos de los audits de bugs del 14 oct (14 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.62` = `2bae68a1` (atestación; candidato `bf3a19bf`).
