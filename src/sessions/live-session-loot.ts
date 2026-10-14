@@ -121,9 +121,9 @@ export class LiveSessionLootTracker {
 			const unresolvedIds = [...this.rows.values()].flatMap((row) =>
 				row.nameResolved && row.unitCopper !== null ? [] : [row.itemId]);
 			const started = this.state;
-				const enriched = await this.enrich([...unresolvedIds, ...gains.map(({ id }) => id)]);
-				// begin() or reset() ran while the network answered: these gains belong to a session that is gone.
-				if (this.state !== started) return;
+			const enriched = await this.enrich([...unresolvedIds, ...gains.map(({ id }) => id)]);
+			// begin() or reset() ran while the network answered: these gains belong to a session that is gone.
+			if (this.state !== started) return;
 			for (const row of this.rows.values()) this.applyEnrichment(row, enriched);
 			for (const gain of gains) {
 				const current = this.rows.get(gain.id);
@@ -151,9 +151,9 @@ export class LiveSessionLootTracker {
 			this.pendingValuableGains.length = 0;
 			const gains = delta.status === 'invalid' ? [] : delta.itemChanges.filter(({ delta: quantity }) => quantity > 0);
 			const started = this.state;
-				const enriched = await this.enrich(gains.map(({ id }) => id));
-				// begin() or reset() ran while the network answered: this closing delta belongs to a session that is gone.
-				if (this.state !== started) return;
+			const enriched = await this.enrich(gains.map(({ id }) => id));
+			// begin() or reset() ran while the network answered: this closing delta belongs to a session that is gone.
+			if (this.state !== started) return;
 			for (const gain of gains) {
 				this.rows.set(gain.id, {
 					itemId: gain.id,
