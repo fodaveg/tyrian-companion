@@ -4,7 +4,7 @@
 	"totals": {
 		"catch_clause": 621,
 		"promise_catch": 62,
-		"void_expression": 146,
+		"void_expression": 147,
 		"callback_registration": 259
 	},
 	"files": {
@@ -18128,9 +18128,9 @@
 				{
 					"id": "e32d8b128697052fb6551899c75fffca8f753a14",
 					"kind": "void_expression",
-					"line": 239,
+					"line": 250,
 					"column": 68,
-					"endLine": 239,
+					"endLine": 250,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18144,9 +18144,9 @@
 				{
 					"id": "6149a2118a8fae9661b982d35ac393a6da53f1bd",
 					"kind": "void_expression",
-					"line": 250,
+					"line": 261,
 					"column": 70,
-					"endLine": 250,
+					"endLine": 261,
 					"endColumn": 92,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18160,9 +18160,9 @@
 				{
 					"id": "cb726164b914d4713903582c1139522e18e2503d",
 					"kind": "callback_registration",
-					"line": 338,
+					"line": 349,
 					"column": 3,
-					"endLine": 338,
+					"endLine": 349,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -18177,9 +18177,9 @@
 				{
 					"id": "dcd5f4d9971b0373815cf75c4e6383f5dbebd1f6",
 					"kind": "void_expression",
-					"line": 345,
+					"line": 356,
 					"column": 74,
-					"endLine": 345,
+					"endLine": 356,
 					"endColumn": 98,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18193,9 +18193,9 @@
 				{
 					"id": "9c1eaa2c0f968add28446b38ac774d9c43e80e47",
 					"kind": "callback_registration",
-					"line": 362,
+					"line": 373,
 					"column": 4,
-					"endLine": 362,
+					"endLine": 373,
 					"endColumn": 175,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -18210,9 +18210,9 @@
 				{
 					"id": "db703e6d749abaf1af5e12ede0e83a580b5b471d",
 					"kind": "void_expression",
-					"line": 362,
+					"line": 373,
 					"column": 124,
-					"endLine": 362,
+					"endLine": 373,
 					"endColumn": 148,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18226,9 +18226,9 @@
 				{
 					"id": "69cd5c32d2d5433d06d9d7490206cd167d022ad9",
 					"kind": "catch_clause",
-					"line": 405,
+					"line": 418,
 					"column": 5,
-					"endLine": 405,
+					"endLine": 418,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18242,9 +18242,9 @@
 				{
 					"id": "2e6cd592bf3385c2947fab83a0f14381da36f4e4",
 					"kind": "void_expression",
-					"line": 408,
+					"line": 422,
 					"column": 61,
-					"endLine": 408,
+					"endLine": 422,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18258,9 +18258,9 @@
 				{
 					"id": "a4b06fdabfd9276c35203a8c3d8170586e4f2baa",
 					"kind": "void_expression",
-					"line": 419,
+					"line": 433,
 					"column": 53,
-					"endLine": 419,
+					"endLine": 433,
 					"endColumn": 77,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18274,9 +18274,9 @@
 				{
 					"id": "679dd62421f5542e49646a144aaba73401c139bc",
 					"kind": "void_expression",
-					"line": 426,
+					"line": 440,
 					"column": 54,
-					"endLine": 426,
+					"endLine": 440,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18290,9 +18290,9 @@
 				{
 					"id": "dbd82876f32590ff80131745c5e63b4defd1baf7",
 					"kind": "void_expression",
-					"line": 429,
+					"line": 443,
 					"column": 4,
-					"endLine": 429,
+					"endLine": 443,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18304,11 +18304,27 @@
 					"reason": "Allowlisted void_expression: In \"trackPrevious\", detached \"this.hashCurrent\" owns its rejection: it hashes the session id locally to leave the session already shown out of the saved list, and a failure only leaves that session listed too; it reads and writes nothing. Verified target: \"this.hashCurrent\" in \"trackPrevious\"."
 				},
 				{
+					"id": "51d1d272162769be11cf7ef1d15623679584f0e1",
+					"kind": "void_expression",
+					"line": 464,
+					"column": 3,
+					"endLine": 464,
+					"endColumn": 31,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPrevious",
+						"scope": "pollLatestSummary",
+						"justification": "The \"pollLatestSummary\" owner detaches \"this.loadPrevious\" because the quiet list read outlives the tick that asks for it; loadPrevious never rejects, since its own catch moves the state to failed and the quiet read then restores the state the block had before, so a failed read leaves the panel as it was and the next spaced retry tries again."
+					},
+					"reason": "Allowlisted void_expression: The \"pollLatestSummary\" owner detaches \"this.loadPrevious\" because the quiet list read outlives the tick that asks for it; loadPrevious never rejects, since its own catch moves the state to failed and the quiet read then restores the state the block had before, so a failed read leaves the panel as it was and the next spaced retry tries again. Verified target: \"this.loadPrevious\" in \"pollLatestSummary\"."
+				},
+				{
 					"id": "0866ed357ee6ba57fefc3f7a60bb9eefc308f882",
 					"kind": "catch_clause",
-					"line": 439,
+					"line": 486,
 					"column": 5,
-					"endLine": 439,
+					"endLine": 486,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18322,9 +18338,9 @@
 				{
 					"id": "e3b2f294d0b0e871917e9ceb29aa404b83691a5d",
 					"kind": "callback_registration",
-					"line": 492,
+					"line": 544,
 					"column": 6,
-					"endLine": 492,
+					"endLine": 544,
 					"endColumn": 73,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -18339,9 +18355,9 @@
 				{
 					"id": "048861b7d0557d5cce7baf02175290acf1092ed9",
 					"kind": "catch_clause",
-					"line": 640,
+					"line": 699,
 					"column": 5,
-					"endLine": 640,
+					"endLine": 699,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18355,9 +18371,9 @@
 				{
 					"id": "0b7d4d3b5319e562cca0b5b8bc34c985710fe94a",
 					"kind": "catch_clause",
-					"line": 648,
+					"line": 707,
 					"column": 51,
-					"endLine": 648,
+					"endLine": 707,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18371,9 +18387,9 @@
 				{
 					"id": "e52a9f9fc5704c7529333549f243e400e3afbdf0",
 					"kind": "catch_clause",
-					"line": 876,
+					"line": 935,
 					"column": 58,
-					"endLine": 876,
+					"endLine": 935,
 					"endColumn": 154,
 					"classification": "allowlisted",
 					"evidence": {
@@ -18387,9 +18403,9 @@
 				{
 					"id": "ae19921f1c15f44d7daa4ad598cd65a350beff32",
 					"kind": "callback_registration",
-					"line": 975,
+					"line": 1034,
 					"column": 6,
-					"endLine": 975,
+					"endLine": 1034,
 					"endColumn": 87,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -18404,9 +18420,9 @@
 				{
 					"id": "36b02e844fdd780d903b84216364bef4841d1f17",
 					"kind": "catch_clause",
-					"line": 981,
+					"line": 1040,
 					"column": 6,
-					"endLine": 981,
+					"endLine": 1040,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
