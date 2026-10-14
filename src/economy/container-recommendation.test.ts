@@ -358,6 +358,34 @@ describe('recommendContainerDisposition', () => {
 		expect({ ...recommendation.explanation, freshness: kernelFreshness }).toEqual(kernel.explanation);
 	});
 
+	// Audit fix (14 oct 2026): a one-copper ask on a single container is a listing that pays nothing,
+	// not an arithmetic overflow. The listing basis values it at net zero, like the instant basis.
+	it('values a one-copper listing basis at net zero instead of reporting arithmetic overflow', () => {
+		const value = input({ vendorValue: 0, modelEvMicro: 1 });
+		const quote = value.market.quotes.find((entry) => entry.itemId === ITEM_ID)!;
+		quote.bidUnitCopper = null;
+		quote.askUnitCopper = 1;
+		const depth = value.market.depth!.items.find((entry) => entry.itemId === ITEM_ID)!;
+		depth.buys = [];
+		depth.sells = [{ unitCopper: 1, quantity: 1 }];
+		const kernel = calculateContainerDispositionKernel({
+			version: 1, asOf: value.asOf, quantity: 1, container: value.container, model: value.model,
+			market: value.market,
+			policy: {
+				version: value.policy.version, openAdvantageBps: value.policy.openAdvantageBps,
+				maxPriceAgeMs: value.policy.maxPriceAgeMs, maxFutureSkewMs: value.policy.maxFutureSkewMs,
+				saleBasis: 'immediate_and_listing',
+			},
+		});
+		expect(kernel).toMatchObject({
+			status: 'ready',
+			explanation: {
+				preferredSaleBasis: 'listing',
+				sellNow: { route: 'listing', grossCopper: 1, totalFeesCopper: 2, netCopper: 0 },
+			},
+		});
+	});
+
 	it.each([
 		['full', false, 'ready'],
 		['free_to_play', false, 'blocked'],
@@ -551,6 +579,19 @@ describe('recommendContainerDisposition', () => {
 		}
 	});
 
+	// Audit fix (14 oct 2026): a cancelled one-copper intent on an unrelated item used to make the
+	// hold plan impossible to evaluate, and every container of the session came out
+	// `invalid/evidence_mismatch`. It is now projected at net zero and protects nothing.
+	it('keeps recommending when a cancelled one-copper intent exists on another item', () => {
+		const tiny = holdIntent({ intentId: 'tiny', itemId: 100, quantity: 1, status: 'cancelled',
+			target: { route: 'instant_sell', unitGrossCopper: 1 } });
+		const value = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [tiny]);
+		const result = recommendContainerDisposition(value);
+		expect(result.status).toBe('ready');
+		expect(result.recommendation?.allocations).toMatchObject({ held: [], freeQuantity: 5 });
+		expect(isContainerRecommendationResult(JSON.parse(JSON.stringify(result)))).toBe(true);
+	});
+
 	it('rejects a transplanted or malformed hold plan even when all quantity would be protected', () => {
 		const target = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })]);
 		target.hold.plan = withHold(input({ gainedQuantity: 4, finalQuantity: 4 }), [holdIntent({ quantity: 4 })]).hold.plan;
@@ -581,6 +622,49 @@ describe('recommendContainerDisposition', () => {
 		expect(result.explanation?.caveats).toContain('excluded_outcomes_not_valued');
 	});
 
+	// Audit fix (14 oct 2026): the excluded tail is disclosure only. A tail that cannot be valued
+	// (here an itemized jackpot quoted at the largest safe integer, which overflows) is reported as
+	// no tail; it used to turn the whole recommendation into `invalid/arithmetic_overflow`, even on
+	// the immediate basis that never shows a tail.
+	it('treats an unvaluable excluded tail as no tail instead of invalidating the recommendation', () => {
+		const value = input();
+		value.model.sample.observations += 2;
+		value.model.excluded = [{
+			category: 'Jackpot', sampleUnits: 2, reason: 'super_rare_jackpot', items: [{ id: 2, label: 'Jackpot', sampleUnits: 2 }],
+		}];
+		value.model.uncertainty.rareDropTreatment = 'excluded';
+		value.modelReview.modelFingerprint = containerModelFingerprint(value.model)!;
+		value.market.quotes.push({
+			itemId: 2, whitelisted: true, bidUnitCopper: Number.MAX_SAFE_INTEGER, askUnitCopper: Number.MAX_SAFE_INTEGER,
+		});
+		value.market.depth!.requestedItemIds = [2, ITEM_ID];
+		value.market.depth!.items = [{
+			itemId: 2, coverage: 'complete',
+			buys: [{ unitCopper: Number.MAX_SAFE_INTEGER, quantity: 1 }],
+			sells: [{ unitCopper: Number.MAX_SAFE_INTEGER, quantity: 1 }],
+		}, ...value.market.depth!.items];
+		withHold(value, []);
+
+		const result = ready(value);
+		expect(result.explanation?.tail).toBeNull();
+		expect(result.explanation?.routes[0]?.openIncludingTail).toBeNull();
+		expect(result.economicDecision).toEqual(ready(input()).economicDecision);
+
+		const kernel = calculateContainerDispositionKernel({
+			version: 1, asOf: value.asOf, quantity: 1, container: value.container, model: value.model,
+			market: value.market,
+			policy: {
+				version: value.policy.version, openAdvantageBps: value.policy.openAdvantageBps,
+				maxPriceAgeMs: value.policy.maxPriceAgeMs, maxFutureSkewMs: value.policy.maxFutureSkewMs,
+				saleBasis: 'immediate_and_listing',
+			},
+		});
+		expect(kernel.status).toBe('ready');
+		if (kernel.status !== 'ready') return;
+		expect(kernel.explanation.tail).toBeNull();
+		expect(kernel.explanation.routes.every((route) => route.openIncludingTail === null)).toBe(true);
+	});
+
 	it('does not let an excluded jackpot change EV or the resulting decision', () => {
 		const baseline = ready(input({ modelEvMicro: 102_300_000 }));
 		const withJackpot = input({ modelEvMicro: 102_300_000 });
@@ -596,6 +680,34 @@ describe('recommendContainerDisposition', () => {
 		expect(result.explanation?.open.evPerContainerMicroCopper)
 			.toBe(baseline.explanation?.open.evPerContainerMicroCopper);
 		expect(result.economicDecision).toEqual(baseline.economicDecision);
+	});
+
+	// Audit fix (14 oct 2026): opening three containers against two buy levels (12c x1, then 10c)
+	// yields an open total that is not a multiple of three. The kernel publishes the per-container
+	// EV as the truncated quotient, so the guard the session note applies must accept exactly that
+	// quotient (and nothing else) instead of demanding `ev * quantity === total`.
+	it('keeps a ready result valid when multi-level depth leaves an open total not divisible by quantity', () => {
+		const value = input({ gainedQuantity: 3, finalQuantity: 3, marketOutcome: true });
+		value.market.quotes.find((quote) => quote.itemId === 1)!.bidUnitCopper = 12;
+		value.market.depth!.items.find((entry) => entry.itemId === 1)!.buys = [
+			{ unitCopper: 12, quantity: 1 }, { unitCopper: 10, quantity: 100_000 },
+		];
+		const result = recommendContainerDisposition(withHold(value, []));
+		expect(result.status).toBe('ready');
+		const open = result.recommendation!.explanation!.open;
+		const total = BigInt(open.totalExpectedMicroCopper);
+		expect(total % 3n).not.toBe(0n);
+		expect(BigInt(open.evPerContainerMicroCopper)).toBe(total / 3n);
+		const persisted: unknown = JSON.parse(JSON.stringify(result));
+		expect(isContainerRecommendationResult(persisted)).toBe(true);
+
+		for (const delta of [1, -1]) {
+			const tampered = JSON.parse(JSON.stringify(result)) as typeof result;
+			const tamperedOpen = tampered.recommendation!.explanation!.open;
+			tamperedOpen.evPerContainerMicroCopper += delta;
+			tampered.recommendation!.explanation!.routes[0]!.open.evPerContainerMicroCopper += delta;
+			expect(isContainerRecommendationResult(tampered)).toBe(false);
+		}
 	});
 
 	it('fails closed on malformed input and arithmetic overflow', () => {

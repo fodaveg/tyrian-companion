@@ -114,6 +114,31 @@ describe('evaluateHoldIntents', () => {
 		expect(evaluateHoldIntents(overflow)).toMatchObject({ status: 'invalid' });
 	});
 
+	// Audit fix (14 oct 2026): a target of one copper on one unit owes more in minimum fees than it
+	// grosses. It used to make the whole plan `invalid_input`, so one stale intent on any item
+	// (even cancelled or expired) invalidated every recommendation of the session. It now projects
+	// net zero, the floor `bestSaleNetCopper` and the instant depth route already apply.
+	it('projects a one-copper single-unit target at net zero instead of invalidating the plan', () => {
+		for (const route of ['instant_sell', 'listing'] as const) {
+			for (const status of ['active', 'cancelled'] as const) {
+				const tiny = intent({ intentId: 'tiny', itemId: 2, quantity: 1, status,
+					target: { route, unitGrossCopper: 1 } });
+				const result = evaluateHoldIntents(input({ intents: [intent(), tiny] }));
+				expect(result.status).toBe('ok');
+				if (result.status !== 'ok') continue;
+				expect(isHoldPlan(result.plan)).toBe(true);
+				expect(result.plan.allocations.find((entry) => entry.intentId === 'tiny')?.projectedTargetNet)
+					.toMatchObject({ grossCopper: 1, listingFeeCopper: 1, exchangeFeeCopper: 1, totalFeesCopper: 2, netCopper: 0 });
+				expect(result.plan.allocations.find((entry) => entry.intentId === 'intent-1')).toMatchObject({
+					state: 'holding', allocatedQuantity: 5,
+				});
+			}
+		}
+		const expired = evaluateHoldIntents(input({ intents: [intent({ quantity: 1, deadlineAt: AS_OF,
+			target: { route: 'instant_sell', unitGrossCopper: 1 } })] }));
+		expect(expired).toMatchObject({ status: 'ok', plan: { allocations: [{ state: 'expired' }] } });
+	});
+
 	it('has a strict standalone plan validator that rejects totals, order and projected fees', () => {
 		const value = plan(input({ intents: [intent({ intentId: 'a' }), intent({ intentId: 'b' })] }));
 		expect(isHoldPlan(value)).toBe(true);

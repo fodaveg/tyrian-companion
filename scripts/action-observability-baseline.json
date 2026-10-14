@@ -4124,9 +4124,9 @@
 				{
 					"id": "8e65647ab950c7d0237d755d43f7d3d742a572fd",
 					"kind": "catch_clause",
-					"line": 319,
+					"line": 320,
 					"column": 4,
-					"endLine": 321,
+					"endLine": 322,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4248,9 +4248,9 @@
 				{
 					"id": "520be09246f94bd74272e0b23e28e66e99e3513c",
 					"kind": "catch_clause",
-					"line": 172,
+					"line": 158,
 					"column": 4,
-					"endLine": 174,
+					"endLine": 160,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4264,9 +4264,9 @@
 				{
 					"id": "502a2709ed7dfdeaffe4b2117589ecc09ecf43ad",
 					"kind": "catch_clause",
-					"line": 211,
+					"line": 197,
 					"column": 4,
-					"endLine": 213,
+					"endLine": 199,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4334,9 +4334,9 @@
 				{
 					"id": "88d7a71910f7c74998fae7cc2b7f4ddc8004176f",
 					"kind": "catch_clause",
-					"line": 184,
+					"line": 185,
 					"column": 55,
-					"endLine": 184,
+					"endLine": 185,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {

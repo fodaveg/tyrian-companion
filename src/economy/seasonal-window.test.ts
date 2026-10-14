@@ -116,6 +116,16 @@ describe('H13.7 end of the window', () => {
 			.toBe(Date.parse('2027-11-16T00:00:00.000Z'));
 	});
 
+	// Audit fix (14 oct 2026): asked exactly at the exclusive end of this year's window, that window
+	// has no instant left at or after `fromMs`; the next close is next year's. One millisecond
+	// earlier is still inside and still closes this year.
+	it('rolls to next year when asked exactly at this year\'s exclusive end', () => {
+		const end = Date.parse('2026-11-16T00:00:00.000Z');
+		expect(seasonalWindowStatusAtMs(HALLOWEEN_SEASONAL_WINDOW, end)).toBe('out_of_season');
+		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, end)).toBe(Date.parse('2027-11-16T00:00:00.000Z'));
+		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, end - 1)).toBe(end);
+	});
+
 	it('returns the same year when asked from inside the window', () => {
 		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, Date.parse('2026-10-20T00:00:00.000Z')))
 			.toBe(Date.parse('2026-11-16T00:00:00.000Z'));
@@ -227,6 +237,18 @@ describe('festival anchors table', () => {
 		expect(isFestivalAnchorsTable(missingSource)).toBe(false);
 	});
 
+	// Audit fix (14 oct 2026): `Date.parse` normalises an impossible day (31 February becomes
+	// 3 March), and nothing tied `startsOn` to the edition `year` it is filed under.
+	it('rejects an impossible calendar day and a start date outside the entry\'s own year', () => {
+		for (const startsOn of ['2026-02-31', '2026-04-31', '2026-02-29']) {
+			expect(isFestivalAnchorsTable(halloweenAnchorsWith([{ year: 2026, startsOn, sourceId: 'src' }]))).toBe(false);
+		}
+		expect(isFestivalAnchorsTable(halloweenAnchorsWith([{ year: 2028, startsOn: '2028-02-29', sourceId: 'src' }])))
+			.toBe(true);
+		expect(isFestivalAnchorsTable(halloweenAnchorsWith([{ year: 2027, startsOn: '2026-10-13', sourceId: 'src' }])))
+			.toBe(false);
+	});
+
 	it('reads a covered year and declares an uncovered one null, rather than guessing', () => {
 		const table = halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }]);
 		expect(festivalAnchorStartMs(table, 2026)).toBe(Date.parse('2026-10-13T00:00:00.000Z'));
@@ -269,6 +291,31 @@ describe('festival-relative windows and candidate resolution', () => {
 		expect(duringBefore?.seasonId).toBe('before');
 		const afterFestivalNothingOpen = resolveFestivalCalendarWindow(entry, anchors, Date.parse('2026-11-01T00:00:00.000Z'));
 		expect(afterFestivalNothingOpen?.seasonId).toBe('may');
+	});
+
+	// Audit fix (14 oct 2026): once this year's edition has passed, a festival-relative candidate's
+	// next opening is only known if next year's real start is curated. Projecting this year's
+	// month-day onto next year is exactly the interpolation the anchors table forbids, and it used
+	// to outrank an annual candidate that genuinely reopens later.
+	it('never ranks a festival-relative candidate by a next opening projected without next year\'s anchor', () => {
+		const lateOctober = annualCandidate('late-october', '10-20', '10-31', 10);
+		const entry: FestivalCalendarEntryV1 = {
+			itemId: 1, candidates: [{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' }, lateOctober],
+		};
+		const asOf = Date.parse('2026-11-01T00:00:00.000Z');
+		const only2026 = new Map([['halloween', halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }])]]);
+		expect(resolveFestivalCalendarWindow(entry, only2026, asOf)?.seasonId).toBe('late-october');
+		const with2027 = new Map([['halloween', halloweenAnchorsWith([
+			{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' },
+			{ year: 2027, startsOn: '2027-10-12', sourceId: 'src' },
+		])]]);
+		expect(resolveFestivalCalendarWindow(entry, with2027, asOf)?.seasonId).toBe('before');
+		const onlyAnchored: FestivalCalendarEntryV1 = {
+			itemId: 2, candidates: [{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' }],
+		};
+		expect(resolveFestivalCalendarWindow(onlyAnchored, only2026, asOf)).toMatchObject({ seasonId: 'before' });
+		expect(seasonalWindowStatusAtMs(resolveFestivalCalendarWindow(onlyAnchored, only2026, asOf), asOf))
+			.toBe('out_of_season');
 	});
 
 	it('declares lack of coverage rather than guessing when the only candidate needs an uncovered festival year', () => {

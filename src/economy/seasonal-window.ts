@@ -87,11 +87,13 @@ export function seasonalWindowClosesAfterMs(window: unknown, fromMs: unknown): n
 	const year = Number.parseInt(iso.slice(0, 4), 10);
 	// The day after the closing day, at midnight: the window includes its closing
 	// day in full, so anything valid "until the close" must reach past midnight.
+	// That end is exclusive: asked exactly at it, this year's window has nothing
+	// left at or after `fromMs`, so the answer is next year's close.
 	for (const candidate of [year, year + 1]) {
 		const closes = Date.parse(`${String(candidate)}-${window.closesOn}T00:00:00.000Z`);
 		if (!Number.isFinite(closes)) return null;
 		const endsAt = closes + 86_400_000;
-		if (endsAt >= fromMs) return endsAt;
+		if (endsAt > fromMs) return endsAt;
 	}
 	return null;
 }
@@ -199,7 +201,8 @@ function isFestivalAnchorSource(value: unknown): value is FestivalAnchorSourceV1
 
 function isFestivalAnchorEntry(value: unknown): value is FestivalAnchorEntryV1 {
 	return record(value) && exactKeys(value, ['year', 'startsOn', 'sourceId'])
-		&& festivalYear(value.year) && fullDate(value.startsOn) && identifier(value.sourceId);
+		&& festivalYear(value.year) && fullDate(value.startsOn) && identifier(value.sourceId)
+		&& Number.parseInt(value.startsOn.slice(0, 4), 10) === value.year;
 }
 
 export function isFestivalAnchorsTable(value: unknown): value is FestivalAnchorsTableV1 {
@@ -249,9 +252,11 @@ function isoDay(value: unknown): value is string {
 	return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 }
 
+/** A real UTC calendar day: `Date.parse` normalises `2026-02-31` to 3 March, so it must round-trip. */
 function fullDate(value: unknown): value is string {
-	return typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/u.test(value)
-		&& Number.isFinite(Date.parse(`${value}T00:00:00.000Z`));
+	if (typeof value !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/u.test(value)) return false;
+	const parsed = Date.parse(`${value}T00:00:00.000Z`);
+	return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
 }
 
 /**
@@ -402,17 +407,41 @@ export function resolveFestivalCalendarWindow(
 	asOfEpochMs: number,
 ): SeasonalWindowV1 | null {
 	const resolved = entry.candidates
-		.map((candidate) => resolveCandidateWindow(candidate, anchors, asOfEpochMs))
-		.filter((window): window is SeasonalWindowV1 => window !== null);
+		.map((candidate) => ({ candidate, window: resolveCandidateWindow(candidate, anchors, asOfEpochMs) }))
+		.filter((item): item is { candidate: FestivalCalendarCandidateV1; window: SeasonalWindowV1 } => item.window !== null);
 	if (resolved.length === 0) return null;
-	const active = resolved.find((window) => seasonalWindowStatusAtMs(window, asOfEpochMs) === 'in_season');
-	if (active !== undefined) return active;
+	const active = resolved.find(({ window }) => seasonalWindowStatusAtMs(window, asOfEpochMs) === 'in_season');
+	if (active !== undefined) return active.window;
 	let soonest: { window: SeasonalWindowV1; opensAt: number } | null = null;
-	for (const window of resolved) {
-		const opensAt = seasonalWindowOpensAfterMs(window, asOfEpochMs);
+	for (const { candidate, window } of resolved) {
+		// An annual window reopens on the same days next year by definition. A festival-relative
+		// one only has a known next opening when that edition's real start is curated: projecting
+		// this year's month-day forward would be the interpolation the anchors table forbids, so
+		// an unknown next opening never outranks a known one.
+		const opensAt = candidate.kind === 'annual'
+			? seasonalWindowOpensAfterMs(window, asOfEpochMs)
+			: festivalRelativeOpensAfterMs(candidate.window, anchors, asOfEpochMs);
 		if (opensAt !== null && (soonest === null || opensAt < soonest.opensAt)) soonest = { window, opensAt };
 	}
-	return soonest?.window ?? resolved[0]!;
+	return soonest?.window ?? resolved[0]!.window;
+}
+
+/** First real opening after `asOfEpochMs` from this year's or next year's curated start, else null. */
+function festivalRelativeOpensAfterMs(
+	window: FestivalRelativeWindowV1,
+	anchors: ReadonlyMap<string, FestivalAnchorsTableV1>,
+	asOfEpochMs: number,
+): number | null {
+	const table = anchors.get(window.festivalId);
+	if (table === undefined) return null;
+	const year = new Date(asOfEpochMs).getUTCFullYear();
+	for (const candidateYear of [year, year + 1]) {
+		const startMs = festivalAnchorStartMs(table, candidateYear);
+		if (startMs === null) return null;
+		const opensAt = startMs + window.opensOffsetDays * 86_400_000;
+		if (opensAt > asOfEpochMs) return opensAt;
+	}
+	return null;
 }
 
 function resolveCandidateWindow(
