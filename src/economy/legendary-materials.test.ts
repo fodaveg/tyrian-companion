@@ -74,4 +74,12 @@ describe('activeLegendaryMaterialsTable (F5, QA-MVP prueba 10)', () => {
 		expect(activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, validUntilMs)).toBeNull();
 		expect(activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, validUntilMs + 35_000)).toBeNull();
 	});
+
+	// Audit fix (14 oct 2026): every comparison with NaN is false, so an unreadable clock used to
+	// serve the table as if it were still valid.
+	it('withdraws the table for an unreadable clock instead of serving it', () => {
+		for (const nowMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+			expect(activeLegendaryMaterialsTable(LEGENDARY_MATERIALS_TABLE, nowMs)).toBeNull();
+		}
+	});
 });

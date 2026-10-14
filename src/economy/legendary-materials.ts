@@ -130,7 +130,8 @@ export function activeLegendaryMaterialsTable(
 	table: LegendaryMaterialsTableV1,
 	nowMs: number,
 ): LegendaryMaterialsTableV1 | null {
-	return nowMs >= Date.parse(table.validUntil) ? null : table;
+	// Every comparison with NaN is false: an unreadable clock must withdraw the table, not serve it.
+	return !Number.isFinite(nowMs) || nowMs >= Date.parse(table.validUntil) ? null : table;
 }
 
 /** `true` when at least one of the entry's leaves cannot be turned into a reservation requirement. */
