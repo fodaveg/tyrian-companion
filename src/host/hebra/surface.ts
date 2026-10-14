@@ -16,7 +16,8 @@
  *   Hebra opens in the browser after its own confirmation.
  *
  * Everything is keyed by the surface's document (a frame can be mounted into more than once) and
- * undone by `dispose`. In Obsidian, and in a test with a single document, it changes nothing the
+ * undone when that frame goes away (`pagehide`: a note block is a new frame on every render, and a dead
+ * one must not stay referenced) or, for what is left, by `dispose`. In Obsidian, and in a test with a single document, it changes nothing the
  * hidden frame already had: the helpers exist, and the class and the listener go on that document.
  */
 import { installDomHelpers } from '../dom-polyfill';
@@ -34,6 +35,8 @@ export interface HebraSurfaceDeps {
 export interface HebraSurfaces {
 	/** Readies the document `el` belongs to; cheap and idempotent per document. */
 	prepare(el: HTMLElement): void;
+	/** Whether it still holds anything of `doc` (what it put there, to take it away). */
+	isPrepared(doc: Document): boolean;
 	/** Removes the class and the listeners it put on every document it prepared. */
 	dispose(): void;
 }
@@ -60,16 +63,26 @@ function webLinkOf(event: Event): string | null {
 }
 
 export function createHebraSurfaces(deps: HebraSurfaceDeps): HebraSurfaces {
-	// Renewed by `dispose`, so a document prepared before it gets its class and listener again.
-	let prepared = new WeakSet<Document>();
+	// What to undo on each document prepared now. A surface's frame can go away long before the plugin does (a note
+	// block is a new frame on every render), so its entry goes with its frame (`pagehide`), never holding a dead
+	// document until `dispose`; `dispose` takes whatever is left.
+	const undoByDocument = new Map<Document, Array<() => void>>();
 	// Never renewed: the helpers stay on a window's prototypes once installed (each only where missing).
 	const helpersInstalled = new WeakSet<object>();
-	const undo: Array<() => void> = [];
+	const release = (doc: Document): void => {
+		const steps = undoByDocument.get(doc);
+		if (steps === undefined) return;
+		undoByDocument.delete(doc);
+		for (const step of steps.reverse()) {
+			try { step(); } catch (error) { deps.report(error, 'surface.dispose'); }
+		}
+	};
 	return {
 		prepare(el) {
 			const doc = el.ownerDocument;
-			if (prepared.has(doc)) return;
-			prepared.add(doc);
+			if (undoByDocument.has(doc)) return;
+			const undo: Array<() => void> = [];
+			undoByDocument.set(doc, undo);
 			const win = doc.defaultView;
 			try {
 				if (win !== null && !helpersInstalled.has(win)) {
@@ -95,12 +108,15 @@ export function createHebraSurfaces(deps: HebraSurfaceDeps): HebraSurfaces {
 			};
 			doc.addEventListener('click', onClick);
 			undo.push(() => { doc.removeEventListener('click', onClick); });
-		},
-		dispose() {
-			prepared = new WeakSet<Document>();
-			for (const step of undo.splice(0).reverse()) {
-				try { step(); } catch (error) { deps.report(error, 'surface.dispose'); }
+			if (win !== null) {
+				const onPageHide = (): void => { release(doc); };
+				win.addEventListener('pagehide', onPageHide, { once: true });
+				undo.push(() => { win.removeEventListener('pagehide', onPageHide); });
 			}
+		},
+		isPrepared: (doc) => undoByDocument.has(doc),
+		dispose() {
+			for (const doc of [...undoByDocument.keys()]) release(doc);
 		},
 	};
 }

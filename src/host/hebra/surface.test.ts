@@ -84,6 +84,35 @@ describe('a surface of another realm', () => {
 		expect(openExternal, 'no listener left after dispose').toHaveBeenCalledTimes(1);
 	});
 
+	// A note block is a new frame on every render: what a surface left behind must go with its frame, not wait for dispose.
+	it('lets go of a surface when its frame goes away (pagehide): class, listener and its entry, while another surface keeps them', () => {
+		const first = surfaceFrame();
+		const second = surfaceFrame();
+		const openExternal = vi.fn();
+		const surfaces = createHebraSurfaces({ appleMobile: true, openExternal, report: vi.fn() });
+		surfaces.prepare(first.el);
+		surfaces.prepare(second.el);
+		const linkIn = (doc: Document, el: HTMLElement): HTMLAnchorElement => {
+			const link = el.appendChild(doc.createElement('a'));
+			link.setAttribute('href', 'https://wiki.guildwars2.com/');
+			return link;
+		};
+		const firstLink = linkIn(first.doc, first.el);
+		const secondLink = linkIn(second.doc, second.el);
+
+		first.frame.dispatchEvent(new first.frame.Event('pagehide'));
+		firstLink.dispatchEvent(new (first.doc.defaultView as unknown as typeof window).MouseEvent('click', { bubbles: true, cancelable: true }));
+		secondLink.dispatchEvent(new (second.doc.defaultView as unknown as typeof window).MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect({
+			firstClass: first.doc.body.classList.contains('is-mobile'),
+			secondClass: second.doc.body.classList.contains('is-mobile'),
+			opened: openExternal.mock.calls.length,
+			firstHeld: surfaces.isPrepared(first.doc),
+			secondHeld: surfaces.isPrepared(second.doc),
+		}).toEqual({ firstClass: false, secondClass: true, opened: 1, firstHeld: false, secondHeld: true });
+	});
+
 	it('readies a document once, however many mounts it gets', () => {
 		const { doc, el } = surfaceFrame();
 		const openExternal = vi.fn();

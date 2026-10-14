@@ -7953,9 +7953,9 @@
 				{
 					"id": "ad30bd5de4d448890e40cbce184be033de66e3f2",
 					"kind": "catch_clause",
-					"line": 57,
+					"line": 60,
 					"column": 4,
-					"endLine": 59,
+					"endLine": 62,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7967,11 +7967,27 @@
 					"reason": "Allowlisted catch_clause: The \"webLinkOf\" catch (\"fallback_return\") answers null for an href that is not a URL: it is not a web link, so the click goes on as the surface has it; nothing failed and nothing is lost. Verified recovery: \"fallback_return\" in \"webLinkOf\"."
 				},
 				{
+					"id": "3be8ddf7b4465b554763e94011509c7b86654e4b",
+					"kind": "catch_clause",
+					"line": 77,
+					"column": 20,
+					"endLine": 77,
+					"endColumn": 76,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "release",
+						"justification": "The \"release\" catch (\"local_recovery\") hands an undo step of a surface (on its pagehide or on dispose) that throws, a class or a listener of a frame already gone, to report, the adapter failure channel that logs it, and the remaining steps still run."
+					},
+					"reason": "Allowlisted catch_clause: The \"release\" catch (\"local_recovery\") hands an undo step of a surface (on its pagehide or on dispose) that throws, a class or a listener of a frame already gone, to report, the adapter failure channel that logs it, and the remaining steps still run. Verified recovery: \"local_recovery\" in \"release\"."
+				},
+				{
 					"id": "5236a5c01f5cb1c52674a0ad9a48e7b8dbe0cc20",
 					"kind": "catch_clause",
-					"line": 79,
+					"line": 92,
 					"column": 6,
-					"endLine": 81,
+					"endLine": 94,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7985,9 +8001,9 @@
 				{
 					"id": "a23e1abe3b6f775a3d81cc579945e51584fabb7a",
 					"kind": "catch_clause",
-					"line": 86,
+					"line": 99,
 					"column": 6,
-					"endLine": 88,
+					"endLine": 101,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7997,22 +8013,6 @@
 						"justification": "The \"prepare\" catches (\"local_recovery\") hand a failure readying a surface (the DOM helpers on its window, or the is-mobile class on its body) to report, the adapter failure channel that logs it, and go on readying the rest of the surface instead of failing Hebra's mount."
 					},
 					"reason": "Allowlisted catch_clause: The \"prepare\" catches (\"local_recovery\") hand a failure readying a surface (the DOM helpers on its window, or the is-mobile class on its body) to report, the adapter failure channel that logs it, and go on readying the rest of the surface instead of failing Hebra's mount. Verified recovery: \"local_recovery\" in \"prepare\"."
-				},
-				{
-					"id": "4117f842501dbc28f909a1a40842a4f920fa0705",
-					"kind": "catch_clause",
-					"line": 102,
-					"column": 21,
-					"endLine": 102,
-					"endColumn": 77,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "dispose",
-						"justification": "The \"dispose\" catch (\"local_recovery\") hands an undo step that throws (a class or a listener of a surface frame already gone) to report, the adapter failure channel that logs it, and the remaining steps still run."
-					},
-					"reason": "Allowlisted catch_clause: The \"dispose\" catch (\"local_recovery\") hands an undo step that throws (a class or a listener of a surface frame already gone) to report, the adapter failure channel that logs it, and the remaining steps still run. Verified recovery: \"local_recovery\" in \"dispose\"."
 				}
 			]
 		},
