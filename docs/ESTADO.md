@@ -1,8 +1,9 @@
 # Estado
 
-## En rama, sin publicar: sección «En vivo», el HUD de cifras grandes (14 oct 2026)
+## Candidato 0.6.59: sección «En vivo», el HUD de cifras grandes (14 oct 2026)
 
-Rama `feat/live-hud`, sin gate completo ni canal. Pedido por David el 14 oct durante el evento («no quería una nota.
+**Candidato; sin publicar.** `main` sobre el canal 0.6.58 publicado (`107b8b54`). Detalle en [CHANGELOG](CHANGELOG.md).
+Publicación sin preguntar según la decisión de David del 10 oct («no me preguntes mas por las releases»). Pedido por David el 14 oct durante el evento («no quería una nota.
 quería un puto panel dentro del plugin. una especie de dashboard o hud», «se puede mostrar el numero de bolsas y bolsas
 por hora? como en el juego?», «y el hallazgo mágico»).
 

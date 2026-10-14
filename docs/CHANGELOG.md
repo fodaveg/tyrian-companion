@@ -1,5 +1,18 @@
 # Changelog
 
+## Release beta 0.6.59 - Panel «En vivo» dentro del plugin, con cifras grandes para el móvil
+
+Se actualiza desde la 0.6.58 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Panel «En vivo». Una sección nueva del plugin con el valor de la sesión, el oro por hora, las bolsas, las bolsas por
+  hora, el hallazgo mágico de la cuenta y la duración en tarjetas grandes, y debajo las cinco líneas de botín que más
+  valen. En Hebra ocupa la pantalla entera del iPhone o del iPad; en Obsidian se abre en su propia pestaña. Se abre con
+  el comando «Abrir panel en vivo». Sin personaje, cuenta ni mapa.
+- En el PC que juega, el panel lee la sesión directamente. En otro dispositivo lee la nota «Live panel» que escribe el
+  PC y se repinta cuando la sincronización la cambia; la nota pasa a llevar esas cifras en sus propiedades.
+- Las bolsas y las bolsas por hora salen de la misma lectura que el panel del juego, y la nota también las toma de ahí.
+
 ## Release beta 0.6.58 - Panel en vivo para el móvil, «1 semana» en la gráfica y «Detalles» en Venta
 
 Se actualiza desde la 0.6.57 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
