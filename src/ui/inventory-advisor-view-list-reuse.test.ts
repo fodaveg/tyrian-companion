@@ -135,16 +135,33 @@ describe('Inventory Advisor list: equivalence of what is visible', () => {
 		const pressedAndDisabled = (): string[] => keepButtons(mount.results)
 			.map((button) => `${button.attributes.get('aria-pressed') ?? ''}:${String(button.disabled)}`);
 		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:false']));
-		// Same content version: the list is not repainted for it, as a live sync tick is not.
+		// Same content version: the list is not repainted for it, as a live sync tick is not (the
+		// pressed state waits for the next repaint), but `busy` reaches the built buttons at once.
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined,
 			{ ...keepInteractions([1_000]), preferencesBusy: true },
 		);
-		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:false']));
+		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:true']));
 		controls.search.value = 'a';
 		controls.search.dispatch('input');
 		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:true', 'true:true']));
 		expect(pressedAndDisabled().filter((state) => state === 'true:true')).toHaveLength(1);
+	});
+
+	it('re-enables the built keep controls when the write ends under the same content version', () => {
+		const model = { ...fixtureModel(60), contentVersion: 1 };
+		const mount = render(model, 'es', keepInteractions([]));
+		const disabled = (): Set<boolean> => new Set(keepButtons(mount.results).map((button) => button.disabled));
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined,
+			{ ...keepInteractions([]), preferencesBusy: true },
+		);
+		expect(disabled()).toEqual(new Set([true]));
+		// A refused write leaves the preferences and the data as they were: only `busy` goes back down.
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined, keepInteractions([]),
+		);
+		expect(disabled()).toEqual(new Set([false]));
 	});
 
 	/**

@@ -655,6 +655,10 @@ describe('Inventory Advisor view', () => {
 		const mount = render(twoCharacterModel());
 		const characterSelect = controlWithLabel(mount.elements(), 'select', 'Personaje');
 		expect(characterSelect.children.map((option) => option.value)).toEqual(['all', 'Astra', 'Borja']);
+		// An update that changes nothing in the roster leaves the options (and an open dropdown) alone.
+		const optionsBefore = [...characterSelect.children];
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, twoCharacterModel(), createTranslator('es'));
+		expect(characterSelect.children.every((option, index) => option === optionsBefore[index])).toBe(true);
 		expect(text(mount.elements())).toContain('Todas las bolsas y compartido');
 		const stores = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
 		expect(stores.every((input) => !input.disabled)).toBe(true);
@@ -1403,6 +1407,9 @@ describe('Inventory Advisor view', () => {
 			},
 		});
 		expect(only(byClass(failed.elements(), 'tyrian-product-shell__status')).hidden).toBe(true);
+		// The sync interactions going away (the runtime left) takes the line down with them.
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, {});
+		expect(status.hidden).toBe(true);
 	});
 
 	it('renders exactly one list for the results, never a second table or card layout for the same rows (H18.37)', () => {

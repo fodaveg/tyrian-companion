@@ -679,14 +679,21 @@ function mountInventoryAdvisorView(
 	}
 
 	/** Rebuilds the roster from the observed rows; an absent character falls back to every bag. */
+	let characterOptionsSignature = '';
 	function syncCharacterOptions(): void {
 		const characters = inventoryAdvisorCharacters(flattenInventoryAdvisorRows(model.groups), translator.locale);
 		const selected = filters.character ?? ALL_CHARACTERS;
 		const resolved = characters.includes(selected) ? selected : ALL_CHARACTERS;
-		character.replaceChildren(allCharactersOption);
-		for (const name of characters) appendOption(character, name, name, resolved);
-		allCharactersOption.selected = resolved === ALL_CHARACTERS;
-		character.value = resolved;
+		// Rebuilt only when the roster or the selection changed: replacing the options of an open
+		// dropdown on every update (a sync tick) closes it under the player's hand.
+		const signature = JSON.stringify([characters, resolved]);
+		if (signature !== characterOptionsSignature) {
+			characterOptionsSignature = signature;
+			character.replaceChildren(allCharactersOption);
+			for (const name of characters) appendOption(character, name, name, resolved);
+			allCharactersOption.selected = resolved === ALL_CHARACTERS;
+			character.value = resolved;
+		}
 		character.disabled = analysisRunning(model) || characters.length === 0;
 		if (resolved !== selected) filters = { ...filters, character: resolved };
 	}
@@ -714,7 +721,8 @@ function mountInventoryAdvisorView(
 		syncPrimaryActions.hidden = sync === undefined;
 		syncAssetsHint.hidden = sync === undefined || sync.assetsInstalled;
 		syncStatusPanel.hidden = sync === undefined;
-		if (sync !== undefined) {
+		if (sync === undefined) statusLine.hidden = true;
+		else {
 			const lastRun = sync.state.status === 'idle' ? sync.state.lastRun ?? null : null;
 			// H18.37: one clock for both milestones. The one-click flow analyzes and writes in the
 			// same run, so "Analizado" and "Notas guardadas" share `lastRun.finishedAt`; there is no
@@ -811,6 +819,9 @@ function mountInventoryAdvisorView(
 		stateCopyButton.setAttribute('aria-label', translator.t('advisor.view.copyTechnicalDetail'));
 		preferencesEditor?.update();
 		updateKeepStatus();
+		// `busy` follows every update, not only the ones that repaint the list: a refused write
+		// leaves the data and the preferences as they were, and the list is then not rebuilt.
+		if (interactions.onKeepItem !== undefined) for (const button of keepButtons.values()) button.disabled = interactions.preferencesBusy === true;
 		// See `lastResultsKey` above: skip rebuilding the results table when only a
 		// live sync-panel tick changed, not the advisor's actual content, state, or locale.
 		const resultsKey = model.contentVersion === undefined
