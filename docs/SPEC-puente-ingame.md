@@ -231,7 +231,7 @@ conexión v2, `alert_ack` es `unexpected_message`, como cualquier tipo desconoci
 ## Versión 3: el acuse de un aviso
 
 Hasta v2 el addon no decía si había enseñado un aviso, y el plugin no podía distinguir «enviado» de
-«visto en el juego». v3 añade `alert_ack` y las extensiones opcionales negociadas `farm1` y `price2` descritas más abajo.
+«visto en el juego». v3 añade `alert_ack` y las extensiones opcionales negociadas `farm1`, `price2` y `mf1` descritas más abajo.
 
 | | v2 | v3 |
 |---|---|---|
@@ -382,7 +382,8 @@ clave de API, `accountId`, `accountRef`, `alertId`, `reason`, `itemId`, snapshot
 ni el texto del toast (que incorpora `reason` traducido: la fuga que tuvo el webhook de la `0.1.22`).
 
 **Addon → plugin:** el secreto (una vez, en el `hello`), el anfitrión, su versión, un id aleatorio de
-proceso, y `state`/`mapId`/`character`. Nada más.
+proceso, y `state`/`mapId`/`character`; con `mf1` negociado, además, el hallazgo mágico del juego
+(`mf`, entero o `null`) y la edad de esa lectura (`ageMs`). Nada más.
 
 Lo que lo impide estructuralmente:
 
@@ -412,7 +413,7 @@ Lo que lo impide estructuralmente:
 **En cada repo de addon** (`tyrian-companion-nexus`, Rust; `tyrian-companion-blish`, C#): ajustes
 de puerto y token; conectar y reconectar; `hello`; leer líneas; pintar `alert`; enviar `context`
 al cambiar, `heartbeat` en los silencios y `bye` al irse. Cero llamadas a la API de GW2, cero
-escritura hacia el plugin fuera de los tipos documentados; `farm1` y `price2` solo añaden una suscripción cada una, nunca acciones dentro del juego.
+escritura hacia el plugin fuera de los tipos documentados; `farm1` y `price2` solo añaden una suscripción cada una, y `mf1` una cifra entera del hallazgo mágico, nunca acciones dentro del juego.
 
 ## Aceptación (auditoría del 24 sep, pruebas 12 a 15)
 
@@ -451,7 +452,7 @@ Pendiente de QA humana en la plataforma real, y no acreditado por lo anterior:
 
 El plugin no lee Mumble Link ni NexusLink: lo leen los addons a través de su anfitrión. No
 inspecciona memoria ni proceso del juego. No automatiza ninguna acción dentro del juego. No
-transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026 y `price2` el precio público del saco autorizado el 7 oct 2026, sin cuenta ni identificadores. No saca la capa H8 del árbol. No mete binarios en
+transporta la cuenta ni una lista de botín o actividad; `farm1` añade únicamente las métricas numéricas cerradas de medición autorizadas el 6 oct 2026 y `price2` el precio público del saco autorizado el 7 oct 2026, sin cuenta ni identificadores; `mf1` lleva del addon al plugin el hallazgo mágico del juego (14 oct 2026), una cifra entera sin personaje, cuenta ni mapa. No saca la capa H8 del árbol. No mete binarios en
 este repo.
 
 ## Fuentes
@@ -612,3 +613,54 @@ de red conserva la cotización anterior, que sigue envejeciendo y pasa a `stale`
 cotización restaurada tras recargar no conserva puja y oferta brutas y cuenta como ausente hasta el
 siguiente refresco. El addon no debe presentar el precio como «en vivo» ni «tiempo real»: puede tener
 hasta unos 2 minutos, y más si falla la red.
+
+## Extensión opt-in `mf1`: hallazgo mágico del juego (14 oct 2026)
+
+David pidió el 14 oct 2026 un panel «En vivo» con las bolsas, las bolsas por hora «y el hallazgo
+mágico». El de la cuenta ya lo tiene el plugin; el del juego con buffs (comida, potenciadores,
+estandartes) solo lo calcula el lector del addon de Nexus, el mismo número que pinta su panel. `mf1`
+lo lleva del addon al plugin, al revés que `farm1` y `price2`. Fixture canónico, idéntico byte a byte
+en los dos repos: `src/alerts/__fixtures__/mf1.json` aquí y `core/tests/fixtures/mf1.json` en el
+addon (sha256 `f6e8e78eedd50da96f57e7f4c188fdc4665d3e4f06590f8c234d5f9fff23bee0`).
+
+Tras `price_cap` y antes de `live_cap`, solo en v3, solo a un `client` `nexus` y solo si el host tiene
+dueño para la cifra, el servidor anuncia (claves exactas `v,type,nonce,tag`):
+
+```json
+{"v":3,"type":"mf_cap","nonce":"AQEBAQEBAQEBAQEBAQEBAQ","tag":"mf1"}
+```
+
+El addon manda `mf_state` SOLO después de recibir ese `mf_cap` en esa conexión, con su `nonce` y en
+v3, y en la misma secuencia de entrada que `context`, `heartbeat`, `bye`, `alert_ack` y las
+suscripciones (claves exactas `v,type,nonce,seq,tag,mf,ageMs`; el orden no cuenta):
+
+```json
+{"ageMs":12,"mf":333,"nonce":"AQEBAQEBAQEBAQEBAQEBAQ","seq":4,"tag":"mf1","type":"mf_state","v":3}
+```
+
+| Campo | Significado cerrado |
+|---|---|
+| `mf` | Hallazgo mágico del juego en puntos enteros (el total del lector redondeado al más cercano), de 0 a 100000; `null` cuando la última lectura no lo cubre. Nunca una suma parcial ni un 0 que no se leyó |
+| `ageMs` | Milisegundos desde la lectura hasta que se escribió la línea, de 0 a 600000. El plugin fecha la cifra en la recepción menos `ageMs` |
+
+Sin personaje, cuenta, mapa ni sumandos. Un `mf_state` en una conexión a la que no se anunció es
+`unexpected_message`, la misma respuesta que daba el plugin 0.6.58 a un tipo que no conocía; otro tag,
+una clave de más o de menos, una cifra fuera de rango o con decimales, o una edad fuera de rango es
+`frame_schema`.
+
+Cuándo lo manda el addon: tras una captura cuyo contexto se mantuvo, después de la última línea de la
+muestra y nunca dentro de su lote; cuando la cifra cambia, otra vez cada 60 s mientras se mantiene y
+como mucho una línea cada 5 s. Una cifra que ninguna captura confirma en 30 s, o la vuelta a la
+selección de personaje, va como `null`; un `null` no se repite y nada sale antes de la primera cifra.
+
+Qué hace el plugin: guarda en memoria la última cifra (no persiste nada) y la enseña en el HUD y en
+`Live panel.md` (`tc_live_mf` con `tc_live_mf_src: game`) mientras tiene menos de dos minutos desde su
+lectura; sin ella, o con `null`, o al cerrarse la conexión que la mandó, enseña la de la cuenta. Un
+cambio de lo que se enseña escribe la nota como una bolsa nueva, con el suelo de 10 s.
+
+| Combinación | Resultado |
+|---|---|
+| Plugin nuevo con addon 0.8.11 | `mf_cap`, y `mf_state` con cada cambio: «MF en el juego» |
+| Plugin nuevo con addon 0.8.10 o anterior | El addon ignora `mf_cap` (tipo desconocido, sin cerrar) y no manda nada: «MF de la cuenta» |
+| Plugin 0.6.58 o anterior con addon 0.8.11 | No hay `mf_cap`, así que el addon no manda `mf_state` y nada cierra la conexión |
+| Blish 0.5.0 con plugin nuevo | No se le anuncia (no es `nexus`) |

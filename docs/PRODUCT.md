@@ -20,10 +20,10 @@ David pidió, durante el evento de Halloween, un panel dentro del plugin y no un
 un puto panel dentro del plugin. una especie de dashboard o hud»), con las bolsas y las bolsas por hora «como en el
 juego» y el hallazgo mágico, en grande y legible en escritorio, iPad e iPhone, «en tiempo lo más real posible». Es
 la quinta sección, «En vivo», tras Logros: una línea de estado, seis cifras grandes (valor de la sesión, oro por
-hora, bolsas, bolsas por hora, MF de la cuenta, duración) y el botín que más vale. Sin personaje, cuenta ni mapa,
+hora, bolsas, bolsas por hora, hallazgo mágico, duración) y el botín que más vale. Sin personaje, cuenta ni mapa,
 porque se deja abierta en otro dispositivo. La nota «Live panel.md» sigue existiendo y pasa a ser su transporte
-hacia el móvil (además de legible). El MF que enseña es el de la cuenta y se etiqueta así; el del juego con buffs
-solo lo conoce el addon y queda para otra tanda. Implementación en [ARCHITECTURE](ARCHITECTURE.md), «En vivo».
+hacia el móvil (además de legible). El MF que enseña es el del juego con buffs cuando el addon de Nexus lo manda
+(«MF en el juego», desde el addon 0.8.11) y, si no, el de la cuenta, etiquetado así. Implementación en [ARCHITECTURE](ARCHITECTURE.md), «En vivo».
 
 ## Decisión vigente: sección «Logros» (10 oct 2026)
 
