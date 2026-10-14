@@ -51,6 +51,12 @@ export interface SaleSourceRow {
 	/** Already net of `GW2_TRADING_POST_FEE_POLICY`; null when no comparison exists for this row. */
 	instantSellNetCopper: number | null;
 	listingNetCopper: number | null;
+	/**
+	 * `false` only when the advisor's own market depth proved the item has no listings at all (the
+	 * same `rowHasMarket` the Inventory tab reads): its «Detalles» then asks for no price history.
+	 * Absent means true.
+	 */
+	hasMarket?: boolean;
 }
 
 export interface SaleWindowSpan {
@@ -83,6 +89,8 @@ export interface SaleRowViewModel {
 	instantSellNetCopper: number | null;
 	listingNetCopper: number | null;
 	quote: SaleQuote;
+	/** See `SaleSourceRow.hasMarket`; what the row's «Detalles» hands its price-history block. Absent means true. */
+	hasMarket?: boolean;
 }
 
 export interface SaleHeroViewModel extends SaleRowViewModel {
@@ -250,6 +258,7 @@ function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): S
 		window,
 		bidCopper: source.bidCopper, instantSellNetCopper: source.instantSellNetCopper, listingNetCopper: source.listingNetCopper,
 		quote: { quotedAtMs, stale: staleAtMs !== null && nowMs > staleAtMs, staleAtMs },
+		hasMarket: source.hasMarket ?? true,
 	};
 }
 

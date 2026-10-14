@@ -1,10 +1,14 @@
 import type { TyrianUiPort } from '../host/tyrian-host';
 import { createTranslator, type Locale } from '../core/i18n';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
+import type { CollectorMode } from '../core/settings';
+import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
+import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
+import type { InventoryAdvisorRowPriceHistory } from './inventory-advisor-price-history-block';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
-import { renderSaleView, type SaleRefreshOutcome } from './sale-view';
+import { disposeSaleView, renderSaleView, type SaleRefreshOutcome } from './sale-view';
 import type { SaleViewModel } from './sale-view-model';
 
 export const SALE_VIEW_TYPE = 'tyrian-sale-view';
@@ -24,6 +28,20 @@ export interface SaleViewActions {
 	openProductSettings?(): void;
 	/** True while the host itself lists the sections (its main screen), so the shell builds no bar of tabs. Absent means false. */
 	hostListsSections?(): boolean;
+	/**
+	 * The rows' «Detalles» (14 oct 2026): the SAME price-history reads and actions the Inventory tab's
+	 * rows use (`InventoryAdvisorViewActions`), under the same names, so one host serves both. All
+	 * four are needed for a row to carry a disclosure; a host without them paints none.
+	 */
+	getPriceHistoryState?(): PriceHistoryRuntimeState;
+	/** The opt-in's enable: `updateSettings`, the path Settings uses. The click is the consent. */
+	enablePriceHistory?(): Promise<void>;
+	/** Last known datawars2 seed of one item: a stale read, never a trigger. */
+	getPriceHistorySeedState?(itemId: number): PriceHistoryPanelSeedState;
+	/** Downloads (or serves from the 24 h cache) the seed of one item. */
+	ensurePriceHistorySeed?(itemId: number): Promise<void>;
+	/** In consult this device never downloads history: the row's enable button is disabled with the reason. */
+	getCollectorMode?(): CollectorMode;
 }
 
 /** The closed set of codes a failed Venta refresh is registered under. */
@@ -67,6 +85,10 @@ export class SaleItemView {
 	private inFlight: Promise<boolean> | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
+	/** The surface the last render painted into (the shell's content, or `contentEl`): what the rows' «Detalles» are keyed by. */
+	private surface: HTMLElement | null = null;
+	/** The shared guard of the rows' price-history enable, like the Inventory tab's: a double click writes once. */
+	private priceHistoryBusy = false;
 	/** The pending repaint for the next instant a figure on screen stops being "recent". */
 	private expiryTimer: number | null = null;
 	private visibilityCleanup: (() => void) | null = null;
@@ -123,6 +145,8 @@ export class SaleItemView {
 		this.refreshRun += 1;
 		this.visibilityCleanup?.();
 		this.visibilityCleanup = null;
+		// The open «Detalles» drop their blocks: a block left behind would paint (and read the host) after the plugin is gone.
+		if (this.surface !== null) disposeSaleView(this.surface);
 	}
 
 	async onClose(): Promise<void> {
@@ -145,6 +169,8 @@ export class SaleItemView {
 		const navigation = !(this.actions.hostListsSections?.() ?? false);
 		const shellKey = `${locale}:${String(missingApiKey)}:${String(navigation)}`;
 		if (actionController !== undefined && (this.productShell === null || this.productShellKey !== shellKey)) {
+			// A new shell is a new surface: what the rows' «Detalles» kept on the old one goes with it.
+			if (this.surface !== null) disposeSaleView(this.surface);
 			this.productShell?.dispose();
 			this.productShell = renderProductShell(this.contentEl, {
 				locale,
@@ -158,13 +184,53 @@ export class SaleItemView {
 			this.productShellKey = shellKey;
 		}
 		const surface = this.productShell?.content ?? this.contentEl;
+		if (this.surface !== null && this.surface !== surface) disposeSaleView(this.surface);
+		this.surface = surface;
 		this.productShell?.update();
 		renderSaleView(surface, this.ui, model, createTranslator(locale), {
 			refreshing: this.refreshing,
 			refreshOutcome: model.status === 'loading' ? this.refreshOutcome : null,
 			onRefresh: this.actions.refreshSale === undefined ? undefined : () => this.runRefresh(),
+			rowDetails: this.hasRowPriceHistory() ? {
+				// Both read at the moment a block paints: `busy` and `enabled` move between paints.
+				priceHistory: () => this.rowPriceHistory(),
+				translator: () => createTranslator(this.actions.getSaleLocale()),
+			} : undefined,
 		});
 		this.scheduleExpiryRepaint(model);
+	}
+
+	/** True when the host offers everything a row's price block needs (the Inventory tab's own test). */
+	private hasRowPriceHistory(): boolean {
+		return this.actions.getPriceHistoryState !== undefined
+			&& this.actions.enablePriceHistory !== undefined
+			&& this.actions.ensurePriceHistorySeed !== undefined
+			&& this.actions.getPriceHistorySeedState !== undefined;
+	}
+
+	/**
+	 * What a row's price block reads, built the way `InventoryAdvisorItemView.render` builds
+	 * `rowPriceHistory`: on from the runtime state, consult from the collector mode, busy from this
+	 * view's own guard. Undefined once the view is closed, so a late paint of a block shows nothing.
+	 */
+	private rowPriceHistory(): InventoryAdvisorRowPriceHistory | undefined {
+		if (this.closed || !this.hasRowPriceHistory()) return undefined;
+		return {
+			enabled: this.actions.getPriceHistoryState!().status !== 'disabled',
+			consultOnly: this.actions.getCollectorMode?.() === 'consult',
+			busy: this.priceHistoryBusy,
+			getSeed: (itemId: number) => this.actions.getPriceHistorySeedState!(itemId),
+			ensureSeed: (itemId: number) => this.actions.ensurePriceHistorySeed!(itemId),
+			onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
+		};
+	}
+
+	private async runPriceHistoryAction(action: () => Promise<void>): Promise<void> {
+		if (this.closed || this.priceHistoryBusy) return;
+		this.priceHistoryBusy = true;
+		this.render();
+		try { await action(); }
+		finally { this.priceHistoryBusy = false; this.render(); }
 	}
 
 	/**

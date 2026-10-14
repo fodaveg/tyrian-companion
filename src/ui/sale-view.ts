@@ -5,6 +5,7 @@ import { formatLootMoney } from '../sessions/loot-presentation';
 import { relativeTimeLabel, renderStorageSpace } from './inventory-advisor-view';
 import { keepFocusOnRebuild } from './keep-focus';
 import { priceHistoryDayUtc } from '../economy/price-history-model';
+import { beginSaleRowDetails, disposeSaleRowDetails, type SaleRowDetails, type SaleRowDetailsSource } from './sale-row-details';
 import type {
 	SaleCalendarRowViewModel,
 	SaleDisplayAction,
@@ -31,6 +32,11 @@ export interface SaleViewInteractions {
 	onRefresh?: () => void | Promise<void>;
 	refreshing?: boolean;
 	refreshOutcome?: SaleRefreshOutcome | null;
+	/**
+	 * What every row's «Detalles» reads (`sale-row-details.ts`): the same price history the Inventory
+	 * tab hands its rows. Absent, the rows carry no disclosure at all.
+	 */
+	rowDetails?: SaleRowDetailsSource;
 }
 
 /** The host's Lucide icons (`TyrianUiPort.setIcon`), the only host capability this render needs. */
@@ -46,7 +52,17 @@ export function renderSaleView(
 	interactions: SaleViewInteractions = {},
 ): void {
 	// The whole page is rebuilt on every repaint, "Actualizar" included: it keeps the focus it had (Z7-4).
-	keepFocusOnRebuild(container, '.tyrian-sale__refresh', () => { paintSaleView(container, ui, model, translator, interactions); });
+	keepFocusOnRebuild(container, '.tyrian-sale__refresh', () => {
+		// The rows' «Detalles» read the focus and the open ones BEFORE the rebuild, and settle once the page is in place.
+		const details = beginSaleRowDetails(container, interactions.rowDetails);
+		paintSaleView(container, ui, model, translator, interactions, details);
+		details.settle();
+	});
+}
+
+/** Drops what the rows' «Detalles» kept across repaints of `container`; the next render starts with every one closed. */
+export function disposeSaleView(container: HTMLElement): void {
+	disposeSaleRowDetails(container);
 }
 
 function paintSaleView(
@@ -55,6 +71,7 @@ function paintSaleView(
 	model: SaleViewModel,
 	translator: Translator,
 	interactions: SaleViewInteractions,
+	details: SaleRowDetails,
 ): void {
 	container.empty();
 	container.addClass('tyrian-sale-page');
@@ -96,14 +113,14 @@ function paintSaleView(
 	// building the review-fix DOM assertions for the calendar's own bars, 26 sep 2026).
 	const sale = container.createDiv({ cls: 'tyrian-sale' });
 	sale.setAttribute('aria-label', translator.t('sale.view.title'));
-	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator, ui, model.storageSpace?.bagCharacter?.character ?? null));
+	if (model.hero !== null) sale.append(renderHeroCard(model.hero, model.nowMs, translator, ui, model.storageSpace?.bagCharacter?.character ?? null, details));
 	if (model.calendar.length > 0) sale.append(renderCalendar(model.calendar, model.nowMs, translator));
 	if (model.status === 'empty' && model.hero === null && model.calendar.length === 0) {
 		sale.createEl('p', { text: translator.t('sale.view.empty') });
 	}
-	sale.append(renderGroup('now', model.groups.now, model, translator, ui));
-	sale.append(renderGroup('wait', model.groups.wait, model, translator, ui));
-	sale.append(renderGroup('noData', model.groups.noData, model, translator, ui));
+	sale.append(renderGroup('now', model.groups.now, model, translator, ui, details));
+	sale.append(renderGroup('wait', model.groups.wait, model, translator, ui, details));
+	sale.append(renderGroup('noData', model.groups.noData, model, translator, ui, details));
 	sale.append(renderFoot(translator));
 }
 
@@ -190,7 +207,9 @@ function renderBlocked(model: SaleViewModel, translator: Translator): HTMLElemen
 	return surface;
 }
 
-function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Translator, ui: IconPainter, bagCharacter: string | null): HTMLElement {
+function renderHeroCard(
+	hero: SaleHeroViewModel, nowMs: number, translator: Translator, ui: IconPainter, bagCharacter: string | null, details: SaleRowDetails,
+): HTMLElement {
 	const article = createEl('article', { cls: 'tyrian-sale__card tyrian-sale__card--hero' });
 	article.setAttribute('aria-labelledby', `tyrian-sale-hero-${String(hero.itemId)}`);
 	const head = article.createDiv({ cls: 'tyrian-sale__head' });
@@ -229,6 +248,9 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 		dl.append(...figures);
 	}
 	article.append(renderQuoteLine(hero, nowMs, translator, ui));
+	// The Saco is a row of the Inventory tab too: the same «Detalles» it has there, under its figures.
+	const disclosure = details.mount(hero);
+	if (disclosure !== null) article.append(disclosure);
 	return article;
 }
 
@@ -306,6 +328,7 @@ function renderGroup(
 	model: SaleViewModel,
 	translator: Translator,
 	ui: IconPainter,
+	details: SaleRowDetails,
 ): HTMLElement {
 	const section = createEl('section', { cls: 'tyrian-sale__group' });
 	if (rows.length === 0) { section.hidden = true; return section; }
@@ -316,11 +339,13 @@ function renderGroup(
 	head.createSpan({ text: translator.t('sale.row.head.decision') });
 	head.createSpan({ text: translator.t('sale.row.head.price') });
 	head.createSpan({ text: translator.t('sale.row.head.value') });
-	for (const row of rows) list.append(renderRow(row, model.nowMs, translator, ui, model.storageSpace?.bagCharacter?.character ?? null));
+	for (const row of rows) list.append(renderRow(row, model.nowMs, translator, ui, model.storageSpace?.bagCharacter?.character ?? null, details));
 	return section;
 }
 
-function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator, ui: IconPainter, bagCharacter: string | null): HTMLElement {
+function renderRow(
+	row: SaleRowViewModel, nowMs: number, translator: Translator, ui: IconPainter, bagCharacter: string | null, details: SaleRowDetails,
+): HTMLElement {
 	const li = createEl('li', { cls: 'tyrian-sale__row', attr: { 'data-item': String(row.itemId) } });
 	const item = li.createDiv({ cls: 'tyrian-sale__item' });
 	item.append(renderIcon(row.name, row.icon));
@@ -347,6 +372,9 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator,
 	// no-ops a repeated `appendChild` of the same node, but re-asserting all four here duplicated
 	// every row under any test double that models `append` as a plain array push (found while
 	// building the review-fix DOM assertions, 26 sep 2026 — see the same fix in `renderSaleView`).
+	// Under the four cells, the row's «Detalles»: the Inventory tab's own disclosure and price block.
+	const disclosure = details.mount(row);
+	if (disclosure !== null) li.append(disclosure);
 	return li;
 }
 

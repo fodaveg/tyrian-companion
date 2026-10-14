@@ -50,6 +50,7 @@ import {
 	saleBagSlotsUsed,
 	saleInstantSellNetFor,
 	saleOpenVsSellCopper,
+	saleRowHasMarket,
 	saleSourceRowFromAdvisorRow,
 } from './core-sale-rules';
 
@@ -323,6 +324,8 @@ export class SaleRuntime {
 				?? computeListingNetCopper(askCopper, row?.ownedQuantity ?? 0),
 			yearThresholdCopper: projection?.status === 'decided' ? projection.sellThresholdCopper : null,
 			openVsSell: saleOpenVsSellCopper(row?.containerEconomy),
+			// Without the account's row nothing proved the Saco has no market: its «Detalles» may still ask.
+			hasMarket: row === null ? true : saleRowHasMarket(row),
 		};
 	}
 

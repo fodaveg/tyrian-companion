@@ -2931,6 +2931,18 @@
 	font-weight: var(--font-normal);
 }
 
+/* Each row's «Detalles» (`sale-row-details.ts`): the Inventory tab's own disclosure and price block
+   (`.tyrian-inventory__more`, `.tyrian-inventory__price-history`, styled above), placed under the four
+   cells of the row. The hero card is a grid of its own: there it is one more block, after the quote line. */
+.tyrian-sale__row > .tyrian-inventory__more {
+	grid-column: 1 / -1;
+	min-width: 0;
+}
+
+.tyrian-sale__card--hero > .tyrian-inventory__more {
+	min-width: 0;
+}
+
 .tyrian-sale-page {
 	/* Un host puede flotar una barra de estado abajo a la derecha (la de Hebra): el último contenido no queda debajo. */
 	padding-bottom: var(--size-4-12);
@@ -2985,6 +2997,8 @@
 	}
 	.tyrian-sale__decision,
 	.tyrian-sale__price { padding-inline-start: 40px; }
+	/* Not indented like the cells: the chart wants the whole width of a narrow row (compact below 480 px). */
+	.tyrian-sale__row > .tyrian-inventory__more { padding-inline-start: 0; }
 	.tyrian-sale__value { max-width: 9.5rem; }
 	.tyrian-sale__price { text-align: start; }
 	.tyrian-sale__windows li { grid-template-columns: minmax(0, 1fr); }

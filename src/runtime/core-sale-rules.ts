@@ -161,7 +161,13 @@ export function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCop
 		bidCopper,
 		instantSellNetCopper: saleInstantSellNetFor(row),
 		listingNetCopper: row.marketComparison?.listingCopper ?? null,
+		hasMarket: saleRowHasMarket(row),
 	};
+}
+
+/** `false` only when the advisor's own market depth proved the item has no listings at all (the Inventory tab's `rowHasMarket`). */
+export function saleRowHasMarket(row: Pick<InventoryAdvisorViewRow, 'marketComparison'>): boolean {
+	return row.marketComparison?.depthStatus !== 'no_market';
 }
 
 /** Only a valuation covering the displayed quantity can be called its instant-sale net. */
