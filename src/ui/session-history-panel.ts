@@ -323,19 +323,25 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 	section.createEl('p', { text: locale === 'es' ? 'Comparación descriptiva: la muestra y las condiciones no demuestran que una build cause mejor rendimiento.' : 'Descriptive comparison: the sample and conditions do not establish that a build causes better performance.' });
 	if (aggregate.performance.missingContextSessions > 0) {
 		section.createEl('p', {
-			text: t.t('sessionHistory.performanceMissingContext', { count: aggregate.performance.missingContextSessions }),
+			text: t.t(aggregate.performance.missingContextSessions === 1
+				? 'sessionHistory.performanceMissingContext.one' : 'sessionHistory.performanceMissingContext.many',
+			{ count: aggregate.performance.missingContextSessions }),
 			cls: 'tyrian-session-history__warning',
 		});
 	}
 	if (aggregate.performance.qualityExcludedSessions > 0) {
 		section.createEl('p', {
-			text: t.t('sessionHistory.performanceQualityExcluded', { count: aggregate.performance.qualityExcludedSessions }),
+			text: t.t(aggregate.performance.qualityExcludedSessions === 1
+				? 'sessionHistory.performanceQualityExcluded.one' : 'sessionHistory.performanceQualityExcluded.many',
+			{ count: aggregate.performance.qualityExcludedSessions }),
 			cls: 'tyrian-session-history__warning',
 		});
 	}
 	if (aggregate.performance.abandonedSessions > 0) {
 		section.createEl('p', {
-			text: t.t('sessionHistory.performanceAbandoned', { count: aggregate.performance.abandonedSessions }),
+			text: t.t(aggregate.performance.abandonedSessions === 1
+				? 'sessionHistory.performanceAbandoned.one' : 'sessionHistory.performanceAbandoned.many',
+			{ count: aggregate.performance.abandonedSessions }),
 			cls: 'tyrian-session-history__warning',
 		});
 	}

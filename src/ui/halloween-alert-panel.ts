@@ -212,8 +212,12 @@ function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, 
 	status.setText(comparison.bagsDisappearedNet < comparison.minimumBags
 		? t('halloween.comparison.collecting', { count: comparison.bagsDisappearedNet, minimum: comparison.minimumBags })
 		: deviations === 0 ? t('halloween.comparison.noDeviation', { count: comparison.bagsDisappearedNet })
-			: t('halloween.comparison.deviation', { count: deviations }));
-	section.createEl('p', { text: t('halloween.comparison.netDisclaimer', { count: comparison.bagsDisappearedNet }) });
+			: t(deviations === 1 ? 'halloween.comparison.deviation.one' : 'halloween.comparison.deviation.many', { count: deviations }));
+	section.createEl('p', {
+		text: t(comparison.bagsDisappearedNet === 1 ? 'halloween.comparison.netDisclaimer.one' : 'halloween.comparison.netDisclaimer.many', {
+			count: comparison.bagsDisappearedNet,
+		}),
+	});
 	section.createEl('p', { text: t('halloween.comparison.global', { value: comparison.globalPearsonMilli }) });
 	const scroller = section.createDiv({ cls: 'tyrian-companion-halloween__table-scroll' });
 	const table = scroller.createEl('table');

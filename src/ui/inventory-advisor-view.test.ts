@@ -729,7 +729,7 @@ describe('Inventory Advisor view', () => {
 		expect(rowText('No aplica').match(/No aplica/gu)?.length).toBeGreaterThanOrEqual(2);
 		// 26 sep 2026: "Con precio" is the only priced row, so its own group's subtotal (not a
 		// separate "Qué hacer ahora" value line, gone) states the same known total.
-		expect(text(mount.elements())).toContain('Subtotal · 1 objetos');
+		expect(text(mount.elements())).toContain('Subtotal · 1 objeto');
 	});
 
 	it('distinguishes a read empty optional store from unavailable or restricted stores', () => {

@@ -756,7 +756,8 @@ export class AchievementsView {
 		const reads = this.tracked.status === 'ready' ? [this.tracked.details, this.tracked.elementDetails] : [];
 		const staleDetails = reads.filter((read) => read.stale && read.savedAt !== null).map((read) => this.now() - (read.savedAt ?? 0));
 		const oldestMs = Math.max(...stale.map((freshness) => freshness.ageMs), ...staleDetails, 0);
-		if (oldestMs > 0) say(t.t('achievements.view.catalogStale', { days: Math.floor(oldestMs / DAY_MS) }));
+		const staleDays = Math.floor(oldestMs / DAY_MS);
+		if (oldestMs > 0) say(t.t(staleDays === 1 ? 'achievements.view.catalogStale.one' : 'achievements.view.catalogStale.many', { days: staleDays }));
 		if (this.index.status === 'ready' && !this.index.saved) say(t.t('achievements.view.indexUnsaved'));
 		if (reads.some((read) => read.failed)) say(t.t('achievements.tracked.detailsFailed'), 'alert');
 	}

@@ -626,7 +626,7 @@ describe('local diagnostics settings', () => {
 		const translator = createTranslator(locale);
 		expect(translator.t('settings.debug.name')).toBe(locale === 'es' ? 'Registros de diagnóstico' : 'Diagnostic logs');
 		expect(translator.t('settings.debug.export')).toBe(locale === 'es' ? 'Crear paquete de soporte' : 'Create support package');
-		expect(translator.t('settings.debug.copied', { count: 2 }).toLocaleLowerCase(locale)).toContain(
+		expect(translator.t('settings.debug.copied.many', { count: 2 }).toLocaleLowerCase(locale)).toContain(
 			locale === 'es' ? 'revisa el extracto antes de compartirlo' : 'review the extract before sharing it',
 		);
 		expect(translator.t('settings.debug.exportModal.intro').toLocaleLowerCase(locale)).toContain(

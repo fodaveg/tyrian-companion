@@ -14,8 +14,32 @@ describe('i18n catalogue', () => {
 	});
 
 	it('selects the requested locale and interpolates text values without HTML handling', () => {
-		expect(createTranslator('es').t('settings.minutes', { minutes: 15 })).toBe('15 minutos');
-		expect(createTranslator('en').t('settings.minutes', { minutes: '<15>' })).toBe('<15> minutes');
+		expect(createTranslator('es').t('settings.minutes.many', { minutes: 15 })).toBe('15 minutos');
+		expect(createTranslator('en').t('settings.minutes.many', { minutes: '<15>' })).toBe('<15> minutes');
+		expect(createTranslator('es').t('settings.minutes.one', { minutes: 1 })).toBe('1 minuto');
+		expect(createTranslator('en').t('settings.minutes.one', { minutes: 1 })).toBe('1 minute');
+	});
+
+	it('has a .one and a .many form, in both locales, for every counted string, and the singular never says the plural', () => {
+		const pairs = [
+			'advisor.view.subtotal', 'settings.minutes', 'settings.connection.retryIn', 'settings.history.written',
+			'settings.history.unchanged', 'settings.history.scrub_ready', 'settings.history.scrubModal.summary',
+			'settings.debug.copied', 'halloween.comparison.deviation', 'halloween.comparison.netDisclaimer',
+			'sessionHistory.performanceMissingContext', 'sessionHistory.performanceQualityExcluded',
+			'sessionHistory.performanceAbandoned', 'achievements.view.catalogStale', 'sale.detail.notYetWindow',
+		] as const;
+		for (const locale of ['es', 'en'] as const) {
+			const table = TRANSLATIONS[locale] as Record<string, string>;
+			for (const base of pairs) {
+				expect(table[`${base}.one`], `${locale} ${base}.one`).toBeTypeOf('string');
+				expect(table[`${base}.many`], `${locale} ${base}.many`).toBeTypeOf('string');
+				expect(table[`${base}.one`]).not.toBe(table[`${base}.many`]);
+			}
+		}
+		const es = createTranslator('es');
+		expect(es.t('advisor.view.subtotal.one', { items: 1 })).toBe('Subtotal · 1 objeto');
+		expect(es.t('settings.connection.retryIn.one', { seconds: 1 })).toBe('Vuelve a intentarlo en 1 segundo.');
+		expect(createTranslator('en').t('settings.history.written.one', { sessions: 1 })).toBe('Export created for 1 session.');
 	});
 
 	// R1c (Hebra checkpoint 16): the shell, view, settings and status copy renders in every host
@@ -96,7 +120,7 @@ const H5_11_KEYS = [
 	'advisor.view.qty.reserved', 'advisor.view.recommendationTitle', 'advisor.view.tableCaption', 'advisor.view.storage.name.bagsFor',
 	'advisor.view.noResults', 'advisor.view.noDirectResults', 'advisor.view.filteredEmpty',
 	'advisor.view.recommendationActionOne', 'advisor.view.recommendationActionMany',
-	'advisor.view.unpricedShort', 'advisor.view.subtotal',
+	'advisor.view.unpricedShort', 'advisor.view.subtotal.one', 'advisor.view.subtotal.many',
 	'advisor.view.character', 'advisor.view.allCharacters', 'advisor.view.characterScope',
 	'advisor.view.scopedValueUnavailable', 'advisor.view.legendaryTableExpired',
 	'advisor.view.sort', 'advisor.view.sort.value_desc', 'advisor.view.sort.quantity_desc', 'advisor.view.sort.name_asc',

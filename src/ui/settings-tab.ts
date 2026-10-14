@@ -33,7 +33,7 @@ import type {
 import type { ViewPlacement } from '../runtime/view-placement';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
-import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
+import { projectConnectionDescription, projectManagedAssetsDescription, sessionHistoryKey } from './settings-i18n';
 import { TyrianModal, type TyrianModalUi } from './tyrian-modal';
 
 /**
@@ -295,7 +295,7 @@ export class TyrianCompanionSettingTab {
 
 	refreshSessionHistoryRow(): void {
 		const history = this.plugin.getSessionHistoryView();
-		this.sessionHistorySetting?.setDesc(this.t(`settings.history.${history.status}` as TranslationKey, history));
+		this.sessionHistorySetting?.setDesc(this.t(sessionHistoryKey(history.status, history.sessions), history));
 		const working = isHistoryOperationWorking(history.status);
 		this.sessionHistoryButton?.setDisabled(working);
 		this.sessionHistoryScrubButton?.setDisabled(working);
@@ -695,7 +695,10 @@ export class TyrianCompanionSettingTab {
 			{
 				group: 'maintenance',
 				name: this.t('settings.history.name'),
-				desc: this.t(`settings.history.${this.plugin.getSessionHistoryView().status}` as TranslationKey, this.plugin.getSessionHistoryView()),
+				desc: this.t(
+					sessionHistoryKey(this.plugin.getSessionHistoryView().status, this.plugin.getSessionHistoryView().sessions),
+					this.plugin.getSessionHistoryView(),
+				),
 					render: (setting) => {
 					this.sessionHistorySetting = setting;
 					setting.addButton((button) => {
@@ -867,7 +870,7 @@ export class TyrianCompanionSettingTab {
 							button.setDisabled(true);
 							try {
 								const count = await this.plugin.copyLocalDebugEntries(50);
-								feedback.setText(count === 0 ? this.t('settings.debug.empty') : this.t('settings.debug.copied', { count }));
+								feedback.setText(count === 0 ? this.t('settings.debug.empty') : this.t(count === 1 ? 'settings.debug.copied.one' : 'settings.debug.copied.many', { count }));
 							} catch { feedback.setText(this.t('settings.debug.failed')); }
 							finally { button.setDisabled(false); }
 						}));
@@ -1167,7 +1170,7 @@ function confirmSessionHistoryScrub(
 
 			onOpen(): void {
 				this.contentEl.createEl('p', {
-					text: t('settings.history.scrubModal.summary', { sessions: preview.sessions }),
+					text: t(preview.sessions === 1 ? 'settings.history.scrubModal.summary.one' : 'settings.history.scrubModal.summary.many', { sessions: preview.sessions }),
 				});
 				for (const key of [
 					'settings.history.scrubModal.preserves',

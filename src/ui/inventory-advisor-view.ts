@@ -1316,9 +1316,10 @@ function renderInventoryGroupSubtotal(
 	subtotal.className = 'tyrian-inventory__row tyrian-inventory-advisor__subtotal';
 	const label = createDiv();
 	label.className = 'tyrian-inventory__cell c-item';
+	const subtotalText = translator.t(totals.items === 1 ? 'advisor.view.subtotal.one' : 'advisor.view.subtotal.many', { items: totals.items });
 	label.textContent = totals.unpricedItems === 0
-		? translator.t('advisor.view.subtotal', { items: totals.items })
-		: `${translator.t('advisor.view.subtotal', { items: totals.items })} · ${translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems })}`;
+		? subtotalText
+		: `${subtotalText} · ${translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems })}`;
 	const qty = createDiv();
 	qty.className = 'tyrian-inventory__cell c-qty';
 	const qtyValue = createEl('b');
