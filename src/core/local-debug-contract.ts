@@ -7,6 +7,11 @@ export const LOCAL_DEBUG_QUEUE_CAPACITY = 256;
  * counted, and the queue goes on: a diagnostic write that never answers must not hold the rest.
  */
 export const LOCAL_DEBUG_WRITE_TIMEOUT_MS = 10_000;
+/** Burst guard: one key (see `LocalDebugLogger`) may write this many records per window, the rest is only counted. */
+export const LOCAL_DEBUG_BURST_WINDOW_MS = 10 * 60 * 1_000;
+export const LOCAL_DEBUG_BURST_BUDGET: Readonly<Record<'debug' | 'info' | 'warn' | 'error', number>> = {
+	debug: 20, info: 20, warn: 50, error: 50,
+};
 
 export const LOCAL_DEBUG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 export type LocalDebugLevel = typeof LOCAL_DEBUG_LEVELS[number];
@@ -16,7 +21,7 @@ export type LocalDebugPhase = typeof LOCAL_DEBUG_PHASES[number];
 
 export const LOCAL_DEBUG_COMPONENTS = [
 	'plugin', 'settings', 'connection', 'http', 'session', 'detection', 'inventory', 'wallet',
-	'price_history', 'halloween', 'advisor', 'assets', 'notification', 'vault', 'ui', 'support', 'local_debug',
+	'price_history', 'halloween', 'advisor', 'assets', 'notification', 'vault', 'ui', 'support', 'local_debug', 'bridge',
 ] as const;
 export type LocalDebugComponent = typeof LOCAL_DEBUG_COMPONENTS[number];
 
@@ -36,7 +41,8 @@ export const LOCAL_DEBUG_ACTIONS = [
 	'notification_emit',
 	'vault_read', 'vault_write', 'command_execute', 'view_render',
 	'global_error',
-	'debug_initialize', 'debug_write', 'debug_rotate', 'debug_recover', 'debug_flush', 'debug_export', 'debug_clear',
+	'bridge_connection', 'bridge_live',
+	'debug_initialize', 'debug_write', 'debug_rotate', 'debug_recover', 'debug_flush', 'debug_export', 'debug_clear', 'debug_suppress',
 ] as const;
 export type LocalDebugAction = typeof LOCAL_DEBUG_ACTIONS[number];
 
@@ -101,6 +107,8 @@ export interface LocalDebugStatus {
 	fileCount: number;
 	lastEventAt: string | null;
 	droppedRecords: number;
+	/** Records the burst guard counted instead of writing; errors among them still count in `errorsSinceLoad`. */
+	suppressedRecords?: number;
 	errorCode: LocalDebugCode | null;
 	queuedRecords: number;
 	recoveredTails: number;

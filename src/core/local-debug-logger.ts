@@ -1,4 +1,6 @@
 import {
+	LOCAL_DEBUG_BURST_BUDGET,
+	LOCAL_DEBUG_BURST_WINDOW_MS,
 	LOCAL_DEBUG_QUEUE_CAPACITY,
 	type LocalDebugCode,
 	type LocalDebugLastError,
@@ -8,6 +10,19 @@ import {
 } from './local-debug-contract';
 import { resanitizeLocalDebugRecord, sanitizeLocalDebugRecord } from './local-debug-sanitizer';
 import { LocalDebugJsonlWriter, LocalDebugWriteTimeoutError } from './local-debug-writer';
+
+/** Upper bound of distinct burst-guard keys kept; past it a new key is not limited rather than tracked. */
+const MAX_BURST_KEYS = 512;
+const BURST_KEY_TOKEN = /^[A-Za-z0-9_.-]{1,32}$/u;
+
+/** One burst-guard key: its current window, how much of it was written and how much was only counted. */
+interface BurstEntry {
+	windowStart: number;
+	written: number;
+	suppressed: number;
+	level: LocalDebugLevel;
+	suppressedKey: string;
+}
 
 export interface LocalDebugLoggerOptions {
 	enabled: boolean;
@@ -40,6 +55,8 @@ export class LocalDebugLogger {
 	private sequence = 0;
 	private queuedRecords = 0;
 	private droppedRecords = 0;
+	private suppressedRecords = 0;
+	private readonly bursts = new Map<string, BurstEntry>();
 	private lastEventAt: string | null = null;
 	private errorCode: LocalDebugCode | null = null;
 	private runtimeState: LocalDebugStatus['state'];
@@ -65,9 +82,78 @@ export class LocalDebugLogger {
 		return this.status();
 	}
 
-	/** Accepts one record synchronously; false means disabled or dropped by the bounded queue. */
+	/**
+	 * Accepts one record synchronously; false means disabled, held back by the burst guard or dropped by
+	 * the bounded queue.
+	 */
 	record(input: LocalDebugRecordInput): boolean {
 		if (!this.enabled || !meetsMinimumLevel(input.level, this.minimumLevel)) return false;
+		if (!this.admitBurst(input)) return false;
+		return this.enqueue(input);
+	}
+
+	/**
+	 * Burst guard, ahead of the queue: per key (level, component, action, phase, code, state, `details.store`,
+	 * `details.operation`) and 10-minute window, debug/info keep the first 20 records and warn/error the first 50.
+	 * The rest is counted; the count leaves as ONE `local_debug/debug_suppress` summary when the key opens its next
+	 * window or on `flush`, with no timer of its own. A suppressed error still counts in `errorsSinceLoad`.
+	 */
+	private admitBurst(input: LocalDebugRecordInput): boolean {
+		const now = this.now();
+		const suppressedKey = burstKey(input);
+		let entry = this.bursts.get(suppressedKey);
+		if (entry !== undefined && now - entry.windowStart >= LOCAL_DEBUG_BURST_WINDOW_MS) {
+			this.emitSummary(entry);
+			entry = undefined;
+			this.bursts.delete(suppressedKey);
+		}
+		if (entry === undefined) {
+			if (this.bursts.size >= MAX_BURST_KEYS) this.pruneBursts(now);
+			if (this.bursts.size >= MAX_BURST_KEYS) return true;
+			entry = { windowStart: now, written: 0, suppressed: 0, level: input.level, suppressedKey };
+			this.bursts.set(suppressedKey, entry);
+		}
+		if (entry.written < LOCAL_DEBUG_BURST_BUDGET[input.level]) {
+			entry.written += 1;
+			return true;
+		}
+		entry.suppressed += 1;
+		this.suppressedRecords += 1;
+		if (input.level === 'error') {
+			this.errorsSinceLoad += 1;
+			this.lastError = {
+				component: input.component, action: input.action, code: input.code,
+				occurredAt: new Date(Number.isFinite(now) ? now : 0).toISOString(),
+			};
+		}
+		return false;
+	}
+
+	/** Emits the pending summary of every expired window and forgets the key; keys still open stay. */
+	private pruneBursts(now: number): void {
+		for (const [key, entry] of this.bursts) {
+			if (now - entry.windowStart < LOCAL_DEBUG_BURST_WINDOW_MS) continue;
+			this.emitSummary(entry);
+			this.bursts.delete(key);
+		}
+	}
+
+	/** Writes the one `debug_suppress` line for a window's suppressed records; no-op when nothing was held back. */
+	private emitSummary(entry: BurstEntry): void {
+		if (entry.suppressed === 0) return;
+		const count = entry.suppressed;
+		entry.suppressed = 0;
+		// Never `error`: the summary must not be counted as one more error. It keeps `warn` for warn/error keys.
+		this.enqueue({
+			level: entry.level === 'debug' || entry.level === 'info' ? entry.level : 'warn',
+			component: 'local_debug', action: 'debug_suppress', phase: 'skip', code: 'skipped',
+			actionId: 'debug_suppress', correlationId: 'debug_suppress',
+			details: { count, suppressedKey: entry.suppressedKey, windowMs: LOCAL_DEBUG_BURST_WINDOW_MS },
+		});
+	}
+
+	/** Puts one already admitted record on the bounded serial queue. */
+	private enqueue(input: LocalDebugRecordInput): boolean {
 		if (this.queuedRecords >= this.queueCapacity) {
 			this.droppedRecords += 1;
 			this.errorCode = 'queue_overflow';
@@ -117,6 +203,7 @@ export class LocalDebugLogger {
 
 	/** Waits for accepted records and the storage port while remaining fail-open. */
 	async flush(): Promise<LocalDebugStatus> {
+		if (this.enabled) for (const entry of this.bursts.values()) this.emitSummary(entry);
 		await this.chain;
 		if (!this.enabled) return this.status();
 		try {
@@ -198,6 +285,7 @@ export class LocalDebugLogger {
 			fileCount: writer.fileCount,
 			lastEventAt: this.lastEventAt,
 			droppedRecords: this.droppedRecords,
+			suppressedRecords: this.suppressedRecords,
 			errorCode: this.errorCode,
 			queuedRecords: this.queuedRecords,
 			recoveredTails: writer.recoveredTails,
@@ -229,6 +317,26 @@ export class LocalDebugLogger {
 		});
 		await this.chain;
 	}
+}
+
+/**
+ * The burst-guard key, built ONLY from closed fields: the four closed enums plus `state`, `details.store` and
+ * `details.operation` when each is a short token or a number (anything else reads `-`). It is also the
+ * `suppressedKey` of the summary, so it never carries free text.
+ */
+function burstKey(input: LocalDebugRecordInput): string {
+	const details = isRecord(input.details) ? input.details : {};
+	return [
+		input.level, input.component, input.action, input.phase, input.code,
+		keyToken(input.state), keyToken(details.store), keyToken(details.operation),
+	].join(':');
+}
+
+/** A token or number for the burst key, else `-`. */
+function keyToken(value: unknown): string {
+	if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+	if (typeof value === 'boolean') return String(value);
+	return typeof value === 'string' && BURST_KEY_TOKEN.test(value) ? value : '-';
 }
 
 /** Maps storage failures to closed, non-sensitive status codes. */

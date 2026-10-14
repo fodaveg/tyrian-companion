@@ -30,7 +30,28 @@ const FILE_SYSTEM_PATH_STARTS = [
 	/(^|[\s"'([{=])(?=[^\s"'()[\]{}<>\\/]+[\\/])/gmu,
 ] as const;
 const FILE_SYSTEM_PATH_END = /\s+(?:after|before|while)\s+(?:HTTP|retry|attempt|error|failure|success|cancel|skip)\b|\s+and\s+(?=(?:[A-Za-z]:\\|\\\\|\/|(?:\.\.?|[^\s"'()[\]{}<>\\/]+)[\\/]))|["'()[\]{}<>]|\r?\n/iu;
-const GW2_ACCOUNT = /\b[^\s.]{2,32}\.\d{4}\b/gu;
+/**
+ * `Name.1234`, where the name may hold single inner spaces (`Foo Bar.1234`), is at most 32 characters and ends in
+ * a word with a letter in it, so a decimal such as `took 12.3456 s` is not an account. Nothing may follow the
+ * four digits but a non-digit and a non-dot, which leaves `0.6.57`-style versions and `1.2345.6` alone.
+ * Placeholders (`<url-redacted>`) never join a name, or an earlier redaction would be swallowed.
+ */
+const GW2_ACCOUNT = /\b(?=[^.\r\n]{2,32}\.\d{4}(?![\d.]))(?:[^\s.<>]+ )*[^\s.<>]*\p{L}[^\s.<>]*\.\d{4}(?![\d.])/gu;
+/** Connective words that may open a match without being part of the name; they stay readable. */
+const ACCOUNT_LEAD_WORDS = /^(?:(?:for|from|by|at|in|on|to|of|with|as|the|user|account|failed|error) )+/iu;
+
+/** Replaces an account match, keeping the lowercase lead-in words that precede the name. */
+function redactAccountMatch(match: string): string {
+	const lead = ACCOUNT_LEAD_WORDS.exec(match)?.[0] ?? '';
+	return `${lead}<identity-redacted>`;
+}
+/**
+ * Detail values of the `bridge` component and of `suppressedKey` are a closed token or a number, never prose:
+ * a string that is not one short token (or that the text sanitizer would change) drops the field.
+ */
+const CLOSED_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/u;
+const CLOSED_KEY_TOKEN = /^[A-Za-z0-9_.:-]{1,200}$/u;
+const MAX_CLOSED_ITEMS = 16;
 
 const COMMON_DETAIL_FIELDS = [
 	'count', 'durationMs', 'attempt', 'state', 'status', 'result', 'reason', 'code', 'retryAfterMs',
@@ -76,8 +97,17 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	notification: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'failed'],
 	vault: [...COMMON_DETAIL_FIELDS, 'operation', 'managed', 'conflict'],
 	ui: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'rowCount'],
-	support: [...COMMON_DETAIL_FIELDS, 'recordCount', 'fileCount', 'bytes'],
-	local_debug: [...COMMON_DETAIL_FIELDS, 'recordCount', 'fileCount', 'bytes', 'droppedRecords', 'recoveredTails'],
+	support: [...COMMON_DETAIL_FIELDS, 'recordCount', 'retainedCount', 'bytes'],
+	// `retainedCount` (the number of retained log files; was `fileCount`, which BLOCKED_KEY always dropped because it contains `file`, and so would any name with it).
+	// `suppressedKey`/`windowMs` belong to the `debug_suppress` summary of the burst guard (`local-debug-logger.ts`).
+	local_debug: [...COMMON_DETAIL_FIELDS, 'recordCount', 'retainedCount', 'bytes', 'droppedRecords', 'recoveredTails', 'suppressedKey', 'windowMs'],
+	// Bridge lines (`bridge_connection`, `bridge_live`, `debug_suppress`): every string is one closed token and every
+	// other value a number or boolean, enforced by `closedDetailValue`; none of these fields carries free text.
+	bridge: [
+		...COMMON_DETAIL_FIELDS, 'clientKind', 'clientVersion', 'protocol', 'capabilities', 'readyStatus', 'gapReason',
+		'endReason', 'wasAuthenticated', 'suppressedKey', 'windowMs', 'ours', 'host', 'hostVersion', 'sourcesComplete',
+		'sourcesPartial', 'sourcesMissing', 'rosterCovered', 'rosterTotal', 'worstStatus',
+	],
 };
 
 export interface LocalDebugSanitizeContext {
@@ -176,7 +206,7 @@ export function sanitizeErrorText(value: string, maximumLength = MAX_STRING_LENG
 		.replace(GW2_API_KEY, REDACTED)
 		.replace(ASSIGNED_SECRET, REDACTED)
 		.replace(URL_VALUE, '<url-redacted>'), vaultBasePath)
-		.replace(GW2_ACCOUNT, '<identity-redacted>');
+		.replace(GW2_ACCOUNT, redactAccountMatch);
 	return truncate(sanitized, maximumLength);
 }
 
@@ -269,9 +299,26 @@ export function sanitizeDetails(
 			if (map !== undefined) result[key] = map;
 			continue;
 		}
+		if (component === 'bridge' || key === 'suppressedKey') {
+			const closed = closedDetailValue(descriptor.value, key === 'suppressedKey' ? CLOSED_KEY_TOKEN : CLOSED_TOKEN);
+			if (closed !== undefined) result[key] = closed;
+			continue;
+		}
 		result[key] = sanitizeUnknown(descriptor.value, seen, 0, vaultBasePath);
 	}
 	return result;
+}
+
+/** Keeps a finite number, a boolean, a closed token or a short list of tokens; anything else is dropped. */
+function closedDetailValue(value: unknown, pattern: RegExp): unknown {
+	if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return value;
+	if (typeof value === 'string') return pattern.test(value) && sanitizeErrorText(value, 200) === value ? value : undefined;
+	if (Array.isArray(value)) {
+		const items = value.slice(0, MAX_CLOSED_ITEMS).filter((entry): entry is string | number | boolean =>
+			closedDetailValue(entry, pattern) !== undefined && !Array.isArray(entry));
+		return items.length > 0 ? items : undefined;
+	}
+	return undefined;
 }
 
 /**
