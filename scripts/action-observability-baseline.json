@@ -3618,44 +3618,44 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "a93ac0771ee9a91b97bcea324282eebbf8342978",
+					"id": "4bfa73ef8ac8f64a5b40f1ea8c523d6060447164",
 					"kind": "callback_registration",
-					"line": 79,
+					"line": 165,
 					"column": 16,
-					"endLine": 114,
+					"endLine": 200,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "then",
-						"scope": "record",
-						"justification": "The \"record\" owner explicitly handles \"then\": The serialized write chain of the local debug logger itself: its inner catch counts the dropped record, stores the storage error code and degrades the runtime state, which is the only diagnostic a logger can emit about its own write failure."
+						"scope": "enqueue",
+						"justification": "The \"enqueue\" owner explicitly handles \"then\": The serialized write chain of the local debug logger itself: its inner catch counts the dropped record, stores the storage error code and degrades the runtime state, which is the only diagnostic a logger can emit about its own write failure."
 					},
-					"reason": "Allowlisted callback_registration: The \"record\" owner explicitly handles \"then\": The serialized write chain of the local debug logger itself: its inner catch counts the dropped record, stores the storage error code and degrades the runtime state, which is the only diagnostic a logger can emit about its own write failure. Verified registration: \"then\" in \"record\"."
+					"reason": "Allowlisted callback_registration: The \"enqueue\" owner explicitly handles \"then\": The serialized write chain of the local debug logger itself: its inner catch counts the dropped record, stores the storage error code and degrades the runtime state, which is the only diagnostic a logger can emit about its own write failure. Verified registration: \"then\" in \"enqueue\"."
 				},
 				{
-					"id": "9822334abf986a84b98f9f3a8c37f74c97836f17",
+					"id": "8cc688adf88cfeff36d8e1d6be8e066566149e25",
 					"kind": "catch_clause",
-					"line": 107,
+					"line": 193,
 					"column": 6,
-					"endLine": 111,
+					"endLine": 197,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "local_recovery",
-						"scope": "record",
-						"justification": "The \"record\" diagnostic sink intentionally keeps \"local_recovery\" fail-open; self-reporting could recurse into the failing sink."
+						"scope": "enqueue",
+						"justification": "The \"enqueue\" diagnostic sink intentionally keeps \"local_recovery\" fail-open; self-reporting could recurse into the failing sink."
 					},
-					"reason": "Allowlisted catch_clause: The \"record\" diagnostic sink intentionally keeps \"local_recovery\" fail-open; self-reporting could recurse into the failing sink. Verified recovery: \"local_recovery\" in \"record\"."
+					"reason": "Allowlisted catch_clause: The \"enqueue\" diagnostic sink intentionally keeps \"local_recovery\" fail-open; self-reporting could recurse into the failing sink. Verified recovery: \"local_recovery\" in \"enqueue\"."
 				},
 				{
 					"id": "431767568609edb44af96d704e224212c30b41e9",
 					"kind": "catch_clause",
-					"line": 124,
+					"line": 211,
 					"column": 5,
-					"endLine": 127,
+					"endLine": 214,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3669,9 +3669,9 @@
 				{
 					"id": "4c45699d8f018e584873249c833f013e3d2328bc",
 					"kind": "catch_clause",
-					"line": 143,
+					"line": 230,
 					"column": 8,
-					"endLine": 146,
+					"endLine": 233,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3685,9 +3685,9 @@
 				{
 					"id": "e3fa2c43c956eab580914255394a0d90a901ecb3",
 					"kind": "catch_clause",
-					"line": 150,
+					"line": 237,
 					"column": 5,
-					"endLine": 154,
+					"endLine": 241,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3701,9 +3701,9 @@
 				{
 					"id": "1ca36ca9b907da4182ce816a55552d6c53bfbf5c",
 					"kind": "catch_clause",
-					"line": 169,
+					"line": 256,
 					"column": 6,
-					"endLine": 172,
+					"endLine": 259,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3717,9 +3717,9 @@
 				{
 					"id": "d4b3b4ff81a2c8ae311284586fb998eea74e5fcc",
 					"kind": "catch_clause",
-					"line": 218,
+					"line": 306,
 					"column": 5,
-					"endLine": 221,
+					"endLine": 309,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3733,9 +3733,9 @@
 				{
 					"id": "0df3dd482455ce946b606fba60d5c02ed93100bc",
 					"kind": "promise_catch",
-					"line": 226,
+					"line": 314,
 					"column": 16,
-					"endLine": 229,
+					"endLine": 317,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
