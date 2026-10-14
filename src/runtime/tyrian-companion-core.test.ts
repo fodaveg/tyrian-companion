@@ -462,7 +462,10 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 		]);
 		// A registration is exactly what `registerView` takes: nothing of the section leaks into it.
 		for (const view of registered.views) {
-			expect(Object.keys(view).sort()).toEqual(['icon', 'mount', 'placement', 'title', 'type', 'unmount']);
+			// Only the live panel asks the host to keep the screen on; the others carry no such key at all.
+			expect(Object.keys(view).sort()).toEqual(view.type === LIVE_HUD_VIEW_TYPE
+				? ['icon', 'keepScreenAwake', 'mount', 'placement', 'title', 'type', 'unmount']
+				: ['icon', 'mount', 'placement', 'title', 'type', 'unmount']);
 		}
 	});
 });
@@ -772,9 +775,12 @@ describe('the three sections on a host with a main screen', () => {
 		]);
 		for (const section of view.sections) {
 			// Only Achievements carries a badge (the followed count); the others list none.
+			// Only the live section asks the host to keep the screen on.
 			expect(Object.keys(section).sort()).toEqual(section.id === 'achievements'
 				? ['badge', 'icon', 'id', 'mount', 'setVisible', 'title', 'unmount']
-				: ['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
+				: section.id === 'live'
+					? ['icon', 'id', 'keepScreenAwake', 'mount', 'setVisible', 'title', 'unmount']
+					: ['icon', 'id', 'mount', 'setVisible', 'title', 'unmount']);
 		}
 		expect(runtime.hostListsSections()).toBe(true);
 		await vi.waitFor(() => {
