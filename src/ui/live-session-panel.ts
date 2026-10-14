@@ -61,6 +61,8 @@ const PAGE_SIZE = 50;
 const HISTORY_PAGE_SIZE = 10;
 const HISTORY_TILES = 12;
 const FETCH_CHUNK = 200;
+/** Pauses after each look for the finished session's summary note (the first look is at once). */
+const LATEST_SUMMARY_RETRY_MS = [5_000, 10_000, 30_000, 75_000, 120_000];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
 const GW2_ICON_ORIGIN = 'https://render.guildwars2.com';
@@ -224,6 +226,13 @@ export class LiveSessionPanel {
 	private lastPhase: LiveSessionViewV1['phase'] | null = null;
 	/** `sessionRef` is the SHA-256 of the live `sessionId`, so the session shown above can be told apart in the saved list. */
 	private currentRef: { id: string; ref: string | null } | null = null;
+	/** The «View summary» action of the finished session shown large; it lives in the status line, hidden unless its note exists. */
+	private readonly latestLink: HTMLButtonElement;
+	private latestPath: string | null = null;
+	private latestView: LiveSessionViewV1 | null = null;
+	/** The finished session's note is written after it ends: the list is read again a few times, quietly, until it shows the note. */
+	private latestAttempts = 0;
+	private latestNextAt = 0;
 
 	constructor(private readonly document: Document, private readonly actions: LiveSessionPanelActions) {
 		this.element = this.node('section', 'tyrian-live-session tyrian-live-session--panel');
@@ -235,7 +244,9 @@ export class LiveSessionPanel {
 		this.phase.setAttribute('role', 'status');
 		this.elapsed = this.node('span', 'tyrian-live-session__elapsed');
 		this.character = this.node('span', 'tyrian-live-session__character');
-		this.statusLine.append(this.dot, this.phase, this.elapsed, this.character);
+		this.latestLink = this.button('mod-link tyrian-live-session__summary-link', () => { if (this.latestPath !== null) this.actions.openSessionSummaryNote?.(this.latestPath); });
+		this.latestLink.hidden = true;
+		this.statusLine.append(this.dot, this.phase, this.elapsed, this.character, this.latestLink);
 		this.toggle = this.button('tyrian-live-session__toggle', () => { void this.press(); });
 		head.append(this.statusLine, this.toggle);
 
@@ -392,18 +403,21 @@ export class LiveSessionPanel {
 	}
 
 	/** Reads the saved sessions. Never called from `refresh()`: it scans every note of the library. */
-	private async loadPrevious(): Promise<void> {
+	private async loadPrevious(quiet = false): Promise<void> {
 		const list = this.actions.listLiveSessionHistory;
 		if (list === undefined || this.previousReading) return;
-		this.previousReading = true; this.previousStale = false; this.previousState = 'loading';
+		// A quiet read (the one that looks for the finished session's note) leaves what the block shows as it is.
+		const before = this.previousState;
+		this.previousReading = true; this.previousStale = false; if (!quiet || this.previousState !== 'ready') this.previousState = 'loading';
 		this.renderPrevious();
 		try {
 			this.previousEntries = await list.call(this.actions);
 			this.previousSetAside = this.actions.getLiveSessionSetAside?.() ?? [];
 			this.previousState = 'ready';
-			this.previousShown = HISTORY_PAGE_SIZE;
+			if (!quiet) this.previousShown = HISTORY_PAGE_SIZE;
 		} catch { this.previousState = 'failed'; }
 		finally { this.previousReading = false; }
+		if (quiet && this.previousState === 'failed') this.previousState = before;
 		// A session that finished during the read left it out of date: read once more, still only because it is open.
 		if (this.previousStale && this.previous?.open === true) { void this.loadPrevious(); return; }
 		this.renderPrevious();
@@ -428,19 +442,53 @@ export class LiveSessionPanel {
 			this.currentRef = { id: view.sessionId, ref: null };
 			void this.hashCurrent(view.sessionId);
 		}
+		this.latestView = view;
+		this.pollLatestSummary(view);
 		this.renderPrevious();
+	}
+
+	/**
+	 * The finished session shown large has its «View summary» too (David, 14 Oct 2026), found in the same list the
+	 * previous sessions use. That list is only read on opening, so here it is read once the session is complete and
+	 * its hash known, then again a few times with growing pauses (the note is written after the session ends).
+	 */
+	private pollLatestSummary(view: LiveSessionViewV1): void {
+		const ref = this.currentRef?.ref ?? null;
+		if (view.sessionId !== this.currentRef?.id) { this.latestAttempts = 0; this.latestNextAt = 0; }
+		if (view.phase !== 'complete' || ref === null || this.actions.openSessionSummaryNote === undefined) return;
+		if (this.previousEntries.some((entry) => entry.sessionRef === ref && (entry.summaryPath ?? null) !== null)) return;
+		const now = Date.now();
+		if (this.previousReading || this.latestAttempts >= LATEST_SUMMARY_RETRY_MS.length || now < this.latestNextAt) return;
+		this.latestNextAt = now + LATEST_SUMMARY_RETRY_MS[this.latestAttempts]!;
+		this.latestAttempts += 1;
+		void this.loadPrevious(true);
+	}
+
+	/** Shows the action only for a complete session whose note the list holds; no note yet (or lost), no action and no gap. */
+	private renderLatestLink(): void {
+		const view = this.latestView;
+		const ref = this.currentRef?.ref ?? null;
+		const path = view?.phase === 'complete' && ref !== null && this.actions.openSessionSummaryNote !== undefined
+			? this.previousEntries.find((entry) => entry.sessionRef === ref)?.summaryPath ?? null : null;
+		this.latestPath = path;
+		this.latestLink.hidden = path === null;
+		if (path === null || view === null || view.startedAt === null || view.endedAt === null) return;
+		this.setText(this.latestLink, this.copy('previousOpenSummary'));
+		const whenText = `${this.dayOf(view.startedAt)} ${this.timeOfDay(view.startedAt, false)}–${this.timeOfDay(view.endedAt, false)}`;
+		this.latestLink.setAttribute('aria-label', this.copy('previousOpenSummaryLabel').replace('{when}', whenText));
 	}
 
 	/** Hashing is local and cheap. If it ever failed, the session shown above would merely stay in the list too. */
 	private async hashCurrent(id: string): Promise<void> {
 		try {
 			const ref = await sha256Text(id);
-			if (this.currentRef?.id === id) { this.currentRef = { id, ref }; this.renderPrevious(); }
+			if (this.currentRef?.id === id) { this.currentRef = { id, ref }; if (this.latestView !== null) this.pollLatestSummary(this.latestView); this.renderPrevious(); }
 		} catch { /* No hash, no exclusion: the list is still correct, only one row longer. */ }
 	}
 
 	private renderPrevious(): void {
 		if (this.previous === null) return;
+		this.renderLatestLink();
 		const open = this.previous.open;
 		const state = this.previousState;
 		const hiddenRef = this.currentRef?.ref ?? null;

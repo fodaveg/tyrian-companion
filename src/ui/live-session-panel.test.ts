@@ -1101,6 +1101,64 @@ describe('previous sessions block', () => {
 		expect(block(h.panel).textContent).toContain('1 of 1');
 	});
 
+	describe('«View summary» of the finished session shown large', () => {
+		const finished = { ...ended(), sessionId: 'session-live-1' };
+		const latestLink = (panel: LiveSessionPanel): HTMLButtonElement | null =>
+			panel.element.querySelector<HTMLButtonElement>('.tyrian-live-session__status button.tyrian-live-session__summary-link');
+		afterEach(() => { vi.restoreAllMocks(); });
+
+		it('offers the same action as the saved rows, without opening the block, and opens the note of THAT session', async () => {
+			for (const [locale, text, label] of [['en', 'View summary', 'Open the summary note of the session of'], ['es', 'Ver resumen', 'Abrir la nota resumen de la sesión del']] as const) {
+				const openSessionSummaryNote = vi.fn();
+				const own = entry(0, { sessionRef: await sha256Text('session-live-1'), summaryPath: 'GW2/summaries/own - summary.md' });
+				const list = vi.fn(async () => [entry(1, { summaryPath: 'GW2/summaries/other - summary.md' }), own]);
+				const h = harness(finished, control(), locale, list, undefined, { openSessionSummaryNote });
+				await vi.waitFor(() => expect(latestLink(h.panel)?.hidden).toBe(false));
+				const link = latestLink(h.panel)!;
+				expect(link.type).toBe('button');
+				expect(link.className).toBe('mod-link tyrian-live-session__summary-link');
+				expect(link.textContent).toBe(text);
+				expect(link.getAttribute('aria-label')).toMatch(new RegExp(`^${label} .+–.+$`, 'u'));
+				expect(block(h.panel).open).toBe(false);
+				link.click();
+				expect(openSessionSummaryNote).toHaveBeenCalledExactlyOnceWith('GW2/summaries/own - summary.md');
+			}
+		});
+
+		it('has no action while the note does not exist, without the host action, or while the session is not complete', async () => {
+			const own = await sha256Text('session-live-1');
+			const noNote = harness(finished, control(), 'en', vi.fn(async () => [entry(0, { sessionRef: own, summaryPath: null })]), undefined, { openSessionSummaryNote: vi.fn() });
+			const noAction = harness(finished, control(), 'en', vi.fn(async () => [entry(0, { sessionRef: own, summaryPath: 'a.md' })]));
+			const active = harness({ ...liveView(), sessionId: 'session-live-1' }, control(), 'en',
+				vi.fn(async () => [entry(0, { sessionRef: own, summaryPath: 'a.md' })]), undefined, { openSessionSummaryNote: vi.fn() });
+			await new Promise((resolve) => setTimeout(resolve, 30));
+			for (const h of [noNote, noAction, active]) expect(latestLink(h.panel)?.hidden ?? true).toBe(true);
+		});
+
+		it('looks again, quietly, until the note is written, and then stops looking', async () => {
+			const own = await sha256Text('session-live-1');
+			const list = vi.fn<() => Promise<LiveSessionHistoryEntry[]>>()
+				.mockResolvedValueOnce([entry(0, { sessionRef: own })])
+				.mockResolvedValue([entry(0, { sessionRef: own, summaryPath: 'GW2/summaries/own - summary.md' })]);
+			const h = harness(finished, control(), 'en', list, undefined, { openSessionSummaryNote: vi.fn() });
+			await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+			await new Promise((resolve) => setTimeout(resolve, 30));
+			expect(latestLink(h.panel)!.hidden).toBe(true);
+			// A tick before the pause is over reads nothing.
+			h.panel.refresh(); expect(list).toHaveBeenCalledTimes(1);
+			const later = Date.now() + 6_000;
+			vi.spyOn(Date, 'now').mockReturnValue(later);
+			h.panel.refresh();
+			await vi.waitFor(() => expect(latestLink(h.panel)!.hidden).toBe(false));
+			expect(list).toHaveBeenCalledTimes(2);
+			// The block the player never opened shows no loading or failure for these reads.
+			expect(block(h.panel).open).toBe(false);
+			vi.spyOn(Date, 'now').mockReturnValue(later + 600_000);
+			h.panel.refresh();
+			expect(list).toHaveBeenCalledTimes(2);
+		});
+	});
+
 	it('pages by ten with «Show 10 more» and «{shown} of {total}», in both languages', async () => {
 		for (const [locale, more, label] of [['en', 'Show 10 more', '10 of 25'], ['es', 'Ver 10 más', '10 de 25']] as const) {
 			const h = harness(idleView(), control(), locale, vi.fn(async () => entries(25)));
