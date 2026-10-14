@@ -1,5 +1,14 @@
 # Changelog
 
+## Release beta 0.7.1 - El bloque de histórico de precios se ve entero en Hebra
+
+Se actualiza desde la 0.7.0 publicada. No se ha visto todavía en una app de Hebra real.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- En Hebra con la API 2.x, el bloque `tyrian-price-history` de una nota perdía los últimos 12 px, con su borde
+  inferior. Ahora se ve entero.
+- En Obsidian no cambia nada.
+
 ## Release beta 0.7.0 - Tyrian pasa a la API 2.0 de plugins de Hebra
 
 Se actualiza desde la 0.6.63 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.

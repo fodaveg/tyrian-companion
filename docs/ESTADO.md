@@ -1,5 +1,20 @@
 # Estado
 
+## Candidato 0.7.1: el bloque de histórico de precios se ve entero en Hebra 2.x (14 oct 2026)
+
+**Candidato; sin publicar.** Rama `fix/surface-root-margin` sobre el canal 0.7.0 publicado (`2ec3946d`). Detalle en
+[CHANGELOG](CHANGELOG.md). Mismo encargo y excepción que la 0.7.0.
+
+- Causa, medida por la sesión de Hebra en la 0.7.0 publicada (Chromium): la raíz de la superficie del bloque
+  (`#hebra-surface-root`) llevaba la clase `tyrian-price-history-note`, con `margin-block` de 12 px. Hebra da al marco
+  el alto del border-box de la raíz (72 px), sin márgenes, así que se recortaban 12 px abajo. El `margin: 0` del
+  `<body>` de la 0.7.0 (`2ae8a762`) no lo arreglaba.
+- `src/host/hebra/tyrian-host.css`: `#hebra-surface-root { margin: 0; }`, que gana a cualquier clase del núcleo en la
+  raíz. Test con la hoja real (`hebra-styles-surface.test.ts`) y comprobación textual en el build
+  (`hebraStylesScopeViolations`), porque happy-dom no distingue la especificidad de `#id` y `[id=…]`. Ninguna otra
+  clase que acaba en la raíz de una superficie tiene margen propio.
+- Sin verificar: el alto y el borde en un Hebra real; se mide en el arnés C1 de la sesión de Hebra antes de publicar.
+
 ## Canal 0.7.0 publicado: Tyrian pasa a la API 2.0 de plugins de Hebra (14 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.0` = `b071a1b9` (atestación; candidato `2ae8a762`).
