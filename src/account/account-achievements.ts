@@ -75,9 +75,10 @@ export async function readAccountAchievements(
 function parseFullEntry(value: unknown): AccountAchievementEntry | null {
 	if (!isRecord(value) || !positive(value.id) || typeof value.done !== 'boolean') return null;
 	if (!optionalNonNegative(value.current) || !optionalNonNegative(value.max) || !optionalNonNegative(value.repeated)) return null;
-	const current = (value.current ?? null) as number | null;
+	const rawCurrent = (value.current ?? null) as number | null;
 	const max = (value.max ?? null) as number | null;
-	if (current !== null && max !== null && current > max) return null;
+	// The API can report a counter above its threshold; keep the entry with the counter capped.
+	const current = rawCurrent !== null && max !== null ? Math.min(rawCurrent, max) : rawCurrent;
 	if (value.bits !== undefined
 		&& !(Array.isArray(value.bits) && value.bits.every(nonNegative) && new Set(value.bits).size === value.bits.length)) return null;
 	return {

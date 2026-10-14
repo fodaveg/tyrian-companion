@@ -28,13 +28,20 @@ describe('parseAccountAchievements', () => {
 	});
 
 	it('checks max, bits and an explicit null bits only in the full profile', () => {
-		const overMax = [{ id: 1, done: false, current: 5, max: 4 }];
 		const dupBits = [{ id: 1, done: true, bits: [1, 1] }];
 		const nullBits = [{ id: 1, done: true, bits: null }];
-		for (const body of [overMax, dupBits, nullBits]) {
+		for (const body of [dupBits, nullBits]) {
 			expect(parseAccountAchievements(body, 'full')).toBeNull();
 			expect(parseAccountAchievements(body, 'progress')).not.toBeNull();
 		}
+	});
+
+	it('clamps a counter above its threshold to max instead of rejecting the whole reading', () => {
+		const body = [{ id: 1, done: true, current: 5, max: 4 }, { id: 2, done: false, current: 1, max: 3 }];
+		expect(parseAccountAchievements(body, 'full')).toEqual([
+			{ id: 1, done: true, current: 4, max: 4, repeated: null, bits: null },
+			{ id: 2, done: false, current: 1, max: 3, repeated: null, bits: null },
+		]);
 	});
 
 	it('refuses an explicit null repeated only in the progress profile, as Magic Find always did', () => {
