@@ -28,3 +28,35 @@ export function vaultFailureCause(error: unknown): VaultFailureCause | undefined
 	}
 	return undefined;
 }
+
+/**
+ * Why a vault WRITE failed once the host did try it, as a closed code for the local diagnostic. Kept apart
+ * from `VaultFailureCause` on purpose: that one reaches the Settings row, and these three have no wording there.
+ *
+ * - `write_not_converged`: `process`/`saveNote` lost the compare-and-swap on every attempt (a persistent conflict).
+ * - `entry_not_indexed`: the path is not in the host's index, so there is nothing to read or rewrite.
+ * - `entry_missing`: the indexed note or file is gone, trashed or protected when it was read.
+ */
+export const VAULT_WRITE_FAILURE_CAUSES = ['write_not_converged', 'entry_not_indexed', 'entry_missing'] as const;
+export type VaultWriteFailureCause = typeof VAULT_WRITE_FAILURE_CAUSES[number];
+
+export function vaultWriteFailure(message: string, cause: VaultWriteFailureCause): Error {
+	return Object.assign(new Error(message), { code: cause });
+}
+
+export function vaultWriteFailureCause(error: unknown): VaultWriteFailureCause | undefined {
+	let current: unknown = error;
+	for (let depth = 0; depth < 4 && typeof current === 'object' && current !== null; depth += 1) {
+		const descriptor = Object.getOwnPropertyDescriptor(current, 'code');
+		const code: unknown = descriptor !== undefined && 'value' in descriptor ? descriptor.value : undefined;
+		const found = VAULT_WRITE_FAILURE_CAUSES.find((cause) => cause === code);
+		if (found !== undefined) return found;
+		current = (current as { cause?: unknown }).cause;
+	}
+	return undefined;
+}
+
+/** The closed local-debug code for a vault write failure: never `unknown_failure` for a cause the host named. */
+export function vaultWriteFailureLogCode(cause: VaultWriteFailureCause): 'precondition_failed' | 'missing' {
+	return cause === 'write_not_converged' ? 'precondition_failed' : 'missing';
+}

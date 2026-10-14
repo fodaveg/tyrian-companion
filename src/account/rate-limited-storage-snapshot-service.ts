@@ -5,6 +5,9 @@ import type { SnapshotCoverage, SourceCoverage, StorageSnapshot } from './storag
 import type { StorageSnapshotCaptureOptions, StorageSnapshotCaptureProgress, StorageSnapshotPassTelemetry, StorageSnapshotService } from './storage-snapshot-service';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
+/** The closed state of the 429 this service raises itself while the shared cooldown is armed. */
+export const LOCAL_COOLDOWN_STATE = 'cooldown_local';
+
 export type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
 
 type SnapshotCaptureOperations = Pick<
@@ -44,12 +47,14 @@ export class RateLimitedStorageSnapshotService implements SnapshotCaptureOperati
 	private async guarded(run: () => Promise<StorageSnapshot>): Promise<StorageSnapshot> {
 		const status = this.rateLimit.status();
 		if (status.active) {
-			throw new HttpTransportError(
+			// Synthetic: no request left this device. The own `code` is what the diagnostic reads
+			// (`unmappedErrorLogDetails`), so a log line tells this apart from a 429 the API sent.
+			throw Object.assign(new HttpTransportError(
 				'http',
 				429,
 				status.remainingMs,
 				'A shared Guild Wars 2 rate limit cooldown is active.',
-			);
+			), { code: LOCAL_COOLDOWN_STATE });
 		}
 		try {
 			const result = await run();

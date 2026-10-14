@@ -22,7 +22,7 @@
 import type { PluginNote, PluginVault, PluginVaultChange } from 'hebra-plugin-api';
 
 import type { TyrianDisposer, TyrianVault, TyrianVaultChange, TyrianVaultFile, TyrianVaultTrashResult } from '../tyrian-host';
-import { vaultFailure } from '../../core/vault-failure-cause';
+import { vaultFailure, vaultWriteFailure } from '../../core/vault-failure-cause';
 import { ensureFolderPath, folderRelativePaths, folderSegmentsOf } from './folder-path';
 import type { TyrianPathIndex } from './path-index';
 import { decideAdoption } from './seed';
@@ -64,6 +64,11 @@ export interface CreateTyrianVaultPortOptions {
 	canonicalPathFor?: (noteText: string) => readonly string[];
 	/** Told where `saveNote` left a note (path relative to the output folder), so the host can open it. */
 	onNoteSaved?: (path: string, id: string) => void;
+	/**
+	 * Told, with no path and no id, when a write converged only after more than one attempt (the closed
+	 * `vault_write/retry` record): `attempts` is how many it took, always 2 or more.
+	 */
+	onWriteRetry?: (retry: { operation: 'process' | 'save_note'; attempts: number }) => void;
 	/** A failure handling an event is reported here and that event dropped; the subscription lives on. */
 	onError?: (error: unknown) => void;
 }
@@ -104,29 +109,29 @@ function readableBody(note: PluginNote | null): string | null {
 }
 
 export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): TyrianVaultPortHandle {
-	const { library, index, rootFolderId, canonicalPathFor, onError, onNoteSaved } = options;
+	const { library, index, rootFolderId, canonicalPathFor, onError, onNoteSaved, onWriteRetry } = options;
 
 	async function read(target: TyrianVaultFile): Promise<string> {
 		const kind = idKindFor(target.path);
 		const id = index.getIdForPath(target.path);
 		if (kind === 'note' && id !== undefined) {
 			const body = readableBody(await library.noteRead(id));
-			if (body === null) throw new Error(`tyrian vault: no note found for ${target.path}`);
+			if (body === null) throw vaultWriteFailure(`tyrian vault: no note found for ${target.path}`, 'entry_missing');
 			return body;
 		}
 		if (kind === 'file' && id !== undefined) return new TextDecoder().decode(await readFileBytes(library, id));
-		throw new Error(`tyrian vault: path not indexed: ${target.path}`);
+		throw vaultWriteFailure(`tyrian vault: path not indexed: ${target.path}`, 'entry_not_indexed');
 	}
 
 	async function processEntry(target: TyrianVaultFile, update: (current: string) => string): Promise<string> {
 		const id = index.getIdForPath(target.path);
-		if (!id) throw new Error(`tyrian vault: process on a path not indexed: ${target.path}`);
+		if (!id) throw vaultWriteFailure(`tyrian vault: process on a path not indexed: ${target.path}`, 'entry_not_indexed');
 		if (index.getKindForId(id) === 'file') return await processFile(id, target.path, update);
 		let current = await library.noteRead(id);
 		// `noteRead` also returns trashed notes: rewriting one silently would bring back a note
 		// the user deleted.
 		let body = readableBody(current);
-		if (current === null || body === null) throw new Error(`tyrian vault: no note found for ${target.path}`);
+		if (current === null || body === null) throw vaultWriteFailure(`tyrian vault: no note found for ${target.path}`, 'entry_missing');
 		for (let attempt = 0; attempt < PROCESS_MAX_ATTEMPTS; attempt += 1) {
 			const nextBody = update(body);
 			if (nextBody === body) return body; // Unchanged: 0 writes.
@@ -138,15 +143,16 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 			if (result.written.includes(id)) {
 				const after = await library.noteRead(id);
 				if (after) index.touchMtime(target.path, after.updatedAt);
+				if (attempt > 0) onWriteRetry?.({ operation: 'process', attempts: attempt + 1 });
 				return nextBody;
 			}
 			// `stale`: read again and retry with the update function, which has to be pure (it
 			// may run several times, §3).
 			current = await library.noteRead(id);
 			body = readableBody(current);
-			if (current === null || body === null) throw new Error(`tyrian vault: note deleted during process: ${target.path}`);
+			if (current === null || body === null) throw vaultWriteFailure(`tyrian vault: note deleted during process: ${target.path}`, 'entry_missing');
 		}
-		throw new Error(`tyrian vault: process did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${target.path}`);
+		throw vaultWriteFailure(`tyrian vault: process did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${target.path}`, 'write_not_converged');
 	}
 
 	/**
@@ -157,7 +163,7 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 	async function processFile(id: string, path: string, update: (current: string) => string): Promise<string> {
 		for (let attempt = 0; attempt < PROCESS_MAX_ATTEMPTS; attempt += 1) {
 			const row = await library.fileRead(id);
-			if (!row || row.trashedAt !== null) throw new Error(`tyrian vault: no file found for ${path}`);
+			if (!row || row.trashedAt !== null) throw vaultWriteFailure(`tyrian vault: no file found for ${path}`, 'entry_missing');
 			const bytes = await library.blobRead(row.sha256);
 			if (!bytes) throw vaultFailure(`tyrian vault: missing blob for the file ${path}`, 'bytes_not_synced');
 			const current = new TextDecoder().decode(bytes);
@@ -167,13 +173,14 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 			try {
 				const replaced = await library.fileReplace(id, blob.sha256, row.sha256);
 				index.touchMtime(path, replaced.updatedAt);
+				if (attempt > 0) onWriteRetry?.({ operation: 'process', attempts: attempt + 1 });
 				return next;
 			} catch (error) {
 				// `file_stale`: someone changed it between the read and the write; read again.
 				if (!isFileStale(error)) throw error;
 			}
 		}
-		throw new Error(`tyrian vault: process did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${path}`);
+		throw vaultWriteFailure(`tyrian vault: process did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${path}`, 'write_not_converged');
 	}
 
 	/**
@@ -253,13 +260,14 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 				{ cause: null, touchUpdatedAt: true },
 			);
 			if (result.written.includes(id)) {
+				if (attempt > 0) onWriteRetry?.({ operation: 'save_note', attempts: attempt + 1 });
 				onNoteSaved?.(path, id);
 				return;
 			}
 		}
 		// Attempts exhausted on a note that is still there: creating another would duplicate it.
 		if (!gone && id !== null) {
-			throw new Error(`tyrian vault: saveNote did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${path}`);
+			throw vaultWriteFailure(`tyrian vault: saveNote did not converge after ${String(PROCESS_MAX_ATTEMPTS)} attempts (persistent conflict): ${path}`, 'write_not_converged');
 		}
 		const created = await library.noteCreate({ folderId, body: content });
 		onNoteSaved?.(path, created.id);

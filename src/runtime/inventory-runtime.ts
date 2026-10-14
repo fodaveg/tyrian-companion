@@ -37,9 +37,10 @@ import type {
 	InventoryPreferencesEditorState,
 	InventoryPreferencesRuntime,
 } from '../advisor/inventory-preferences-runtime';
+import { snapshotCoverageLogCounts } from '../account/snapshot-coverage-log';
 import { createTranslator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
-import type { LocalDebugActionRunner, ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import type { LocalDebugActionOutcome, LocalDebugActionRunner, ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import type { InventoryVaultSyncLastRun, TyrianSettings } from '../core/settings';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { TyrianHost } from '../host/tyrian-host';
@@ -183,8 +184,8 @@ export class InventoryRuntime {
 	}
 
 	async refreshInventoryAdvisor(): Promise<void> {
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<LocalDebugActionOutcome | undefined> => {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return undefined; }
 		const operation = this.inventoryAdvisor.refresh({}, context);
 		this.renderInventoryAdvisorViews();
 		const model = await operation; if (model.status === 'blocked' && model.blockedReason === 'credential_unavailable') this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'advisor.view.blockedReason.credential_unavailable'), 'inventory_advisor_missing_key');
@@ -192,12 +193,28 @@ export class InventoryRuntime {
 		// quantity and today's bid, both of which this analysis just settled.
 		await this.sale.refreshSaleHeroTiming();
 		this.renderInventoryAdvisorViews();
+		return this.snapshotCoverageOutcome();
 		};
 		// No deferred seed pass starts here: the action that left one starts it itself, when it ends
 		// (`startPriceSeedDeferredPass`), so an "Analizar" never starts another action's downloads.
 		await (this.localDebugActions?.run(
 			{ component: 'inventory', action: 'inventory_refresh' }, perform,
 		) ?? perform());
+	}
+
+	/**
+	 * The success record of a refresh carries how much of the account its capture covered, as counts only
+	 * (`snapshotCoverageLogCounts`, under `coverage`, the key the `inventory` detail allowlist has). It is
+	 * read from the analysis the view now holds and fails open: no analysis, or a read that throws, adds nothing.
+	 */
+	private snapshotCoverageOutcome(): LocalDebugActionOutcome | undefined {
+		try {
+			const snapshot = this.inventoryAdvisor.analysis({ readOnly: true })?.source.input.snapshot;
+			if (snapshot === undefined) return undefined;
+			return { details: { coverage: snapshotCoverageLogCounts(snapshot.coverage, snapshot.roster) } };
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**

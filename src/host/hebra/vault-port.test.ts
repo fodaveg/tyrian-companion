@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createFakeLibrary, type FakeLibrary } from '../../test/hebra-plugin-fakes';
+import { vaultFailureCause, vaultWriteFailureCause, vaultWriteFailureLogCode } from '../../core/vault-failure-cause';
 import type { TyrianVaultChange } from '../tyrian-host';
 import { TyrianPathIndex } from './path-index';
 import { createMemoryPathIndexKv } from './path-index-kv';
@@ -276,6 +277,57 @@ describe('createTyrianVaultPort: process on a file that is not a note (.base, ma
 		expect(seen).toEqual(['{"generation":1}\n', '{"generation":2}\n']);
 		expect(result).toBe('{"generation":20}\n');
 		expect(library.readText(id)).toBe('{"generation":20}\n');
+	});
+
+	it('tells onWriteRetry how many attempts a converged write took, and stays silent on a first-try write', async () => {
+		const library = setupLibrary();
+		const index = await freshIndex();
+		await createTyrianVaultPort({ library, index, rootFolderId: ROOT }).create('Tyrian Companion Assets.json', '{"generation":1}\n');
+		const id = index.getIdForPath('Tyrian Companion Assets.json') ?? '';
+		let sabotaged = false;
+		const retries: unknown[] = [];
+		const vault = createTyrianVaultPort({
+			library: intercept(library, {
+				fileReplace: async (fileId, sha, expected) => {
+					if (!sabotaged) {
+						sabotaged = true;
+						const blob = await library.blobPut(new TextEncoder().encode('{"generation":2}\n'));
+						await library.fileReplace(id, blob.sha256);
+					}
+					return await library.fileReplace(fileId, sha, expected);
+				},
+			}),
+			index,
+			rootFolderId: ROOT,
+			onWriteRetry: (retry) => retries.push(retry),
+		});
+		const bump = (current: string): string => current.replace(/\d+/u, (n) => String(Number(n) + 1));
+		await vault.process({ path: 'Tyrian Companion Assets.json' }, bump);
+		expect(retries).toEqual([{ operation: 'process', attempts: 2 }]);
+		await vault.process({ path: 'Tyrian Companion Assets.json' }, bump);
+		expect(retries).toHaveLength(1);
+	});
+
+	it('names the closed cause of a write that never converges and of an entry that is not indexed', async () => {
+		const library = setupLibrary();
+		const index = await freshIndex();
+		await createTyrianVaultPort({ library, index, rootFolderId: ROOT }).create('Tyrian Companion Assets.json', '{"generation":1}\n');
+		const vault = createTyrianVaultPort({
+			library: intercept(library, {
+				fileReplace: async () => { throw Object.assign(new Error('file_stale'), { code: 'file_stale' }); },
+			}),
+			index,
+			rootFolderId: ROOT,
+			onWriteRetry: () => { throw new Error('a write that never converged must not report a retry'); },
+		});
+		const failure = await vault.process({ path: 'Tyrian Companion Assets.json' }, (current) => `${current}x`).catch((error: unknown) => error);
+		expect(vaultWriteFailureCause(failure)).toBe('write_not_converged');
+		const missing = await vault.process({ path: 'Nowhere.json' }, (current) => current).catch((error: unknown) => error);
+		expect(vaultWriteFailureCause(missing)).toBe('entry_not_indexed');
+		expect(vaultWriteFailureLogCode('write_not_converged')).toBe('precondition_failed');
+		expect(vaultWriteFailureLogCode('entry_not_indexed')).toBe('missing');
+		// The Settings-row causes stay a separate list: these never reach it.
+		expect(vaultFailureCause(failure)).toBeUndefined();
 	});
 
 	it('does not rewrite a trashed file', async () => {

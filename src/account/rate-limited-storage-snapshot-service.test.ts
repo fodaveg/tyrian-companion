@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { HttpTransportError } from '../core/http';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
-import { RateLimitedStorageSnapshotService } from './rate-limited-storage-snapshot-service';
+import { LOCAL_COOLDOWN_STATE, RateLimitedStorageSnapshotService } from './rate-limited-storage-snapshot-service';
 import type { SnapshotCoverage, SourceCoverage, StorageSnapshot } from './storage-snapshot-model';
 
 function clock(startAt: number): { now: () => number; advance: (ms: number) => void } {
@@ -111,6 +111,24 @@ describe('RateLimitedStorageSnapshotService', () => {
 		await expect(gated.capture()).rejects.toMatchObject({ status: 500 });
 		expect(inner.capture).toHaveBeenCalledTimes(1);
 		expect(coordinator.status()).toEqual({ active: false });
+	});
+
+	it('marks the 429 it raises itself during the cooldown, and leaves a real one unmarked', async () => {
+		const time = clock(0);
+		const real = new HttpTransportError('http', 429, 5_000, 'Limited.');
+		const inner = { capture: vi.fn().mockRejectedValueOnce(real) };
+		const coordinator = new RateLimitCoordinator({ now: time.now, fallbackCooldownMs: 12_000 });
+		const gated = new RateLimitedStorageSnapshotService(inner as never, coordinator);
+
+		const fromApi = await gated.capture().catch((error: unknown) => error);
+		expect(fromApi).toBe(real);
+		expect(Object.getOwnPropertyDescriptor(fromApi, 'code')).toBeUndefined();
+
+		const local = await gated.capture().catch((error: unknown) => error);
+		expect(local).toBeInstanceOf(HttpTransportError);
+		expect(local).toMatchObject({ status: 429, code: LOCAL_COOLDOWN_STATE });
+		expect(LOCAL_COOLDOWN_STATE).toBe('cooldown_local');
+		expect(inner.capture).toHaveBeenCalledTimes(1);
 	});
 
 	it('makes two distinct consumers observe the SAME shared cooldown', async () => {
