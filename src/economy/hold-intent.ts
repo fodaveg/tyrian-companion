@@ -1,7 +1,8 @@
 import type { ContainerMarketQuote } from './container-expected-value';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
 import { safeAddOrThrow } from '../core/safe-add';
-import { createTradingPostValueWithPolicy } from './gw2-fees';
+import { calculateTradingPostFees } from './gw2-fees';
+import { createGrossCopperValue } from './monetary';
 
 const HOLD_INTENT_VERSION = 1 as const;
 const HOLD_PLAN_VERSION = 1 as const;
@@ -112,13 +113,8 @@ export function evaluateHoldIntents(value: unknown): HoldPlanResult {
 			const allocatedQuantity = protects ? Math.min(intent.quantity, available) : 0;
 			const shortfallQuantity = protects ? safeSubtract(intent.quantity, allocatedQuantity) : 0;
 			remaining.set(intent.itemId, safeSubtract(available, allocatedQuantity));
-			const projected = createTradingPostValueWithPolicy(
-				intent.target.route,
-				intent.target.unitGrossCopper,
-				intent.quantity,
-			);
-			if (projected.status !== 'ok') return { status: 'invalid', reason: projected.reason === 'arithmetic_overflow'
-				? 'arithmetic_overflow' : 'invalid_input' };
+			const projected = projectTargetNet(intent.target.route, intent.target.unitGrossCopper, intent.quantity);
+			if (typeof projected === 'string') return { status: 'invalid', reason: projected };
 			allocations.push({
 				intentId: intent.intentId,
 				itemId: intent.itemId,
@@ -130,17 +126,7 @@ export function evaluateHoldIntents(value: unknown): HoldPlanResult {
 				shortfallQuantity,
 				currentUnitGrossCopper: current,
 				targetUnitGrossCopper: intent.target.unitGrossCopper,
-				projectedTargetNet: {
-					policyVersion: projected.policyVersion,
-					route: intent.target.route,
-					quantity: intent.quantity,
-					unitGrossCopper: intent.target.unitGrossCopper,
-					grossCopper: projected.value.grossCopper,
-					listingFeeCopper: projected.value.listingFeeCopper,
-					exchangeFeeCopper: projected.value.exchangeFeeCopper,
-					totalFeesCopper: projected.value.totalFeesCopper,
-					netCopper: projected.value.netCopper,
-				},
+				projectedTargetNet: projected,
 				remainingMs: Math.max(0, safeSubtract(Date.parse(intent.deadlineAt), Date.parse(value.asOf))),
 			});
 		}
@@ -294,13 +280,36 @@ function isProjected(value: unknown): value is HoldProjectedTargetNet {
 		'exchangeFeeCopper', 'totalFeesCopper', 'netCopper',
 	]) || value.policyVersion !== 1 || (value.route !== 'instant_sell' && value.route !== 'listing') ||
 		!positive(value.quantity) || !positive(value.unitGrossCopper)) return false;
-	const expected = createTradingPostValueWithPolicy(value.route, value.unitGrossCopper, value.quantity);
-	return expected.status === 'ok' && canonical(expected.value) === canonical({
-		version: 1, kind: value.route, priceSource: value.route === 'instant_sell' ? 'highest_buy_order' : 'listing_price',
-		liquidity: value.route === 'instant_sell' ? 'immediate' : 'conditional', quantity: value.quantity,
-		unitCopper: value.unitGrossCopper, grossCopper: value.grossCopper, listingFeeCopper: value.listingFeeCopper,
-		exchangeFeeCopper: value.exchangeFeeCopper, totalFeesCopper: value.totalFeesCopper, netCopper: value.netCopper,
-	});
+	const expected = projectTargetNet(value.route, value.unitGrossCopper, value.quantity);
+	return typeof expected !== 'string' && canonical(expected) === canonical(value);
+}
+
+/**
+ * Net of selling the whole intent at its target price. A gross below the
+ * one-copper minimum fees completes paying nothing (`max(0, gross - fees)`),
+ * the floor `bestSaleNetCopper` and `valueInstantSellDepth` already apply;
+ * it is not a malformed intent, so it cannot invalidate the whole plan.
+ */
+function projectTargetNet(
+	route: HoldIntentRoute,
+	unitGrossCopper: number,
+	quantity: number,
+): HoldProjectedTargetNet | 'invalid_input' | 'arithmetic_overflow' {
+	const gross = createGrossCopperValue(unitGrossCopper, quantity);
+	if (gross.status !== 'ok') return gross.reason === 'arithmetic_overflow' ? 'arithmetic_overflow' : 'invalid_input';
+	const fees = calculateTradingPostFees(gross.value.grossCopper);
+	if (fees.status !== 'ok') return fees.reason === 'arithmetic_overflow' ? 'arithmetic_overflow' : 'invalid_input';
+	return {
+		policyVersion: fees.fees.policyVersion,
+		route,
+		quantity,
+		unitGrossCopper,
+		grossCopper: gross.value.grossCopper,
+		listingFeeCopper: fees.fees.listingFeeCopper,
+		exchangeFeeCopper: fees.fees.exchangeFeeCopper,
+		totalFeesCopper: fees.fees.totalFeesCopper,
+		netCopper: Math.max(0, gross.value.grossCopper - fees.fees.totalFeesCopper),
+	};
 }
 
 function intentState(intent: HoldIntentV1, asOf: string, current: number | null): HoldIntentState {

@@ -579,6 +579,19 @@ describe('recommendContainerDisposition', () => {
 		}
 	});
 
+	// Audit fix (14 oct 2026): a cancelled one-copper intent on an unrelated item used to make the
+	// hold plan impossible to evaluate, and every container of the session came out
+	// `invalid/evidence_mismatch`. It is now projected at net zero and protects nothing.
+	it('keeps recommending when a cancelled one-copper intent exists on another item', () => {
+		const tiny = holdIntent({ intentId: 'tiny', itemId: 100, quantity: 1, status: 'cancelled',
+			target: { route: 'instant_sell', unitGrossCopper: 1 } });
+		const value = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [tiny]);
+		const result = recommendContainerDisposition(value);
+		expect(result.status).toBe('ready');
+		expect(result.recommendation?.allocations).toMatchObject({ held: [], freeQuantity: 5 });
+		expect(isContainerRecommendationResult(JSON.parse(JSON.stringify(result)))).toBe(true);
+	});
+
 	it('rejects a transplanted or malformed hold plan even when all quantity would be protected', () => {
 		const target = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })]);
 		target.hold.plan = withHold(input({ gainedQuantity: 4, finalQuantity: 4 }), [holdIntent({ quantity: 4 })]).hold.plan;
