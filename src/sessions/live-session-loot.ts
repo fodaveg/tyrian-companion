@@ -120,7 +120,10 @@ export class LiveSessionLootTracker {
 				.reduce((sum, gain) => sum + gain.delta, 0);
 			const unresolvedIds = [...this.rows.values()].flatMap((row) =>
 				row.nameResolved && row.unitCopper !== null ? [] : [row.itemId]);
-			const enriched = await this.enrich([...unresolvedIds, ...gains.map(({ id }) => id)]);
+			const started = this.state;
+				const enriched = await this.enrich([...unresolvedIds, ...gains.map(({ id }) => id)]);
+				// begin() or reset() ran while the network answered: these gains belong to a session that is gone.
+				if (this.state !== started) return;
 			for (const row of this.rows.values()) this.applyEnrichment(row, enriched);
 			for (const gain of gains) {
 				const current = this.rows.get(gain.id);

@@ -173,6 +173,56 @@ describe('LiveSessionLootTracker', () => {
 			quantity: 1, totalCopper: 850_000, priceStatus: 'known', reason: 'valuable' });
 	});
 
+	describe('an observe still waiting on the network when the session changes', () => {
+		function gatedTracker(): { tracker: LiveSessionLootTracker; onAlert: ReturnType<typeof vi.fn>; release: () => void; requested: () => Promise<void> } {
+			let release = (): void => undefined;
+			const gate = new Promise<void>((resolve) => { release = resolve; });
+			const onAlert = vi.fn();
+			const gateway = {
+				requestDetailed: vi.fn(async (path: string) => {
+					await gate;
+					return path.startsWith('items?')
+						? { status: 200, headers: {}, body: [{ id: 1, name: 'Infusión valiosa' }] }
+						: { status: 200, headers: {}, body: [{ id: 1, whitelisted: true,
+							buys: { quantity: 1, unit_price: 1_000_000 }, sells: { quantity: 1, unit_price: 1_100_000 } }] };
+				}),
+			};
+			return { tracker: new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 500_000, onAlert }), onAlert, release,
+				// The observe has passed its entry guard and is parked on the network.
+				requested: async () => { await vi.waitFor(() => { expect(gateway.requestDetailed).toHaveBeenCalled(); }); } };
+		}
+
+		it('does not write the old session gains, alerts or sack counts into the session that replaced it', async () => {
+			const { tracker, onAlert, release, requested } = gatedTracker();
+			tracker.begin('old');
+			const pending = tracker.observe('old', delta(1, 1));
+			await requested();
+			tracker.begin('new');
+			release();
+			await pending;
+
+			expect(tracker.getState()).toMatchObject({ status: 'observing', sessionId: 'new', rows: [], knownTotalCopper: 0, updatedAt: null });
+			expect(onAlert).not.toHaveBeenCalled();
+			await tracker.observe('new', delta(1, 0));
+			expect(tracker.getState()).toMatchObject({ sessionId: 'new', rows: [] });
+			expect(onAlert).not.toHaveBeenCalled();
+		});
+
+		it('leaves the tracker idle, not observing with an empty session id, after a reset', async () => {
+			const { tracker, onAlert, release, requested } = gatedTracker();
+			tracker.begin('old');
+			const pending = tracker.observe('old', delta(1, 1));
+			await requested();
+			tracker.reset();
+			release();
+			await pending;
+
+			expect(tracker.getState()).toEqual({ status: 'idle' });
+			expect(tracker.displayNames()).toEqual({});
+			expect(onAlert).not.toHaveBeenCalled();
+		});
+	});
+
 	it('batches public item and price requests in groups of at most 200 ids', async () => {
 		const requestedBatches: number[][] = [];
 		const gateway = {
