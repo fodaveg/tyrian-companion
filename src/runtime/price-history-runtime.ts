@@ -19,6 +19,7 @@
  * persisted-session boundary: the history's stores belong to that service, this holds none.
  */
 import type { PriceIngameState } from '../alerts/price-ingame-state';
+import { openSessionCatalog } from './session-catalog-opening';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import { startLocalDebugAction } from '../core/local-debug-action-runner';
@@ -87,8 +88,6 @@ export class PriceHistoryRuntime {
 	private get priceHistory(): PriceHistoryService | null { return this.port.priceHistory; }
 	private get priceHistoryPanelSeed(): PriceHistoryRuntimePort['priceHistoryPanelSeed'] { return this.port.priceHistoryPanelSeed; }
 	private get sessionCatalogFactory(): PriceHistoryRuntimePort['sessionCatalogFactory'] { return this.port.sessionCatalogFactory; }
-	private get sessionCatalog(): PublicCatalogService | null { return this.port.sessionCatalog; }
-	private set sessionCatalog(value: PublicCatalogService | null) { this.port.sessionCatalog = value; }
 	private get liveSessions(): PriceHistoryRuntimePort['liveSessions'] { return this.port.liveSessions; }
 	private get liveEconomy(): PriceHistoryRuntimePort['liveEconomy'] { return this.port.liveEconomy; }
 	private notifyRuntimeStarting(): void { this.port.notifyRuntimeStarting(); }
@@ -182,8 +181,7 @@ export class PriceHistoryRuntime {
 			component: 'price_history', action: 'price_history_load_series', state: 'price_history_catalog',
 		});
 		try {
-			this.sessionCatalog ??= await this.sessionCatalogFactory();
-			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
+			const items = await (await openSessionCatalog(this.port)).resolveItems(itemIds, this.settings.language);
 			const resolved: Record<number, { name: string; icon: string | null }> = {};
 			for (const [key, item] of Object.entries(items)) {
 				const itemId = Number(key);

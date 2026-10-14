@@ -1770,6 +1770,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.alertQueue?.dispose();
 		this.sessionCatalog?.dispose();
 		this.sessionCatalog = null;
+		// Without its factory nothing reopens the catalog after the unload (the next start sets a new one).
+		this.sessionCatalogFactory = null;
 		// Awaited, not fire-and-forget: `dispose`'s own promise is already what `onunload` hands
 		// `localDebugShutdown` (see below), so this rides that same wait for free. A reload with
 		// the in-game channel enabled builds a fresh plugin instance right after this one's

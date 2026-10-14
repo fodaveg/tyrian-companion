@@ -33,6 +33,7 @@ import type { CatalogItem } from '../catalog/public-catalog-model';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { startLocalDebugAction, type LocalDebugActionRunner, type ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import { createTranslator } from '../core/i18n';
+import { openSessionCatalog } from './session-catalog-opening';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
@@ -159,8 +160,6 @@ export class SessionNoteRuntime {
 	private get inventoryPreferences(): SessionNoteRuntimePort['inventoryPreferences'] { return this.port.inventoryPreferences; }
 	private get lootPresentation(): SessionNoteRuntimePort['lootPresentation'] { return this.port.lootPresentation; }
 	private get sessionCatalogFactory(): SessionNoteRuntimePort['sessionCatalogFactory'] { return this.port.sessionCatalogFactory; }
-	private get sessionCatalog(): PublicCatalogService | null { return this.port.sessionCatalog; }
-	private set sessionCatalog(value: PublicCatalogService | null) { this.port.sessionCatalog = value; }
 	private get liveSummaryNetwork(): boolean { return this.port.liveSummaryNetwork; }
 	private get ingameSessionMarker(): SessionNoteRuntimePort['ingameSessionMarker'] { return this.port.ingameSessionMarker; }
 	private get farming(): SessionNoteRuntimePort['farming'] { return this.port.farming; }
@@ -380,10 +379,10 @@ export class SessionNoteRuntime {
 		return new LiveSessionEconomy({
 			lifecycle, gateway, rateLimit, now: () => Date.now(),
 			canEmit: () => !consulting(this.port) && !this.unloaded,
-			catalog: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveItems(ids,this.settings.language); },
-			cachedItems: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedItems(ids,this.settings.language); },
-			currencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.resolveCurrencies(ids,this.settings.language); },
-			cachedCurrencies: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await this.sessionCatalog.readCachedCurrencies(ids,this.settings.language); },
+			catalog: async (ids) => { return await (await openSessionCatalog(this.port)).resolveItems(ids,this.settings.language); },
+			cachedItems: async (ids) => { return await (await openSessionCatalog(this.port)).readCachedItems(ids,this.settings.language); },
+			currencies: async (ids) => { return await (await openSessionCatalog(this.port)).resolveCurrencies(ids,this.settings.language); },
+			cachedCurrencies: async (ids) => { return await (await openSessionCatalog(this.port)).readCachedCurrencies(ids,this.settings.language); },
 			emit: async (intent) => await this.port.emitLiveSessionAlert(intent), onError: (error) => { this.port.recordIngameSessionFailure(error); },
 			onChange: () => { this.renderViews(); },
 		});
@@ -406,12 +405,12 @@ export class SessionNoteRuntime {
 			markWritten: async (sessionId) => { await this.liveSessions?.markSummaryWritten(sessionId); }, networkAllowed: () => this.liveSummaryNetwork, locale: () => this.settings.language, outputFolder: () => this.settings.outputFolder,
 			inlineIcons: () => hostPaintsRemoteImages(this.host),
 			displayNames: (record) => knownLiveDisplayNames(record.totals, (kind, id) => this.getLiveSessionEntity(kind, id)?.name),
-			cachedNames: async (wanted) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); return await summaryCachedNames(this.sessionCatalog, wanted, this.settings.language); },
-			itemMeta: async (ids) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedItems(ids, this.settings.language);
+			cachedNames: async (wanted) => { return await summaryCachedNames(await openSessionCatalog(this.port), wanted, this.settings.language); },
+			itemMeta: async (ids) => { const cached = await (await openSessionCatalog(this.port)).readCachedItems(ids, this.settings.language);
 				return Object.fromEntries(Object.values(cached).map((item) => [item.id, { flags: item.flags, type: item.type, icon: item.icon }])); },
-			mapNames: async (ids, network) => { this.sessionCatalog ??= await this.sessionCatalogFactory!(); const cached = await this.sessionCatalog.readCachedMaps(ids, this.settings.language);
+			mapNames: async (ids, network) => { const catalog = await openSessionCatalog(this.port); const cached = await catalog.readCachedMaps(ids, this.settings.language);
 				const missing = ids.filter((id) => cached[String(id)] === undefined);
-				const fetched = missing.length === 0 || !network ? {} : await this.sessionCatalog.resolveMaps(missing, this.settings.language);
+				const fetched = missing.length === 0 || !network ? {} : await catalog.resolveMaps(missing, this.settings.language);
 				return Object.fromEntries(Object.entries({ ...cached, ...fetched }).map(([id, map]) => [id, map.name])); },
 			enabled: () => !consulting(this.port) && !this.unloaded, now: () => Date.now(),
 			startTimer: (callback, ms) => { const handle = window.setTimeout(callback, ms); return () => { window.clearTimeout(handle); }; },
@@ -499,8 +498,7 @@ export class SessionNoteRuntime {
 			...(parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } }),
 		});
 		try {
-			this.sessionCatalog ??= await this.sessionCatalogFactory();
-			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
+			const items = await (await openSessionCatalog(this.port)).resolveItems(itemIds, this.settings.language);
 			span.success('resolved');
 			return items;
 		} catch (error) {
