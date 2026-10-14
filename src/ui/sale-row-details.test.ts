@@ -4,6 +4,7 @@ import { createTranslator } from '../core/i18n';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
+import type { InventoryAdvisorViewRow } from './inventory-advisor-view-model';
 import { SaleItemView, type SaleViewActions } from './sale-item-view';
 import { renderSaleView } from './sale-view';
 import { buildSaleViewModel, type SaleSourceRow, type SaleViewModel, type SaleViewModelInput } from './sale-view-model';
@@ -253,6 +254,83 @@ describe('the «Detalles» of the Venta rows', () => {
 	});
 });
 
+describe('the body of a Venta row\'s «Detalles»: the Inventory tab\'s own', () => {
+	it('with the advisor row: the facts list, the chart right under it and the sub-details, in the advisor\'s order', () => {
+		const page = sale({ enabled: true, seed: seeded(300), advisorRow: advisorRow() });
+
+		page.toggle(0, true);
+
+		const detail = page.details()[0]!;
+		expect(detail.children.map((child) => `${child.tag}.${child.className}`)).toEqual([
+			'summary.', 'dl.', 'div.tyrian-inventory__price-history', 'dl.tyrian-inventory-advisor__row-context', 'details.tyrian-inventory-advisor__advanced-evidence',
+		]);
+		const facts = detail.children[1]!;
+		expect(facts.children.filter((child) => child.tag === 'dt').map((child) => child.textContent)).toEqual([
+			translator.t('advisor.view.list.headExplanation'), translator.t('advisor.view.owned'), translator.t('advisor.view.unitValue'),
+			translator.t('advisor.view.location'), translator.t('advisor.view.evidence'),
+		]);
+		const owned = facts.children[facts.children.findIndex((child) => child.textContent === translator.t('advisor.view.owned')) + 1]!;
+		expect(owned.textContent).toBe('3');
+		expect(texts(detail.children[3]!)).toContain(translator.t('advisor.view.marketComparison.instant'));
+		expect(texts(detail.children[4]!)).toContain(translator.t('advisor.view.advancedDetails'));
+		expect(walk(detail).filter((element) => element.className === 'tyrian-price-chart__plot')).toHaveLength(1);
+	});
+
+	it('paints neither «Ver en Venta» nor the value concentration: one leads here, the other is the Inventory list\'s own', () => {
+		const page = sale({ enabled: true, seed: seeded(30), advisorRow: { ...advisorRow(), containerEconomy: undefined } });
+
+		page.toggle(0, true);
+
+		const detail = page.details()[0]!;
+		expect(walk(detail).filter((element) => element.className === 'mod-link')).toHaveLength(0);
+		expect(texts(detail)).not.toContain(translator.t('advisor.view.list.viewInSale'));
+		expect(texts(detail)).not.toContain(translator.t('sale.row.head.value'));
+	});
+
+	it('a repaint paints the facts again, once, around the same chart', () => {
+		const page = sale({ enabled: true, seed: seeded(300), advisorRow: advisorRow() });
+		page.toggle(0, true);
+		const chart = chartContainer(only(page.blocks()));
+
+		page.repaint();
+		page.repaint();
+
+		const detail = page.details()[0]!;
+		expect(detail.open).toBe(true);
+		expect(detail.children.filter((child) => child.tag === 'dl' && child.className === '')).toHaveLength(1);
+		expect(chartContainer(only(page.blocks()))).toBe(chart);
+		expect(page.ensureSeed).toHaveBeenCalledTimes(1);
+	});
+
+	it('with little space in the selected character\'s bags the body says what the row frees, named', () => {
+		const page = sale({
+			enabled: true, seed: seeded(30),
+			model: model({
+				storageSpace: {
+					bags: { free: 5, total: 160 }, bank: { free: 4, total: 210 }, sharedInventory: { free: 0, total: 6 },
+					lowSpace: { freeSlots: 9, totalSlots: 376, thresholdFreeSlots: 20, isLow: true },
+					materialCapacity: null, bagCharacter: { character: 'Beta', source: 'addon' },
+				},
+				rows: [row({ itemId: FANGS, name: 'High-quality plastic fangs', bagSlotsUsed: 2, advisorRow: { ...advisorRow(), slotsFreed: 2 } })],
+			}),
+		});
+
+		page.toggle(0, true);
+
+		const context = only(walk(page.details()[0]!).filter((element) => element.className === 'tyrian-inventory-advisor__row-context'));
+		expect(texts(context)).toContain(translator.t('advisor.view.slotsFreed.label'));
+		expect(texts(context)).toContain(translator.t('advisor.view.slotsFreed.namedMany', { count: 2, character: 'Beta' }));
+	});
+
+	it('without the advisor row (a hero with no account row) the body is the block alone', () => {
+		const page = sale({ enabled: true, seed: seeded(30) });
+
+		page.toggle(0, true);
+
+		expect(page.details()[0]!.children.map((child) => child.tag)).toEqual(['summary', 'div']);
+	});
+});
+
 describe('SaleItemView and the rows\' «Detalles»', () => {
 	it('with the host\'s price-history actions the rows carry the detail, off while the runtime says disabled', async () => {
 		const host = view({ status: 'disabled' });
@@ -319,6 +397,8 @@ interface SaleSetup {
 	noMarket?: boolean;
 	withoutSource?: boolean;
 	model?: SaleViewModel;
+	/** The Inventory tab's row of the first Venta row, when its body is the advisor's. */
+	advisorRow?: InventoryAdvisorViewRow;
 }
 
 function sale(setup: SaleSetup) {
@@ -329,7 +409,7 @@ function sale(setup: SaleSetup) {
 	const ensureSeed = vi.fn((): void | Promise<void> => undefined);
 	const getSeed = vi.fn(() => seed.current);
 	const onEnable = vi.fn();
-	let current = setup.model ?? model({ withHero: setup.hero, noMarket: setup.noMarket });
+	let current = setup.model ?? model({ withHero: setup.hero, noMarket: setup.noMarket, advisorRow: setup.advisorRow });
 	const paint = (): void => renderSaleView(container as unknown as HTMLElement, icons, current, translator, {
 		rowDetails: setup.withoutSource === true ? undefined : {
 			priceHistory: () => ({ ...source, getSeed, ensureSeed, onEnable }),
@@ -405,8 +485,8 @@ function row(overrides: Partial<SaleSourceRow> & Pick<SaleSourceRow, 'itemId' | 
 	};
 }
 
-function model(overrides: Partial<SaleViewModelInput> & { withHero?: boolean; noMarket?: boolean } = {}): SaleViewModel {
-	const { withHero, noMarket, ...input } = overrides;
+function model(overrides: Partial<SaleViewModelInput> & { withHero?: boolean; noMarket?: boolean; advisorRow?: InventoryAdvisorViewRow } = {}): SaleViewModel {
+	const { withHero, noMarket, advisorRow, ...input } = overrides;
 	return buildSaleViewModel({
 		status: 'ready', nowMs: NOW_MS, festivalStartMs: Date.UTC(2026, 9, 13), maxPriceAgeMs: 900_000,
 		hero: withHero === true
@@ -416,12 +496,29 @@ function model(overrides: Partial<SaleViewModelInput> & { withHero?: boolean; no
 			row({
 				itemId: FANGS, name: 'High-quality plastic fangs', hasMarket: noMarket !== true,
 				decision: { action: 'sell', reason: 'seasonal_sell_window', until: null, priceQuotedAt: null, sellWindowFromDay: '2026-09-22', sellWindowToDay: '2026-10-19' },
+				...(advisorRow === undefined ? {} : { advisorRow }),
 			}),
 			row({ itemId: CANDY_CORN, name: 'Candy corn', decision: { action: 'hold', reason: 'no_demonstrated_wait_advantage', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null } }),
 		],
 		calendar: [],
 		...input,
 	});
+}
+
+/** The Inventory tab's row of the fangs: a market comparison (a context list) and one limited axis (an advanced disclosure). */
+function advisorRow(): InventoryAdvisorViewRow {
+	const state = 'complete' as const;
+	return {
+		id: '#/explanations/0/0', itemId: FANGS, name: 'High-quality plastic fangs', icon: null,
+		ownedQuantity: 3, availableQuantity: 3, action: 'sell', quantity: 3,
+		allocations: [{ positionRef: '#/positions/0', quantity: 3, location: { source: 'bank', slot: 1 } }],
+		reasonCodes: ['rule_missing'], protectionReasons: [],
+		value: { status: 'available', copper: 4_000, route: 'instant_sell' },
+		marketComparison: { instantSellCopper: 34, listingCopper: 51, differenceCopper: 17, differenceBasisPoints: 5_000 },
+		burden: null,
+		coverage: { snapshot: state, inventory: state, catalog: state, prices: 'limited', reservations: state, accountSignals: state, rules: state },
+		irreversibleReviewOnly: false, discardProof: null,
+	};
 }
 
 function idle(): PriceHistoryPanelSeedState {

@@ -4,20 +4,25 @@ import {
 	type InventoryAdvisorRowPriceHistory,
 	type RowPriceHistoryBlock,
 } from './inventory-advisor-price-history-block';
+import { rowDetailBody } from './inventory-advisor-row-detail-body';
 import type { SaleRowViewModel } from './sale-view-model';
 
 /**
  * The «Detalles» of a Venta row (David, 14 oct 2026: «en venta, quiero que los elementos tengan el
  * mismo detalle que en inventario»). The disclosure is the advisor's own (`tyrian-inventory__more`,
- * the same summary text) and its body is the SAME «Histórico de precio de venta» block the Inventory
- * tab mounts (`inventory-advisor-price-history-block.ts`): same texts, same opt-in and the same
- * states, never a second drawing of it.
+ * the same summary text) and its body is the advisor's own too: the facts list, the «Histórico de
+ * precio de venta» block (`inventory-advisor-price-history-block.ts`) and the sub-details, painted
+ * by `rowDetailBody` from the Inventory tab's row for the same object (`SaleRowViewModel.advisorRow`),
+ * with the same texts, the same opt-in and the same states, never a second drawing of them. Only
+ * «Ver en Venta» and the value concentration stay out: one leads here, the other is the Inventory
+ * list's own. Without the advisor row (a hero with no account row) the body is the block alone.
  *
  * What differs from the advisor is the page around it: Venta rebuilds its whole DOM on every repaint
  * (`renderSaleView`), so a row's detail cannot simply keep its nodes. This module keeps the block of
- * every OPEN detail across a repaint, keyed by the row's item: the new `<details>` comes back open
- * with the same block element, so the request made when it opened is not repeated and the zoom the
- * reader chose survives. A row that left the page takes its block with it.
+ * every OPEN detail across a repaint, keyed by the row's item: the new `<details>` comes back open,
+ * its facts painted again and the same block element among them, so the request made when it
+ * opened is not repeated and the zoom the reader chose survives. A row that left the page takes its
+ * block with it.
  */
 
 /** What the Venta tab hands its rows' «Detalles». Read at paint time, never captured. */
@@ -27,13 +32,20 @@ export interface SaleRowDetailsSource {
 	readonly translator: () => Translator;
 }
 
+/** What the page knows that every row's body reads: the same two facts the Inventory tab's rows get. */
+export interface SaleRowDetailsContext {
+	/** With little free space in the selected character's bags the row says what it frees (H18.15). */
+	readonly showSlotsFreed: boolean;
+	readonly bagCharacter: string | null;
+}
+
 /** The «Detalles» of one paint of the Venta page. */
 export interface SaleRowDetails {
 	/**
 	 * The disclosure of `row` for this paint, closed unless it was open before the repaint. Null when
 	 * the host offers no price history: a detail with nothing in it is not painted.
 	 */
-	mount(row: Pick<SaleRowViewModel, 'itemId' | 'name' | 'hasMarket'>): HTMLDetailsElement | null;
+	mount(row: Pick<SaleRowViewModel, 'itemId' | 'name' | 'hasMarket' | 'advisorRow'>): HTMLDetailsElement | null;
 	/**
 	 * Called once the page is in the document: paints the blocks of the open details (a block
 	 * measures its width then), drops the blocks of rows this paint did not mount, and gives the focus
@@ -61,7 +73,11 @@ const states = new WeakMap<object, SaleRowDetailsState>();
  * Begins the «Detalles» of one paint of `container`. Without a `source` nothing is mounted and
  * whatever an earlier paint kept is dropped on `settle()`.
  */
-export function beginSaleRowDetails(container: HTMLElement, source: SaleRowDetailsSource | undefined): SaleRowDetails {
+export function beginSaleRowDetails(
+	container: HTMLElement,
+	source: SaleRowDetailsSource | undefined,
+	context: SaleRowDetailsContext = { showSlotsFreed: false, bagCharacter: null },
+): SaleRowDetails {
 	const state: SaleRowDetailsState = states.get(container)
 		?? { open: new Map<number, RowPriceHistoryBlock>(), painted: new Map<number, PaintedDetail>() };
 	states.set(container, state);
@@ -72,17 +88,23 @@ export function beginSaleRowDetails(container: HTMLElement, source: SaleRowDetai
 	const seen = new Set<number>();
 	let refocus: (() => void) | null = null;
 
-	const mount = (row: Pick<SaleRowViewModel, 'itemId' | 'name' | 'hasMarket'>): HTMLDetailsElement | null => {
+	const mount = (row: Pick<SaleRowViewModel, 'itemId' | 'name' | 'hasMarket' | 'advisorRow'>): HTMLDetailsElement | null => {
 		if (source === undefined) return null;
+		const translator = source.translator();
 		const details = createEl('details');
 		details.className = 'tyrian-inventory__more';
 		const summary = createEl('summary');
-		summary.textContent = source.translator().t('advisor.view.list.detailsSummary');
+		summary.textContent = translator.t('advisor.view.list.detailsSummary');
 		details.append(summary);
 		// The same item twice on one page (never expected) keeps one block: the second is a fresh, closed detail.
 		const reusable = !seen.has(row.itemId);
 		seen.add(row.itemId);
 		let block: RowPriceHistoryBlock | null = null;
+		// The Inventory tab's body around the block; the block alone when the page has no advisor row for the object.
+		const body = (chart: HTMLElement): HTMLElement[] => row.advisorRow === undefined ? [chart] : rowDetailBody(row.advisorRow, translator, {
+			concentration: null, showSlotsFreed: context.showSlotsFreed, viewInSale: 'omit',
+			bagCharacter: context.bagCharacter, priceHistory: chart,
+		});
 		const openBody = (): void => {
 			if (block !== null) return;
 			block = mountRowPriceHistoryBlock({
@@ -90,7 +112,7 @@ export function beginSaleRowDetails(container: HTMLElement, source: SaleRowDetai
 				source: source.priceHistory, translator: source.translator,
 			});
 			state.open.set(row.itemId, block);
-			details.append(block.element);
+			details.append(...body(block.element));
 			// Attached now: the block measures its width and paints.
 			block.update();
 		};
@@ -103,10 +125,10 @@ export function beginSaleRowDetails(container: HTMLElement, source: SaleRowDetai
 		};
 		const kept = reusable ? state.open.get(row.itemId) : undefined;
 		if (kept !== undefined) {
-			// Open before the repaint: back open, with the same block (painted again in `settle`).
+			// Open before the repaint: back open, its facts painted again around the same block (which `settle` repaints).
 			block = kept;
 			details.open = true;
-			details.append(kept.element);
+			details.append(...body(kept.element));
 		}
 		if (reusable && focus !== null && focus.itemId === row.itemId) {
 			const target = focus.target;

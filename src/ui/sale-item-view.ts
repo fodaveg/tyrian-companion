@@ -215,6 +215,9 @@ export class SaleItemView {
 	 */
 	private rowPriceHistory(): InventoryAdvisorRowPriceHistory | undefined {
 		if (this.closed || !this.hasRowPriceHistory()) return undefined;
+		// Pending (14 oct 2026): once the block's «1 semana» window lands (`feat/price-chart-week-window`,
+		// `InventoryAdvisorRowPriceHistory.hourly`), this is where Venta hands it the same
+		// `hourly: { get: getPriceHourlyState, ensure: ensurePriceHourly }` the Inventory tab does.
 		return {
 			enabled: this.actions.getPriceHistoryState!().status !== 'disabled',
 			consultOnly: this.actions.getCollectorMode?.() === 'consult',

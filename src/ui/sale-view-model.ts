@@ -4,7 +4,7 @@ import type { PositionRecommendationReasonCode } from '../advisor/inventory-posi
 import { priceHistoryDayUtc } from '../economy/price-history-model';
 import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { prioritizeSpaceFreeingActions } from '../inventory/storage-space';
-import type { InventoryAdvisorViewStatus } from './inventory-advisor-view-model';
+import type { InventoryAdvisorViewRow, InventoryAdvisorViewStatus } from './inventory-advisor-view-model';
 
 /**
  * The Sale tab (`docs/diseno/halloween-venta`). Pure, translator-free: every text and date is
@@ -57,6 +57,12 @@ export interface SaleSourceRow {
 	 * Absent means true.
 	 */
 	hasMarket?: boolean;
+	/**
+	 * The Inventory tab's own row for this object, carried as-is so the row's «Detalles» paints the
+	 * SAME body the Inventory tab does (`inventory-advisor-row-detail-body.ts`). Absent (a hero with no
+	 * account row, a harness), the detail carries the price block alone. Never read by this module.
+	 */
+	advisorRow?: InventoryAdvisorViewRow;
 }
 
 export interface SaleWindowSpan {
@@ -91,6 +97,8 @@ export interface SaleRowViewModel {
 	quote: SaleQuote;
 	/** See `SaleSourceRow.hasMarket`; what the row's «Detalles» hands its price-history block. Absent means true. */
 	hasMarket?: boolean;
+	/** See `SaleSourceRow.advisorRow`; what the row's «Detalles» paints its facts from. */
+	advisorRow?: InventoryAdvisorViewRow;
 }
 
 export interface SaleHeroViewModel extends SaleRowViewModel {
@@ -259,6 +267,7 @@ function toRowViewModel(source: SaleSourceRow, isLow: boolean, nowMs: number): S
 		bidCopper: source.bidCopper, instantSellNetCopper: source.instantSellNetCopper, listingNetCopper: source.listingNetCopper,
 		quote: { quotedAtMs, stale: staleAtMs !== null && nowMs > staleAtMs, staleAtMs },
 		hasMarket: source.hasMarket ?? true,
+		...(source.advisorRow === undefined ? {} : { advisorRow: source.advisorRow }),
 	};
 }
 

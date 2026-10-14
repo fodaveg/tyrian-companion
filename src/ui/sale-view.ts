@@ -54,7 +54,10 @@ export function renderSaleView(
 	// The whole page is rebuilt on every repaint, "Actualizar" included: it keeps the focus it had (Z7-4).
 	keepFocusOnRebuild(container, '.tyrian-sale__refresh', () => {
 		// The rows' «Detalles» read the focus and the open ones BEFORE the rebuild, and settle once the page is in place.
-		const details = beginSaleRowDetails(container, interactions.rowDetails);
+		const details = beginSaleRowDetails(container, interactions.rowDetails, {
+			showSlotsFreed: model.storageSpace?.lowSpace?.isLow === true,
+			bagCharacter: model.storageSpace?.bagCharacter?.character ?? null,
+		});
 		paintSaleView(container, ui, model, translator, interactions, details);
 		details.settle();
 	});

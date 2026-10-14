@@ -162,6 +162,8 @@ export function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCop
 		instantSellNetCopper: saleInstantSellNetFor(row),
 		listingNetCopper: row.marketComparison?.listingCopper ?? null,
 		hasMarket: saleRowHasMarket(row),
+		// The row's «Detalles» paints the Inventory tab's own body from it (14 oct 2026).
+		advisorRow: row,
 	};
 }
 
