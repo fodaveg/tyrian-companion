@@ -463,7 +463,20 @@ function mountInventoryAdvisorView(
 	advancedFiltersContent.append(actionLabel, groupLabelElement, characterLabel, sourceFieldset);
 	advancedFilters.append(advancedFiltersSummary, advancedFiltersContent);
 	controls.append(searchLabel, sortLabelElement, advancedFilters, syncPrimaryActions);
-	const syncFilterControlAvailability = (): boolean => {
+	/** Whether the optional store can be offered: complete coverage only. */
+	const sourceAvailable = (key: 'bank' | 'materials' | 'delivery'): boolean => model.optionalSources?.[key]?.status === 'complete';
+	/**
+	 * What the list is scoped by: the player's choice (`filters`, always equal to the checkboxes)
+	 * AND the store being available. Availability disables a checkbox, it never unchecks it, so a
+	 * choice made while a store loads is still there when it arrives.
+	 */
+	const effectiveFilters = (): typeof filters => ({
+		...filters,
+		includeBank: filters.includeBank === true && sourceAvailable('bank'),
+		includeMaterials: filters.includeMaterials === true && sourceAvailable('materials'),
+		includeDelivery: filters.includeDelivery === true && sourceAvailable('delivery'),
+	});
+	const syncFilterControlAvailability = (): void => {
 		const loading = analysisRunning(model);
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
 		search.disabled = loading;
@@ -471,22 +484,15 @@ function mountInventoryAdvisorView(
 		group.disabled = loading;
 		sortSelect.disabled = loading;
 		sourceFieldset.disabled = loading;
-		let sourceSelectionChanged = false;
 		for (const [key, control] of sourceControls) {
 			if (key === 'keep' || key === 'review') {
 				control.input.disabled = loading;
 				continue;
 			}
 			const coverage = model.optionalSources?.[key] ?? null;
-			const available = coverage?.status === 'complete';
-			control.input.disabled = loading || scopedToCharacter || !available;
+			control.input.disabled = loading || scopedToCharacter || !sourceAvailable(key);
 			control.status.textContent = ` · ${optionalSourceCoverageLabel(coverage, translator)}`;
-			if (!available && control.input.checked) {
-				control.input.checked = false;
-				sourceSelectionChanged = true;
-			}
 		}
-		return sourceSelectionChanged;
 	};
 	// The list at account size (~1,400 rows). What a key of the search may cost is one pass over
 	// rows already scoped and ordered, and moving row elements already built: the scope and the
@@ -507,13 +513,14 @@ function mountInventoryAdvisorView(
 	let shownConcentration: ReadonlyMap<string, InventoryAdvisorValueConcentration> | null = null;
 	/** The rows in scope, in the chosen order. `dataChanged` discards what the previous data left. */
 	const orderedRows = (dataChanged: boolean): InventoryListProjection => {
+		const effective = effectiveFilters();
 		const scopeKey = JSON.stringify([
-			filters.character ?? ALL_CHARACTERS, filters.includeBank === true, filters.includeMaterials === true, filters.includeDelivery === true,
+			effective.character ?? ALL_CHARACTERS, effective.includeBank, effective.includeMaterials, effective.includeDelivery,
 		]);
 		// By identity: an update can bring other groups under the same `contentVersion`, and a key
 		// of the search must not filter and order the rows the previous groups left.
 		if (dataChanged || projection === null || projection.groups !== model.groups || projection.scopeKey !== scopeKey) {
-			projection = { groups: model.groups, scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters), orderKey: '', ordered: [] };
+			projection = { groups: model.groups, scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), effective), orderKey: '', ordered: [] };
 			clearRowElements();
 		}
 		const order = filters.sort ?? 'value_desc';
@@ -551,13 +558,8 @@ function mountInventoryAdvisorView(
 	};
 	const refreshResults = (dataChanged = true): void => {
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
-		const sourceSelectionChanged = syncFilterControlAvailability();
-		if (sourceSelectionChanged) filters = {
-			...filters,
-			includeBank: sourceControls.get('bank')!.input.checked,
-			includeMaterials: sourceControls.get('materials')!.input.checked,
-			includeDelivery: sourceControls.get('delivery')!.input.checked,
-		};
+		syncFilterControlAvailability();
+		const scoping = effectiveFilters();
 		const visible = model.status === 'ready' || model.status === 'limited';
 		const heldFocus = focusedRowControl();
 		// A detail does not outlive a change of the list: it closes, as it did when every row was rebuilt.
@@ -568,9 +570,9 @@ function mountInventoryAdvisorView(
 		}
 		const ordered = visible ? orderedRows(dataChanged) : null;
 		// H18.15: only the value order yields to space; an explicit quantity or name order stands.
-		const rows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher(filters));
+		const rows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher(scoping));
 		const directRows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher({
-			...filters, action: 'all', showKeep: false, showReview: false,
+			...scoping, action: 'all', showKeep: false, showReview: false,
 		}));
 		shownRows = rows;
 		shownConcentration = null;
@@ -614,7 +616,7 @@ function mountInventoryAdvisorView(
 				action.focus();
 			},
 			{
-				scope: scopeSummaryOfScopedRows(ordered.scoped, new Set(rows.map((row) => row.itemId)), filters),
+				scope: scopeSummaryOfScopedRows(ordered.scoped, new Set(rows.map((row) => row.itemId)), scoping),
 				storageSpace: model.storageSpace ?? null,
 				legendaryTableExpiredAt: model.legendaryTableExpiredAt ?? null,
 				rowElement: (row) => {
@@ -813,7 +815,7 @@ function mountInventoryAdvisorView(
 		// live sync-panel tick changed, not the advisor's actual content, state, or locale.
 		const resultsKey = model.contentVersion === undefined
 			? `unversioned:${String(unversionedRenders += 1)}`
-			: `${String(model.contentVersion)}:${translator.locale}:${model.status}`;
+			: `${String(model.contentVersion)}:${translator.locale}:${model.status}:${(['bank', 'materials', 'delivery'] as const).map((key) => sourceAvailable(key) ? 1 : 0).join('')}`;
 		if (resultsKey !== lastResultsKey) {
 			lastResultsKey = resultsKey;
 			refreshResults();

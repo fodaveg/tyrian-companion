@@ -742,6 +742,20 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).not.toContain('403');
 	});
 
+	it('keeps the player choice of the stores while they load: disabled is not unchecked, and typing hides nothing', () => {
+		const mount = render({ ...scopeModel(), status: 'loading', optionalSources: null, groups: [] });
+		const stores = () => find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
+		expect(stores().map((input) => [input.checked, input.disabled])).toEqual([[true, true], [true, true], [true, true]]);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, scopeModel(), createTranslator('es'));
+		expect(stores().map((input) => [input.checked, input.disabled])).toEqual([[true, false], [true, false], [true, false]]);
+		const search = controlWithLabel(mount.elements(), 'input', 'Buscar objetos');
+		search.value = 'o';
+		search.dispatch('input');
+		const names = text(mount.elements());
+		expect(names).toContain('Solo banco');
+		expect(names).toContain('Material');
+	});
+
 	it('orders visible rows by the selected criterion and closes each group with its exact subtotal', () => {
 		const rows = [
 			row({ id: '#/explanations/1/0', itemId: 1, name: 'Bajo valor', action: 'sell', quantity: 9,
