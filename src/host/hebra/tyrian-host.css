@@ -157,9 +157,12 @@
    la superficie (`html[data-hebra-surface]`), que mide lo que Hebra da al marco. En la 1.x
    eran el inspector, el diálogo, la sección de la pantalla principal y el panel de Ajustes;
    el modal y el bloque no lo llevaban porque su ancho salía del contenido, y en la 2.x el
-   ancho de cualquier marco lo pone Hebra, así que lo llevan todos. */
+   ancho de cualquier marco lo pone Hebra, así que lo llevan todos. Sin el margen por defecto
+   del `<body>` (8 px): Hebra ajusta el alto del marco a la raíz y ese margen recortaba el borde
+   inferior del bloque de la nota (arnés C1 de Hebra, 14 oct 2026: hueco 72 px, body 96). */
 [data-hebra-surface] > body {
   container-type: inline-size;
+  margin: 0;
 }
 
 /* En la pantalla principal la sección ocupa la columna entera. El tope de 84rem que Tyrian
