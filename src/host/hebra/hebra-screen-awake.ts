@@ -1,5 +1,5 @@
 /**
- * Hebra's `screen.awake` capability (plugin API 1.8, provisional): `api.ui.keepScreenOn(viewId, on)`
+ * Hebra's `screen.awake` capability (plugin API 1.8): `api.ui.keepScreenOn(viewId, on)`
  * keeps an iPhone/iPad screen on while a view is visible. This is the only file of the plugin that
  * touches it. The pinned `hebra-plugin-api` types predate 1.8, so the method has a local minimal type
  * and a bounded cast here.
@@ -17,7 +17,7 @@ import type { HebraPluginApi } from 'hebra-plugin-api';
 
 export const SCREEN_AWAKE_FEATURE = 'screen.awake';
 
-/** The id Hebra's `keepScreenOn` takes for a view. UNCONFIRMED (provisional contract): `view.type`; change it here only. */
+/** The id Hebra's `keepScreenOn` takes for a view: the `id` it was registered with (`registerView({ id })`), which is `view.type` in both registrations (Hebra 1.8 contract, e893555d). */
 export function screenAwakeViewId(viewType: string): string {
 	return viewType;
 }
