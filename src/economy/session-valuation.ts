@@ -283,8 +283,12 @@ function valueLine(
 		? depth?.coverage ?? 'unavailable' : 'not_applicable';
 	const instantSell = tpEligible && price?.bid && depth?.coverage === 'complete'
 		? valueInstantSellDepth(depth.buys, quantity) : null;
-	const listing = classified.classification.tradingPost.status === 'eligible' && price?.ask
+	const listingValued = classified.classification.tradingPost.status === 'eligible' && price?.ask
 		? createTradingPostValueWithPolicy('listing', price.ask.unitCopper, quantity) : null;
+	// A gross smaller than the minimum fees still completes with nothing received (see `instantNet` in
+	// gw2-fees): the line counts as zero, it must not invalidate the whole session's valuation.
+	const listing = listingValued?.status === 'invalid' && listingValued.reason === 'fees_exceed_gross'
+		? null : listingValued;
 	if (instantSell?.status === 'invalid' || listing?.status === 'invalid') return null;
 	const vendor = classified.classification.vendor.status === 'eligible'
 		? classified.classification.vendor.value : null;

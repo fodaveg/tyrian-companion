@@ -216,6 +216,30 @@ describe('calculateSessionValuation', () => {
 		});
 	});
 
+	it('values a one-copper ask line at nothing instead of invalidating the whole session', () => {
+		const value = input();
+		value.delta = {
+			...value.delta,
+			itemChanges: value.delta.itemChanges.map((change) => change.id === 2
+				? { id: 2, before: 0, after: 1, delta: 1 } : change),
+		};
+		value.prices = {
+			...value.prices,
+			items: value.prices.items.map((entry) => entry.itemId === 2
+				? { ...entry, quantityGained: 1, bid: null, ask: { quantity: 10, unitCopper: 1 } } : entry),
+		};
+		value.catalogItems['2'] = item(2, { vendorValue: 0 });
+		value.bindingByItem['2'] = 'unbound';
+
+		const result = calculateSessionValuation(value);
+
+		expect(result).toMatchObject({ status: 'ok' });
+		if (result.status !== 'ok') return;
+		const line = result.valuation.lines.find((entry) => entry.itemId === 2);
+		expect(line).toMatchObject({ quantity: 1, listing: null, listingBestCopper: null });
+		expect(isSessionValuation(result.valuation, value.delta, [HALLOWEEN_TOT_BAG_ITEM_ID])).toBe(true);
+	});
+
 	it('reports item losses as an explicit limitation and never subtracts an invented value', () => {
 		const value = input();
 		value.delta.itemChanges.splice(1, 0, { id: 99, before: 3, after: 1, delta: -2 });
