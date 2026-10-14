@@ -116,6 +116,16 @@ describe('H13.7 end of the window', () => {
 			.toBe(Date.parse('2027-11-16T00:00:00.000Z'));
 	});
 
+	// Audit fix (14 oct 2026): asked exactly at the exclusive end of this year's window, that window
+	// has no instant left at or after `fromMs`; the next close is next year's. One millisecond
+	// earlier is still inside and still closes this year.
+	it('rolls to next year when asked exactly at this year\'s exclusive end', () => {
+		const end = Date.parse('2026-11-16T00:00:00.000Z');
+		expect(seasonalWindowStatusAtMs(HALLOWEEN_SEASONAL_WINDOW, end)).toBe('out_of_season');
+		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, end)).toBe(Date.parse('2027-11-16T00:00:00.000Z'));
+		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, end - 1)).toBe(end);
+	});
+
 	it('returns the same year when asked from inside the window', () => {
 		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, Date.parse('2026-10-20T00:00:00.000Z')))
 			.toBe(Date.parse('2026-11-16T00:00:00.000Z'));

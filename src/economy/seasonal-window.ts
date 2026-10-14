@@ -87,11 +87,13 @@ export function seasonalWindowClosesAfterMs(window: unknown, fromMs: unknown): n
 	const year = Number.parseInt(iso.slice(0, 4), 10);
 	// The day after the closing day, at midnight: the window includes its closing
 	// day in full, so anything valid "until the close" must reach past midnight.
+	// That end is exclusive: asked exactly at it, this year's window has nothing
+	// left at or after `fromMs`, so the answer is next year's close.
 	for (const candidate of [year, year + 1]) {
 		const closes = Date.parse(`${String(candidate)}-${window.closesOn}T00:00:00.000Z`);
 		if (!Number.isFinite(closes)) return null;
 		const endsAt = closes + 86_400_000;
-		if (endsAt >= fromMs) return endsAt;
+		if (endsAt > fromMs) return endsAt;
 	}
 	return null;
 }
