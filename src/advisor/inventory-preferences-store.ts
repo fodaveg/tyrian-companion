@@ -167,10 +167,13 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 	}
 
 	/**
-	 * DU-13: writes `records` only when the vault has no record at all, checked and written in one transaction, so a record
-	 * saved meanwhile is never overwritten. Every record must be valid and belong to `vaultId`.
+	 * DU-13: writes each of `records` whose key this vault does not hold, or holds corrupt (a value no release can read:
+	 * it blocks every read and write of its account, and the copy has the last good version). A record this release can
+	 * read is never written over, nor one of a future schema, which a newer release on another device wrote and can read.
+	 * Every key is checked and written in one transaction, so a record saved meanwhile is never overwritten. Every record
+	 * must be valid and belong to `vaultId`; `not_empty` when none needed writing.
 	 */
-	async restoreVaultIfEmpty(vaultId: string, records: readonly InventoryPreferencesV1[]): Promise<InventoryPreferencesVaultRestoreResult> {
+	async restoreMissingRecords(vaultId: string, records: readonly InventoryPreferencesV1[]): Promise<InventoryPreferencesVaultRestoreResult> {
 		const attempt = this.writeDiagnostics.begin('inventory_preferences', 'write');
 		const copies = records.map(cloneInventoryPreferences);
 		if (copies.some((record) => record === null || record.vaultId !== vaultId)
@@ -180,14 +183,18 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		}
 		try {
 			const result = await this.onStore<InventoryPreferencesVaultRestoreResult>(this.writeDiagnostics, 'readwrite', (store, done) => {
-				const present = store.count(vaultKeys(vaultId));
-				present.onsuccess = () => {
-					if (present.result > 0) {
-						done({ status: 'not_empty' });
-						return;
+				const keys = store.getAllKeys(vaultKeys(vaultId));
+				const values = store.getAll(vaultKeys(vaultId));
+				values.onsuccess = () => {
+					const held = new Map<IDBValidKey, unknown>(keys.result.map((key, index) => [key, (values.result as unknown[])[index]]));
+					let count = 0;
+					for (const record of copies as InventoryPreferencesV1[]) {
+						const key = storageKey(record);
+						if (held.has(key) && !corruptRecord(held.get(key), key)) continue;
+						store.put(record, key);
+						count += 1;
 					}
-					for (const record of copies as InventoryPreferencesV1[]) store.put(record, storageKey(record));
-					done({ status: 'restored', count: copies.length });
+					done(count === 0 ? { status: 'not_empty' } : { status: 'restored', count });
 				};
 			});
 			attempt.success();
@@ -351,6 +358,16 @@ function parseRecord(raw: unknown, scope: InventoryPreferenceScope):
 		return { status: 'error', code: 'corrupt' };
 	}
 	return { status: 'ok', record, migrated: (raw as { schemaVersion?: unknown }).schemaVersion === 0 };
+}
+
+/**
+ * A stored value no release can read under `key`: not a record (after migration), or one of another key. One of a future
+ * schema is not corrupt: the newer release that wrote it reads it.
+ */
+function corruptRecord(raw: unknown, key: IDBValidKey): boolean {
+	if (isFutureInventoryPreferences(raw)) return false;
+	const record = migrateInventoryPreferences(raw);
+	return record === null || storageKey(record) !== key;
 }
 
 function storageKey(scope: InventoryPreferenceScope): string {

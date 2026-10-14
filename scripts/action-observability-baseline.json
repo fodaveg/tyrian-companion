@@ -1683,27 +1683,27 @@
 					"reason": "Allowlisted catch_clause: The \"readVault\" catch records the failed vault read on the inventory_preferences probe (attempt.failure) and answers { status: \"error\", code } with a \"fallback_return\"; the copy's writer records that answer as backup_read_failed. Verified recovery: \"fallback_return\" in \"readVault\"."
 				},
 				{
-					"id": "dca1ad9484d10cbd50bb1c92669064f2d556380f",
+					"id": "b5ea50a5f68421ea7c78105644a1ffd1e58c3e19",
 					"kind": "catch_clause",
-					"line": 195,
+					"line": 202,
 					"column": 5,
-					"endLine": 199,
+					"endLine": 206,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
-						"scope": "restoreVaultIfEmpty",
-						"justification": "The \"restoreVaultIfEmpty\" catch records the failed restore on the inventory_preferences probe (attempt.failure) and answers { status: \"error\", code } with a \"fallback_return\"; restoreOnce records that answer as backup_restore_failed."
+						"scope": "restoreMissingRecords",
+						"justification": "The \"restoreMissingRecords\" catch records the failed restore on the inventory_preferences probe (attempt.failure) and answers { status: \"error\", code } with a \"fallback_return\"; restoreOnce records that answer as backup_restore_failed."
 					},
-					"reason": "Allowlisted catch_clause: The \"restoreVaultIfEmpty\" catch records the failed restore on the inventory_preferences probe (attempt.failure) and answers { status: \"error\", code } with a \"fallback_return\"; restoreOnce records that answer as backup_restore_failed. Verified recovery: \"fallback_return\" in \"restoreVaultIfEmpty\"."
+					"reason": "Allowlisted catch_clause: The \"restoreMissingRecords\" catch records the failed restore on the inventory_preferences probe (attempt.failure) and answers { status: \"error\", code } with a \"fallback_return\"; restoreOnce records that answer as backup_restore_failed. Verified recovery: \"fallback_return\" in \"restoreMissingRecords\"."
 				},
 				{
 					"id": "0b2e50fd3aa78075d88b6e68f9ddfd55a77e5487",
 					"kind": "catch_clause",
-					"line": 244,
+					"line": 251,
 					"column": 5,
-					"endLine": 247,
+					"endLine": 254,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1717,9 +1717,9 @@
 				{
 					"id": "71f5577e8dfb609cc390dd6d81dacc9f9f3f30fb",
 					"kind": "catch_clause",
-					"line": 255,
+					"line": 262,
 					"column": 29,
-					"endLine": 255,
+					"endLine": 262,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1733,9 +1733,9 @@
 				{
 					"id": "0d06c90985b415acac1a0c1df64539c953d78064",
 					"kind": "catch_clause",
-					"line": 275,
+					"line": 282,
 					"column": 5,
-					"endLine": 277,
+					"endLine": 284,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1749,9 +1749,9 @@
 				{
 					"id": "db84d157faa515df7fbb179cc10ce732ae8d2c43",
 					"kind": "catch_clause",
-					"line": 303,
+					"line": 310,
 					"column": 5,
-					"endLine": 305,
+					"endLine": 312,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1765,9 +1765,9 @@
 				{
 					"id": "e54c6c5bc4989d07418d291dc48944662217d053",
 					"kind": "catch_clause",
-					"line": 324,
+					"line": 331,
 					"column": 7,
-					"endLine": 327,
+					"endLine": 334,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {

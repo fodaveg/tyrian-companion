@@ -12,14 +12,16 @@
  *   vault holds in IndexedDB at that moment, merged over the stored copy: an account IndexedDB does not hold is kept in
  *   the copy as it was, so a write never drops an account (`mergeInventoryPreferencesBackup`). A record this release
  *   cannot read (corrupt, or from a newer release) is left out of what is read and counted in the log line; it stays in
- *   IndexedDB. A failure is recorded and never reaches the
+ *   IndexedDB, and the copy keeps the last version of that account it had. A failure is recorded and never reaches the
  *   user's action. A burst still waiting at `dispose` is written once more, best effort, without holding the unload; any
  *   other write after the unload is refused by the host. A vault's adoption of its earlier path (DU-02) counts as a change.
- * - When it is restored: once per load, at the start, only when IndexedDB holds no record of this vault and the copy is
- *   valid. Checking and writing are one IndexedDB transaction, so a record saved meanwhile is never overwritten. Until
- *   the restore has settled, the store wrapped by `BackedUpInventoryPreferencesStore` makes reads and writes wait for it.
- * - IndexedDB wins for every account it holds: with records there, the copy is not touched until the next change
- *   rewrites those accounts from them.
+ * - When it is restored: once per load, at the start, when the copy is valid, account by account: an account whose
+ *   record IndexedDB lacks, or holds corrupt, takes the copy's. One IndexedDB can read is never written over, nor one of
+ *   a future schema (only the newer release that wrote it reads it). Checking and writing are one IndexedDB transaction,
+ *   so a record saved meanwhile is never overwritten. Until the restore has settled, the store wrapped by
+ *   `BackedUpInventoryPreferencesStore` makes reads and writes wait for it.
+ * - IndexedDB wins for every account it can read: the copy is not touched until the next change rewrites those
+ *   accounts from them, and keeps the rest.
  * - A copy that does not validate (corrupt, or a version this release does not know) is not restored and is recorded;
  *   nothing deletes it. One of a future version is not written over either (`inventoryPreferencesBackupWritableOver`):
  *   only the newer release that wrote it can read it. A corrupt one is.
@@ -283,7 +285,8 @@ export class InventoryPreferencesBackup {
 				span.failure(new Error(`inventory_preferences_${read.code}`), 'storage_failure', 'backup_read_failed', { reason: read.code });
 				return;
 			}
-			// A record IndexedDB holds but this release cannot read is left out of the copy, and counted here.
+			// A record IndexedDB holds but this release cannot read is left out of what is sent, and counted here; the
+			// settings port keeps that account's last version in the copy (`mergeInventoryPreferencesBackup`).
 			const outcome = await this.options.settings.write(createInventoryPreferencesBackup(read.records), final);
 			const details = { count: read.records.length, ...(read.unreadable > 0 ? { result: `unreadable_${String(read.unreadable)}` } : {}) };
 			if (outcome === 'saved') span.success('backup_saved', details);
@@ -316,7 +319,7 @@ export class InventoryPreferencesBackup {
 				span.failure(new Error('inventory_preferences_backup_corrupt'), 'validation_failed', 'backup_invalid', { reason: 'corrupt' });
 				return 'invalid';
 			}
-			const result = await this.options.store.restoreVaultIfEmpty(this.options.vaultId, records);
+			const result = await this.options.store.restoreMissingRecords(this.options.vaultId, records);
 			if (result.status === 'restored') {
 				span.success('backup_restored', { count: result.count });
 				return 'restored';

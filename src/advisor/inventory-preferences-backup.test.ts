@@ -10,7 +10,12 @@ import {
 	type InventoryPreferencesBackupWriteOutcome,
 } from './inventory-preferences-backup';
 import type { InventoryAdvisorEvidenceCaptureResultV1 } from './inventory-advisor-evidence-model';
-import { INVENTORY_PREFERENCES_DB_NAME, type InventoryPreferenceScope } from './inventory-preferences-model';
+import {
+	INVENTORY_PREFERENCES_DB_NAME,
+	INVENTORY_PREFERENCES_DB_VERSION,
+	INVENTORY_PREFERENCES_STORE_NAME,
+	type InventoryPreferenceScope,
+} from './inventory-preferences-model';
 import { InventoryPreferencesRuntime } from './inventory-preferences-runtime';
 import { InventoryPreferencesService } from './inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
@@ -54,18 +59,56 @@ describe('inventory preferences copy: restore at the start', () => {
 		world.dispose();
 	});
 
-	it('never overwrites an IndexedDB that already holds records of this vault, and leaves the copy alone', async () => {
+	it('never overwrites a record IndexedDB can read, restores only the accounts it lacks, and leaves the copy alone', async () => {
 		const world = harness({ stored: copyOf([[ACCOUNT, ['goal-from-copy'], []], ['account-beta', ['goal-beta'], []]]) });
+		const own = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
+		await own.upsertGoal(scope, 0, goal('goal-in-indexeddb'));
+		own.dispose();
+
+		await expect(world.backup.restore()).resolves.toBe('restored');
+		expect(await world.service.list(scope)).toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-in-indexeddb' }] } });
+		// An account the vault does not have yet comes back from the copy.
+		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-beta' })).toMatchObject({
+			status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-beta' }] },
+		});
+		expect(world.writes).toEqual([]);
+		expect(world.outcomes('backup_restore')).toEqual([['success', 'ok', 'backup_restored', { count: 1 }]]);
+		world.dispose();
+	});
+
+	it('has nothing to restore when IndexedDB can read every account of the copy', async () => {
+		const world = harness({ stored: copyOf([[ACCOUNT, ['goal-from-copy'], []]]) });
 		const own = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
 		await own.upsertGoal(scope, 0, goal('goal-in-indexeddb'));
 		own.dispose();
 
 		await expect(world.backup.restore()).resolves.toBe('not_empty');
 		expect(await world.service.list(scope)).toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-in-indexeddb' }] } });
-		// Not even an account the vault does not have yet: IndexedDB has data, so it decides.
-		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-beta' })).toEqual({ status: 'ok', record: null });
-		expect(world.writes).toEqual([]);
 		expect(world.outcomes('backup_restore')).toEqual([['skip', 'skipped', 'backup_not_needed', undefined]]);
+		world.dispose();
+	});
+
+	it('repairs a corrupt record from the copy, and never touches one of a future schema', async () => {
+		const world = harness({ stored: copyOf([[ACCOUNT, ['goal-a'], []], ['account-beta', ['goal-beta'], []], ['account-gamma', ['goal-gamma'], []]]) });
+		const future = { schemaVersion: 99, whatever: 'release 99 keeps here' };
+		await putRaw(world.factory, world.name, `${VAULT}\u0000${ACCOUNT}`, { schemaVersion: 1, goals: 'not a list' });
+		await putRaw(world.factory, world.name, `${VAULT}\u0000account-beta`, future);
+		const own = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
+		await own.upsertGoal({ vaultId: VAULT, accountId: 'account-gamma' }, 0, goal('goal-gamma-in-indexeddb'));
+		own.dispose();
+
+		await expect(world.backup.restore()).resolves.toBe('restored');
+		// The corrupt one blocked every read and write of its account; now it is the copy's, and editable again.
+		expect(await world.service.list(scope)).toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-a' }] } });
+		await expect(world.service.upsertGoal(scope, 1, goal('goal-a2'))).resolves.toMatchObject({ status: 'ok' });
+		// Only the newer release that wrote it can read it: left as it is.
+		expect(await getRaw(world.factory, world.name, `${VAULT}\u0000account-beta`)).toEqual(future);
+		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-beta' })).toEqual({ status: 'error', code: 'future_schema' });
+		// A readable one is never written over.
+		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-gamma' })).toMatchObject({
+			status: 'ok', record: { goals: [{ goalId: 'goal-gamma-in-indexeddb' }] },
+		});
+		expect(world.outcomes('backup_restore')).toEqual([['success', 'ok', 'backup_restored', { count: 1 }]]);
 		world.dispose();
 	});
 
@@ -376,6 +419,32 @@ function harness(options: {
 		levels: (state: string) => terminal(state).map((event) => event.level),
 		dispose: () => { service.dispose(); },
 	};
+}
+
+/** Opens the preferences database as the store would, to write or read a raw value past every validator. */
+async function onRaw<T>(factory: IDBFactory, name: string, mode: IDBTransactionMode, body: (store: IDBObjectStore) => IDBRequest | undefined): Promise<T> {
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = factory.open(name, INVENTORY_PREFERENCES_DB_VERSION);
+		request.onupgradeneeded = () => { request.result.createObjectStore(INVENTORY_PREFERENCES_STORE_NAME); };
+		request.onsuccess = () => { resolve(request.result); };
+		request.onerror = () => { reject(request.error ?? new Error('open failed')); };
+	});
+	const transaction = database.transaction(INVENTORY_PREFERENCES_STORE_NAME, mode);
+	const request = body(transaction.objectStore(INVENTORY_PREFERENCES_STORE_NAME));
+	await new Promise<void>((resolve, reject) => {
+		transaction.oncomplete = () => { resolve(); };
+		transaction.onerror = () => { reject(transaction.error ?? new Error('transaction failed')); };
+	});
+	database.close();
+	return request?.result as T;
+}
+
+async function putRaw(factory: IDBFactory, name: string, key: string, value: unknown): Promise<void> {
+	await onRaw(factory, name, 'readwrite', (store) => { store.put(value, key); return undefined; });
+}
+
+async function getRaw(factory: IDBFactory, name: string, key: string): Promise<unknown> {
+	return await onRaw(factory, name, 'readonly', (store) => store.get(key));
 }
 
 function manualTimers() {
