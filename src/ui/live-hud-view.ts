@@ -52,6 +52,7 @@ export function liveHudSection(actions: Pick<LiveHudActions, 'getLocale'>): Tyri
 		label: () => createTranslator(actions.getLocale()).t('shell.nav.live'),
 		// One of the glyphs Hebra draws (`bases/obsidian-icons.ts`, its curated set; `gauge` painted the blank marker) and a Lucide name for Obsidian.
 		icon: 'play',
+		keepScreenAwake: true,
 	};
 }
 

@@ -211,6 +211,8 @@ export interface TyrianViewRegistration {
 	readonly icon: string;
 	/** In Hebra, `'column'` is a tab of the right column (its `el` 288 px wide) and `'dialog'` the 960×720 dialog; absent means `'column'`. ObsidianHost ignores it. */
 	readonly placement?: 'column' | 'dialog';
+	/** The host keeps the device screen on while this view is mounted (where it can). */
+	readonly keepScreenAwake?: boolean;
 	mount(container: HTMLElement): void | Promise<void>;
 	unmount(container: HTMLElement): void | Promise<void>;
 }
@@ -237,6 +239,8 @@ export interface TyrianViewSectionRegistration {
 	unmount(container: HTMLElement): void | Promise<void>;
 	/** The host hid (false) or showed again (true) the mounted section in `container`. Never called right after `mount` nor before `unmount`. */
 	setVisible?(container: HTMLElement, visible: boolean): void;
+	/** The host keeps the device screen on while this section is mounted and visible (where it can). */
+	readonly keepScreenAwake?: boolean;
 }
 
 /** ONE view on the host's main screen that lists several sections and shows one at a time (`capabilities.mainView`). */

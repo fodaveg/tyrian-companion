@@ -28,6 +28,7 @@ import type { HebraPluginApi, PluginMenuEntry } from 'hebra-plugin-api';
 
 import type { TyrianMenuEntry, TyrianSecretsPort, TyrianUiPort, TyrianViewRegistration } from '../tyrian-host';
 import { attachFolderPicker } from './folder-picker';
+import { createScreenAwake, type ScreenAwake } from './hebra-screen-awake';
 import { registerHebraMainView, revealHebraMainViewSection, updateHebraMainViewSection } from './hebra-main-view';
 import { createSecretControl, createSettingRow, type HebraTranslator } from './setting-row';
 
@@ -35,7 +36,8 @@ import { createSecretControl, createSettingRow, type HebraTranslator } from './s
 export const TYRIAN_COMMAND_PREFIX = 'tyrian-companion:';
 
 export interface HebraTyrianUiDeps {
-	api: Pick<HebraPluginApi, 'ui' | 'editor' | 'env'>;
+	/** `has` is for the screen hold (`hebra-screen-awake.ts`); without it the hold is never asked. */
+	api: Pick<HebraPluginApi, 'ui' | 'editor' | 'env'> & Partial<Pick<HebraPluginApi, 'has'>>;
 	/** The active language, read when a copy is shown (notices, folder picker, secret dialog). */
 	translator: HebraTranslator;
 	secrets: TyrianSecretsPort;
@@ -79,7 +81,7 @@ function createLane(report: (error: unknown) => void): (step: Step) => void {
 	};
 }
 
-function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistration, titles: Map<string, () => string>): () => void {
+function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistration, titles: Map<string, () => string>, screenAwake: ScreenAwake): () => void {
 	const run = createLane((error) => deps.report(error, `view ${view.type}`));
 	let mounted: HTMLElement | null = null;
 	const unregister = deps.api.ui.registerView({
@@ -89,12 +91,14 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 		placement: view.placement ?? 'column',
 		mount(el) {
 			mounted = el;
+			if (view.keepScreenAwake === true) screenAwake.request(view.type, true);
 			run(() => view.mount(el));
 		},
 		unmount() {
 			const el = mounted;
 			mounted = null;
 			if (!el) return;
+			if (view.keepScreenAwake === true) screenAwake.request(view.type, false);
 			run(() => view.unmount(el));
 		},
 	});
@@ -102,6 +106,7 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 	return () => {
 		titles.delete(view.type);
 		unregister();
+		if (view.keepScreenAwake === true) screenAwake.request(view.type, false);
 	};
 }
 
@@ -124,6 +129,7 @@ function toMenuEntries(entries: readonly TyrianMenuEntry[]): PluginMenuEntry[] {
 
 export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 	const { ui, editor, env } = deps.api;
+	const screenAwake = createScreenAwake(deps.api, (error, where) => deps.report(error, where));
 	const settingDeps = { secrets: deps.secrets, host: ui, translator: deps.translator, report: (error: unknown) => deps.report(error, 'setting') };
 	// The main view registered right now, and what makes each ribbon button again when that changes.
 	let mainViewId: string | null = null;
@@ -140,7 +146,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 		? {
 			registerSectionsView: (view) => {
 				const unregister = registerHebraMainView({
-					ui, lane: createLane, report: (error, where) => deps.report(error, where),
+					ui, lane: createLane, report: (error, where) => deps.report(error, where), screenAwake,
 				}, view);
 				setMainView(view.type);
 				mainTitles.set(view.type, () => view.title());
@@ -157,7 +163,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 		}
 		: {};
 	return {
-		registerView: (view) => registerTyrianView(deps, view, columnTitles),
+		registerView: (view) => registerTyrianView(deps, view, columnTitles, screenAwake),
 		refreshViewTitles: () => {
 			// `ui.updateView` arrived with the main view (API 1.3): before it the method does not exist.
 			// The main view's title only where this Hebra has it (`api.has('ui.view.main')`, asked once).

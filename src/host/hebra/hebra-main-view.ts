@@ -16,6 +16,7 @@
  */
 import type { HebraPluginApi, PluginHostFeature, PluginMainViewDefinition, PluginUi, PluginViewSectionPatch } from 'hebra-plugin-api';
 
+import type { ScreenAwake } from './hebra-screen-awake';
 import type { TyrianSectionsViewRegistration, TyrianViewSectionPatch } from '../tyrian-host';
 
 const MAIN_VIEW_FEATURE: PluginHostFeature = 'ui.view.main';
@@ -28,6 +29,8 @@ export interface HebraMainViewDeps {
 	lane(report: (error: unknown) => void): (step: Step) => void;
 	/** An asynchronous failure of the plugin with nobody to reach (it is logged). */
 	report(error: unknown, where: string): void;
+	/** The screen hold (`hebra-screen-awake.ts`); absent, a section asking for it is painted without it. */
+	screenAwake?: ScreenAwake;
 }
 
 /**
@@ -64,18 +67,27 @@ export function registerHebraMainView(deps: HebraMainViewDeps, view: TyrianSecti
 			// Hebra only asks for the sections it was given; anything else has nothing to paint.
 			if (section === undefined) return undefined;
 			const run = deps.lane((error) => deps.report(error, `section ${view.type}/${sectionId}`));
+			const awake = section.keepScreenAwake === true ? deps.screenAwake : undefined;
 			run(() => section.mount(el));
+			// Hebra mounts a section on its first visit, so it is on screen now.
+			awake?.request(view.type, true);
 			return {
 				unmount() {
+					awake?.request(view.type, false);
 					run(() => section.unmount(el));
 				},
 				onVisibilityChange(visible) {
+					awake?.request(view.type, visible);
 					section.setVisible?.(el, visible);
 				},
 			};
 		},
 	};
-	return deps.ui.registerView(definition);
+	const unregister = deps.ui.registerView(definition);
+	return () => {
+		unregister();
+		if (view.sections.some((section) => section.keepScreenAwake === true)) deps.screenAwake?.request(view.type, false);
+	};
 }
 
 /** Enters the main view on that section, or switches to it where the view is already on screen. */
