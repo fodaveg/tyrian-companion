@@ -380,6 +380,8 @@ describe('Inventory Advisor view', () => {
 			'tyrian-inventory-advisor__state',
 			// H18.37: "Copiar detalle técnico", hidden unless the state carries a safe code.
 			'clickable-icon tyrian-inventory-advisor__state-copy',
+			// Says so when the clipboard refuses the copy, hidden otherwise.
+			'tyrian-inventory-advisor__copy-status',
 			// H18.18: the outcome of a row's "Conservar", hidden until one is pressed.
 			'tyrian-inventory-advisor__keep-status',
 			'tyrian-inventory-advisor__results',
@@ -390,8 +392,8 @@ describe('Inventory Advisor view', () => {
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
 		expect(mount.section.children[3]!.hidden).toBe(true);
-		expect(mount.section.children[7]!.hidden).toBe(true);
-		expect(text(walk(mount.section.children[8]!))).toContain('Qué hacer ahora');
+		expect(mount.section.children[8]!.hidden).toBe(true);
+		expect(text(walk(mount.section.children[9]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
@@ -655,6 +657,10 @@ describe('Inventory Advisor view', () => {
 		const mount = render(twoCharacterModel());
 		const characterSelect = controlWithLabel(mount.elements(), 'select', 'Personaje');
 		expect(characterSelect.children.map((option) => option.value)).toEqual(['all', 'Astra', 'Borja']);
+		// An update that changes nothing in the roster leaves the options (and an open dropdown) alone.
+		const optionsBefore = [...characterSelect.children];
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, twoCharacterModel(), createTranslator('es'));
+		expect(characterSelect.children.every((option, index) => option === optionsBefore[index])).toBe(true);
 		expect(text(mount.elements())).toContain('Todas las bolsas y compartido');
 		const stores = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
 		expect(stores.every((input) => !input.disabled)).toBe(true);
@@ -723,7 +729,7 @@ describe('Inventory Advisor view', () => {
 		expect(rowText('No aplica').match(/No aplica/gu)?.length).toBeGreaterThanOrEqual(2);
 		// 26 sep 2026: "Con precio" is the only priced row, so its own group's subtotal (not a
 		// separate "Qué hacer ahora" value line, gone) states the same known total.
-		expect(text(mount.elements())).toContain('Subtotal · 1 objetos');
+		expect(text(mount.elements())).toContain('Subtotal · 1 objeto');
 	});
 
 	it('distinguishes a read empty optional store from unavailable or restricted stores', () => {
@@ -740,6 +746,20 @@ describe('Inventory Advisor view', () => {
 		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__source-status').map((entry) => entry.textContent))
 			.toEqual([' · Leído', ' · No disponible', ' · Restringido por la clave', null, null]);
 		expect(text(mount.elements())).not.toContain('403');
+	});
+
+	it('keeps the player choice of the stores while they load: disabled is not unchecked, and typing hides nothing', () => {
+		const mount = render({ ...scopeModel(), status: 'loading', optionalSources: null, groups: [] });
+		const stores = () => find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
+		expect(stores().map((input) => [input.checked, input.disabled])).toEqual([[true, true], [true, true], [true, true]]);
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, scopeModel(), createTranslator('es'));
+		expect(stores().map((input) => [input.checked, input.disabled])).toEqual([[true, false], [true, false], [true, false]]);
+		const search = controlWithLabel(mount.elements(), 'input', 'Buscar objetos');
+		search.value = 'o';
+		search.dispatch('input');
+		const names = text(mount.elements());
+		expect(names).toContain('Solo banco');
+		expect(names).toContain('Material');
 	});
 
 	it('orders visible rows by the selected criterion and closes each group with its exact subtotal', () => {
@@ -1101,6 +1121,36 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).not.toMatch(/vault-hash|account-a|generation/u);
 	});
 
+	it('clears the preference form once the write is confirmed, so a second Enter adds nothing, and keeps it when the write failed', async () => {
+		let failed = false;
+		const upsertGoal = vi.fn(async () => {});
+		const upsertException = vi.fn(async () => {});
+		const interactions: InventoryAdvisorViewInteractions = {
+			preferences: { status: 'ready', goals: [], keepExceptions: [] },
+			get preferenceWriteFailed() { return failed; },
+			onUpsertGoal: upsertGoal, onUpsertKeepException: upsertException,
+		};
+		const mount = render(readyModel(), 'es', interactions);
+		const [goalForm, exceptionForm] = byClass(mount.elements(), 'tyrian-inventory-advisor__preference-form');
+		if (goalForm === undefined || exceptionForm === undefined) throw new Error('Expected preference forms.');
+		const goalInputs = find(walk(goalForm), 'input');
+		goalInputs[0]!.value = 'Goal'; goalInputs[1]!.value = '10'; goalInputs[2]!.value = '5';
+		goalForm.dispatch('submit');
+		await Promise.resolve(); await Promise.resolve();
+		expect(upsertGoal).toHaveBeenCalledTimes(1);
+		expect([goalInputs[0]!.value, goalInputs[1]!.value, goalInputs[2]!.value]).toEqual(['', '', '']);
+		goalForm.dispatch('submit');
+		expect(upsertGoal, 'a second Enter created a duplicate').toHaveBeenCalledTimes(1);
+
+		failed = true;
+		const exceptionInputs = find(walk(exceptionForm), 'input');
+		exceptionInputs[0]!.value = '12'; exceptionInputs[1]!.value = '3';
+		exceptionForm.dispatch('submit');
+		await Promise.resolve(); await Promise.resolve();
+		expect(upsertException).toHaveBeenCalledTimes(1);
+		expect(exceptionInputs[0]!.value, 'a refused write lost what was typed').toBe('12');
+	});
+
 	it('renders the one guided button and its advance notice without capturing or writing until an explicit click', () => {
 		const onRun = vi.fn();
 		const onConfirm = vi.fn();
@@ -1359,6 +1409,9 @@ describe('Inventory Advisor view', () => {
 			},
 		});
 		expect(only(byClass(failed.elements(), 'tyrian-product-shell__status')).hidden).toBe(true);
+		// The sync interactions going away (the runtime left) takes the line down with them.
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, readyModel(), createTranslator('es'), undefined, {});
+		expect(status.hidden).toBe(true);
 	});
 
 	it('renders exactly one list for the results, never a second table or card layout for the same rows (H18.37)', () => {
@@ -1566,8 +1619,22 @@ describe('Inventory Advisor view', () => {
 		copyButton.dispatch('click');
 		expect((navigator as unknown as { clipboard: { writeText: ReturnType<typeof vi.fn> } }).clipboard.writeText)
 			.toHaveBeenCalledWith('capture_snapshot_coverage_incomplete');
+		expect(only(byClass(mount.elements(), 'tyrian-inventory-advisor__copy-status')).hidden).toBe(true);
 		const ready = render(readyModel());
 		expect(only(byClass(ready.elements(), 'tyrian-inventory-advisor__state-copy')).hidden).toBe(true);
+	});
+
+	it('says so when the clipboard refuses the technical detail, or is absent, instead of dropping the rejection', async () => {
+		for (const clipboard of [{ writeText: vi.fn(() => Promise.reject(new Error('NotAllowedError'))) }, undefined]) {
+			vi.stubGlobal('navigator', { clipboard });
+			const mount = render({ ...readyModel(), status: 'blocked', blockedReason: 'capture_snapshot_coverage_incomplete', groups: [] });
+			const feedback = only(byClass(mount.elements(), 'tyrian-inventory-advisor__copy-status'));
+			only(byClass(mount.elements(), 'tyrian-inventory-advisor__state-copy')).dispatch('click');
+			await Promise.resolve(); await Promise.resolve();
+			expect(feedback.hidden).toBe(false);
+			expect(feedback.textContent).toBe('No se pudo copiar el detalle técnico.');
+			expect(feedback.attributes.get('aria-live')).toBe('polite');
+		}
 	});
 });
 

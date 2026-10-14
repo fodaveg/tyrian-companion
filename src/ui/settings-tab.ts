@@ -33,7 +33,7 @@ import type {
 import type { ViewPlacement } from '../runtime/view-placement';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
-import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
+import { projectConnectionDescription, projectManagedAssetsDescription, sessionHistoryKey } from './settings-i18n';
 import { TyrianModal, type TyrianModalUi } from './tyrian-modal';
 
 /**
@@ -119,6 +119,7 @@ export class TyrianCompanionSettingTab {
 	private maintenanceOpen = false;
 	/** Saves what the alert-threshold field holds, if it is a new valid value; null before the row renders. */
 	private commitThreshold: (() => void) | null = null;
+	private commitWebhook: (() => void) | null = null;
 	private commitOutputFolder: (() => void) | null = null;
 	/** Lets go of the output-folder picker the row attached (in Hebra it listens to the library's folders). */
 	private disposeOutputFolderPicker: (() => void) | null = null;
@@ -236,6 +237,11 @@ export class TyrianCompanionSettingTab {
 	unmount(): void {
 		this.commitThreshold?.();
 		this.commitThreshold = null;
+		this.commitWebhook?.();
+		this.commitWebhook = null;
+		if (this.ingameSecretConfirmTimer !== null) window.clearTimeout(this.ingameSecretConfirmTimer);
+		this.ingameSecretConfirmTimer = null;
+		this.ingameSecretConfirming = false;
 		this.commitOutputFolder?.();
 		this.commitOutputFolder = null;
 		this.releaseOutputFolderPicker();
@@ -289,7 +295,7 @@ export class TyrianCompanionSettingTab {
 
 	refreshSessionHistoryRow(): void {
 		const history = this.plugin.getSessionHistoryView();
-		this.sessionHistorySetting?.setDesc(this.t(`settings.history.${history.status}` as TranslationKey, history));
+		this.sessionHistorySetting?.setDesc(this.t(sessionHistoryKey(history.status, history.sessions), history));
 		const working = isHistoryOperationWorking(history.status);
 		this.sessionHistoryButton?.setDisabled(working);
 		this.sessionHistoryScrubButton?.setDisabled(working);
@@ -555,21 +561,42 @@ export class TyrianCompanionSettingTab {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
-					setting.addText((text) => text
-						.setValue(this.plugin.settings.alertWebhookUrl)
-						.onChange(async (value) => {
-							const destination = alertWebhookDestination(value);
-							if (destination.length === 0 && value.trim().length > 0) {
-								text.inputEl.setAttr('aria-invalid', 'true');
-								feedback.setAttr('role', 'alert');
-								feedback.setText(this.t('settings.alerts.webhook.invalid'));
-								return;
-							}
-							text.inputEl.removeAttribute('aria-invalid');
-							feedback.setAttr('role', 'status');
-							feedback.setText('');
-							await save({ alertWebhookUrl: destination });
-						}));
+					// As the threshold: typing only validates; the destination is saved when the field is left
+					// or confirmed. Saving per key persisted every valid https prefix of a URL being typed
+					// or pasted, and a rejected write rebuilt the page under the caret.
+					let typed = this.plugin.settings.alertWebhookUrl;
+					let saved = typed;
+					let text!: TyrianTextControl;
+					const validate = (): string | null => {
+						const destination = alertWebhookDestination(typed);
+						if (destination.length === 0 && typed.trim().length > 0) {
+							text.inputEl.setAttr('aria-invalid', 'true');
+							feedback.setAttr('role', 'alert');
+							feedback.setText(this.t('settings.alerts.webhook.invalid'));
+							return null;
+						}
+						text.inputEl.removeAttribute('aria-invalid');
+						feedback.setAttr('role', 'status');
+						feedback.setText('');
+						return destination;
+					};
+					// Saved once per value: `change`, `blur` and closing the tab can all report the same one.
+					const commit = (): void => {
+						const destination = validate();
+						if (destination === null || destination === saved) return;
+						saved = destination;
+						void save({ alertWebhookUrl: destination });
+					};
+					this.commitWebhook = commit;
+					setting.addText((control) => {
+						text = control;
+						// A webhook URL is a bearer capability: not shown in clear on screen.
+						control.inputEl.type = 'password';
+						control.inputEl.autocomplete = 'off';
+						control.setValue(typed).onChange((value) => { typed = value; validate(); });
+						control.inputEl.addEventListener('change', commit);
+						control.inputEl.addEventListener('blur', commit);
+					});
 				},
 			},
 			{
@@ -668,7 +695,10 @@ export class TyrianCompanionSettingTab {
 			{
 				group: 'maintenance',
 				name: this.t('settings.history.name'),
-				desc: this.t(`settings.history.${this.plugin.getSessionHistoryView().status}` as TranslationKey, this.plugin.getSessionHistoryView()),
+				desc: this.t(
+					sessionHistoryKey(this.plugin.getSessionHistoryView().status, this.plugin.getSessionHistoryView().sessions),
+					this.plugin.getSessionHistoryView(),
+				),
 					render: (setting) => {
 					this.sessionHistorySetting = setting;
 					setting.addButton((button) => {
@@ -840,7 +870,7 @@ export class TyrianCompanionSettingTab {
 							button.setDisabled(true);
 							try {
 								const count = await this.plugin.copyLocalDebugEntries(50);
-								feedback.setText(count === 0 ? this.t('settings.debug.empty') : this.t('settings.debug.copied', { count }));
+								feedback.setText(count === 0 ? this.t('settings.debug.empty') : this.t(count === 1 ? 'settings.debug.copied.one' : 'settings.debug.copied.many', { count }));
 							} catch { feedback.setText(this.t('settings.debug.failed')); }
 							finally { button.setDisabled(false); }
 						}));
@@ -1140,7 +1170,7 @@ function confirmSessionHistoryScrub(
 
 			onOpen(): void {
 				this.contentEl.createEl('p', {
-					text: t('settings.history.scrubModal.summary', { sessions: preview.sessions }),
+					text: t(preview.sessions === 1 ? 'settings.history.scrubModal.summary.one' : 'settings.history.scrubModal.summary.many', { sessions: preview.sessions }),
 				});
 				for (const key of [
 					'settings.history.scrubModal.preserves',

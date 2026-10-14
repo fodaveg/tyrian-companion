@@ -342,9 +342,26 @@ function mountInventoryAdvisorView(
 	ui.setIcon(stateCopyIcon, 'copy');
 	const stateCopyText = createSpan();
 	stateCopyButton.append(stateCopyIcon, stateCopyText);
+	// A refused copy has no other way to reach the player (the code is never rendered as text), so
+	// it says so, as the session card's "Copiar detalle técnico" does with a notice.
+	const stateCopyStatus = createEl('p');
+	stateCopyStatus.className = 'tyrian-inventory-advisor__copy-status';
+	stateCopyStatus.setAttribute('aria-live', 'polite');
+	stateCopyStatus.hidden = true;
 	stateCopyButton.addEventListener('click', () => {
 		const code = model.refreshWarning ?? model.blockedReason;
-		if (code !== undefined) void navigator.clipboard?.writeText(code);
+		if (code === undefined) return;
+		stateCopyStatus.hidden = true;
+		const failed = (): void => {
+			stateCopyStatus.textContent = translator.t('sessionCard.copyTechnicalDetailFailed');
+			stateCopyStatus.hidden = false;
+		};
+		// `writeText` is called in the click's own task (WebKit spends the user activation on any
+		// earlier `await`); an absent clipboard and a refusal both end in the same message.
+		try {
+			if (navigator.clipboard === undefined) failed();
+			else void Promise.resolve(navigator.clipboard.writeText(code)).catch(() => { failed(); });
+		} catch { failed(); }
 	});
 	// H18.18: the outcome of the last row "Conservar", in its own polite line: the row itself
 	// moves to "keep" (hidden by default) once the preference is saved and reclassified.
@@ -463,7 +480,20 @@ function mountInventoryAdvisorView(
 	advancedFiltersContent.append(actionLabel, groupLabelElement, characterLabel, sourceFieldset);
 	advancedFilters.append(advancedFiltersSummary, advancedFiltersContent);
 	controls.append(searchLabel, sortLabelElement, advancedFilters, syncPrimaryActions);
-	const syncFilterControlAvailability = (): boolean => {
+	/** Whether the optional store can be offered: complete coverage only. */
+	const sourceAvailable = (key: 'bank' | 'materials' | 'delivery'): boolean => model.optionalSources?.[key]?.status === 'complete';
+	/**
+	 * What the list is scoped by: the player's choice (`filters`, always equal to the checkboxes)
+	 * AND the store being available. Availability disables a checkbox, it never unchecks it, so a
+	 * choice made while a store loads is still there when it arrives.
+	 */
+	const effectiveFilters = (): typeof filters => ({
+		...filters,
+		includeBank: filters.includeBank === true && sourceAvailable('bank'),
+		includeMaterials: filters.includeMaterials === true && sourceAvailable('materials'),
+		includeDelivery: filters.includeDelivery === true && sourceAvailable('delivery'),
+	});
+	const syncFilterControlAvailability = (): void => {
 		const loading = analysisRunning(model);
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
 		search.disabled = loading;
@@ -471,22 +501,15 @@ function mountInventoryAdvisorView(
 		group.disabled = loading;
 		sortSelect.disabled = loading;
 		sourceFieldset.disabled = loading;
-		let sourceSelectionChanged = false;
 		for (const [key, control] of sourceControls) {
 			if (key === 'keep' || key === 'review') {
 				control.input.disabled = loading;
 				continue;
 			}
 			const coverage = model.optionalSources?.[key] ?? null;
-			const available = coverage?.status === 'complete';
-			control.input.disabled = loading || scopedToCharacter || !available;
+			control.input.disabled = loading || scopedToCharacter || !sourceAvailable(key);
 			control.status.textContent = ` · ${optionalSourceCoverageLabel(coverage, translator)}`;
-			if (!available && control.input.checked) {
-				control.input.checked = false;
-				sourceSelectionChanged = true;
-			}
 		}
-		return sourceSelectionChanged;
 	};
 	// The list at account size (~1,400 rows). What a key of the search may cost is one pass over
 	// rows already scoped and ordered, and moving row elements already built: the scope and the
@@ -507,13 +530,14 @@ function mountInventoryAdvisorView(
 	let shownConcentration: ReadonlyMap<string, InventoryAdvisorValueConcentration> | null = null;
 	/** The rows in scope, in the chosen order. `dataChanged` discards what the previous data left. */
 	const orderedRows = (dataChanged: boolean): InventoryListProjection => {
+		const effective = effectiveFilters();
 		const scopeKey = JSON.stringify([
-			filters.character ?? ALL_CHARACTERS, filters.includeBank === true, filters.includeMaterials === true, filters.includeDelivery === true,
+			effective.character ?? ALL_CHARACTERS, effective.includeBank, effective.includeMaterials, effective.includeDelivery,
 		]);
 		// By identity: an update can bring other groups under the same `contentVersion`, and a key
 		// of the search must not filter and order the rows the previous groups left.
 		if (dataChanged || projection === null || projection.groups !== model.groups || projection.scopeKey !== scopeKey) {
-			projection = { groups: model.groups, scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters), orderKey: '', ordered: [] };
+			projection = { groups: model.groups, scopeKey, scoped: scopeInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), effective), orderKey: '', ordered: [] };
 			clearRowElements();
 		}
 		const order = filters.sort ?? 'value_desc';
@@ -551,13 +575,8 @@ function mountInventoryAdvisorView(
 	};
 	const refreshResults = (dataChanged = true): void => {
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
-		const sourceSelectionChanged = syncFilterControlAvailability();
-		if (sourceSelectionChanged) filters = {
-			...filters,
-			includeBank: sourceControls.get('bank')!.input.checked,
-			includeMaterials: sourceControls.get('materials')!.input.checked,
-			includeDelivery: sourceControls.get('delivery')!.input.checked,
-		};
+		syncFilterControlAvailability();
+		const scoping = effectiveFilters();
 		const visible = model.status === 'ready' || model.status === 'limited';
 		const heldFocus = focusedRowControl();
 		// A detail does not outlive a change of the list: it closes, as it did when every row was rebuilt.
@@ -568,9 +587,9 @@ function mountInventoryAdvisorView(
 		}
 		const ordered = visible ? orderedRows(dataChanged) : null;
 		// H18.15: only the value order yields to space; an explicit quantity or name order stands.
-		const rows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher(filters));
+		const rows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher(scoping));
 		const directRows = ordered === null ? [] : ordered.ordered.filter(inventoryAdvisorRowMatcher({
-			...filters, action: 'all', showKeep: false, showReview: false,
+			...scoping, action: 'all', showKeep: false, showReview: false,
 		}));
 		shownRows = rows;
 		shownConcentration = null;
@@ -614,7 +633,7 @@ function mountInventoryAdvisorView(
 				action.focus();
 			},
 			{
-				scope: scopeSummaryOfScopedRows(ordered.scoped, new Set(rows.map((row) => row.itemId)), filters),
+				scope: scopeSummaryOfScopedRows(ordered.scoped, new Set(rows.map((row) => row.itemId)), scoping),
 				storageSpace: model.storageSpace ?? null,
 				legendaryTableExpiredAt: model.legendaryTableExpiredAt ?? null,
 				rowElement: (row) => {
@@ -670,21 +689,28 @@ function mountInventoryAdvisorView(
 	function arrangeSections(): void {
 		if (arranged) return;
 		arranged = true;
-		const ordered: HTMLElement[] = [statusLine, controls, syncAssetsHint, optIn, sellSignal, state, stateCopyButton, keepStatus, results, syncStatusPanel];
+		const ordered: HTMLElement[] = [statusLine, controls, syncAssetsHint, optIn, sellSignal, state, stateCopyButton, stateCopyStatus, keepStatus, results, syncStatusPanel];
 		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
 		ordered.push(priceHistoryDisclosure);
 		section.replaceChildren(...ordered);
 	}
 
 	/** Rebuilds the roster from the observed rows; an absent character falls back to every bag. */
+	let characterOptionsSignature = '';
 	function syncCharacterOptions(): void {
 		const characters = inventoryAdvisorCharacters(flattenInventoryAdvisorRows(model.groups), translator.locale);
 		const selected = filters.character ?? ALL_CHARACTERS;
 		const resolved = characters.includes(selected) ? selected : ALL_CHARACTERS;
-		character.replaceChildren(allCharactersOption);
-		for (const name of characters) appendOption(character, name, name, resolved);
-		allCharactersOption.selected = resolved === ALL_CHARACTERS;
-		character.value = resolved;
+		// Rebuilt only when the roster or the selection changed: replacing the options of an open
+		// dropdown on every update (a sync tick) closes it under the player's hand.
+		const signature = JSON.stringify([characters, resolved]);
+		if (signature !== characterOptionsSignature) {
+			characterOptionsSignature = signature;
+			character.replaceChildren(allCharactersOption);
+			for (const name of characters) appendOption(character, name, name, resolved);
+			allCharactersOption.selected = resolved === ALL_CHARACTERS;
+			character.value = resolved;
+		}
 		character.disabled = analysisRunning(model) || characters.length === 0;
 		if (resolved !== selected) filters = { ...filters, character: resolved };
 	}
@@ -712,7 +738,8 @@ function mountInventoryAdvisorView(
 		syncPrimaryActions.hidden = sync === undefined;
 		syncAssetsHint.hidden = sync === undefined || sync.assetsInstalled;
 		syncStatusPanel.hidden = sync === undefined;
-		if (sync !== undefined) {
+		if (sync === undefined) statusLine.hidden = true;
+		else {
 			const lastRun = sync.state.status === 'idle' ? sync.state.lastRun ?? null : null;
 			// H18.37: one clock for both milestones. The one-click flow analyzes and writes in the
 			// same run, so "Analizado" and "Notas guardadas" share `lastRun.finishedAt`; there is no
@@ -805,15 +832,19 @@ function mountInventoryAdvisorView(
 		else state.removeAttribute('role');
 		const technicalCode = model.refreshWarning ?? model.blockedReason;
 		stateCopyButton.hidden = technicalCode === undefined;
+		if (technicalCode === undefined) stateCopyStatus.hidden = true;
 		stateCopyText.textContent = translator.t('advisor.view.copyTechnicalDetail');
 		stateCopyButton.setAttribute('aria-label', translator.t('advisor.view.copyTechnicalDetail'));
 		preferencesEditor?.update();
 		updateKeepStatus();
+		// `busy` follows every update, not only the ones that repaint the list: a refused write
+		// leaves the data and the preferences as they were, and the list is then not rebuilt.
+		if (interactions.onKeepItem !== undefined) for (const button of keepButtons.values()) button.disabled = interactions.preferencesBusy === true;
 		// See `lastResultsKey` above: skip rebuilding the results table when only a
 		// live sync-panel tick changed, not the advisor's actual content, state, or locale.
 		const resultsKey = model.contentVersion === undefined
 			? `unversioned:${String(unversionedRenders += 1)}`
-			: `${String(model.contentVersion)}:${translator.locale}:${model.status}`;
+			: `${String(model.contentVersion)}:${translator.locale}:${model.status}:${(['bank', 'materials', 'delivery'] as const).map((key) => sourceAvailable(key) ? 1 : 0).join('')}`;
 		if (resultsKey !== lastResultsKey) {
 			lastResultsKey = resultsKey;
 			refreshResults();
@@ -1285,9 +1316,10 @@ function renderInventoryGroupSubtotal(
 	subtotal.className = 'tyrian-inventory__row tyrian-inventory-advisor__subtotal';
 	const label = createDiv();
 	label.className = 'tyrian-inventory__cell c-item';
+	const subtotalText = translator.t(totals.items === 1 ? 'advisor.view.subtotal.one' : 'advisor.view.subtotal.many', { items: totals.items });
 	label.textContent = totals.unpricedItems === 0
-		? translator.t('advisor.view.subtotal', { items: totals.items })
-		: `${translator.t('advisor.view.subtotal', { items: totals.items })} · ${translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems })}`;
+		? subtotalText
+		: `${subtotalText} · ${translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems })}`;
 	const qty = createDiv();
 	qty.className = 'tyrian-inventory__cell c-qty';
 	const qtyValue = createEl('b');
@@ -1681,7 +1713,10 @@ function mountPreferencesEditor(
 				creditedQuantity: goalForm.editingRequirement?.id === itemId ? goalForm.editingRequirement.creditedQuantity : 0,
 				basis: selectedBasis(goalForm.basis.value), intendedUse: selectedIntendedUse(goalForm.intendedUse?.value ?? 'hold') }],
 		};
-		void getInteractions().onUpsertGoal?.(goal);
+		afterConfirmedWrite(getInteractions, getInteractions().onUpsertGoal?.(goal), () => {
+			clearPreferenceForm(goalForm);
+			updatePreferenceFormLabels(goalForm, getTranslator());
+		});
 	});
 	const exceptionsHeading = preferenceHeading('advisor.preferences.exceptions', getTranslator());
 	const exceptions = createDiv();
@@ -1701,7 +1736,10 @@ function mountPreferencesEditor(
 			status: selectedExceptionStatus(exceptionForm.status.value), basis: selectedBasis(exceptionForm.basis.value),
 			quantity: quantityIntent, reason: selectedExceptionReason(exceptionForm.reason.value),
 		};
-		void getInteractions().onUpsertKeepException?.(keepException);
+		afterConfirmedWrite(getInteractions, getInteractions().onUpsertKeepException?.(keepException), () => {
+			clearPreferenceForm(exceptionForm);
+			updatePreferenceFormLabels(exceptionForm, getTranslator());
+		});
 	});
 	details.append(summary, status, load, goalsHeading, goals, goalForm.form, exceptionsHeading, exceptions, exceptionForm.form);
 	let entriesSignature = '';
@@ -1919,6 +1957,22 @@ function supportsGoalEditor(goal: ReservationGoal): boolean {
 }
 
 function preferenceText(translator: Translator, key: string): string { return translator.t(key as never); }
+
+/**
+ * Runs `confirmed` once the write the form asked for has ended AND was saved. The form keeps what
+ * the player typed while the write is pending or refused (`preferenceWriteFailed`, read after the
+ * write ends), so a refusal is retried without retyping; once saved it is cleared, because a
+ * second Enter on a filled "add" form would mint another id and write a duplicate.
+ */
+function afterConfirmedWrite(
+	getInteractions: () => InventoryAdvisorViewInteractions,
+	write: void | Promise<void>,
+	confirmed: () => void,
+): void {
+	void Promise.resolve(write).then(() => {
+		if (getInteractions().preferenceWriteFailed !== true) confirmed();
+	}, () => undefined);
+}
 
 function clearPreferenceForm(form: PreferenceForm): void {
 	form.editingId = null; form.title.value = ''; form.itemId.value = ''; form.quantity.value = ''; form.status.value = 'active';

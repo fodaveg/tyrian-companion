@@ -261,7 +261,7 @@ describe('mountSessionHistoryPanel', () => {
 		descendants(container).find((element) => element.tag === 'button')!.click();
 		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
 
-		expect(allText(container)).toContain('1 sesiones quedan excluidas: su calidad no es comparable');
+		expect(allText(container)).toContain('1 sesión queda excluida: su calidad no es comparable');
 	});
 
 	// H18.10: `loot-presentation-view.ts` had no consumer at all; the durable gains list a note's

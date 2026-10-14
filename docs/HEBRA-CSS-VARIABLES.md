@@ -134,6 +134,8 @@ Obsidian define `--text-warning` como `var(--color-orange)` y `--text-success` c
 | `--size-4-4` | paso de 16 | 32: padding×9, margin×14, gap×4, otros×5 | 16px | `--space-4` | Directo. |
 | `--size-4-5` | paso de 20 | 2: margin-block×2 | 20px | `--space-5` | Directo. |
 | `--size-4-8` | paso de 32 | 1: max-height×1 | 32px | `--space-8` | Directo. |
+| `--size-4-12` | paso de 48 | 1: padding-bottom×1 (`.tyrian-sale-page`, hueco para la barra de estado de Hebra) | 48px | `calc(var(--space-8) * 1.5)` | **Sin equivalente directo**: la escala de Hebra acaba en `--space-8` (32px). Un paso y medio. Sin este mapeo valía 0 en Hebra y la última fila de Venta quedaba bajo la barra de estado. |
+| `--size-2-3` | paso fino de 6 | 1: gap×1 (`.tyrian-inventory__keep button`, icono y texto de «Conservar») | 6px | `--space-2` (8px) | **Sin equivalente directo**: 6px no tiene paso; el más cercano es 8px, el mismo que ya usa el `padding` de `.clickable-icon`. Sin este mapeo el gap valía 0 en Hebra. |
 | `--size-2-2` | paso fino de 4 | 7: margin-top×2, gap×2, otros×3 | 4px | `--space-1` | Directo. |
 | `--size-2-1` | paso fino de 2 | 2: inset-block-start×1, inset-inline-end×1 | 2px | `calc(var(--space-1) / 2)` | **Sin equivalente directo**: la escala de Hebra empieza en 4px. Mitad del primer paso. Solo lo usa el punto de pendiente del ribbon (`.tyrian-companion-ribbon--pending::after`); en Hebra el ribbon lo pinta `ModuleRibbon.svelte`, así que puede quedar inerte (no medido si HebraHost pone esa clase). |
 | `--radius-s` | radio de control y chip | 22: border-radius×22 | 4px | `--radius-sm` (6px) | Directo. |
@@ -217,12 +219,14 @@ Para pegar en `src/app.css` de Hebra. Solo tokens de Hebra, salvo los cinco lite
   /* espacio */
   --size-2-1: calc(var(--space-1) / 2); /* sin equivalente directo: no hay paso de 2px */
   --size-2-2: var(--space-1);
+  --size-2-3: var(--space-2); /* sin equivalente directo: 6px no tiene paso, el más cercano es 8px */
   --size-4-1: var(--space-1);
   --size-4-2: var(--space-2);
   --size-4-3: var(--space-3);
   --size-4-4: var(--space-4);
   --size-4-5: var(--space-5);
   --size-4-8: var(--space-8);
+  --size-4-12: calc(var(--space-8) * 1.5); /* sin equivalente directo: 48px, un paso y medio de --space-8 */
   /* radios y controles */
   --radius-s: var(--radius-sm);
   --radius-m: var(--radius-md);

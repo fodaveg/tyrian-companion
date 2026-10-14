@@ -72,9 +72,20 @@ export function connectionErrorKey(code: string): TranslationKey {
 		: 'settings.connection.error.unknown';
 }
 
+/**
+ * The key of the durable-history row for a status. The statuses that state a count of sessions
+ * have a `.one` and a `.many` form, so "1 sesiones" is never shown.
+ */
+export function sessionHistoryKey(status: string, sessions: number): TranslationKey {
+	const base = `settings.history.${status}`;
+	return (status === 'written' || status === 'unchanged' || status === 'scrub_ready'
+		? `${base}.${sessions === 1 ? 'one' : 'many'}` : base) as TranslationKey;
+}
+
 function appendCooldown(message: string, retryAt: number | null, translator: Translator, now: number): string {
 	if (retryAt === null || retryAt <= now) return message;
-	return `${message} ${translator.t('settings.connection.retryIn', { seconds: Math.max(1, Math.ceil((retryAt - now) / 1_000)) })}`;
+	const seconds = Math.max(1, Math.ceil((retryAt - now) / 1_000));
+	return `${message} ${translator.t(seconds === 1 ? 'settings.connection.retryIn.one' : 'settings.connection.retryIn.many', { seconds })}`;
 }
 
 function managedAssetsMessageKey(code: ManagedAssetsMessageCode): TranslationKey {

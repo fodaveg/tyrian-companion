@@ -135,16 +135,33 @@ describe('Inventory Advisor list: equivalence of what is visible', () => {
 		const pressedAndDisabled = (): string[] => keepButtons(mount.results)
 			.map((button) => `${button.attributes.get('aria-pressed') ?? ''}:${String(button.disabled)}`);
 		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:false']));
-		// Same content version: the list is not repainted for it, as a live sync tick is not.
+		// Same content version: the list is not repainted for it, as a live sync tick is not (the
+		// pressed state waits for the next repaint), but `busy` reaches the built buttons at once.
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined,
 			{ ...keepInteractions([1_000]), preferencesBusy: true },
 		);
-		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:false']));
+		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:true']));
 		controls.search.value = 'a';
 		controls.search.dispatch('input');
 		expect(new Set(pressedAndDisabled())).toEqual(new Set(['false:true', 'true:true']));
 		expect(pressedAndDisabled().filter((state) => state === 'true:true')).toHaveLength(1);
+	});
+
+	it('re-enables the built keep controls when the write ends under the same content version', () => {
+		const model = { ...fixtureModel(60), contentVersion: 1 };
+		const mount = render(model, 'es', keepInteractions([]));
+		const disabled = (): Set<boolean> => new Set(keepButtons(mount.results).map((button) => button.disabled));
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined,
+			{ ...keepInteractions([]), preferencesBusy: true },
+		);
+		expect(disabled()).toEqual(new Set([true]));
+		// A refused write leaves the preferences and the data as they were: only `busy` goes back down.
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined, keepInteractions([]),
+		);
+		expect(disabled()).toEqual(new Set([false]));
 	});
 
 	/**
@@ -476,16 +493,18 @@ describe('Inventory Advisor list: accessibility of rows that are kept and moved'
 });
 
 /** The hashes were captured from the implementation that rebuilt the list on every key (cfecb9b). */
+// Re-pinned (combinations, searches, openDetails) for «Subtotal · 1 objeto»: a group of one item no longer
+// says «1 objetos». Verified: giving the `.one` form the plural text again restores the previous hashes.
 const PINNED = {
-	combinations: 'bfdf52bd3d2cb89216e600458ecc3e7acd613879612edc5aa1a5891ca979a2fe',
-	searches: '1a7431810c76531c5eb8a368001813bb5bdfeea8e2f436a9205c427b85b4f0dd',
+	combinations: 'da7eb829e406ec2fc8ecb35bdd9f0bf6376061cdcfeab0e551812c93ad6299f5',
+	searches: '228eeac86a7cd3361564e9707ea565a446cece6008400661f9f794f9ac5a6288',
 	// Re-pinned for 64b83bb2: a `keep` row with neither a keep exception nor `reserved_for_goal` (no_sell, seasonal_hold)
 	// no longer carries the «reservation rules» note. Verified: restoring only that note gives the previous hashes.
-	openDetails: '0d81f1de588fe54b6a9144f661b48c41147de744d117309d07c6101a92de05af',
+	openDetails: '9921f61962f14d47dd4e7b1d6fd4cb41f563c2992e45db869c9a83a501d5bb62',
 	// Halloween scope: the low-space repaint labels character bags; its pressure fixture now excludes bank slots.
 	repaints: '05098523620b066ed26f32b29a70914f97ab4d0d8b1a75e9478c6a024798a041',
 	/** Elements created to mount 1,371 rows; 36,144 while every closed detail carried its body. */
-	nodesOnMount: 18_110,
+	nodesOnMount: 18_111,
 	/**
 	 * Per key of the search `s, se, sed, seda 1, sed, (empty), 10, (empty)`: rows shown, elements
 	 * created. While every key rebuilt the rows it created 10,336, 5,189, 5,189, 1,882, 5,189,

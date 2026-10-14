@@ -391,7 +391,7 @@ function rowDetailText(row: SaleRowViewModel, nowMs: number, translator: Transla
 	}
 	if (row.action === 'not_yet' && row.window !== null) {
 		const daysUntil = Math.max(0, Math.round((Date.parse(`${row.window.fromDay}T00:00:00.000Z`) - nowMs) / DAY_MS));
-		return translator.t('sale.detail.notYetWindow', {
+		return translator.t(daysUntil === 1 ? 'sale.detail.notYetWindow.one' : 'sale.detail.notYetWindow.many', {
 			from: formatDayShort(row.window.fromDay, translator.locale), to: formatDayShort(row.window.toDay, translator.locale), days: daysUntil,
 		});
 	}
