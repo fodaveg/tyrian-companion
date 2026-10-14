@@ -3233,15 +3233,21 @@
 
 /*
  * The «En vivo» HUD (14 oct 2026): big figures to leave open on a phone or a tablet while the game runs on the PC. Host
- * variables only (docs/HEBRA-CSS-VARIABLES.md), so Hebra paints it with its tokens, light and dark alike. The figures follow
- * the container (`cqi`): a 375 px phone gets two columns of cards and a value that fills the width; the 288 px column of
- * Hebra one column; a tablet or the PC three. Nothing here moves on its own (no transitions), and nothing is a control:
- * the only hit targets are the loot rows, which keep 44 px so a finger can rest on a name for its tooltip.
+ * variables only (docs/HEBRA-CSS-VARIABLES.md), so Hebra paints it with its tokens, light and dark alike. Two query
+ * containers: the view, named, for the layout (a 375 px phone gets two columns of cards, the 288 px column of Hebra
+ * one, a tablet or the PC three), and EACH CARD, unnamed, for its figure: a figure is sized by its card's width
+ * (`cqi`) divided by its own rough width in em (`--tyrian-hud-em`, written by the view), with a comfortable size as
+ * the ceiling, so it always sits on ONE line and its coin icons scale with it (David, 14 oct 2026: the value broke
+ * into two lines on an iPhone). Where each card goes is the grid's (`grid-template-areas`), not the DOM's: bags and
+ * bags per hour one over the other in every width. The status line, the loot title, the empty line and the loot rows
+ * take the cards' own inset (`--tyrian-hud-inset`), so no text sits closer to the edge than a card's label. Nothing
+ * here moves on its own (no transitions), and nothing is a control: the only hit targets are the loot rows, which keep
+ * 44 px so a finger can rest on a name for its tooltip.
  */
-.tyrian-live-hud-view { container-type: inline-size; min-width: 0; }
-.tyrian-live-hud { display: grid; gap: var(--size-4-4); min-width: 0; padding-block: var(--size-4-2); color: var(--text-normal); }
+.tyrian-live-hud-view { container: tyrian-live-hud / inline-size; min-width: 0; }
+.tyrian-live-hud { --tyrian-hud-inset: var(--size-4-3); display: grid; gap: var(--size-4-4); min-width: 0; padding-block: var(--size-4-2); color: var(--text-normal); }
 .tyrian-live-hud h3, .tyrian-live-hud p { margin: 0; }
-.tyrian-live-hud__status { display: flex; align-items: center; flex-wrap: wrap; gap: var(--size-4-1) var(--size-4-2); min-height: 44px; font-size: var(--font-ui-medium); font-weight: var(--font-semibold); }
+.tyrian-live-hud__status { display: flex; align-items: center; flex-wrap: wrap; gap: var(--size-4-1) var(--size-4-2); min-height: 44px; padding-inline: var(--tyrian-hud-inset); font-size: var(--font-ui-medium); font-weight: var(--font-semibold); }
 .tyrian-live-hud__dot { flex: none; box-sizing: border-box; width: var(--size-4-3); height: var(--size-4-3); border: var(--size-2-1) solid var(--text-muted); border-radius: 50%; background: var(--text-muted); }
 .tyrian-live-hud__status[data-tone="ok"] .tyrian-live-hud__dot { border-color: var(--text-success); background: var(--text-success); }
 .tyrian-live-hud__status[data-tone="warn"] .tyrian-live-hud__dot { border-color: var(--text-warning); background: var(--text-warning); }
@@ -3252,35 +3258,48 @@
 .tyrian-live-hud__status[data-tone="err"] .tyrian-live-hud__state { color: var(--text-error); }
 .tyrian-live-hud__detail { color: var(--text-muted); font-weight: var(--font-medium); font-variant-numeric: tabular-nums; }
 .tyrian-live-hud__detail:empty { display: none; }
-.tyrian-live-hud__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--size-4-2); margin: 0; }
-.tyrian-live-hud__card { display: flex; flex-direction: column; justify-content: center; gap: var(--size-4-1); min-width: 0; box-sizing: border-box; padding: var(--size-4-3); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-secondary); }
+/* Two columns: the value across the top, the rates and the bags paired so bags and bags per hour stack, the duration across the bottom. */
+.tyrian-live-hud__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "value value" "rate bags" "magic-find bags-rate" "duration duration"; gap: var(--size-4-2); margin: 0; }
+.tyrian-live-hud__card { container-type: inline-size; display: flex; flex-direction: column; justify-content: center; gap: var(--size-4-1); min-width: 0; box-sizing: border-box; padding: var(--tyrian-hud-inset); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-secondary); }
+.tyrian-live-hud__card--value { grid-area: value; }
+.tyrian-live-hud__card--rate { grid-area: rate; }
+.tyrian-live-hud__card--bags { grid-area: bags; }
+.tyrian-live-hud__card--bags-rate { grid-area: bags-rate; }
+.tyrian-live-hud__card--magic-find { grid-area: magic-find; }
+.tyrian-live-hud__card--duration { grid-area: duration; }
 .tyrian-live-hud__card dt { color: var(--text-muted); font-size: var(--font-smallest); font-weight: var(--font-semibold); letter-spacing: 0.04em; text-transform: uppercase; overflow-wrap: anywhere; }
-.tyrian-live-hud__card dd { margin: 0; font-size: clamp(1.5rem, 9cqi, 2.75rem); font-weight: var(--font-semibold); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-/* The value is THE figure: the whole first row, the biggest size, and its three coins wrap instead of overflowing on a long amount. */
-.tyrian-live-hud__card--value { grid-column: 1 / -1; }
-.tyrian-live-hud__card--value dd { font-size: clamp(2rem, 14cqi, 4.5rem); }
-.tyrian-live-hud__card .tyrian-money { column-gap: 0.3em; }
-.tyrian-live-hud__section { color: var(--text-muted); font-size: var(--font-smallest); font-weight: var(--font-semibold); letter-spacing: 0.04em; text-transform: uppercase; }
+/*
+ * One line, always: the comfortable size for the card's width, or smaller when the figure is wider than the card
+ * (`94cqi` leaves the estimate its room; the fallback em is for a figure painted without one). Never under 1rem.
+ */
+.tyrian-live-hud__card dd { margin: 0; white-space: nowrap; font-size: max(1rem, min(clamp(1.5rem, 22cqi, 2.75rem), calc(94cqi / var(--tyrian-hud-em, 4)))); font-weight: var(--font-semibold); line-height: var(--line-height-tight); font-variant-numeric: tabular-nums; }
+/* The value is THE figure: the biggest size; its coins never wrap (they shrink with it instead), and the icons follow the em. */
+.tyrian-live-hud__card--value dd { font-size: max(1.25rem, min(clamp(2rem, 15cqi, 4.5rem), calc(94cqi / var(--tyrian-hud-em, 6)))); }
+.tyrian-live-hud__card .tyrian-money { flex-wrap: nowrap; column-gap: 0.3em; }
+.tyrian-live-hud__section { padding-inline: var(--tyrian-hud-inset); color: var(--text-muted); font-size: var(--font-smallest); font-weight: var(--font-semibold); letter-spacing: 0.04em; text-transform: uppercase; }
 .tyrian-live-hud__loot { display: grid; gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
-.tyrian-live-hud__loot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--size-4-3); min-height: 44px; padding: var(--size-4-1) var(--size-4-2); border-radius: var(--radius-s); background: var(--background-secondary); font-size: var(--font-ui-medium); }
+.tyrian-live-hud__loot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--size-4-3); min-height: 44px; padding: var(--size-4-1) var(--tyrian-hud-inset); border-radius: var(--radius-s); background: var(--background-secondary); font-size: var(--font-ui-medium); }
 .tyrian-live-hud__loot-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-medium); }
 .tyrian-live-hud__loot-qty { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tyrian-live-hud__loot-value { font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tyrian-live-hud__empty { color: var(--text-muted); }
-/* Hebra's 288 px column: one card per row; the value still gets the biggest size the width allows. */
-@container (max-width: 319px) {
-	.tyrian-live-hud__cards { grid-template-columns: minmax(0, 1fr); }
+.tyrian-live-hud__empty { padding-inline: var(--tyrian-hud-inset); color: var(--text-muted); }
+/* Hebra's 288 px column: one card per row, bags before bags per hour; the value still gets the biggest size the width allows. */
+@container tyrian-live-hud (max-width: 319px) {
+	.tyrian-live-hud__cards { grid-template-columns: minmax(0, 1fr); grid-template-areas: "value" "rate" "bags" "bags-rate" "magic-find" "duration"; }
 	.tyrian-live-hud__loot-row { grid-template-columns: minmax(0, 1fr) auto; }
 	.tyrian-live-hud__loot-value { grid-column: 1 / -1; justify-self: end; }
 }
-/* A tablet or the PC: three cards per row, the value spanning the three; the figures stop growing past a comfortable size. */
-@container (min-width: 600px) {
-	.tyrian-live-hud__cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--size-4-3); }
-	.tyrian-live-hud__card { padding: var(--size-4-4); }
-	.tyrian-live-hud__card dd { font-size: clamp(1.75rem, 5cqi, 2.75rem); }
-	.tyrian-live-hud__card--value dd { font-size: clamp(2.5rem, 8cqi, 4.5rem); }
+/*
+ * A tablet or the PC: three columns with no hole, the value two wide and two tall, bags over bags per hour beside it,
+ * the rest along the bottom; the figures stop growing past a comfortable size.
+ */
+@container tyrian-live-hud (min-width: 600px) {
+	.tyrian-live-hud { --tyrian-hud-inset: var(--size-4-4); }
+	.tyrian-live-hud__cards { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "value value bags" "value value bags-rate" "rate magic-find duration"; gap: var(--size-4-3); }
+	.tyrian-live-hud__card dd { font-size: max(1rem, min(clamp(1.75rem, 18cqi, 2.75rem), calc(94cqi / var(--tyrian-hud-em, 4)))); }
+	.tyrian-live-hud__card--value dd { font-size: max(1.25rem, min(clamp(2.5rem, 13cqi, 4.5rem), calc(94cqi / var(--tyrian-hud-em, 6)))); }
 }
-@container (min-width: 900px) {
+@container tyrian-live-hud (min-width: 900px) {
 	.tyrian-live-hud__loot { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

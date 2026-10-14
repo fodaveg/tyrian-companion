@@ -18,7 +18,7 @@ import type { LivePanelLiveV1, LivePanelMagicFindSource, LivePanelState } from '
 import { formatClock } from './format-time';
 import { formatDecimal } from './format-number';
 import { liveSessionCopy } from './live-session-copy';
-import { CoinFigure, speakCopper } from './live-session-money';
+import { CoinFigure, speakCopper, type CoinFigureShape } from './live-session-money';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
 
 export const LIVE_HUD_VIEW_TYPE = 'tyrian-live-hud-view';
@@ -50,7 +50,8 @@ export function liveHudSection(actions: Pick<LiveHudActions, 'getLocale'>): Tyri
 		id: 'live',
 		title: () => createTranslator(actions.getLocale()).t('liveHud.view.title'),
 		label: () => createTranslator(actions.getLocale()).t('shell.nav.live'),
-		icon: 'gauge',
+		// One of the glyphs Hebra draws (`bases/obsidian-icons.ts`, its curated set; `gauge` painted the blank marker) and a Lucide name for Obsidian.
+		icon: 'play',
 	};
 }
 
@@ -65,6 +66,14 @@ export function liveHudView(actions: Pick<LiveHudActions, 'getLocale'>): TyrianV
 const DASH = '—';
 const TICK_MS = 1_000;
 type Tone = 'ok' | 'warn' | 'err' | 'idle';
+
+/**
+ * Rough widths in em of what a card shows, for `--tyrian-hud-em`: the CSS divides the card's width by it so a figure
+ * always fits on ONE line (`styles.css`, «En vivo»). Tabular digits of the UI font are about 0.6 em; a coin is its icon
+ * (0.8 em) plus the gap to its number, and the coins sit 0.3 em apart. Generous on purpose: a figure a little smaller
+ * than it could be is fine, one that wraps or overflows is not.
+ */
+const EM = { digit: 0.62, space: 0.28, other: 0.58, coin: 0.92, coinGap: 0.3, sign: 0.35 } as const;
 
 /** What the state line says and which colour its dot takes; `detail` is the second, quieter part. */
 const STATE_KEY: Readonly<Record<LiveHudState, { key: TranslationKey; tone: Tone }>> = {
@@ -158,23 +167,27 @@ export class LiveHudItemView {
 		const detail = status.createSpan({ cls: 'tyrian-live-hud__detail' });
 		detail.setText(this.detailText(t, locale, data, now));
 
+		// The DOM order is the reading order (value, then the rates, then the rest); where each card sits is the grid's
+		// (`grid-template-areas` in `styles.css`): bags and bags per hour one over the other, in every width.
 		const cards = root.createEl('dl', { cls: 'tyrian-live-hud__cards' });
 		const spoken = (copper: number): string => speakCopper(copper, liveSessionCopy(locale, 'moneySpoken'), liveSessionCopy(locale, 'moneySpokenLoss'));
-		this.card(cards, t.t('liveHud.card.value'), 'value', (dd) => this.money(dd, live?.valueCopper ?? null, spoken));
-		this.card(cards, t.t('liveHud.card.rate'), 'rate', (dd) => this.money(dd, live?.ratePerHourCopper ?? null, spoken));
-		this.card(cards, t.t('liveHud.card.bags'), 'bags', (dd) => { dd.setText(live?.bags === null || live === null ? DASH : String(live.bags)); });
+		this.card(cards, t.t('liveHud.card.value'), 'value', (dd) => { this.moneyFigure(dd, live?.valueCopper ?? null, spoken); });
+		this.card(cards, t.t('liveHud.card.rate'), 'rate', (dd) => { this.moneyFigure(dd, live?.ratePerHourCopper ?? null, spoken); });
+		this.card(cards, t.t('liveHud.card.bags'), 'bags', (dd) => { this.textFigure(dd, live?.bags === null || live === null ? DASH : String(live.bags)); });
 		this.card(cards, t.t('liveHud.card.bagsPerHour'), 'bags-rate', (dd) => {
-			dd.setText(live?.bagsPerHourMilli === null || live === null ? DASH : formatDecimal(Math.round(live.bagsPerHourMilli / 100) / 10, locale));
+			this.textFigure(dd, live?.bagsPerHourMilli === null || live === null ? DASH : formatDecimal(Math.round(live.bagsPerHourMilli / 100) / 10, locale));
 		});
 		this.card(cards, t.t(MAGIC_FIND_KEY[live?.magicFind.source ?? 'unknown']), 'magic-find', (dd) => {
-			dd.setText(live?.magicFind.value === null || live === null ? DASH : t.t('liveHud.card.magicFind.value', { value: live.magicFind.value }));
+			this.textFigure(dd, live?.magicFind.value === null || live === null ? DASH : t.t('liveHud.card.magicFind.value', { value: live.magicFind.value }));
 		});
-		const duration = this.card(cards, t.t('liveHud.card.duration'), 'duration', (dd) => { dd.setText(durationText(live, now)); });
+		const duration = this.card(cards, t.t('liveHud.card.duration'), 'duration', (dd) => { this.textFigure(dd, durationText(t, live, now)); });
 
 		root.createEl('h3', { cls: 'tyrian-live-hud__section', text: t.t('liveHud.loot.title') });
 		const loot = live?.loot ?? [];
 		if (loot.length === 0) {
-			root.createEl('p', { cls: 'tyrian-live-hud__empty', text: t.t(live === null ? 'liveHud.loot.unavailable' : 'liveHud.loot.empty') });
+			// «todavía» only while loot can still come: a finished session, or none, has simply none.
+			const empty: TranslationKey = live === null ? 'liveHud.loot.unavailable' : counting(data) ? 'liveHud.loot.empty' : 'liveHud.loot.none';
+			root.createEl('p', { cls: 'tyrian-live-hud__empty', text: t.t(empty) });
 		} else {
 			const list = root.createEl('ol', { cls: 'tyrian-live-hud__loot' });
 			for (const row of loot) {
@@ -199,12 +212,29 @@ export class LiveHudItemView {
 		return dd;
 	}
 
-	/** A copper amount as the three coins with their icons (`CoinFigure`), or the dash. */
-	private money(target: HTMLElement, copper: number | null, spoken: (copper: number) => string): void {
-		if (copper === null) { target.setText(DASH); return; }
-		const figure = new CoinFigure(this.contentEl.doc);
+	/**
+	 * A copper amount as its coins with their icons (`CoinFigure`, without the 0 coins on the left: «46 plata 52 cobre»,
+	 * never «0 oro 46 plata 52 cobre»), or the dash. Returns what is on screen, for the card to size it.
+	 */
+	private money(target: HTMLElement, copper: number | null, spoken: (copper: number) => string): CoinFigureShape | null {
+		if (copper === null) { target.setText(DASH); return null; }
+		const figure = new CoinFigure(this.contentEl.doc, { trimLeadingZeros: true });
 		figure.set(copper, spoken(copper));
 		target.append(figure.element);
+		return figure.shape();
+	}
+
+	/** The money of a card, with its width in em for the CSS to fit it on one line. */
+	private moneyFigure(dd: HTMLElement, copper: number | null, spoken: (copper: number) => string): void {
+		const shape = this.money(dd, copper, spoken);
+		if (shape === null) { setFigureEm(dd, textEm(DASH)); return; }
+		setFigureEm(dd, shape.digits * EM.digit + shape.parts * EM.coin + (shape.parts - 1) * EM.coinGap + (shape.negative ? EM.sign : 0));
+	}
+
+	/** The text of a card, with its width in em for the CSS to fit it on one line. */
+	private textFigure(dd: HTMLElement, text: string): void {
+		dd.setText(text);
+		setFigureEm(dd, textEm(text));
 	}
 
 	/** The quieter half of the state line: the time of the last reading, how long ago it was, or when the session ended. */
@@ -226,7 +256,7 @@ export class LiveHudItemView {
 		const data = this.actions.getLiveHud();
 		const now = Date.now();
 		const t = createTranslator(this.actions.getLocale());
-		this.ticking.duration.setText(durationText(data.live, now));
+		this.textFigure(this.ticking.duration, durationText(t, data.live, now));
 		this.ticking.detail.setText(this.detailText(t, this.actions.getLocale(), data, now));
 		if (!counting(data)) this.clearTimer();
 	}
@@ -262,10 +292,12 @@ function counting(data: LiveHudData): boolean {
 }
 
 /**
- * The duration as `H:MM:SS` (or `MM:SS`), counted here from the start the transport carries: live and stale sessions up to now,
- * a disconnected one up to its last reading (what the collector froze it at), a finished one up to its end.
+ * The duration with its units («10 min 5 s», «1 h 12 min», «45 s»; David, 14 Oct 2026: «10:05» read as a time of day),
+ * counted here from the start the transport carries: live and stale sessions up to now, a disconnected one up to its
+ * last reading (what the collector froze it at), a finished one up to its end. Under an hour it moves every second;
+ * from an hour on the seconds go, so the figure does not flicker while it is left open.
  */
-export function durationText(live: LivePanelLiveV1 | null, now: number): string {
+export function durationText(t: Translator, live: LivePanelLiveV1 | null, now: number): string {
 	if (live === null || live.startedAt === null) return DASH;
 	const started = Date.parse(live.startedAt);
 	const until = live.state === 'ended' && live.endedAt !== null ? Date.parse(live.endedAt)
@@ -273,8 +305,22 @@ export function durationText(live: LivePanelLiveV1 | null, now: number): string 
 	if (!Number.isFinite(started) || !Number.isFinite(until)) return DASH;
 	const total = Math.floor(Math.max(0, until - started) / 1_000);
 	const hours = Math.floor(total / 3_600), minutes = Math.floor(total % 3_600 / 60), seconds = total % 60;
-	const mm = String(minutes).padStart(2, '0'), ss = String(seconds).padStart(2, '0');
-	return hours > 0 ? `${String(hours)}:${mm}:${ss}` : `${mm}:${ss}`;
+	if (hours > 0) return `${t.t('liveHud.ago.hours', { count: hours })} ${t.t('liveHud.ago.minutes', { count: minutes })}`;
+	if (minutes > 0) return `${t.t('liveHud.ago.minutes', { count: minutes })} ${t.t('liveHud.ago.seconds', { count: seconds })}`;
+	return t.t('liveHud.ago.seconds', { count: seconds });
+}
+
+/** The rough width of a card's text in em (see `EM`). */
+export function textEm(text: string): number {
+	let em = 0;
+	for (const char of text) em += char === ' ' ? EM.space : /\d/u.test(char) ? EM.digit : EM.other;
+	return em;
+}
+
+/** Writes `--tyrian-hud-em` on the figure, rounded so a tick that does not change the width does not touch the style. */
+function setFigureEm(dd: HTMLElement, em: number): void {
+	const value = String(Math.round(em * 100) / 100);
+	if (dd.style.getPropertyValue('--tyrian-hud-em') !== value) dd.style.setProperty('--tyrian-hud-em', value);
 }
 
 /** «N s» under a minute, «N min» from there on. */

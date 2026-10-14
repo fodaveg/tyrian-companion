@@ -167,7 +167,7 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 			{ id: 'inventory', title: 'Inventario', icon: 'package-search' },
 			{ id: 'sale', title: 'Venta', icon: 'candy' },
 			{ id: 'achievements', title: 'Logros', icon: 'circle-check', badge: null },
-			{ id: 'live', title: 'En vivo', icon: 'gauge' },
+			{ id: 'live', title: 'En vivo', icon: 'play' },
 		]);
 		expect(test.fake.viewTitle(TYRIAN_MAIN_VIEW_TYPE)).toBe('Tyrian Companion');
 		expect(test.fake.recorded.views).toEqual([]);

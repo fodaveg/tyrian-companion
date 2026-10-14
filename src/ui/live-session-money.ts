@@ -20,6 +20,24 @@ export function splitCopper(copper: number): { negative: boolean; gold: number; 
 	return { negative: copper < 0, gold: Math.floor(value / 10_000), silver: Math.floor(value / 100) % 100, copper: value % 100 };
 }
 
+export interface CoinFigureOptions {
+	/**
+	 * Leave out the coins on the left that are 0: `46s 52c` for 4 652 copper, `52c` for 52. With any gold the three
+	 * coins stay, even a 0 silver or copper (`185g 0s 0c`), and 0 copper is `0c`. Off by default: the session panel
+	 * and the summaries keep the three coins always, so the columns line up. The «En vivo» HUD turns it on.
+	 */
+	readonly trimLeadingZeros?: boolean;
+}
+
+/** What is on screen after `set()`: what the HUD needs to estimate the figure's width. */
+export interface CoinFigureShape {
+	/** Digits across the visible coins. */
+	readonly digits: number;
+	/** Coins on screen (1 to 3). */
+	readonly parts: number;
+	readonly negative: boolean;
+}
+
 /**
  * An amount of copper as `N [gold] N [silver] N [copper]`, with the official coin icons.
  *
@@ -27,22 +45,30 @@ export function splitCopper(copper: number): { negative: boolean; gold: number; 
  * `formatCopperVisual`; a letter hides only once ITS icon has loaded (`data-icon`), so with no network or a
  * broken image the text is what stays, never a gap or a broken icon. The whole figure is one `role="img"`
  * with the spoken amount as its name, and the icons are decorative. The three parts are built once and
- * `set()` only rewrites their numbers, so a changing value never reloads an icon.
+ * `set()` only rewrites their numbers, so a changing value never reloads an icon. A coin left out
+ * (`trimLeadingZeros`) is taken out of the DOM, not hidden (`textContent` would still read its `0g`), and put back,
+ * the same node with its loaded icon, when the value grows into it.
  */
 export class CoinFigure {
 	readonly element: HTMLElement;
 	private readonly sign: HTMLElement;
 	private readonly numbers: HTMLElement[] = [];
+	private readonly parts: HTMLElement[] = [];
+	/** The spaces between the parts on screen; two at most. */
+	private readonly separators: Text[];
+	/** Which parts are on screen right now, as `visible.join()`; the children are only rearranged when it changes. */
+	private shown = '';
+	private current: CoinFigureShape = { digits: 3, parts: 3, negative: false };
 
-	constructor(document: Document) {
+	constructor(document: Document, private readonly options: CoinFigureOptions = {}) {
 		// The root has no parent yet (the live panel places it), so only it comes from `document` (`createOwnedRoot` keeps that owner);
 		// the parts hang from it through Obsidian's helpers (polyfilled in Hebra, `host/dom-polyfill.ts`).
 		this.element = createOwnedRoot(document, 'span');
 		this.element.className = 'tyrian-money';
 		this.element.setAttribute('role', 'img');
 		this.sign = this.element.createSpan({ cls: 'tyrian-money__sign' });
-		UNITS.forEach(([unit, letter], index) => {
-			if (index > 0) this.element.append(document.createTextNode(' '));
+		this.separators = [document.createTextNode(' '), document.createTextNode(' ')];
+		UNITS.forEach(([unit, letter]) => {
 			const part = this.element.createSpan({ cls: 'tyrian-money__part' });
 			part.dataset.unit = unit;
 			const number = part.createSpan({ cls: 'tyrian-money__num' });
@@ -54,7 +80,23 @@ export class CoinFigure {
 			icon.src = COIN_ICON_URLS[unit];
 			part.createSpan({ cls: 'tyrian-money__letter', text: letter });
 			this.numbers.push(number);
+			this.parts.push(part);
 		});
+		this.arrange([true, true, true]);
+	}
+
+	/** Puts the sign and the parts to show under the root, a space between parts; nothing moves when the set is the same as before. */
+	private arrange(visible: readonly boolean[]): void {
+		const key = visible.join();
+		if (key === this.shown) return;
+		this.shown = key;
+		const children: Node[] = [this.sign];
+		visible.forEach((shown, index) => {
+			if (!shown) return;
+			if (children.length > 1) children.push(this.separators[children.length === 2 ? 0 : 1]!);
+			children.push(this.parts[index]!);
+		});
+		this.element.replaceChildren(...children);
 	}
 
 	/** Paints `copper`; `label` is the spoken amount (see `speakCopper`). Touches only what changed. */
@@ -64,7 +106,21 @@ export class CoinFigure {
 		const sign = parts.negative ? '-' : '';
 		if (this.sign.textContent !== sign) this.sign.textContent = sign;
 		values.forEach((value, index) => { if (this.numbers[index]!.textContent !== value) this.numbers[index]!.textContent = value; });
+		// Gold goes when it is 0; silver only when gold went too and it is 0 as well; copper always stays.
+		const trim = this.options.trimLeadingZeros === true;
+		const visible = [!trim || parts.gold > 0, !trim || parts.gold > 0 || parts.silver > 0, true];
+		this.arrange(visible);
+		this.current = {
+			digits: values.reduce((sum, value, index) => sum + (visible[index] === true ? value.length : 0), 0),
+			parts: visible.filter(Boolean).length,
+			negative: parts.negative,
+		};
 		if (this.element.getAttribute('aria-label') !== label) this.element.setAttribute('aria-label', label);
+	}
+
+	/** The visible digits, coins and sign of the last `set()`. */
+	shape(): CoinFigureShape {
+		return this.current;
 	}
 }
 
