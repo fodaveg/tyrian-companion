@@ -1115,6 +1115,36 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).not.toMatch(/vault-hash|account-a|generation/u);
 	});
 
+	it('clears the preference form once the write is confirmed, so a second Enter adds nothing, and keeps it when the write failed', async () => {
+		let failed = false;
+		const upsertGoal = vi.fn(async () => {});
+		const upsertException = vi.fn(async () => {});
+		const interactions: InventoryAdvisorViewInteractions = {
+			preferences: { status: 'ready', goals: [], keepExceptions: [] },
+			get preferenceWriteFailed() { return failed; },
+			onUpsertGoal: upsertGoal, onUpsertKeepException: upsertException,
+		};
+		const mount = render(readyModel(), 'es', interactions);
+		const [goalForm, exceptionForm] = byClass(mount.elements(), 'tyrian-inventory-advisor__preference-form');
+		if (goalForm === undefined || exceptionForm === undefined) throw new Error('Expected preference forms.');
+		const goalInputs = find(walk(goalForm), 'input');
+		goalInputs[0]!.value = 'Goal'; goalInputs[1]!.value = '10'; goalInputs[2]!.value = '5';
+		goalForm.dispatch('submit');
+		await Promise.resolve(); await Promise.resolve();
+		expect(upsertGoal).toHaveBeenCalledTimes(1);
+		expect([goalInputs[0]!.value, goalInputs[1]!.value, goalInputs[2]!.value]).toEqual(['', '', '']);
+		goalForm.dispatch('submit');
+		expect(upsertGoal, 'a second Enter created a duplicate').toHaveBeenCalledTimes(1);
+
+		failed = true;
+		const exceptionInputs = find(walk(exceptionForm), 'input');
+		exceptionInputs[0]!.value = '12'; exceptionInputs[1]!.value = '3';
+		exceptionForm.dispatch('submit');
+		await Promise.resolve(); await Promise.resolve();
+		expect(upsertException).toHaveBeenCalledTimes(1);
+		expect(exceptionInputs[0]!.value, 'a refused write lost what was typed').toBe('12');
+	});
+
 	it('renders the one guided button and its advance notice without capturing or writing until an explicit click', () => {
 		const onRun = vi.fn();
 		const onConfirm = vi.fn();

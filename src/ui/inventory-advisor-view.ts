@@ -1683,7 +1683,10 @@ function mountPreferencesEditor(
 				creditedQuantity: goalForm.editingRequirement?.id === itemId ? goalForm.editingRequirement.creditedQuantity : 0,
 				basis: selectedBasis(goalForm.basis.value), intendedUse: selectedIntendedUse(goalForm.intendedUse?.value ?? 'hold') }],
 		};
-		void getInteractions().onUpsertGoal?.(goal);
+		afterConfirmedWrite(getInteractions, getInteractions().onUpsertGoal?.(goal), () => {
+			clearPreferenceForm(goalForm);
+			updatePreferenceFormLabels(goalForm, getTranslator());
+		});
 	});
 	const exceptionsHeading = preferenceHeading('advisor.preferences.exceptions', getTranslator());
 	const exceptions = createDiv();
@@ -1703,7 +1706,10 @@ function mountPreferencesEditor(
 			status: selectedExceptionStatus(exceptionForm.status.value), basis: selectedBasis(exceptionForm.basis.value),
 			quantity: quantityIntent, reason: selectedExceptionReason(exceptionForm.reason.value),
 		};
-		void getInteractions().onUpsertKeepException?.(keepException);
+		afterConfirmedWrite(getInteractions, getInteractions().onUpsertKeepException?.(keepException), () => {
+			clearPreferenceForm(exceptionForm);
+			updatePreferenceFormLabels(exceptionForm, getTranslator());
+		});
 	});
 	details.append(summary, status, load, goalsHeading, goals, goalForm.form, exceptionsHeading, exceptions, exceptionForm.form);
 	let entriesSignature = '';
@@ -1921,6 +1927,22 @@ function supportsGoalEditor(goal: ReservationGoal): boolean {
 }
 
 function preferenceText(translator: Translator, key: string): string { return translator.t(key as never); }
+
+/**
+ * Runs `confirmed` once the write the form asked for has ended AND was saved. The form keeps what
+ * the player typed while the write is pending or refused (`preferenceWriteFailed`, read after the
+ * write ends), so a refusal is retried without retyping; once saved it is cleared, because a
+ * second Enter on a filled "add" form would mint another id and write a duplicate.
+ */
+function afterConfirmedWrite(
+	getInteractions: () => InventoryAdvisorViewInteractions,
+	write: void | Promise<void>,
+	confirmed: () => void,
+): void {
+	void Promise.resolve(write).then(() => {
+		if (getInteractions().preferenceWriteFailed !== true) confirmed();
+	}, () => undefined);
+}
 
 function clearPreferenceForm(form: PreferenceForm): void {
 	form.editingId = null; form.title.value = ''; form.itemId.value = ''; form.quantity.value = ''; form.status.value = 'active';
