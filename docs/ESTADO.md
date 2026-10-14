@@ -1,5 +1,22 @@
 # Estado
 
+## En rama, sin publicar: sección «En vivo», el HUD de cifras grandes (14 oct 2026)
+
+Rama `feat/live-hud`, sin gate completo ni canal. Pedido por David el 14 oct durante el evento («no quería una nota.
+quería un puto panel dentro del plugin. una especie de dashboard o hud», «se puede mostrar el numero de bolsas y bolsas
+por hora? como en el juego?», «y el hallazgo mágico»).
+
+- Quinta sección «En vivo» (`src/ui/live-hud-view.ts`, comando `open-live` «Abrir panel en vivo»): estado, seis tarjetas
+  (valor, oro/h, bolsas, bolsas/h, MF de la cuenta, duración) y el botín que más vale. En la pantalla principal de Hebra
+  ocupa la pantalla entera del iPhone o iPad; en Obsidian abre en su propia pestaña. Sin personaje, cuenta ni mapa.
+- Transporte: el frontmatter de `Live panel.md` lleva los campos `tc_live_*` (`tc_live_v: 1`); el recolector escribe
+  cuando cambia una cifra visible, dentro del suelo de 10 s; un dispositivo en consulta lee la nota al montar el HUD y en
+  cada `vault.onChange` sobre esa ruta (`src/runtime/live-hud-runtime.ts`). Detalle en [ARCHITECTURE](ARCHITECTURE.md).
+- Bolsas y bolsas/h: la misma lectura de `view.totals` que el panel del juego (`liveObservedBags`), también en la nota.
+- Sin verificar: el render en iPhone, iPad, Obsidian y Hebra reales; la latencia real del transporte por la sincronización
+  de Hebra (medida antes: 60 s de mediana). El MF del juego con buffs sigue sin viajar al plugin (otra tanda: addon +
+  protocolo); el modelo reserva la fuente `game`.
+
 ## Canal 0.6.58 publicado: panel en vivo, ventana «1 semana», «Detalles» en Venta y audit de bugs (14 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.58` = `107b8b54` (atestación; candidato `1998c658`).

@@ -14,6 +14,17 @@ David autoriza el lector propio y pasivo de Nexus para el alcance completo del a
 
 La [comparación live y build declarada](SPEC-live-loot.md#14-build-declarada-y-comparación-de-sesiones-live) es obligatoria para 0.5.0: incluye sesiones Nexus separadas del historial API, bolsas observadas/netas y tasas sobre tiempo cubierto, con al menos dos completas por grupo comparable; la activa queda provisional. La preparación admite pegar una plantilla GW2 y etiqueta opcional, congeladas al iniciar e identificadas por configuración validada, no por etiqueta ni SHA del ejecutable. No acredita build equipada, equipo/stats ni causalidad. Una entrada inválida permanece visible y la sesión continúa con declaración desconocida, sin fallback a otra válida. Parser, captura, notas, editor y comparador están integrados en 0.5.0 con revisión independiente aprobada; gate y publicación están acreditados en [ESTADO](ESTADO.md), con QA real pendiente.
 
+## Decisión vigente: sección «En vivo» (14 oct 2026)
+
+David pidió, durante el evento de Halloween, un panel dentro del plugin y no una nota («no quería una nota. quería
+un puto panel dentro del plugin. una especie de dashboard o hud»), con las bolsas y las bolsas por hora «como en el
+juego» y el hallazgo mágico, en grande y legible en escritorio, iPad e iPhone, «en tiempo lo más real posible». Es
+la quinta sección, «En vivo», tras Logros: una línea de estado, seis cifras grandes (valor de la sesión, oro por
+hora, bolsas, bolsas por hora, MF de la cuenta, duración) y el botín que más vale. Sin personaje, cuenta ni mapa,
+porque se deja abierta en otro dispositivo. La nota «Live panel.md» sigue existiendo y pasa a ser su transporte
+hacia el móvil (además de legible). El MF que enseña es el de la cuenta y se etiqueta así; el del juego con buffs
+solo lo conoce el addon y queda para otra tanda. Implementación en [ARCHITECTURE](ARCHITECTURE.md), «En vivo».
+
 ## Decisión vigente: sección «Logros» (10 oct 2026)
 
 David decidió la cuarta sección del panel, «Logros», bajo Sesión, Inventario y Venta, con el recuento de
