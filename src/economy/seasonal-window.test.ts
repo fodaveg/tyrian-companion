@@ -293,6 +293,31 @@ describe('festival-relative windows and candidate resolution', () => {
 		expect(afterFestivalNothingOpen?.seasonId).toBe('may');
 	});
 
+	// Audit fix (14 oct 2026): once this year's edition has passed, a festival-relative candidate's
+	// next opening is only known if next year's real start is curated. Projecting this year's
+	// month-day onto next year is exactly the interpolation the anchors table forbids, and it used
+	// to outrank an annual candidate that genuinely reopens later.
+	it('never ranks a festival-relative candidate by a next opening projected without next year\'s anchor', () => {
+		const lateOctober = annualCandidate('late-october', '10-20', '10-31', 10);
+		const entry: FestivalCalendarEntryV1 = {
+			itemId: 1, candidates: [{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' }, lateOctober],
+		};
+		const asOf = Date.parse('2026-11-01T00:00:00.000Z');
+		const only2026 = new Map([['halloween', halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }])]]);
+		expect(resolveFestivalCalendarWindow(entry, only2026, asOf)?.seasonId).toBe('late-october');
+		const with2027 = new Map([['halloween', halloweenAnchorsWith([
+			{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' },
+			{ year: 2027, startsOn: '2027-10-12', sourceId: 'src' },
+		])]]);
+		expect(resolveFestivalCalendarWindow(entry, with2027, asOf)?.seasonId).toBe('before');
+		const onlyAnchored: FestivalCalendarEntryV1 = {
+			itemId: 2, candidates: [{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' }],
+		};
+		expect(resolveFestivalCalendarWindow(onlyAnchored, only2026, asOf)).toMatchObject({ seasonId: 'before' });
+		expect(seasonalWindowStatusAtMs(resolveFestivalCalendarWindow(onlyAnchored, only2026, asOf), asOf))
+			.toBe('out_of_season');
+	});
+
 	it('declares lack of coverage rather than guessing when the only candidate needs an uncovered festival year', () => {
 		const anchorsFor2026 = new Map([['halloween', halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }])]]);
 		const onlyAnchored: FestivalCalendarEntryV1 = {
