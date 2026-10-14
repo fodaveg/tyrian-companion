@@ -535,9 +535,14 @@ export function createTyrianVaultPort(options: CreateTyrianVaultPortOptions): Ty
 	function onLibraryChange(event: PluginVaultChange): void {
 		if (disposed || event.kind !== 'note-changed') return;
 		const { id, change } = event;
-		// `moved` (it may have left the output folder) and `unarchived` (it may be back) are read like a
-		// `synced`; without the path function there is nothing to decide with, as before.
-		const rereads = change === 'synced' || ((change === 'moved' || change === 'unarchived') && canonicalPathFor !== undefined);
+		// `moved` (it may have left the output folder), `unarchived` and `restored` (it may be back: its
+		// `archived`/`trashed` dropped it from the index) are read like a `synced`; without the path
+		// function there is nothing to decide with, as before. `created` is not: the plugin's own
+		// `create` indexes its note after `noteCreate` resolves, and adopting it first from the event
+		// would make that `create` find its path taken and trash its own note. A note created on
+		// another device arrives as `synced`.
+		const rereads = change === 'synced'
+			|| ((change === 'moved' || change === 'unarchived' || change === 'restored') && canonicalPathFor !== undefined);
 		if (rereads) {
 			if (!canonicalPathFor && !draining && events.length === 0) {
 				// No path function, no read to wait for: `modify` of what is indexed, synchronous.
