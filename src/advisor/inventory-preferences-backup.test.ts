@@ -233,6 +233,40 @@ describe('inventory preferences copy: writes after a change', () => {
 		world.dispose();
 	});
 
+	it('reads IndexedDB for the copy only after the restore has settled, even for a change told before it did', async () => {
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => { release = resolve; });
+		const calls: string[] = [];
+		const timers = manualTimers();
+		const backup = new InventoryPreferencesBackup({
+			vaultId: VAULT,
+			store: {
+				readVault: async () => { calls.push('readVault'); return { status: 'ok', records: [], unreadable: 0 }; },
+				restoreMissingRecords: async () => {
+					calls.push('restore:start');
+					await held;
+					calls.push('restore:end');
+					return { status: 'restored', count: 1 };
+				},
+			},
+			settings: { read: () => copyOf([[ACCOUNT, ['goal-a'], []]]), write: async () => 'saved' },
+			schedule: timers.schedule,
+			cancel: timers.cancel,
+			now,
+		});
+		const restoring = backup.restore();
+		// What the adoption of a moved vault does (`vault-runtime`), past the store that waits for the restore.
+		backup.changed();
+		timers.fire();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(calls).toEqual(['restore:start']);
+
+		release();
+		await restoring;
+		await backup.settled();
+		expect(calls).toEqual(['restore:start', 'restore:end', 'readVault']);
+	});
+
 	it('writes only this vault\'s records, never those of a vault whose id starts the same', async () => {
 		const world = harness({ stored: null });
 		const other = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);

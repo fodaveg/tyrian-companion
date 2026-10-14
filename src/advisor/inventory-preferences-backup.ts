@@ -8,7 +8,8 @@
  *
  * - What: per account of this vault, its goals and exceptions. No vault id (it is a hash of the path in Obsidian, so it
  *   changes when the vault moves), no generation, no timestamp: nothing derived, only what restoring needs.
- * - When it is written: after a change IndexedDB confirmed, once per burst (`quietMs` after the last one), from what the
+ * - When it is written: after a change IndexedDB confirmed, once per burst (`quietMs` after the last one, and never before
+ *   the restore of the start has settled), from what the
  *   vault holds in IndexedDB at that moment, merged over the stored copy: an account IndexedDB does not hold is kept in
  *   the copy as it was, so a write never drops an account (`mergeInventoryPreferencesBackup`). A record this release
  *   cannot read (corrupt, or from a newer release) is left out of what is read and counted in the log line; it stays in
@@ -280,6 +281,9 @@ export class InventoryPreferencesBackup {
 			component: 'advisor', action: 'inventory_preferences_write', state: final ? 'backup_write_final' : 'backup_write',
 		});
 		try {
+			// A change told before the restore settled (the adoption of a moved vault writes IndexedDB past the store that
+			// waits for it) must not read a half-restored vault. `ready` never rejects.
+			await this.ready();
 			const read = await this.options.store.readVault(this.options.vaultId);
 			if (read.status === 'error') {
 				span.failure(new Error(`inventory_preferences_${read.code}`), 'storage_failure', 'backup_read_failed', { reason: read.code });
