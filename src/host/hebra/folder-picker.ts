@@ -277,10 +277,14 @@ export function attachFolderPicker(
 	input.hidden = true;
 	input.after(root);
 
+	// Only the answer to the latest request applies: an older listing that arrives late is stale.
+	let latestLoad = 0;
 	const loadPaths = (): void => {
+		latestLoad += 1;
+		const thisLoad = latestLoad;
 		deps.folderPaths()
 			.then((result) => {
-				if (!active) return;
+				if (!active || thisLoad !== latestLoad) return;
 				paths = result;
 				loaded = true;
 				paintNote();
