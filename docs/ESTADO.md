@@ -1,9 +1,30 @@
 # Estado
 
-## Candidato 0.6.60: el panel «En vivo» muestra el hallazgo mágico del juego (14 oct 2026)
+## Candidato 0.6.61: el panel «En vivo» corregido desde la captura de David en el iPhone (14 oct 2026)
 
-**Candidato; sin publicar.** `main` sobre el canal 0.6.59 publicado (`28f46d62`). Detalle en [CHANGELOG](CHANGELOG.md).
-Pedido por David el 14 oct («y el hallazgo mágico»). Va con el addon de Nexus 0.8.11 (`2a64012`), que es quien lee la cifra.
+**Candidato; sin publicar.** `main` sobre el canal 0.6.60 publicado (`7df962cd`). Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 14 oct con una captura del HUD en Hebra iPhone: «haz que el dinero quepa en 1 linea y se ajuste»,
+«quiero ver las bolsas y bolsas por hora uno debajo del otro», «el estado de sesión y botín que mas vale están muy pegados
+al lateral», «añade una hamburguesa al lado de tyrian companion», «ponle icono a la sección en vivo».
+
+- Layout (`src/ui/live-hud-view.ts`, `styles.css`, `src/ui/live-session-money.ts`): valor en una línea que encoge con la
+  tarjeta (`--tyrian-hud-em` y `cqi`), sin monedas a cero a la izquierda (solo en el HUD); Bolsas sobre Bolsas/h por
+  `grid-template-areas`; margen `--tyrian-hud-inset` en estado y botín; duración con unidades; «Sin botín.» al terminar.
+- Icono de la sección y del menú: `play`. Hebra solo dibuja el conjunto cerrado de `obsidian-icons.ts` y `gauge` no está.
+- La hamburguesa la pinta Hebra (`ModuleMainView.svelte`, botón de volver en el iPhone): pedida a la sesión de Hebra, que
+  la está haciendo; sale con su TestFlight. Tyrian no cambia nada para eso.
+- Iconos de objeto en el botín: el transporte los lleva en una clave aparte, `tc_live_loot_icons`, que el lector de
+  0.6.59/0.6.60 ignora (comprobado con su parser real), y solo URLs de `render.guildwars2.com/file/…png`.
+- El MF del juego caducado repinta el HUD del recolector a los 2 min (un `setTimeout` re-armado, cancelado en el unload).
+- «Abrir panel en vivo» entra en el menú del ribbon, en Obsidian y en Hebra.
+- Sin verificar: todo lo anterior en un iPhone, iPad, Obsidian o Hebra reales.
+
+## Canal 0.6.60 publicado: el panel «En vivo» muestra el hallazgo mágico del juego (14 oct 2026)
+
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.60` = `7df962cd` (atestación; candidato `a3424ba5`).
+Gate local verde (check en UTC con 7841 tests, test 29/29, BRAT PASS); CI 38535431786 y Release 38536930035 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=not-checked`), release normal. Va con el addon de Nexus 0.8.11
+(etiqueta `0.8.11` = `2a64012`, DLL sha256 `b1aa8491…12f9`, publicado el 14 oct), que es quien lee la cifra.
 
 - El MF del juego con buffs viaja por `mf1` negociado ([SPEC del puente](SPEC-puente-ingame.md)): el plugin anuncia
   `mf_cap` solo a `client: nexus` en v3; el addon responde con `mf_state` (`mf` entero o `null`, `ageMs`) al cambiar, cada

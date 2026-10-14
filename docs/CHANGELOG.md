@@ -1,5 +1,19 @@
 # Changelog
 
+## Release beta 0.6.61 - El panel «En vivo» se lee mejor en el móvil
+
+Se actualiza desde la 0.6.60 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- El valor de la sesión cabe siempre en una línea y encoge con la pantalla; ya no enseña las monedas a cero de la
+  izquierda («46 plata 52 cobre»).
+- Bolsas y Bolsas por hora van una debajo de la otra.
+- El estado y el botín llevan el mismo margen que las tarjetas.
+- La duración se lee con unidades: «10 min 5 s», «1 h 12 min». Al terminar la sesión sin botín dice «Sin botín.».
+- La sección «En vivo» tiene icono en Hebra, y «Abrir panel en vivo» está en el menú del botón lateral.
+- Las líneas de botín llevan el icono del objeto. Un dispositivo con la 0.6.59 o la 0.6.60 sigue leyendo el panel.
+- Si el addon deja de mandar el hallazgo mágico del juego, a los dos minutos el panel del PC vuelve al de la cuenta.
+
 ## Release beta 0.6.60 - El panel «En vivo» muestra el hallazgo mágico del juego
 
 Se actualiza desde la 0.6.59 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
