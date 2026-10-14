@@ -42,6 +42,8 @@ export interface LivePanelSnapshot {
 	readonly ratePerHourCopper: number | null;
 	readonly loot: readonly LivePanelLootRow[];
 	readonly lastDrop: LivePanelLastDrop | null;
+	/** The game's Magic Find while fresh (`LivePanelInput.gameMagicFind`); null or absent shows the account's. */
+	readonly gameMagicFind?: number | null;
 }
 
 /**
@@ -55,6 +57,8 @@ export function livePanelSnapshot(parts: {
 	readonly alerts: readonly LiveSessionAlertViewV1[];
 	readonly loot: LiveSessionLootState;
 	readonly itemName: (itemId: number) => string | null;
+	/** `LiveGameMagicFind.current(now)`: the game's figure while fresh, else null. */
+	readonly gameMagicFind?: number | null;
 }): LivePanelSnapshot {
 	const rows = parts.loot.status === 'idle' ? [] : parts.loot.rows;
 	const nameOf = (itemId: number): string => parts.itemName(itemId) ?? rows.find((row) => row.itemId === itemId)?.name
@@ -66,6 +70,7 @@ export function livePanelSnapshot(parts: {
 		loot: rows.map((row) => ({ itemId: row.itemId, name: row.name, quantity: row.quantity, totalCopper: row.totalCopper })),
 		lastDrop: latest === null ? null
 			: { itemId: latest.itemId, name: nameOf(latest.itemId), quantity: latest.quantity, totalCopper: latest.totalCopper, observedAt: latest.observedAt },
+		gameMagicFind: parts.gameMagicFind ?? null,
 	};
 }
 

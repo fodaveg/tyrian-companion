@@ -58,6 +58,7 @@ import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { LiveIngameObservation, LiveIngamePort } from '../alerts/live-loot-protocol';
 import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from '../alerts/loot-alert-criteria';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
+import type { MagicFindIngameReading } from '../alerts/magic-find-ingame-state';
 import { sha256Text } from '../assets/generic-assets';
 import { createTranslator, type Locale } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
@@ -138,6 +139,8 @@ export interface AlertRuntimePort {
 	alertWebhookTransport(): AlertWebhookTransport;
 	getFarmingIngameState(): FarmingIngameState;
 	getBagPriceIngameState(): PriceIngameState;
+	/** `mf1`: one report of the game's Magic Find from a Nexus connection, or its loss. Must not throw. */
+	observeGameMagicFind(reading: MagicFindIngameReading): void;
 	startIngameSession(character: string | null): Promise<string | null>;
 	recordIngameSessionFailure(error: unknown): void;
 }
@@ -486,6 +489,7 @@ export class AlertRuntime {
 				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
 				farmingState: () => this.port.getFarmingIngameState(),
 				priceState: () => this.port.getBagPriceIngameState(),
+				onMagicFind: (reading) => { this.port.observeGameMagicFind(reading); },
 				onFarmingError: (error) => { this.port.recordIngameSessionFailure(error); },
 				live: this.liveIngamePort(),
 			},

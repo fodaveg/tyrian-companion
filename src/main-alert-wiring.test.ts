@@ -482,11 +482,12 @@ describe('H13.4 alert channel cabling', () => {
 				}
 			});
 			socket.write(ingameHello(await pluginBridgeSecret(plugin), version));
-			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 4 : 1); });
+			await vi.waitFor(() => { expect(lines).toHaveLength(version === 3 ? 5 : 1); });
 			if (version === 3) {
 				expect(JSON.parse(lines[1] ?? '{}')).toMatchObject({ type: 'farming_cap', tag: 'farm1' });
 				expect(JSON.parse(lines[2] ?? '{}')).toMatchObject({ type: 'price_cap', tag: 'price2' });
-				expect(JSON.parse(lines[3] ?? '{}')).toMatchObject({ type: 'live_cap', tag: 'live1' });
+				expect(JSON.parse(lines[3] ?? '{}')).toMatchObject({ type: 'mf_cap', tag: 'mf1' });
+				expect(JSON.parse(lines[4] ?? '{}')).toMatchObject({ type: 'live_cap', tag: 'live1' });
 			}
 			const { nonce } = JSON.parse(lines[0] ?? '{}') as { nonce: string };
 			return { socket, lines, nonce };
@@ -499,8 +500,8 @@ describe('H13.4 alert channel cabling', () => {
 			await withBridge(async (plugin, port) => {
 				const addon = await connectAddon(plugin, port, 3);
 				await plugin.emitAlert(VALUABLE);
-				await vi.waitFor(() => { expect(addon.lines).toHaveLength(5); });
-				const alert = JSON.parse(addon.lines[4] ?? '{}') as { v: number; seq: number };
+				await vi.waitFor(() => { expect(addon.lines).toHaveLength(6); });
+				const alert = JSON.parse(addon.lines[5] ?? '{}') as { v: number; seq: number };
 				expect(alert.v).toBe(3);
 				await vi.waitFor(() => {
 					expect([...plugin.getAlertDeliveries().values()]).toMatchObject([{ state: 'pending', sentTo: ['nexus'] }]);
@@ -532,6 +533,18 @@ describe('H13.4 alert channel cabling', () => {
 				const view = alertReceiptView(stored, plugin.getAlertDeliveries().get(stored.alertId), tr, 'es');
 				expect(view.steps[2]).toMatchObject({ label: 'Sin confirmar', detail: { text: 'el addon no confirma: actualízalo' } });
 				addon.socket.destroy();
+			});
+		});
+
+		it('the game magic find an addon reports over mf1 reaches the core, and goes with the connection', async () => {
+			await withBridge(async (plugin, port) => {
+				const held = () => (plugin as unknown as { gameMagicFind: { current(nowMs: number): number | null } }).gameMagicFind.current(Date.now());
+				const addon = await connectAddon(plugin, port, 3);
+				expect(held()).toBeNull();
+				addon.socket.write(`${JSON.stringify({ v: 3, type: 'mf_state', nonce: addon.nonce, seq: 0, tag: 'mf1', mf: 363, ageMs: 40 })}\n`);
+				await vi.waitFor(() => { expect(held()).toBe(363); });
+				addon.socket.destroy();
+				await vi.waitFor(() => { expect(held()).toBeNull(); });
 			});
 		});
 
@@ -594,7 +607,7 @@ describe('H13.4 alert channel cabling', () => {
 						}
 					});
 					socket.write(ingameHello(secret, 3));
-					await vi.waitFor(() => { expect(lines.map((line) => line.type)).toEqual(['welcome', 'farming_cap', 'price_cap', 'live_cap']); });
+					await vi.waitFor(() => { expect(lines.map((line) => line.type)).toEqual(['welcome', 'farming_cap', 'price_cap', 'mf_cap', 'live_cap']); });
 					const nonce = lines[0]!.nonce;
 					return { socket, lines, write: (frame: Record<string, unknown>) => { socket.write(`${JSON.stringify({ ...frame, nonce })}\n`); } };
 				} });
@@ -679,7 +692,7 @@ describe('H13.4 alert channel cabling', () => {
 					}
 				});
 				socket.write(ingameHello(await pluginBridgeSecret(plugin), 3));
-				await vi.waitFor(() => { expect(lines).toHaveLength(4); });
+				await vi.waitFor(() => { expect(lines).toHaveLength(5); });
 				const nonce = lines[0]!.nonce as string;
 				const write = (record: Record<string, unknown>) => { socket.write(`${JSON.stringify({ ...record, nonce })}\n`); };
 				const acks = () => lines.filter((line) => line.type === 'live_ack').length;

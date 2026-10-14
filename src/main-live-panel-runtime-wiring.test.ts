@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
-import { LivePanelRuntime } from './runtime/live-panel-runtime';
+import { LivePanelRuntime, type LivePanelSnapshot } from './runtime/live-panel-runtime';
 import { createRuntimeHarness, type RuntimeHarness } from './test/runtime-harness';
 
 /**
@@ -43,6 +43,27 @@ describe('the core wires the live panel note', () => {
 		await harness.shutdown();
 		expect(stop).toHaveBeenCalledOnce();
 		expect(own.livePanel).toBeNull();
+	});
+
+	it('tells the writer when the game magic find changes what it shows, and hands the figure to the snapshot', async () => {
+		harness = createRuntimeHarness();
+		const own = harness.core as unknown as Own & { observeGameMagicFind(reading: { connectionId: string; value: number | null; observedAtMs: number }): void };
+		own.localDebugActions = null;
+		await harness.initializeRuntime();
+		const notify = vi.spyOn(LivePanelRuntime.prototype, 'notify');
+		const read = (): LivePanelSnapshot => (own.livePanel as unknown as { options: { read(): LivePanelSnapshot } }).options.read();
+		expect(read().gameMagicFind).toBeNull();
+
+		own.observeGameMagicFind({ connectionId: 'AQEBAQEBAQEBAQEBAQEBAQ', value: 363, observedAtMs: Date.now() });
+		expect(notify).toHaveBeenCalledOnce();
+		expect(read().gameMagicFind).toBe(363);
+		// The same figure again (the addon's minute refresh) changes nothing the panel shows: no repaint.
+		own.observeGameMagicFind({ connectionId: 'AQEBAQEBAQEBAQEBAQEBAQ', value: 363, observedAtMs: Date.now() });
+		expect(notify).toHaveBeenCalledOnce();
+		own.observeGameMagicFind({ connectionId: 'AQEBAQEBAQEBAQEBAQEBAQ', value: null, observedAtMs: Date.now() });
+		expect(notify).toHaveBeenCalledTimes(2);
+		expect(read().gameMagicFind).toBeNull();
+		await harness.shutdown();
 	});
 
 	it('writes nothing from a device with no session, in consult or as collector', async () => {

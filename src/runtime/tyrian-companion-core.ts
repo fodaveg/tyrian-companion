@@ -20,7 +20,9 @@ import { type FarmingGoalV1, type FarmingGoalProgress } from '../sessions/farmin
 import type { FarmingManualReminder, FarmingPreparationContext, FarmingPreparationSettingsV1, FarmingReminderKind } from '../sessions/farming-goal-preparation';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
+import type { MagicFindIngameReading } from '../alerts/magic-find-ingame-state';
 import { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
+import { LiveGameMagicFind } from '../sessions/live-game-magic-find';
 import { LiveSourceConnections } from '../sessions/live-source-connections';
 import type { LiveSessionAlertViewV1, LiveSessionViewV1, LiveJournalEntryV1 } from '../sessions/live-session-model';
 import type { LiveSessionEconomy } from '../sessions/live-session-economy';
@@ -634,6 +636,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private livePanel: LivePanelRuntime | null = null;
 	/** Where the «En vivo» HUD reads its figures: the live session here, or the live panel note on a device in consult. */
 	private liveHud: LiveHudRuntime | null = null;
+	/** The game's Magic Find the Nexus addon reports over `mf1`, in memory only; the HUD and the note show it while fresh. */
+	private readonly gameMagicFind = new LiveGameMagicFind();
 	/**
 	 * R1b: this DEVICE's mode, kept in local `kv` (`runtime/collector-instance.ts`), never in
 	 * `data.json`. The seed on load, this device's stored mode once `initializeRuntime` reads it;
@@ -1497,6 +1501,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const readLivePanelSnapshot = (): LivePanelSnapshot => livePanelSnapshot({
 			locale: this.settings.language, view: lifecycle.getView(0, 1), alerts: lifecycle.getAlerts(),
 			loot: this.liveSessionLoot.getState(), itemName: (id) => this.liveEconomy?.entity('item', id)?.name ?? null,
+			gameMagicFind: this.gameMagicFind.current(Date.now()),
 		});
 		this.livePanel = new LivePanelRuntime({
 			vault: labelledVault(host.vault, 'Live panel note'), root: () => this.configuredNotesRoot(),
@@ -2380,6 +2385,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			},
 			getFarmingIngameState: () => core.getFarmingIngameState(),
 			getBagPriceIngameState: () => core.getBagPriceIngameState(),
+			observeGameMagicFind: (reading) => { core.observeGameMagicFind(reading); },
 			startIngameSession: (character) => core.startIngameSession(character),
 			recordIngameSessionFailure: (error) => { core.ingame.recordIngameSessionFailure(error); },
 		};
@@ -2892,6 +2898,14 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Public gross price of the Halloween bag for `price2` (`PriceHistoryRuntime`). */
 	getBagPriceIngameState(): PriceIngameState { return this.priceHistoryFacade.getBagPriceIngameState(); }
+
+	/**
+	 * `mf1`: the addon reported the game's Magic Find, or lost it. A change of what the panel would show repaints the views, and
+	 * through them the live panel note (`LivePanelRuntime.notify`, under its 10 s floor), as a new bag or a new value does.
+	 */
+	observeGameMagicFind(reading: MagicFindIngameReading): void {
+		if (this.gameMagicFind.observe(reading, Date.now())) this.renderViews();
+	}
 
 	getLiveSessionLoot(): LiveSessionLootState { return this.liveView.getLiveSessionLoot(); }
 

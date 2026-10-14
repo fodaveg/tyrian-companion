@@ -23,6 +23,7 @@ import {
 
 import { FARMING_INGAME_REFRESH_MS, farmingIngameCapabilityLine, farmingIngameStateLine, type FarmingIngameState } from './farming-ingame-state';
 import { PRICE_INGAME_REFRESH_MS, priceIngameCapabilityLine, priceIngameStateLine, type PriceIngameState } from './price-ingame-state';
+import { magicFindIngameCapabilityLine, type MagicFindIngameReading } from './magic-find-ingame-state';
 
 export { ALERT_INGAME_MAX_MESSAGE_BYTES };
 
@@ -131,6 +132,11 @@ export interface AlertIngameBridgeOptions {
 	priceState?(): PriceIngameState;
 	/** Negotiated Nexus-only live feed; success waits for this owner's durable commit. */
 	readonly live?: LiveIngamePort;
+	/**
+	 * `mf1`: the game's Magic Find as the Nexus addon reads it. Without it the capability is never announced. Called with each
+	 * accepted `mf_state`, and with `value: null` when a connection that sent one closes. It must not throw.
+	 */
+	onMagicFind?(reading: MagicFindIngameReading): void;
 	readonly helloTimeoutMs?: number;
 	readonly livenessTimeoutMs?: number;
 }
@@ -155,6 +161,10 @@ interface BridgeConnection {
 	priceSeq: number;
 	priceTimer: unknown;
 	live: LiveIngameChannel | null;
+	/** `mf_cap` went out on this connection: only then is an `mf_state` from it accepted. */
+	magicFindOffered: boolean;
+	/** It sent at least one `mf_state`: its close tells the owner that figure is gone. */
+	magicFindReported: boolean;
 	lastSeenAtMs: number;
 	deadline: unknown;
 	endReason: 'lost' | IngameByeReason;
@@ -343,7 +353,7 @@ function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void
 	const connection: BridgeConnection = {
 		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
 		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null,
-			priceSubscribed: false, priceSeq: 1, priceTimer: null, live: null,
+			priceSubscribed: false, priceSeq: 1, priceTimer: null, live: null, magicFindOffered: false, magicFindReported: false,
 		lastSeenAtMs: runtime.bridge.now(), deadline: null, endReason: 'lost',
 	};
 	runtime.pending.add(connection);
@@ -390,6 +400,8 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 	if (connection.phase === 'awaiting_hello') { handleHello(connection, runtime, decoded.value); return; }
 	const nonce = connection.nonce;
 	if (nonce === null) { reject(connection, runtime, 'unexpected_message'); return; }
+	// Never announced on this connection: the same answer 0.6.58 gave to a type it did not know.
+	if (decoded.value.type === 'mf_state' && !connection.magicFindOffered) { reject(connection, runtime, 'unexpected_message'); return; }
 	if (isLiveIngameType(decoded.value.type)) {
 		if (connection.live === null) { reject(connection, runtime, 'unexpected_message'); return; }
 		const live = parseLiveIngameMessage(decoded.value, { nonce, seq: connection.nextSeq }, connection.version);
@@ -418,6 +430,13 @@ function handleFrame(connection: BridgeConnection, runtime: BridgeRuntime, frame
 			connection.priceSubscribed = true;
 			sendPriceState(connection, runtime);
 		}
+		return;
+	}
+	if (message.value.type === 'mf_state') {
+		connection.magicFindReported = true;
+		runtime.bridge.onMagicFind?.({
+			connectionId: nonce, value: message.value.mf, observedAtMs: connection.lastSeenAtMs - message.value.ageMs,
+		});
 		return;
 	}
 	if (message.value.type === 'context') {
@@ -478,6 +497,11 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 	}
 	if (connection.version === 3 && runtime.bridge.priceState) {
 		connection.socket.write(`${priceIngameCapabilityLine(nonce)}\n`);
+	}
+	// Before `live_cap`: the addon takes it before its first capture, which is what the figure rides on.
+	if (connection.version === 3 && connection.client === 'nexus' && runtime.bridge.onMagicFind) {
+		connection.magicFindOffered = true;
+		connection.socket.write(`${magicFindIngameCapabilityLine(nonce)}\n`);
 	}
 	const live = runtime.bridge.live;
 	if (connection.version === 3 && connection.client === 'nexus' && live !== undefined && liveSeats(runtime) < INGAME_BRIDGE_MAX_AUTHENTICATED_CONNECTIONS) {
@@ -567,6 +591,11 @@ function settleClosed(connection: BridgeConnection, runtime: BridgeRuntime): voi
 
 function emitClosed(connection: BridgeConnection, runtime: BridgeRuntime): void {
 	if (connection.nonce === null) return;
+	if (connection.magicFindReported) {
+		// What this connection said about Magic Find stops being the game's with it.
+		connection.magicFindReported = false;
+		runtime.bridge.onMagicFind?.({ connectionId: connection.nonce, value: null, observedAtMs: runtime.bridge.now() });
+	}
 	runtime.bridge.onConnectionEvent({
 		kind: 'closed', connectionId: connection.nonce, atMs: runtime.bridge.now(),
 		lastSeenAtMs: connection.lastSeenAtMs, reason: connection.endReason,

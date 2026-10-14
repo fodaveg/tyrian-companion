@@ -121,6 +121,26 @@ describe('LivePanelRuntime', () => {
 		expect(t.store.writes).toHaveLength(2);
 	});
 
+	it('writes a change of the game magic find under the same floor as a new bag, and its loss back to the account figure', async () => {
+		const game: { value: number | null } = { value: null };
+		const t = setup({ read: () => ({ ...snapshot(t.state.view), gameMagicFind: game.value }) });
+		t.panel.start();
+		await t.advance(0);
+		expect(t.store.notes.get(NOTE)).not.toContain('tc_live_mf_src: game');
+		game.value = 363;
+		t.panel.notify();
+		await t.advance(LIVE_PANEL_WRITE_FLOOR_MS - 1_000);
+		expect(t.store.writes).toHaveLength(1);
+		await t.advance(1_000);
+		expect(t.store.writes).toHaveLength(2);
+		expect(t.store.notes.get(NOTE)).toContain('\ntc_live_mf: 363\ntc_live_mf_src: game\n');
+		game.value = null;
+		t.panel.notify();
+		await t.advance(LIVE_PANEL_WRITE_FLOOR_MS);
+		expect(t.store.writes).toHaveLength(3);
+		expect(t.store.notes.get(NOTE)).not.toContain('tc_live_mf_src: game');
+	});
+
 	it('costs at most one write a minute while connected with nothing new: only the minute-level text moves', async () => {
 		const t = setup();
 		t.panel.start();

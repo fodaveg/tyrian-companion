@@ -188,6 +188,27 @@ describe('livePanelLive', () => {
 		expect(livePanelLive(input({ view: emptyLiveSessionView() }))).toEqual(emptyLivePanelLive());
 	});
 
+	it('shows the game magic find while there is one, and the account figure without it or once the session ended', () => {
+		expect(livePanelLive(input({ gameMagicFind: 363 })).magicFind).toEqual({ value: 363, source: 'game' });
+		// A figure of 0 read in the game is a figure, not «none».
+		expect(livePanelLive(input({ gameMagicFind: 0 })).magicFind).toEqual({ value: 0, source: 'game' });
+		expect(livePanelLive(input({ gameMagicFind: null })).magicFind).toEqual({ value: 250, source: 'manual' });
+		expect(livePanelLive(input()).magicFind).toEqual({ value: 250, source: 'manual' });
+		for (const state of [{ connection: 'disconnected' as const }, { sourceState: 'stale' as const }]) {
+			expect(livePanelLive(input({ gameMagicFind: 363, view: view(state) })).magicFind.source).toBe('game');
+		}
+		const ended = view({ phase: 'complete', connection: 'disconnected', sourceState: 'unavailable', endedAt: iso(at(50)) });
+		expect(livePanelLive(input({ gameMagicFind: 363, view: ended })).magicFind).toEqual({ value: 250, source: 'manual' });
+		expect(livePanelLive(input({ gameMagicFind: 363, view: emptyLiveSessionView() }))).toEqual(emptyLivePanelLive());
+	});
+
+	it('changes the note text when the game magic find changes, so the writer writes it like a new bag', () => {
+		const before = renderLivePanelNote(input({ gameMagicFind: 333 }));
+		expect(renderLivePanelNote(input({ gameMagicFind: 333 }))).toBe(before);
+		expect(renderLivePanelNote(input({ gameMagicFind: 363 }))).not.toBe(before);
+		expect(renderLivePanelNote(input({ gameMagicFind: null }))).not.toBe(before);
+	});
+
 	it('floors the last reading to its minute and rounds the money to whole copper', () => {
 		const live = livePanelLive(input({ valueCopper: 1_234_567.4, ratePerHourCopper: 1_850_000.6 }));
 		expect(live.observedAt).toBe(iso(at(42)));
@@ -244,9 +265,11 @@ describe('parseLivePanelNote and livePanelNotePath', () => {
 		expect(parseLivePanelNote(noLoot)?.live?.loot).toEqual([]);
 	});
 
-	it('accepts a magic find source reserved for the game, without the plugin producing one yet', () => {
-		const text = renderLivePanelNote(input()).replace('tc_live_mf_src: manual', 'tc_live_mf_src: game');
-		expect(parseLivePanelNote(text)?.live?.magicFind).toEqual({ value: 250, source: 'game' });
+	it('round-trips the game magic find as `tc_live_mf` with `tc_live_mf_src: game`', () => {
+		const text = renderLivePanelNote(input({ gameMagicFind: 363 }));
+		expect(text).toContain('\ntc_live_mf: 363\n');
+		expect(text).toContain('\ntc_live_mf_src: game\n');
+		expect(parseLivePanelNote(text)?.live?.magicFind).toEqual({ value: 363, source: 'game' });
 	});
 
 	it('lives next to the collector status note', () => {

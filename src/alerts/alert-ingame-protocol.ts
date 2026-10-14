@@ -16,6 +16,8 @@
  * already speak it and neither host needs a length prefix to find the end of a record.
  */
 
+import { MAGIC_FIND_INGAME_MAX, MAGIC_FIND_INGAME_MAX_AGE_MS, MAGIC_FIND_INGAME_TAG } from './magic-find-ingame-state';
+
 export const INGAME_BRIDGE_PROTOCOL_VERSION = 2 as const;
 
 /**
@@ -108,7 +110,12 @@ export type IngameSequencedMessageV2 =
 	/** farm1 only: opt in to the separate read-only farming stream. */
 	| { readonly v: 3; readonly type: 'farming_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'farm1' }
 	/** price2 only: opt in to the separate public-price stream of the Halloween bag. */
-	| { readonly v: 3; readonly type: 'price_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'price2' };
+	| { readonly v: 3; readonly type: 'price_sub'; readonly nonce: string; readonly seq: number; readonly tag: 'price2' }
+	/** mf1 only, after `mf_cap`: the game's Magic Find in whole points (null: no reading) and how old that reading was. */
+	| {
+		readonly v: 3; readonly type: 'mf_state'; readonly nonce: string; readonly seq: number; readonly tag: typeof MAGIC_FIND_INGAME_TAG;
+		readonly mf: number | null; readonly ageMs: number;
+	};
 
 export type IngameParseResult<T> =
 	| { readonly ok: true; readonly value: T }
@@ -122,6 +129,7 @@ const SEQUENCED_KEYS = {
 	alert_ack: ['v', 'type', 'nonce', 'seq', 'alertSeq'],
 	farming_sub: ['v', 'type', 'nonce', 'seq', 'tag'],
 	price_sub: ['v', 'type', 'nonce', 'seq', 'tag'],
+	mf_state: ['v', 'type', 'nonce', 'seq', 'tag', 'mf', 'ageMs'],
 } as const;
 const MAP_ID_MAXIMUM = 2_147_483_647;
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -186,7 +194,9 @@ export function parseIngameSequenced(
 	if (record.v !== version) return { ok: false, code: 'frame_schema' };
 	const type = record.type;
 	// `alert_ack` exists only from v3 on: to a v2 connection it is a type like any unknown one.
-	const known = type === 'context' || type === 'heartbeat' || type === 'bye' || ((type === 'alert_ack' || type === 'farming_sub' || type === 'price_sub') && version === INGAME_BRIDGE_PROTOCOL_VERSION_V3);
+	// `mf_state` is known here on any v3 connection; whether THIS connection was offered `mf1` is the server's to check first.
+	const known = type === 'context' || type === 'heartbeat' || type === 'bye'
+		|| ((type === 'alert_ack' || type === 'farming_sub' || type === 'price_sub' || type === 'mf_state') && version === INGAME_BRIDGE_PROTOCOL_VERSION_V3);
 	if (!known) return { ok: false, code: 'unexpected_message' };
 	if (!exactKeys(record, SEQUENCED_KEYS[type])) return { ok: false, code: 'frame_schema' };
 	if (typeof record.nonce !== 'string' || typeof record.seq !== 'number' || !Number.isSafeInteger(record.seq)) {
@@ -202,6 +212,13 @@ export function parseIngameSequenced(
 	if (type === 'price_sub') {
 		if (record.tag !== 'price2') return { ok: false, code: 'frame_schema' };
 		return { ok: true, value: { v: 3, type, nonce: record.nonce, seq: record.seq, tag: 'price2' } };
+	}
+	if (type === 'mf_state') {
+		const { mf, ageMs } = record;
+		const figure = mf === null || (typeof mf === 'number' && Number.isSafeInteger(mf) && mf >= 0 && mf <= MAGIC_FIND_INGAME_MAX);
+		const age = typeof ageMs === 'number' && Number.isSafeInteger(ageMs) && ageMs >= 0 && ageMs <= MAGIC_FIND_INGAME_MAX_AGE_MS;
+		if (record.tag !== MAGIC_FIND_INGAME_TAG || !figure || !age) return { ok: false, code: 'frame_schema' };
+		return { ok: true, value: { v: 3, type, nonce: record.nonce, seq: record.seq, tag: MAGIC_FIND_INGAME_TAG, mf, ageMs } };
 	}
 	if (type === 'alert_ack') {
 		const alertSeq = record.alertSeq;

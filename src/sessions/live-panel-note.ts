@@ -46,7 +46,8 @@ const LIVE_PANEL_STATES: readonly LivePanelState[] = ['none', 'live', 'stale', '
 
 /**
  * Where the magic find figure comes from. `manual`, `verified` and `unknown` are the account's (`LiveSessionViewV1.magicFind`);
- * `game` is reserved for the in-game total with buffs that only the addon knows and that does not reach the plugin yet.
+ * `game` is the in-game total with buffs that only the Nexus addon knows, while its last report over `mf1` is fresh
+ * (`live-game-magic-find.ts`).
  */
 export type LivePanelMagicFindSource = LiveSessionViewV1['magicFind']['source'] | 'game';
 const MAGIC_FIND_SOURCES: readonly LivePanelMagicFindSource[] = ['manual', 'verified', 'unknown', 'game'];
@@ -76,6 +77,11 @@ export interface LivePanelInput {
 	/** Every loot row; the card keeps the most valuable `LIVE_PANEL_LOOT_ROWS`. */
 	readonly loot: readonly LivePanelLootRow[];
 	readonly lastDrop: LivePanelLastDrop | null;
+	/**
+	 * The game's Magic Find in whole points, already checked for freshness (`LiveGameMagicFind.current`); null or absent when there
+	 * is none, and then the account's figure is shown. A finished session always shows the account's.
+	 */
+	readonly gameMagicFind?: number | null;
 }
 
 /**
@@ -123,12 +129,15 @@ export function emptyLivePanelLive(): LivePanelLiveV1 {
  * The HUD figures of a live session. The collector paints its HUD from this and writes it into the note's frontmatter; a device
  * in consult reads it back with `parseLivePanelNote`. Same input, same figures.
  */
-export function livePanelLive(input: Pick<LivePanelInput, 'view' | 'valueCopper' | 'ratePerHourCopper' | 'loot'>): LivePanelLiveV1 {
+export function livePanelLive(
+	input: Pick<LivePanelInput, 'view' | 'valueCopper' | 'ratePerHourCopper' | 'loot' | 'gameMagicFind'>,
+): LivePanelLiveV1 {
 	const { view } = input;
 	const state = livePanelState(view);
 	if (state === 'none' || view.startedAt === null) return emptyLivePanelLive();
 	const { valuation } = view;
 	const unpriced = valuation.capturedAt === null && valuation.knownNetValueCopper === null;
+	const game = state === 'ended' ? null : input.gameMagicFind ?? null;
 	return {
 		version: LIVE_PANEL_TRANSPORT_VERSION, state,
 		observedAt: minuteOf(view.lastObservationAt), startedAt: view.startedAt,
@@ -136,7 +145,7 @@ export function livePanelLive(input: Pick<LivePanelInput, 'view' | 'valueCopper'
 		valueCopper: unpriced ? null : Math.round(input.valueCopper),
 		ratePerHourCopper: input.ratePerHourCopper === null ? null : Math.round(input.ratePerHourCopper),
 		bags: liveObservedBags(view), bagsPerHourMilli: liveBagsPerHourMilli(view),
-		magicFind: { value: view.magicFind.value, source: view.magicFind.source },
+		magicFind: game === null ? { value: view.magicFind.value, source: view.magicFind.source } : { value: game, source: 'game' },
 		loot: rankLoot(input.loot).map((row) => ({ ...row, name: plainName(row.name) })),
 	};
 }
