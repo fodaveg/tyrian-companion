@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.62: arreglos de los audits de bugs del 14 oct (14 oct 2026)
+## Canal 0.6.62 publicado: arreglos de los audits de bugs del 14 oct (14 oct 2026)
 
-**Candidato; sin publicar.** `main` sobre el canal 0.6.61 publicado (`3bfb7d66`). Detalle en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.62` = `2bae68a1` (atestación; candidato `bf3a19bf`).
+Gate local verde (check en UTC con 7948 tests, test 29/29, BRAT PASS); CI 38551023307 y Release 38552468534 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=not-checked`), release normal. `main` sobre el canal 0.6.61
+publicado (`3bfb7d66`). Detalle en [CHANGELOG](CHANGELOG.md).
 Pedido por David el 14 oct («has corregido todos los bugs que has encontrado en el audit?», «haz el audit de esas zonas
 en paralelo»): los pendientes del primer audit y un segundo audit de las zonas sin revisar (sesiones manuales y runtime,
 economía de contenedores, asesor, UI y ajustes, núcleo y panel del addon). Va con el addon de Nexus 0.8.12 (`e27f10b`,
