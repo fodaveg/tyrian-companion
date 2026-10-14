@@ -117,7 +117,7 @@ describe('settings page: one list, a closed maintenance block', () => {
 		expect(container.querySelector('[role="tablist"], nav, [role="tab"]')).toBeNull();
 		expect(rowNames(container)).toEqual([
 			'This installation\'s mode', 'API key', 'Output folder', 'In-game alert (optional)',
-			'Alert me about a drop from', 'Alert webhook (optional)', 'Legendary targets',
+			'Alert me about a drop from', 'Alert webhook (optional)', 'Live panel for your phone', 'Legendary targets',
 			'Durable history', 'Local price history', 'Diagnostic logs', 'Diagnostic logs: actions', 'Managed assets',
 		]);
 		const details = container.querySelector('details');
@@ -127,7 +127,7 @@ describe('settings page: one list, a closed maintenance block', () => {
 		// Focus order is DOM order: every main row precedes the summary, which precedes its own rows.
 		const order = Array.from(container.querySelectorAll('.setting-item, summary'));
 		const summaryAt = order.indexOf(details!.querySelector('summary')!);
-		expect(summaryAt).toBe(7);
+		expect(summaryAt).toBe(8);
 		expect(order.slice(0, summaryAt).every((el) => !details!.contains(el))).toBe(true);
 	});
 
