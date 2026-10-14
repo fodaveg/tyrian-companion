@@ -78,7 +78,7 @@ describe('renderLivePanelNote', () => {
 		const text = renderLivePanelNote(input());
 		expect(text.startsWith(`${FRONTMATTER_HEAD}\n`)).toBe(true);
 		expect(text).toContain([
-			'tc_live_observed_at: 2026-10-31T17:42:00.000Z', 'tc_live_started_at: 2026-10-31T17:00:00.000Z', 'tc_live_value_c: 1234567',
+			`tc_live_observed_at: ${iso(at(42))}`, `tc_live_started_at: ${iso(at(0))}`, 'tc_live_value_c: 1234567',
 			'tc_live_rate_c: 1850000', 'tc_live_bags: 12', 'tc_live_bags_h_milli: 18000', 'tc_live_mf: 250', 'tc_live_mf_src: manual',
 			'tc_live_loot:', '  - [ 36038, Bolsa de Halloween, 12, 90000 ]', '  - [ 24358, Hueso antiguo, 40, 4000 ]', '  - [ 99, Sin precio, 3, null ]',
 			'cssclasses:', '  - dashboard', 'obsidianUIMode: preview', '---', '',
@@ -137,7 +137,7 @@ describe('renderLivePanelNote', () => {
 		const ended = view({ phase: 'complete', connection: 'disconnected', sourceState: 'unavailable', endedAt: iso(at(50)), elapsedMs: 50 * 60_000 });
 		const text = renderLivePanelNote(input({ view: ended, nowMs: at(90) }));
 		expect(text).toContain('tc_live_state: ended');
-		expect(text).toContain('tc_live_ended_at: 2026-10-31T17:50:00.000Z');
+		expect(text).toContain(`tc_live_ended_at: ${iso(at(50))}`);
 		expect(text).toContain('Sesión terminada 18:50 · valor final 123g 45s 67c');
 		expect(text).not.toContain('Último drop');
 		// Later minutes do not change a finished note.
@@ -190,7 +190,7 @@ describe('livePanelLive', () => {
 
 	it('floors the last reading to its minute and rounds the money to whole copper', () => {
 		const live = livePanelLive(input({ valueCopper: 1_234_567.4, ratePerHourCopper: 1_850_000.6 }));
-		expect(live.observedAt).toBe('2026-10-31T17:42:00.000Z');
+		expect(live.observedAt).toBe(iso(at(42)));
 		expect([live.valueCopper, live.ratePerHourCopper]).toEqual([1_234_567, 1_850_001]);
 	});
 });
@@ -225,8 +225,8 @@ describe('parseLivePanelNote and livePanelNotePath', () => {
 		['a fractional value', 'tc_live_value_c: 1234567', 'tc_live_value_c: 12.5'],
 		['a negative bag count', 'tc_live_bags: 12', 'tc_live_bags: -1'],
 		['an unknown magic find source', 'tc_live_mf_src: manual', 'tc_live_mf_src: guess'],
-		['a start that is not an instant', 'tc_live_started_at: 2026-10-31T17:00:00.000Z', 'tc_live_started_at: yesterday'],
-		['a live state without a start', 'tc_live_started_at: 2026-10-31T17:00:00.000Z', 'tc_live_other: 1'],
+		['a start that is not an instant', `tc_live_started_at: ${iso(at(0))}`, 'tc_live_started_at: yesterday'],
+		['a live state without a start', `tc_live_started_at: ${iso(at(0))}`, 'tc_live_other: 1'],
 		['a loot row with a missing field', '[ 36038, Bolsa de Halloween, 12, 90000 ]', '[ 36038, Bolsa de Halloween, 12 ]'],
 		['a loot row whose name is not text', '[ 36038, Bolsa de Halloween, 12, 90000 ]', '[ 36038, 7, 12, 90000 ]'],
 		['a loot row with a fractional quantity', '[ 36038, Bolsa de Halloween, 12, 90000 ]', '[ 36038, Bolsa de Halloween, 1.5, 90000 ]'],
