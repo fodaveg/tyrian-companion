@@ -22,9 +22,13 @@ export interface NodeTcpServerModule {
 }
 
 /** The production port; `net` is injected only so a test can hand in a misbehaving module. */
-export function createNodeTcpServerPort(net: NodeTcpServerModule = { createServer }): TyrianTcpServerPort {
+export function createNodeTcpServerPort(
+	net: NodeTcpServerModule = { createServer },
+	/** Told of an `error` the server raises once it is listening (e.g. `EMFILE` accepting); the host has no failure channel for it yet, so absent it is only absorbed. */
+	onServerError: (error: Error) => void = () => undefined,
+): TyrianTcpServerPort {
 	return {
-		listen: (port, host, onConnection) => listenOnce(net, port, host, onConnection),
+		listen: (port, host, onConnection) => listenOnce(net, port, host, onConnection, onServerError),
 	};
 }
 
@@ -38,6 +42,7 @@ function listenOnce(
 	port: number,
 	host: string,
 	onConnection: (connection: TyrianTcpConnection) => void,
+	onServerError: (error: Error) => void,
 ): Promise<TyrianTcpServer> {
 	const server = net.createServer((socket) => { onConnection(nodeConnection(socket)); });
 	return new Promise((resolve, reject) => {
@@ -48,6 +53,8 @@ function listenOnce(
 		};
 		const onListening = (): void => {
 			server.removeListener('error', onError);
+			// An `error` with no listener is an uncaught exception: this one stays for the server's whole life and never rethrows.
+			server.on('error', onServerError);
 			resolve(boundServer(server));
 		};
 		server.once('error', onError);
