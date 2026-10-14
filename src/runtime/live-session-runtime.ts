@@ -369,13 +369,15 @@ export class LiveSessionRuntime {
 	): Promise<void> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
-		const detection = this.assistedDetection.getState();
-		const proposal = pendingClaim?.proposal.phase === 'stop'
-			? pendingClaim.proposal.proposal : detection.status === 'stop_proposed' ? detection.proposal : null;
-		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
+		let workflowProposalId: string | null = null;
 		let pilotWorkflowSucceeded = false;
-		this.renderViews();
+		// The claim renews every minute until the finally stops it: nothing after it may throw outside the try.
 		try {
+			const detection = this.assistedDetection.getState();
+			const proposal = pendingClaim?.proposal.phase === 'stop'
+				? pendingClaim.proposal.proposal : detection.status === 'stop_proposed' ? detection.proposal : null;
+			workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
+			this.renderViews();
 			const runtimeLease = this.requireRuntimeMutationLease();
 			const result = await (captureNow ? this.sessions.captureFinalNow()
 				: observedEndAtMs !== null ? this.sessions.stopAt(observedEndAtMs) : this.sessions.stop())
@@ -520,15 +522,17 @@ export class LiveSessionRuntime {
 	): Promise<void> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
-		const detection = this.assistedDetection.getState();
-		const capturedGoal = normalizeFarmingGoal(this.settings.farmingGoal);
-		const capturedGroup = this.farmingGroupContext;
-		const proposal = pendingClaim?.proposal.phase === 'start'
-			? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
-		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
+		let workflowProposalId: string | null = null;
 		let pilotWorkflowSucceeded = false;
-		this.renderViews();
+		// The claim renews every minute until the finally stops it: nothing after it may throw outside the try.
 		try {
+			const detection = this.assistedDetection.getState();
+			const capturedGoal = normalizeFarmingGoal(this.settings.farmingGoal);
+			const capturedGroup = this.farmingGroupContext;
+			const proposal = pendingClaim?.proposal.phase === 'start'
+				? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
+			workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
+			this.renderViews();
 			// A finished session is released by the start itself once its summary is proven saved
 			// (H18.8); saving it here first is what lets the next session start without a clear.
 			await this.ensureCompletedSummarySaved();
