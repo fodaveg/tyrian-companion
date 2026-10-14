@@ -432,6 +432,23 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
+	it('a start refused as busy keeps the stopped session\'s delta and its pending stop evidence', async () => {
+		const final = afterSnapshot({ holdings: [looseHolding(100, 5, { source: 'bank', slot: 0 })] });
+		const service = new ManualSessionStartService(coordinator(), {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => structuredClone(final)),
+		}, serviceOptions({ runtimeStore: new MemorySessionRuntimeStore() }));
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({ status: 'stopped', state: { status: 'provisional' } });
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
+
+		expect(service.getState().status).toBe('provisional');
+		expect(service.getProvisionalDelta()).toMatchObject({ afterSnapshotId: 'snapshot-after' });
+		await service.dispose();
+	});
+
 	// H14.1: the classifier is synchronous, so the review resolves the lost items' catalog type
 	// beforehand and only exempts the ones that resolve to Container/Consumable.
 	it('resolves lost items against the catalog before review and exempts a farmed container', async () => {

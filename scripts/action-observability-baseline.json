@@ -12603,9 +12603,9 @@
 				{
 					"id": "747b2a6e3f44f257508ba5dc38c861b68dc0029c",
 					"kind": "catch_clause",
-					"line": 448,
+					"line": 450,
 					"column": 5,
-					"endLine": 451,
+					"endLine": 453,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12619,9 +12619,9 @@
 				{
 					"id": "8fbcfe3945f0bf0f771ee5f69ebfdabbc1daaff1",
 					"kind": "catch_clause",
-					"line": 499,
+					"line": 501,
 					"column": 5,
-					"endLine": 503,
+					"endLine": 505,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12635,9 +12635,9 @@
 				{
 					"id": "160cba519fd17f80a207218f479c903f7ff3e02b",
 					"kind": "catch_clause",
-					"line": 601,
+					"line": 603,
 					"column": 6,
-					"endLine": 613,
+					"endLine": 615,
 					"endColumn": 5,
 					"classification": "observed",
 					"evidence": {
@@ -12649,9 +12649,9 @@
 				{
 					"id": "39820e5b5e74f70d7d8541ddc005c4fb7cc88f1a",
 					"kind": "catch_clause",
-					"line": 642,
+					"line": 644,
 					"column": 5,
-					"endLine": 660,
+					"endLine": 662,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12665,9 +12665,9 @@
 				{
 					"id": "22d437d2ee8f01c5862914014994d3feb9127aef",
 					"kind": "catch_clause",
-					"line": 657,
+					"line": 659,
 					"column": 7,
-					"endLine": 657,
+					"endLine": 659,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12681,9 +12681,9 @@
 				{
 					"id": "c787c03d2a5db715c5a84d715891547824a4e82d",
 					"kind": "catch_clause",
-					"line": 887,
+					"line": 889,
 					"column": 5,
-					"endLine": 887,
+					"endLine": 889,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12697,9 +12697,9 @@
 				{
 					"id": "623d53ba2c637fe1b5484223eb411805015d4eb7",
 					"kind": "catch_clause",
-					"line": 896,
+					"line": 898,
 					"column": 5,
-					"endLine": 896,
+					"endLine": 898,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
