@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type ItemHolding, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import {
-	classifyInventoryAdvisor,
+	classifyInventoryAdvisor, reasonFor,
 	isInventoryKnowledgePack, sha256InventoryKnowledgePack,
 } from './inventory-advisor-classifier';
 import { isMaterialStorageCapacity, materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
@@ -12,7 +14,7 @@ import type {
 	InventoryKnowledgePackV1,
 } from './inventory-advisor-classifier-model';
 import type { InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
-import { isInventoryAdvisorInput, isInventoryAdvisorReport, sha256InventoryRulePack } from './inventory-advisor-contract';
+import { INVENTORY_ADVISOR_REASON_CODES, isInventoryAdvisorInput, isInventoryAdvisorReport, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import {
 	createInventoryRecommendationEnvelope,
@@ -775,6 +777,25 @@ describe('H4.15 inventory advisor classifier', () => {
 			{ unitCopper: 1_697, quantity: 10 }, { unitCopper: 1_698, quantity: 10 },
 		];
 		expect(classifyInventoryAdvisor(input)).toMatchObject({ status: 'invalid', report: null });
+	});
+
+	it('reports a missing salvage output price as salvage_value_unknown, not as an invalid snapshot', () => {
+		const input = equipmentSalvageFixture('Rare');
+		input.equipmentSalvage!.marketDepth!.items[0]!.buys = [{ unitCopper: 1_000, quantity: 1 }];
+		const result = classifyInventoryAdvisor(input);
+		expect(result.status).toBe('ready');
+		expect(result.report?.lines[0]?.reasons.map((reason) => reason.code)).toContain('salvage_value_unknown');
+		expect(result.report?.lines[0]?.reasons.map((reason) => reason.code)).not.toContain('snapshot_invalid');
+	});
+
+	it('maps every reason the classifier can emit to a code of its own, never to the snapshot_invalid fallback', () => {
+		const source = readFileSync(new URL('./inventory-advisor-classifier.ts', import.meta.url), 'utf8');
+		const emitted = new Set([...source.matchAll(/'([a-z]+(?:_[a-z]+)+)'/g)].map((match) => match[1]!)
+			.filter((token) => INVENTORY_ADVISOR_REASON_CODES.includes(token as never)));
+		expect(emitted.size).toBeGreaterThan(20);
+		expect([...emitted].filter((token) => token !== 'snapshot_invalid' && reasonFor(token) === 'snapshot_invalid')).toEqual([]);
+		expect(reasonFor('seasonal_hold')).toBe('seasonal_hold');
+		expect(reasonFor('salvage_value_unknown')).toBe('salvage_value_unknown');
 	});
 });
 

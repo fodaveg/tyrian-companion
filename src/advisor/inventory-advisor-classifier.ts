@@ -389,7 +389,7 @@ function publicCoverage(input: InventoryAdvisorInputV1, itemId: number, reservat
 	};
 }
 
-function reasonFor(value: string): InventoryAdvisorReasonCode {
+export function reasonFor(value: string): InventoryAdvisorReasonCode {
 	const reasons: Record<string, InventoryAdvisorReasonCode> = {
 		alternative_route_exists: 'alternative_route_exists', no_sell: 'no_sell',
 		reserved_for_goal: 'reserved_for_goal', user_keep_exception: 'user_keep_exception', position_not_actionable: 'position_not_actionable',
@@ -403,6 +403,7 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
 		curated_salvage_economy: 'alternative_route_exists',
+		salvage_value_unknown: 'salvage_value_unknown', seasonal_hold: 'seasonal_hold',
 		salvage_exotic_rate_unverified: 'salvage_exotic_rate_unverified',
 		salvage_mystic_cost_unmodeled: 'salvage_mystic_cost_unmodeled',
 		salvage_item_evidence_uncertain: 'salvage_item_evidence_uncertain',
