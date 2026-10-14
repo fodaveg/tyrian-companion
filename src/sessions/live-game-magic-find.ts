@@ -5,8 +5,9 @@
  *
  * A figure counts for `GAME_MAGIC_FIND_FRESH_MS` from the addon's reading. The addon itself reports again every minute while the
  * figure holds and says `null` when it has none, and the bridge says `null` when the connection that reported it closes, so the
- * window only matters for an addon that stops talking without either. Nothing here arms a timer: whoever asks passes the clock,
- * and the live panel's own recheck (`LIVE_PANEL_TICK_MS`) is what lets an expired figure go from the note.
+ * window only matters for an addon that stops talking without either. Nothing here arms a timer: whoever asks passes the clock.
+ * The collector (`tyrian-companion-core.ts`) arms ONE timeout from `msUntilStale` so the views and the note repaint when the
+ * figure goes, instead of waiting for the next repaint that something else causes.
  */
 
 import type { MagicFindIngameReading } from '../alerts/magic-find-ingame-state';
@@ -34,5 +35,15 @@ export class LiveGameMagicFind {
 		if (latest === null || latest.value === null) return null;
 		const age = nowMs - latest.observedAtMs;
 		return age >= 0 && age <= GAME_MAGIC_FIND_FRESH_MS ? latest.value : null;
+	}
+
+	/**
+	 * How long until the figure now held stops counting (the first millisecond at which `current` answers null), or null when
+	 * there is none to expire. A figure already past its window has none.
+	 */
+	msUntilStale(nowMs: number): number | null {
+		const latest = this.latest;
+		if (this.current(nowMs) === null || latest === null) return null;
+		return latest.observedAtMs + GAME_MAGIC_FIND_FRESH_MS - nowMs + 1;
 	}
 }

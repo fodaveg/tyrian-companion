@@ -50,4 +50,17 @@ describe('the game Magic Find the panel shows', () => {
 		held.observe({ connectionId: A, value: null, observedAtMs: NOW + 2 }, NOW + 2);
 		expect(held.current(NOW + 2)).toBe(363);
 	});
+
+	it('says how long until the held figure stops counting, and nothing when there is none to expire', () => {
+		const held = new LiveGameMagicFind();
+		expect(held.msUntilStale(NOW)).toBeNull();
+		held.observe({ connectionId: A, value: 333, observedAtMs: NOW - 20_000 }, NOW);
+		const wait = held.msUntilStale(NOW);
+		expect(wait).toBe(GAME_MAGIC_FIND_FRESH_MS - 20_000 + 1);
+		expect(held.current(NOW + wait! - 1)).toBe(333);
+		expect(held.current(NOW + wait!)).toBeNull();
+		expect(held.msUntilStale(NOW + wait!)).toBeNull();
+		held.observe({ connectionId: A, value: null, observedAtMs: NOW + 1 }, NOW + 1);
+		expect(held.msUntilStale(NOW + 1)).toBeNull();
+	});
 });

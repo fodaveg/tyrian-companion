@@ -638,6 +638,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private liveHud: LiveHudRuntime | null = null;
 	/** The game's Magic Find the Nexus addon reports over `mf1`, in memory only; the HUD and the note show it while fresh. */
 	private readonly gameMagicFind = new LiveGameMagicFind();
+	/** The ONE timeout that repaints when the game's Magic Find goes stale; armed by a figure, cancelled by `null`, a close and the unload. */
+	private gameMagicFindExpiry: number | null = null;
 	/**
 	 * R1b: this DEVICE's mode, kept in local `kv` (`runtime/collector-instance.ts`), never in
 	 * `data.json`. The seed on load, this device's stored mode once `initializeRuntime` reads it;
@@ -1777,6 +1779,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async shutdownRuntime(): Promise<void> {
 		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
+		this.clearGameMagicFindExpiry();
 		this.sessionStoreRetry?.dispose();
 		// Z6-2: before anything that can fail, so a rejected drain cannot leave them subscribed to a dead core.
 		this.uncaughtErrorOff?.();
@@ -2905,7 +2908,30 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * through them the live panel note (`LivePanelRuntime.notify`, under its 10 s floor), as a new bag or a new value does.
 	 */
 	observeGameMagicFind(reading: MagicFindIngameReading): void {
-		if (this.gameMagicFind.observe(reading, Date.now())) this.renderViews();
+		const changed = this.gameMagicFind.observe(reading, Date.now());
+		this.armGameMagicFindExpiry();
+		if (changed) this.renderViews();
+	}
+
+	/**
+	 * Re-arms the single timeout for the figure now held (a `null`, a close or a figure already stale leaves none). When it fires,
+	 * the views repaint and the live panel note goes back to the account's figure, under the writer's own floor. Never an interval.
+	 */
+	private armGameMagicFindExpiry(): void {
+		this.clearGameMagicFindExpiry();
+		if (this.unloaded) return;
+		const wait = this.gameMagicFind.msUntilStale(Date.now());
+		if (wait === null) return;
+		this.gameMagicFindExpiry = window.setTimeout(() => {
+			this.gameMagicFindExpiry = null;
+			if (!this.unloaded) this.renderViews();
+		}, wait);
+	}
+
+	private clearGameMagicFindExpiry(): void {
+		if (this.gameMagicFindExpiry === null) return;
+		window.clearTimeout(this.gameMagicFindExpiry);
+		this.gameMagicFindExpiry = null;
 	}
 
 	getLiveSessionLoot(): LiveSessionLootState { return this.liveView.getLiveSessionLoot(); }
