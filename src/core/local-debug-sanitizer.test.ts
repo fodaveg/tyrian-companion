@@ -232,3 +232,36 @@ describe('local debug sanitizer: boot timings', () => {
 		expect(resanitizeLocalDebugRecord(record)?.details).toEqual({ bootMs: { module: 812, renderRequested: 2_301 } });
 	});
 });
+
+/** P1b vocabulary: closed fields (boolean, number or one token) that diagnose a failure without carrying text. */
+describe('local debug sanitizer: closed diagnostic vocabulary', () => {
+	const record = (component: 'plugin' | 'session' | 'inventory' | 'wallet', details: unknown) => sanitizeLocalDebugRecord({
+		level: 'info', component, action: 'debug_write', phase: 'success', code: 'ok', actionId: 'a1', correlationId: 'c1', details,
+	}, CONTEXT);
+
+	it('keeps ours, host, hostVersion and errorName on a plugin record', () => {
+		const details = { ours: true, host: 'hebra', hostVersion: '1.4.2', errorName: 'TypeError' };
+		expect(record('plugin', details).details).toEqual(details);
+		expect(resanitizeLocalDebugRecord(record('plugin', details))?.details).toEqual(details);
+	});
+
+	it('keeps outboxCount and queueCount on a session record', () => {
+		expect(record('session', { outboxCount: 2, queueCount: 0 }).details).toEqual({ outboxCount: 2, queueCount: 0 });
+	});
+
+	it('keeps the flat coverage of an inventory record', () => {
+		const details = { sourcesComplete: 3, sourcesPartial: 1, sourcesMissing: 0, rosterCovered: 5, rosterTotal: 6, worstStatus: 'partial' };
+		expect(record('inventory', details).details).toEqual(details);
+	});
+
+	it('NEGATIVE: prose, paths and wrong types never ride in under these fields', () => {
+		expect(record('plugin', { host: 'Mi nota privada', hostVersion: 'Tyrian/Notas/a.md', errorName: 'TypeError: fail', ours: 'yes' }).details).toBeUndefined();
+		expect(record('plugin', { host: { name: 'hebra' }, errorName: ['A'] }).details).toBeUndefined();
+		expect(record('session', { outboxCount: '3', queueCount: Number.NaN }).details).toBeUndefined();
+		expect(record('inventory', { sourcesComplete: 'many', rosterTotal: true, worstStatus: 4 }).details).toBeUndefined();
+	});
+
+	it('is per component: another one never carries them', () => {
+		expect(record('wallet', { ours: true, host: 'hebra', errorName: 'TypeError', outboxCount: 1, worstStatus: 'ok' }).details).toBeUndefined();
+	});
+});

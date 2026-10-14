@@ -62,13 +62,25 @@ const COMMON_DETAIL_FIELDS = [
 const NUMERIC_MAP_FIELDS: ReadonlySet<string> = new Set(['bootMs', 'bootCounts']);
 const NUMERIC_MAP_KEY = /^[A-Za-z][A-Za-z0-9]{0,31}$/u;
 
+/**
+ * Detail fields with a closed value type, in every component that lists them: a boolean, a finite number or one
+ * short token (`CLOSED_TOKEN`), never prose. They are exempt from `BLOCKED_KEY` because the value is closed, not the
+ * name: `errorName` holds `name` in it, and the class of an error (`TypeError`) is the point of the field.
+ */
+const CLOSED_DETAIL_TYPES: Readonly<Record<string, 'boolean' | 'number' | 'token'>> = {
+	ours: 'boolean',
+	host: 'token', hostVersion: 'token', errorName: 'token', worstStatus: 'token',
+	outboxCount: 'number', queueCount: 'number',
+	sourcesComplete: 'number', sourcesPartial: 'number', sourcesMissing: 'number', rosterCovered: 'number', rosterTotal: 'number',
+};
+
 export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, readonly string[]>> = {
 	// `bootMs`/`bootCounts` (the `boot_timings` line, `src/core/boot-trace.ts`): flat maps of phase to
 	// non-negative integer, enforced by `NUMERIC_MAP_FIELDS` below, never a string or a nested object.
 	// `usageMiB`/`quotaUsedBand` (the `origin_storage` line, `src/core/persistent-storage.ts`): the origin's storage
 	// usage as a whole number of MiB and the band of the quota it takes (`<50`, `50-80`, `80-95`, `>=95`). Never the
 	// quota itself, which gives the size of the disk away, nor an exact share, which would give the quota back.
-	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts', 'usageMiB', 'quotaUsedBand'],
+	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount', 'bootMs', 'bootCounts', 'usageMiB', 'quotaUsedBand', 'ours', 'host', 'hostVersion', 'errorName'],
 	settings: [...COMMON_DETAIL_FIELDS, 'schemaVersion', 'changedKeys', 'language'],
 	connection: [...COMMON_DETAIL_FIELDS, 'permissionCount', 'missingPermissionCount'],
 	// `itemIds` are GW2's own public catalog item ids (e.g. the batch behind a failed
@@ -80,10 +92,15 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	http: [...COMMON_DETAIL_FIELDS, 'statusCode', 'responseKind', 'endpoint', 'itemIds', 'apiReason'],
 	// `archiveKey` is the IndexedDB key of a preserved API archive (`legacy-api-runtime:<sessionId>`): a
 	// local session id, no account data. The sanitizer truncates its value to MAX_STRING_LENGTH.
-	session: [...COMMON_DETAIL_FIELDS, 'phase', 'evidenceQuality', 'itemCount', 'archiveKey'],
+	session: [...COMMON_DETAIL_FIELDS, 'phase', 'evidenceQuality', 'itemCount', 'archiveKey', 'outboxCount', 'queueCount'],
 	detection: [...COMMON_DETAIL_FIELDS, 'armed', 'proposalKind', 'continuity', 'intervalMs'],
 	// `written` is a count: a failed vault sync keeps how far it got. Its `errorName` stays out, BLOCKED_KEY drops every `*name*` key.
-	inventory: [...COMMON_DETAIL_FIELDS, 'itemCount', 'locationCount', 'coverage', 'operationCount', 'written'],
+	// `sourcesComplete`/`sourcesPartial`/`sourcesMissing`/`rosterCovered`/`rosterTotal` (numbers) and `worstStatus` (a token):
+	// the flat coverage of the snapshots a refresh read; see `CLOSED_DETAIL_TYPES`.
+	inventory: [
+		...COMMON_DETAIL_FIELDS, 'itemCount', 'locationCount', 'coverage', 'operationCount', 'written',
+		'sourcesComplete', 'sourcesPartial', 'sourcesMissing', 'rosterCovered', 'rosterTotal', 'worstStatus',
+	],
 	wallet: [...COMMON_DETAIL_FIELDS, 'currencyCount', 'coverage', 'operationCount', 'written'],
 	price_history: [...COMMON_DETAIL_FIELDS, 'itemCount', 'sampleCount', 'coverage', 'intervalMs'],
 	halloween: [...COMMON_DETAIL_FIELDS, 'sampleCount', 'outcomeCount', 'coverage', 'alertCount'],
@@ -291,9 +308,15 @@ export function sanitizeDetails(
 	seen.add(value);
 	const result: Record<string, unknown> = {};
 	for (const key of Object.keys(value).sort()) {
-		if (!allowed.has(key) || BLOCKED_KEY.test(key)) continue;
+		const closedType = component === 'bridge' ? undefined : CLOSED_DETAIL_TYPES[key];
+		if (!allowed.has(key) || (closedType === undefined && BLOCKED_KEY.test(key))) continue;
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (descriptor === undefined || !('value' in descriptor)) continue;
+		if (closedType !== undefined) {
+			const closed = closedDetailValue(descriptor.value, CLOSED_TOKEN);
+			if (typeof closed === closedType || (closedType === 'token' && typeof closed === 'string')) result[key] = closed;
+			continue;
+		}
 		if (NUMERIC_MAP_FIELDS.has(key)) {
 			const map = sanitizeNumericMap(descriptor.value);
 			if (map !== undefined) result[key] = map;
