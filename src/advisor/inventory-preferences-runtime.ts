@@ -331,7 +331,8 @@ export class InventoryPreferencesRuntime {
 			return this.snapshotEditorSession(this.state);
 		}
 		if (result.status === 'error') {
-			this.record = null; this.state = blocked(result.code);
+			// What the store holds is unknown now: as after a failed read, only a reload makes the record current again.
+			this.record = null; this.loaded = false; this.state = blocked(result.code);
 			return this.snapshotEditorSession(this.state);
 		}
 		this.state = { status: 'needs_refresh', goals: [], keepExceptions: [] };
@@ -363,7 +364,9 @@ export class InventoryPreferencesRuntime {
 			return this.current();
 		}
 		if (result.status === 'error') {
+			// What the store holds is unknown now: as after a failed read, only a reload makes the record current again.
 			this.record = null;
+			this.loaded = false;
 			this.state = blocked(result.code);
 			return this.current();
 		}

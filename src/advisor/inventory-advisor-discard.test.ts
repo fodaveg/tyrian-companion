@@ -76,6 +76,28 @@ describe('inventory discard allowlist H4.16', () => {
 		expect(result.report?.lines[0]).toMatchObject({ retainedQuantity: 0, actionedQuantity: 3 });
 	});
 
+	it('keeps the no_sell reason of a line while any of its slices stays keep', () => {
+		const engineInput = fixture();
+		engineInput.input.snapshot.holdings.push({ kind: 'item', itemId: 10, quantity: 1, state: 'loose', location: { source: 'materials', category: 1 }, metadata: { binding: 'Guild' } });
+		engineInput.input.snapshot.ownedByItem = { '10': 3 }; engineInput.input.snapshot.availableByItem = { '10': 3 };
+		rehash(engineInput);
+		const producerResult = classifyInventoryAdvisor(engineInput);
+		const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
+		expect(result.status).toBe('ready');
+		const line = result.report?.lines[0];
+		expect(line?.decisions.map((decision) => decision.action).sort()).toEqual(['discard_candidate', 'keep']);
+		// The slice still kept is kept because the item cannot be sold: that reason stays next to the discard one.
+		expect(line?.reasons.map((reason) => reason.code).sort()).toEqual(['discard_not_allowlisted', 'no_sell']);
+		expect(result.report?.reasons.map((reason) => reason.code).sort()).toEqual(['discard_not_allowlisted', 'no_sell']);
+		expect(isInventoryDiscardAllowlistResultForInput(result, { engineInput, producerResult })).toBe(true);
+	});
+
+	it('drops the no_sell reason of a line once every slice became a discard candidate', () => {
+		const engineInput = fixture();
+		const result = applyInventoryDiscardAllowlist({ engineInput, producerResult: classifyInventoryAdvisor(engineInput) });
+		expect(result.report?.lines[0]?.reasons.map((reason) => reason.code)).toEqual(['discard_not_allowlisted']);
+	});
+
 	it.each([
 		['reservation', (value: InventoryAdvisorEngineInputV1) => { value.input.goals = [goal()]; }],
 		['keep exception', (value: InventoryAdvisorEngineInputV1) => { value.input.keepExceptions = [{ version: 1, exceptionId: 'keep-10', itemId: 10, status: 'active', basis: 'available', quantity: { mode: 'minimum', value: 1 }, reason: 'user_keep' }]; }],

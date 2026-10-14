@@ -100,7 +100,10 @@ function applyInventoryDiscardAllowlistDiagnosed(
 			}
 			for (const line of report.lines) {
 				if (line.decisions.some((decision) => decision.action === 'discard_candidate')) {
-					line.reasons = line.reasons.filter((reason) => reason.code !== 'no_sell');
+					// `no_sell` is why a slice is kept: it goes only once no slice of the line is kept any more.
+					if (line.decisions.every((decision) => decision.action === 'discard_candidate')) {
+						line.reasons = line.reasons.filter((reason) => reason.code !== 'no_sell');
+					}
 					line.reasons.push({ code: 'discard_not_allowlisted', itemId: line.itemId, goalId: null,
 						ruleId: line.decisions.find((decision) => decision.action === 'discard_candidate')!.ruleId });
 					line.reasons.sort(reasonOrder);

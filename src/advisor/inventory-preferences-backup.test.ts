@@ -4,12 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	BackedUpInventoryPreferencesStore,
 	InventoryPreferencesBackup,
+	mergeInventoryPreferencesBackup,
 	readInventoryPreferencesBackup,
 	type InventoryPreferencesBackupV1,
 	type InventoryPreferencesBackupWriteOutcome,
 } from './inventory-preferences-backup';
 import type { InventoryAdvisorEvidenceCaptureResultV1 } from './inventory-advisor-evidence-model';
-import { INVENTORY_PREFERENCES_DB_NAME, type InventoryPreferenceScope } from './inventory-preferences-model';
+import {
+	INVENTORY_PREFERENCES_DB_NAME,
+	INVENTORY_PREFERENCES_DB_VERSION,
+	INVENTORY_PREFERENCES_STORE_NAME,
+	type InventoryPreferenceScope,
+} from './inventory-preferences-model';
 import { InventoryPreferencesRuntime } from './inventory-preferences-runtime';
 import { InventoryPreferencesService } from './inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
@@ -53,18 +59,56 @@ describe('inventory preferences copy: restore at the start', () => {
 		world.dispose();
 	});
 
-	it('never overwrites an IndexedDB that already holds records of this vault, and leaves the copy alone', async () => {
+	it('never overwrites a record IndexedDB can read, restores only the accounts it lacks, and leaves the copy alone', async () => {
 		const world = harness({ stored: copyOf([[ACCOUNT, ['goal-from-copy'], []], ['account-beta', ['goal-beta'], []]]) });
+		const own = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
+		await own.upsertGoal(scope, 0, goal('goal-in-indexeddb'));
+		own.dispose();
+
+		await expect(world.backup.restore()).resolves.toBe('restored');
+		expect(await world.service.list(scope)).toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-in-indexeddb' }] } });
+		// An account the vault does not have yet comes back from the copy.
+		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-beta' })).toMatchObject({
+			status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-beta' }] },
+		});
+		expect(world.writes).toEqual([]);
+		expect(world.outcomes('backup_restore')).toEqual([['success', 'ok', 'backup_restored', { count: 1 }]]);
+		world.dispose();
+	});
+
+	it('has nothing to restore when IndexedDB can read every account of the copy', async () => {
+		const world = harness({ stored: copyOf([[ACCOUNT, ['goal-from-copy'], []]]) });
 		const own = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
 		await own.upsertGoal(scope, 0, goal('goal-in-indexeddb'));
 		own.dispose();
 
 		await expect(world.backup.restore()).resolves.toBe('not_empty');
 		expect(await world.service.list(scope)).toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-in-indexeddb' }] } });
-		// Not even an account the vault does not have yet: IndexedDB has data, so it decides.
-		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-beta' })).toEqual({ status: 'ok', record: null });
-		expect(world.writes).toEqual([]);
 		expect(world.outcomes('backup_restore')).toEqual([['skip', 'skipped', 'backup_not_needed', undefined]]);
+		world.dispose();
+	});
+
+	it('repairs a corrupt record from the copy, and never touches one of a future schema', async () => {
+		const world = harness({ stored: copyOf([[ACCOUNT, ['goal-a'], []], ['account-beta', ['goal-beta'], []], ['account-gamma', ['goal-gamma'], []]]) });
+		const future = { schemaVersion: 99, whatever: 'release 99 keeps here' };
+		await putRaw(world.factory, world.name, `${VAULT}\u0000${ACCOUNT}`, { schemaVersion: 1, goals: 'not a list' });
+		await putRaw(world.factory, world.name, `${VAULT}\u0000account-beta`, future);
+		const own = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
+		await own.upsertGoal({ vaultId: VAULT, accountId: 'account-gamma' }, 0, goal('goal-gamma-in-indexeddb'));
+		own.dispose();
+
+		await expect(world.backup.restore()).resolves.toBe('restored');
+		// The corrupt one blocked every read and write of its account; now it is the copy's, and editable again.
+		expect(await world.service.list(scope)).toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-a' }] } });
+		await expect(world.service.upsertGoal(scope, 1, goal('goal-a2'))).resolves.toMatchObject({ status: 'ok' });
+		// Only the newer release that wrote it can read it: left as it is.
+		expect(await getRaw(world.factory, world.name, `${VAULT}\u0000account-beta`)).toEqual(future);
+		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-beta' })).toEqual({ status: 'error', code: 'future_schema' });
+		// A readable one is never written over.
+		expect(await world.service.list({ vaultId: VAULT, accountId: 'account-gamma' })).toMatchObject({
+			status: 'ok', record: { goals: [{ goalId: 'goal-gamma-in-indexeddb' }] },
+		});
+		expect(world.outcomes('backup_restore')).toEqual([['success', 'ok', 'backup_restored', { count: 1 }]]);
 		world.dispose();
 	});
 
@@ -189,6 +233,40 @@ describe('inventory preferences copy: writes after a change', () => {
 		world.dispose();
 	});
 
+	it('reads IndexedDB for the copy only after the restore has settled, even for a change told before it did', async () => {
+		let release!: () => void;
+		const held = new Promise<void>((resolve) => { release = resolve; });
+		const calls: string[] = [];
+		const timers = manualTimers();
+		const backup = new InventoryPreferencesBackup({
+			vaultId: VAULT,
+			store: {
+				readVault: async () => { calls.push('readVault'); return { status: 'ok', records: [], unreadable: 0 }; },
+				restoreMissingRecords: async () => {
+					calls.push('restore:start');
+					await held;
+					calls.push('restore:end');
+					return { status: 'restored', count: 1 };
+				},
+			},
+			settings: { read: () => copyOf([[ACCOUNT, ['goal-a'], []]]), write: async () => 'saved' },
+			schedule: timers.schedule,
+			cancel: timers.cancel,
+			now,
+		});
+		const restoring = backup.restore();
+		// What the adoption of a moved vault does (`vault-runtime`), past the store that waits for the restore.
+		backup.changed();
+		timers.fire();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(calls).toEqual(['restore:start']);
+
+		release();
+		await restoring;
+		await backup.settled();
+		expect(calls).toEqual(['restore:start', 'restore:end', 'readVault']);
+	});
+
 	it('writes only this vault\'s records, never those of a vault whose id starts the same', async () => {
 		const world = harness({ stored: null });
 		const other = new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(world.factory, world.name), now);
@@ -201,6 +279,28 @@ describe('inventory preferences copy: writes after a change', () => {
 		// Nothing of the other vault was even read: no unreadable record is counted.
 		expect(world.outcomes('backup_write')).toEqual([['success', 'ok', 'backup_saved', { count: 1 }]]);
 		world.dispose();
+	});
+});
+
+describe('inventory preferences copy: merge over the stored copy', () => {
+	it('keeps every stored account the new copy does not carry, and takes the new copy for the ones it does', () => {
+		const stored = copyOf([['account-alpha', ['goal-old'], []], ['account-beta', [], ['keep-b']], ['account-gamma', ['goal-g'], []]]);
+		const fresh = copyOf([['account-alpha', ['goal-new'], []]]);
+
+		expect(mergeInventoryPreferencesBackup(stored, fresh)).toEqual(copyOf([
+			['account-alpha', ['goal-new'], []], ['account-beta', [], ['keep-b']], ['account-gamma', ['goal-g'], []],
+		]));
+		// Even an empty read of IndexedDB never empties the copy.
+		expect(mergeInventoryPreferencesBackup(stored, copyOf([]))).toEqual(stored);
+	});
+
+	it.each([
+		['no stored copy', null],
+		['a corrupt stored copy', 'not a copy'],
+		['a stored copy of a future version', { version: 2, accounts: [] }],
+	])('adds nothing from %s', (_label, stored) => {
+		const fresh = copyOf([['account-alpha', ['goal-a'], []]]);
+		expect(mergeInventoryPreferencesBackup(stored, fresh)).toEqual(fresh);
 	});
 });
 
@@ -353,6 +453,32 @@ function harness(options: {
 		levels: (state: string) => terminal(state).map((event) => event.level),
 		dispose: () => { service.dispose(); },
 	};
+}
+
+/** Opens the preferences database as the store would, to write or read a raw value past every validator. */
+async function onRaw<T>(factory: IDBFactory, name: string, mode: IDBTransactionMode, body: (store: IDBObjectStore) => IDBRequest | undefined): Promise<T> {
+	const database = await new Promise<IDBDatabase>((resolve, reject) => {
+		const request = factory.open(name, INVENTORY_PREFERENCES_DB_VERSION);
+		request.onupgradeneeded = () => { request.result.createObjectStore(INVENTORY_PREFERENCES_STORE_NAME); };
+		request.onsuccess = () => { resolve(request.result); };
+		request.onerror = () => { reject(request.error ?? new Error('open failed')); };
+	});
+	const transaction = database.transaction(INVENTORY_PREFERENCES_STORE_NAME, mode);
+	const request = body(transaction.objectStore(INVENTORY_PREFERENCES_STORE_NAME));
+	await new Promise<void>((resolve, reject) => {
+		transaction.oncomplete = () => { resolve(); };
+		transaction.onerror = () => { reject(transaction.error ?? new Error('transaction failed')); };
+	});
+	database.close();
+	return request?.result as T;
+}
+
+async function putRaw(factory: IDBFactory, name: string, key: string, value: unknown): Promise<void> {
+	await onRaw(factory, name, 'readwrite', (store) => { store.put(value, key); return undefined; });
+}
+
+async function getRaw(factory: IDBFactory, name: string, key: string): Promise<unknown> {
+	return await onRaw(factory, name, 'readonly', (store) => store.get(key));
 }
 
 function manualTimers() {

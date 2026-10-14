@@ -398,6 +398,22 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			await runtime.stop();
 		});
 
+		it('never drops an account of the stored copy that the new one does not carry (IndexedDB lacks it here)', async () => {
+			const other = { accountId: 'account-b', goals: [], keepExceptions: [{ ...copy.accounts[0]!.keepExceptions[0]!, exceptionId: 'keep-b', itemId: 9 }] };
+			const both = { version: 1, accounts: [copy.accounts[0]!, other] };
+			const { runtime, store } = await startWith({ ...base, inventoryPreferencesBackup: both });
+			const write = (runtime as unknown as { inventory: { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> } }).inventory.writeInventoryPreferencesBackup.bind((runtime as unknown as { inventory: object }).inventory);
+			// What a save of account A writes when IndexedDB only holds A (B lives on another device, or its record is unreadable).
+			const onlyA = { version: 1, accounts: [{ ...copy.accounts[0]!, goals: [], keepExceptions: [] }] };
+
+			await expect(write(onlyA, false)).resolves.toBe('saved');
+			expect((store.value as Record<string, unknown>).inventoryPreferencesBackup).toEqual({ version: 1, accounts: [onlyA.accounts[0], other] });
+			expect(runtime.settings.inventoryPreferencesBackup).toEqual({ version: 1, accounts: [onlyA.accounts[0], other] });
+			// The same write again changes nothing: B is still there, and A is what IndexedDB said.
+			await expect(write(onlyA, false)).resolves.toBe('unchanged');
+			await runtime.stop();
+		});
+
 		it('writes nothing over settings from a newer release (DU-04)', async () => {
 			const { runtime, store } = await startWith({ ...base, schemaVersion: SETTINGS_SCHEMA_VERSION + 1 }, false);
 			const write = (runtime as unknown as { inventory: { writeInventoryPreferencesBackup(backup: unknown, final: boolean): Promise<string> } }).inventory.writeInventoryPreferencesBackup.bind((runtime as unknown as { inventory: object }).inventory);
