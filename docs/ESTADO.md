@@ -1,8 +1,13 @@
 # Estado
 
-## Candidato 0.6.58: panel en vivo, ventana «1 semana», «Detalles» en Venta y audit de bugs (14 oct 2026)
+## Canal 0.6.58 publicado: panel en vivo, ventana «1 semana», «Detalles» en Venta y audit de bugs (14 oct 2026)
 
-**Candidato; sin publicar.** `main` sobre el canal 0.6.57 publicado (`2211305d`). Detalle en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.58` = `107b8b54` (atestación; candidato `1998c658`).
+Gate local verde (check con 7778 tests, test 29/29, BRAT PASS); CI 38523321460 y Release 38523322728 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=not-checked`), release normal. `main` sobre el canal 0.6.57
+publicado (`2211305d`). Detalle en [CHANGELOG](CHANGELOG.md). Va con el addon de Nexus 0.8.10 (etiqueta `0.8.10` =
+`5a19af7`, DLL sha256 `eef07af9…488d`, publicado el 14 oct): muestras en vivo de hasta 512 trozos y el motivo de cada
+desconexión en el log de Nexus; sin probar todavía en el juego.
 Pedido por David el 13 y 14 oct (audit de los logs del 13 oct y del código entero, logs de diagnóstico, «Ver resumen»,
 «Detalles» en Venta, «1 semana», panel en vivo) y publicación pedida el 14 oct («publica ambos»), dentro de la
 excepción a la congelación de Halloween.
