@@ -93,12 +93,28 @@ export interface HostFailureChannel {
 
 export const HOST_FAILURE_BUFFER = 50;
 
+/**
+ * What a reported failure says. An `Error` keeps its message. Hebra also rejects with plain objects (the
+ * serialized Rust `{ code, message }`): `String()` of those is `[object Object]`, so only a short `code`
+ * of safe characters survives (never the message, which can carry OS text or paths); anything else is
+ * named by its type.
+ */
+function describeFailure(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	if (typeof error === 'object' && error !== null) {
+		const { code } = error as { code?: unknown };
+		if (typeof code === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(code)) return `non-Error rejection (code ${code})`;
+		return 'non-Error rejection';
+	}
+	return String(error);
+}
+
 export function createHostFailureChannel(limit = HOST_FAILURE_BUFFER): HostFailureChannel {
 	const listeners = new Set<(failure: Error) => void>();
 	const pending: Error[] = [];
 	return {
 		report(error, where) {
-			const failure = new Error(`hebra host (${where}): ${error instanceof Error ? error.message : String(error)}`);
+			const failure = new Error(`hebra host (${where}): ${describeFailure(error)}`);
 			if (error instanceof Error && error.stack) failure.stack = `${failure.message}\n${error.stack}`;
 			if (listeners.size === 0) {
 				if (pending.length >= limit) pending.shift();

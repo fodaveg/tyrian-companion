@@ -35,6 +35,28 @@ function listenError(reason: unknown): TyrianTcpListenError {
 	return Object.assign(new Error(typeof reason === 'string' ? reason : 'tcp-listen-failed'), { code: 'EHEBRA_TCP_LISTEN' });
 }
 
+/**
+ * Codes with which Hebra's bridge refuses a write/end/destroy because the connection (or the whole
+ * server) is already gone: the peer closed first, or the plugin is unloading and Hebra closed the
+ * server. Expected closures, not failures (`module_tcp.rs`: `UNKNOWN_CONNECTION`, `NOT_LISTENING`, and
+ * the `EHEBRA_TCP_<io kind>` of a write to a socket the peer already dropped).
+ */
+const CLOSED_CONNECTION_CODES: ReadonlySet<string> = new Set([
+	'module-tcp-unknown-connection',
+	'module-tcp-not-listening',
+	'EHEBRA_TCP_BROKENPIPE',
+	'EHEBRA_TCP_CONNECTIONRESET',
+	'EHEBRA_TCP_CONNECTIONABORTED',
+	'EHEBRA_TCP_NOTCONNECTED',
+	'EHEBRA_TCP_UNEXPECTEDEOF',
+]);
+
+function isClosedConnection(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+	const { code } = error as { code?: unknown };
+	return typeof code === 'string' && CLOSED_CONNECTION_CODES.has(code);
+}
+
 class BridgeConnection implements TyrianTcpConnection {
 	readonly #tcp: PluginTcp;
 	readonly #id: number;
@@ -49,7 +71,9 @@ class BridgeConnection implements TyrianTcpConnection {
 	constructor(tcp: PluginTcp, id: number, report: (error: unknown, where: string) => void) {
 		this.#tcp = tcp;
 		this.#id = id;
-		this.#report = report;
+		// A queued operation refused because the connection is already closed (peer first, or the plugin
+		// unloading) is an expected closure: the socket error it raises is all it needs, not a failure report.
+		this.#report = (error, where) => { if (!isClosedConnection(error)) report(error, where); };
 	}
 
 	onData(listener: (chunk: Uint8Array) => void): void {

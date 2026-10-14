@@ -713,6 +713,22 @@ describe('createHebraHost: the other ports', () => {
 		]);
 	});
 
+	it('a failure that is not an Error keeps a safe code and never the object or its message', () => {
+		const failures = createHostFailureChannel();
+		const seen: string[] = [];
+		failures.subscribe((failure) => seen.push(failure.message));
+		failures.report({ code: 'module-tcp-write-too-large', message: 'C:\\Users\\someone\\secret' }, 'tcp.connection');
+		failures.report({ code: 'has spaces and /slashes', message: 'x' }, 'tcp.connection');
+		failures.report({ unrelated: true }, 'tcp.connection');
+		failures.report('plain text', 'tcp.connection');
+		expect(seen).toEqual([
+			'hebra host (tcp.connection): non-Error rejection (code module-tcp-write-too-large)',
+			'hebra host (tcp.connection): non-Error rejection',
+			'hebra host (tcp.connection): non-Error rejection',
+			'hebra host (tcp.connection): plain text',
+		]);
+	});
+
 	it('diagnostics write to the local storage, under Hebra\'s configDir', async () => {
 		const fileBackend = createMemoryFileBackend();
 		const handle = await createHebraHost(deps(createTyrianTestApi(), { fileBackend }));

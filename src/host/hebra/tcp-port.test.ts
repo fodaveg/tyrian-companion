@@ -74,9 +74,31 @@ describe('tcp-port: TyrianTcpServerPort over api.tcp', () => {
 		expect(calls.at(-1)).toBe('destroy 7');
 	});
 
-	it('a write Hebra refuses (connection already closed) is reported as a socket error', async () => {
+	it('a write to a connection already closed (peer first, or the plugin unloading) warns the socket without a failure report', async () => {
+		for (const code of ['module-tcp-unknown-connection', 'module-tcp-not-listening', 'EHEBRA_TCP_BROKENPIPE']) {
+			const { tcp, emit } = fakeTcp();
+			// Hebra rejects with the serialized Rust error, a plain object and not an `Error`.
+			// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- see above.
+			tcp.write = () => Promise.reject({ code, message: 'gone' });
+			const report = vi.fn();
+			const onError = vi.fn();
+			let socket: TyrianTcpConnection | undefined;
+			await createTcpServerPort(tcp, report).listen(47823, '127.0.0.1', (connection) => {
+				connection.onError(onError);
+				socket = connection;
+			});
+			emit({ kind: 'connection', id: 1 });
+			socket?.write('x');
+			await flush();
+			expect(onError).toHaveBeenCalledTimes(1);
+			expect(report).not.toHaveBeenCalled();
+		}
+	});
+
+	it('a write that fails for another reason is still reported as a failure', async () => {
 		const { tcp, emit } = fakeTcp();
-		tcp.write = () => Promise.reject(Object.assign(new Error('gone'), { code: 'module-tcp-unknown-connection' }));
+		// eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the serialized Rust error.
+		tcp.write = () => Promise.reject({ code: 'module-tcp-write-too-large', message: 'too big' });
 		const report = vi.fn();
 		const onError = vi.fn();
 		let socket: TyrianTcpConnection | undefined;
@@ -88,7 +110,7 @@ describe('tcp-port: TyrianTcpServerPort over api.tcp', () => {
 		socket?.write('x');
 		await flush();
 		expect(onError).toHaveBeenCalledTimes(1);
-		expect(report).toHaveBeenCalledWith(expect.anything(), 'tcp.connection');
+		expect(report).toHaveBeenCalledWith(expect.objectContaining({ code: 'module-tcp-write-too-large' }), 'tcp.connection');
 	});
 
 	it('the error event warns the socket and the close after it closes it', async () => {
