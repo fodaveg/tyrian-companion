@@ -73,7 +73,7 @@ import type { TyrianPathIndexKv } from './path-index-kv';
 import { createPreloadedSecrets, type TyrianSecretsBackend } from './secrets';
 import { refreshUnadoptedNotes, seedTyrianPathIndex, type TyrianSeedLibrary, type TyrianSeedResult, type TyrianUnadoptedNote } from './seed';
 import { createHebraTranslator, type HebraTranslator } from './setting-row';
-import { createHebraSurfaces } from './surface';
+import { createHebraSurfaces, type HebraSurfaceKind } from './surface';
 import { createTcpServerPort, unavailableTcpServerPort } from './tcp-port';
 import { createHebraTyrianVault, HEBRA_TYRIAN_CONFIG_DIR, relativeToOutputFolder } from './vault';
 import { createTyrianVaultPort } from './vault-port';
@@ -210,7 +210,7 @@ export interface HebraHostHandle {
 	/** The active language's translator for the adapter's own copy, fresh on every call. */
 	translator: HebraTranslator;
 	/** Readies a surface the adapter paints itself (the unadopted-notes panel), as the core's are (`surface.ts`). */
-	prepareSurface(el: HTMLElement): void;
+	prepareSurface(el: HTMLElement, kind?: HebraSurfaceKind): void;
 	/** Waits for the pending keychain writes. */
 	flush(): Promise<void>;
 	/** Drops what this instance left armed (the pending restart, the watch of indexed files, the
@@ -730,7 +730,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		seed,
 		unadopted,
 		translator,
-		prepareSurface: (el) => surfaces.prepare(el),
+		prepareSurface: (el, kind) => surfaces.prepare(el, kind),
 		flush: () => secrets.flush(),
 		dispose: () => {
 			disposed = true;

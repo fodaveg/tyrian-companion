@@ -25,7 +25,9 @@
 // - any import left in the output (Hebra resolves none), or a bundled copy of CodeMirror or Lezer
 //   (`@codemirror/*`, `@lezer/*`): the plugin has no editor of its own, and in the 2.x Hebra lends none;
 // - a CSS import, or a package that is not declared in package.json;
-// - for the plugin entry, an output that does not export `activate`.
+// - for the plugin entry, an output that does not export `activate`;
+// - a `hebra-styles.css` with a rule scoped to a plugin API 1.x slot, or without the base rule of
+//   `#hebra-surface-root` (`hebraStylesScopeViolations`): in a 2.x surface that is all there is.
 //
 // Run: `npm run build:host-esm` (exit 0 and a one-line summary when clean; exit 1 listing every
 // violation otherwise). `--entry=<file>` and `--no-write` exist for `scripts/tests/probar-build-host-esm.mjs`.
@@ -144,6 +146,28 @@ export function hebraStyleSheet(root = REPOSITORY_ROOT) {
 	return HEBRA_STYLES_SOURCES.map((source) => `${readFileSync(resolve(root, source), 'utf8')}\n`).join('');
 }
 
+/**
+ * Class selectors of the plugin API 1.x slots (Hebra's own DOM), which a 2.x surface does not have: the
+ * surface's document only has `#hebra-surface-root` (SPEC-PLUGINS-EXTERNOS.md §5.5.2). The adapter's own
+ * classes (`.hebra-module-setting-*`, `.hebra-module-folder-*`) are not among them.
+ */
+const HEBRA_1X_SLOT_SELECTOR = /\.(?:lv1-[\w-]+|hebra-module-view[\w-]*|hebra-module-modal-content|cm-hebra-module-code-block|markdown-editor)(?![\w-])/gu;
+/** The base rule every surface needs: the root with Hebra's interface font (`--ui`), which no 2.x surface document gives. */
+const HEBRA_SURFACE_ROOT_BASE = /\[id='hebra-surface-root'\]\s*\{[^}]*font-family:\s*var\(--ui\)/u;
+
+/**
+ * What would leave `hebra-styles.css` unapplied in a 2.x surface: a rule scoped to a 1.x slot (it matches
+ * nothing there, so its look silently disappears) or a sheet without the root's base rule. Comments do not
+ * count. Empty when the sheet is scoped to `#hebra-surface-root`.
+ */
+export function hebraStylesScopeViolations(css) {
+	const code = css.replace(/\/\*[\s\S]*?\*\//gu, '');
+	const violations = [...new Set(code.match(HEBRA_1X_SLOT_SELECTOR) ?? [])]
+		.map((selector) => `hebra-styles.css scopes a rule to the 1.x slot ${selector}, which no 2.x surface has`);
+	if (!HEBRA_SURFACE_ROOT_BASE.test(code)) violations.push("hebra-styles.css has no [id='hebra-surface-root'] rule with font-family: var(--ui)");
+	return violations;
+}
+
 /** Writes `hebra-styles.css` at the repository root and returns its byte length. */
 export function writeHebraStyles(root = REPOSITORY_ROOT) {
 	const css = hebraStyleSheet(root);
@@ -215,6 +239,15 @@ async function main(argv) {
 		process.stderr.write(`host ESM bundle: FAIL (${String(outcome.violations.length)} violation(s))\n`);
 		for (const violation of outcome.violations) process.stderr.write(`- ${violation}\n`);
 		return 1;
+	}
+	if (entry === undefined) {
+		const scope = hebraStylesScopeViolations(hebraStyleSheet());
+		if (scope.length > 0) {
+			if (write) rmSync(resolve(REPOSITORY_ROOT, outcome.outfile), { force: true });
+			process.stderr.write(`host ESM bundle: FAIL (${String(scope.length)} stylesheet violation(s))\n`);
+			for (const violation of scope) process.stderr.write(`- ${violation}\n`);
+			return 1;
+		}
 	}
 	const styles = write && entry === undefined ? writeHebraStyles() : null;
 	process.stdout.write(

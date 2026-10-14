@@ -2,7 +2,7 @@
 import { Window as HappyDomWindow } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createHebraSurfaces, isDomElement } from './surface';
+import { createHebraSurfaces, hebraSurfaceClass, isDomElement } from './surface';
 
 // Plugin API 2.0 (SPEC-PLUGINS-EXTERNOS.md §5.5.2): each surface Hebra hands the plugin is a frame of its own,
 // another realm. A second happy-dom `Window` stands for that frame here: its own document and window. Limit: happy-dom
@@ -111,6 +111,18 @@ describe('a surface of another realm', () => {
 			firstHeld: surfaces.isPrepared(first.doc),
 			secondHeld: surfaces.isPrepared(second.doc),
 		}).toEqual({ firstClass: false, secondClass: true, opened: 1, firstHeld: false, secondHeld: true });
+	});
+
+	// hebra-styles.css tells the kinds of surface apart by this class: the 2.x document only has #hebra-surface-root.
+	it('marks the root with the kind of surface it is, on every mount, also of a document already readied', () => {
+		const { doc, el } = surfaceFrame();
+		const surfaces = createHebraSurfaces({ appleMobile: false, openExternal: vi.fn(), report: vi.fn() });
+		surfaces.prepare(el, 'code-block');
+		const other = doc.body.appendChild(doc.createElement('div'));
+		surfaces.prepare(other, 'modal');
+		surfaces.prepare(doc.body.appendChild(doc.createElement('div')));
+		expect([el.className, other.className, hebraSurfaceClass('main')])
+			.toEqual(['tyrian-hebra-surface--code-block', 'tyrian-hebra-surface--modal', 'tyrian-hebra-surface--main']);
 	});
 
 	it('readies a document once, however many mounts it gets', () => {

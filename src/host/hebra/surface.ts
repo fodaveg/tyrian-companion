@@ -32,9 +32,25 @@ export interface HebraSurfaceDeps {
 	report(error: unknown, where: string): void;
 }
 
+/**
+ * What a surface is, marked on its root as `tyrian-hebra-surface--<kind>` for `hebra-styles.css`
+ * (`tyrian-host.css`): in the 2.x every surface's document only has `#hebra-surface-root`, so the
+ * rules that differed between the 1.x slots (the main screen, a modal's button row, a note block
+ * on the page's paper) read this class instead.
+ */
+export type HebraSurfaceKind = 'view' | 'main' | 'modal' | 'settings' | 'code-block';
+
+/** The class `prepare` puts on the root of a surface of that kind. */
+export function hebraSurfaceClass(kind: HebraSurfaceKind): string {
+	return `tyrian-hebra-surface--${kind}`;
+}
+
 export interface HebraSurfaces {
-	/** Readies the document `el` belongs to; cheap and idempotent per document. */
-	prepare(el: HTMLElement): void;
+	/**
+	 * Readies the document `el` belongs to (cheap and idempotent per document) and, with `kind`,
+	 * marks `el` with its class (`hebraSurfaceClass`).
+	 */
+	prepare(el: HTMLElement, kind?: HebraSurfaceKind): void;
 	/** Whether it still holds anything of `doc` (what it put there, to take it away). */
 	isPrepared(doc: Document): boolean;
 	/** Removes the class and the listeners it put on every document it prepared. */
@@ -78,7 +94,8 @@ export function createHebraSurfaces(deps: HebraSurfaceDeps): HebraSurfaces {
 		}
 	};
 	return {
-		prepare(el) {
+		prepare(el, kind) {
+			if (kind !== undefined) el.classList.add(hebraSurfaceClass(kind));
 			const doc = el.ownerDocument;
 			if (undoByDocument.has(doc)) return;
 			const undo: Array<() => void> = [];

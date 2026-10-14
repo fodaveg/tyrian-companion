@@ -2,20 +2,27 @@
  * Tyrian Companion en Hebra (checkpoint 16): lo que HebraHost pone para que el
  * `styles.css` de Tyrian se vea con el diseño de Hebra. Llegó desde
  * `src/lib/modules/tyrian/tyrian-host.css` de Hebra al pasar Tyrian a plugin externo.
- * `npm run build:host-esm` lo pone DELANTE de `styles.css` en `hebra-styles.css`, que
- * Hebra inyecta solo mientras el plugin está activo, y todo va acotado a los cinco
- * huecos donde Hebra monta contenido de un plugin:
+ * `npm run build:host-esm` lo pone DELANTE de `styles.css` en `hebra-styles.css`.
  *
- *   .lv1-context-module-el                pestaña del inspector (LibraryContextPanel.svelte)
- *   .hebra-module-view-content            diálogo de vista (ModuleViewSlot.svelte) y, con la
- *                                         API 1.3.0, cada sección de la vista de la pantalla
- *                                         principal, que lleva además
- *                                         `.hebra-module-view-main-content`
- *   .hebra-module-modal-content           `ui.openModal` (host-ui.ts)
- *   .lv1-modules-panel[data-module-panel] `ui.settingsPanel`, en el modal propio del módulo
- *                                         (LibraryModuleSettingsDialog.svelte)
- *   .cm-hebra-module-code-block           `ui.registerCodeBlock` (module-code-blocks.ts)
+ * API de plugins 2.x (0.7.0 en adelante, solo 2.x): cada vista, sección de la pantalla
+ * principal, modal, panel de ajustes y bloque de código es un MARCO propio, y Hebra carga
+ * `hebra-styles.css` en cada uno (SPEC-PLUGINS-EXTERNOS.md §5.5.2). Su documento solo tiene
+ * `#hebra-surface-root`, que es el propio `el` que recibe `mount(el)`; los cinco huecos de la
+ * 1.x (`.lv1-context-module-el`, `.hebra-module-view-content`, `.hebra-module-modal-content`,
+ * `.lv1-modules-panel[data-module-panel]`, `.cm-hebra-module-code-block`) no existen ahí, así
+ * que todo va acotado a esa raíz. Se escribe `[id='hebra-surface-root']`, que casa con el
+ * mismo elemento con la especificidad de UNA clase, la que tenía cada hueco de la 1.x: así
+ * cada regla gana o pierde frente a las de `styles.css` igual que antes.
  *
+ * Lo que distinguía un hueco de otro lo pone ahora el adaptador como clase en la raíz
+ * (`surface.ts`): `tyrian-hebra-surface--main` (sección de la pantalla principal),
+ * `--view` (vista de columna o diálogo), `--modal`, `--settings` y `--code-block`.
+ *
+ * 0. Lo que el documento de Hebra daba y una superficie 2.x no tiene: tipografía, color de
+ *    texto, `box-sizing` y el reseteo de `button` de su `app.css`, y lo que Hebra ponía
+ *    debajo de la hoja de cualquier plugin (`figure`, deslizador, campos con el dedo).
+ *    Las variables (`--ui`, `--ink`, `--space-*`…) sí llegan: Hebra las pone en el `<html>`
+ *    de cada superficie con el tema actual.
  * 1. Variables de Obsidian → tokens de Hebra: el bloque del §5 de
  *    `docs/HEBRA-CSS-VARIABLES.md` de este repo (Tyrian `5043743`), tal cual.
  *    La tabla y el motivo de cada fila están allí; los cinco literales son pesos e
@@ -24,16 +31,66 @@
  *    con el patrón de Hebra que nombra cada fila. Hebra resetea `button` en `app.css`:
  *    sin esto, los 61 botones de Tyrian se verían como texto suelto.
  *
- * Los huecos van dentro de `:where()` (especificidad 0): cualquier regla de Tyrian con
- * una clase propia gana a estas, que solo ponen el aspecto que Obsidian daría por defecto.
+ * La raíz va dentro de `:where()` (especificidad 0) donde iban los huecos: cualquier regla de
+ * Tyrian con una clase propia gana a estas, que solo ponen el aspecto que Obsidian daría.
  */
 
+/* ---- 0. Lo que daba el documento de Hebra (su `app.css`) ------------------------ */
+
+/* Tipografía y texto: los de `:root` de Hebra, al tamaño de interfaz por defecto
+   (`--type-ui-md`, el que la 1.x daba al panel de Ajustes; el cuerpo de Hebra son 17 px). */
+[id='hebra-surface-root'] {
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: var(--type-ui-md);
+  font-synthesis: none;
+}
+:where([id='hebra-surface-root'], [id='hebra-surface-root'] *) {
+  box-sizing: border-box;
+}
+/* El reseteo de `app.css` (un elemento, 0,0,1), ANTES de las reglas de §2, que le ganan por
+   orden con la misma especificidad, como en la 1.x. */
+:where([id='hebra-surface-root']) :is(button, input, textarea) {
+  font: inherit;
+}
+:where([id='hebra-surface-root']) button {
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+:where([id='hebra-surface-root']) button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+:where([id='hebra-surface-root']) :is(button, input, textarea, select, summary, a):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Lo que Hebra ponía debajo de la hoja de cualquier plugin en los cinco huecos de la 1.x
+   (`app.css`, QA en el simulador de iPhone del 4 oct 2026), con la misma especificidad. */
+[id='hebra-surface-root'] figure {
+  /* El margen del navegador (40 px a cada lado) aplastaba el gráfico del histórico. */
+  margin: 0;
+}
+[id='hebra-surface-root'] input[type='range'] {
+  accent-color: var(--accent);
+}
+@media (pointer: coarse) {
+  /* Con el dedo, los campos al cuerpo mínimo que no hace zoom en iOS (16 px). */
+  [id='hebra-surface-root']
+    :is(input:not([type='checkbox'], [type='radio'], [type='range']), select, textarea) {
+    font-size: var(--type-ui-field-touch, 16px);
+  }
+  /* El `<select>` de una línea del WebKit de iOS solo respeta `height`. */
+  [id='hebra-surface-root'] select:not([multiple], [size]) {
+    height: var(--hit-touch);
+  }
+}
+
 /* ---- 1. Variables (HEBRA-CSS-VARIABLES.md §5) ---------------------------------- */
-.lv1-context-module-el,
-.hebra-module-view-content,
-.hebra-module-modal-content,
-.lv1-modules-panel[data-module-panel],
-.cm-hebra-module-code-block {
+[id='hebra-surface-root'] {
   /* superficies y bordes */
   --background-primary: var(--panel);
   --background-secondary: var(--paper);
@@ -92,47 +149,27 @@
   --input-height: var(--hit-pointer);
 }
 
-/* Tamaño base del panel de Ajustes del módulo: `--type-ui-md`, «interfaz por defecto»
-   (el de las filas de Ajustes de Hebra). Sin él, nombres de ajuste, párrafos y notas
-   heredan el cuerpo de Hebra (17 px) dentro del modal. Solo este hueco: el inspector, el
-   diálogo y el bloque de código ya traen el suyo. */
-.lv1-modules-panel[data-module-panel] {
-  font-size: var(--type-ui-md);
-}
-
-/* Contenedor de consulta propio ENCIMA de cada hueco cuyo ancho da el padre, para que
-   las `@container` sin nombre de Tyrian midan el hueco y no el `.editor-panel`
-   (`container-name: note-column`, app.css), que es el contenedor más cercano por encima
-   del inspector y mide 1120 a 1440. Encima y no en el hueco: Tyrian pone
-   `.tyrian-product-surface` (que ya es contenedor) EN el propio hueco
-   (`product-shell.ts:43`), y una consulta nunca se mide contra su propio elemento, así
-   que su `(max-width: 599px)`, el que baja el relleno de 16 a 8 px, buscaría más arriba.
-   Padres: `.lv1-context-module` (el panel de la pestaña del inspector), el diálogo
-   `.hebra-module-view` (ancho explícito, `min(90vw, 960px)`) y el hueco del panel de
-   Ajustes, dentro del modal del módulo (54rem en escritorio: más de 480 px de hueco). El modal y el bloque de código NO lo llevan: el ancho del modal sale de su
-   contenido (la contención lo colapsaría) y el bloque vive dentro de la nota, donde
-   medir la columna es lo correcto.
-   La vista de la pantalla principal (API 1.3.0): el padre de cada sección
-   lleva `hebra-module-view hebra-module-view-main` y mide la columna 3 entera (de 593 a
-   852 px en un escritorio normal, de 397 a 756 en tablet, 390 en teléfono), así que la
-   primera clase ya lo hace contenedor; la segunda va escrita para que no dependa de que
-   Hebra conserve las dos. */
-.lv1-context-module,
-.hebra-module-view,
-.hebra-module-view-main,
-.lv1-modules-panel[data-module-panel] {
+/* Contenedor de consulta propio ENCIMA de la raíz, para que las `@container` sin nombre de
+   Tyrian midan la superficie. Encima y no en la raíz: Tyrian pone `.tyrian-product-surface`
+   (que ya es contenedor) EN la propia raíz (`product-shell.ts`), y una consulta nunca se
+   mide contra su propio elemento, así que su `(max-width: 599px)`, el que baja el relleno de
+   16 a 8 px, buscaría más arriba. En la 2.x el padre de la raíz es el `<body>` del marco de
+   la superficie (`html[data-hebra-surface]`), que mide lo que Hebra da al marco. En la 1.x
+   eran el inspector, el diálogo, la sección de la pantalla principal y el panel de Ajustes;
+   el modal y el bloque no lo llevaban porque su ancho salía del contenido, y en la 2.x el
+   ancho de cualquier marco lo pone Hebra, así que lo llevan todos. */
+[data-hebra-surface] > body {
   container-type: inline-size;
 }
 
-/* En la pantalla principal el hueco de la sección ES el contenedor de scroll y ocupa la
-   columna entera (`position: absolute; inset: 0`). El tope de 84rem que Tyrian pone en
-   `.tyrian-product-surface` (styles.css) acabaría ahí el hueco, con su barra de scroll, a
-   mitad de columna en una ventana muy ancha (columna de más de 1344 px: ventana de más de
-   1932). El tope pasa al contenido, que es lo que quería limitar. */
-.hebra-module-view-main-content.tyrian-product-surface {
+/* En la pantalla principal la sección ocupa la columna entera. El tope de 84rem que Tyrian
+   pone en `.tyrian-product-surface` (styles.css) acabaría ahí la superficie a mitad de
+   columna en una ventana muy ancha (columna de más de 1344 px: ventana de más de 1932). El
+   tope pasa al contenido, que es lo que quería limitar. */
+.tyrian-hebra-surface--main.tyrian-product-surface {
   max-width: none;
 }
-.hebra-module-view-main-content > .tyrian-product-shell {
+.tyrian-hebra-surface--main > .tyrian-product-shell {
   max-width: 84rem;
 }
 
@@ -140,27 +177,28 @@
    las dos columnas en su Hebra y prefirió una): el valor estimado arriba, la gráfica debajo a todo el ancho del
    contenido y luego Objetos, Monedas, Cronología y Sesiones anteriores. `styles.css` pasa a dos columnas desde
    600 px de contenedor, pensado para una hoja de Obsidian; aquí se devuelve la disposición en columna con el
-   hueco delante para ganarle por especificidad (el hueco `.hebra-module-view-main` es el contenedor sin nombre
-   más cercano, el mismo contra el que mide esa regla). Las dos columnas de las filas de la Cronología no cambian.
-   El valor estimado recupera su tamaño por contenedor (en `styles.css` vuelve a 1.25rem dentro de las dos columnas). */
+   superficie de la sección delante para ganarle por especificidad (`.tyrian-hebra-surface--main`, la clase
+   que pone el adaptador, con el peso que tenía el hueco de la 1.x). Las dos columnas de las filas de la
+   Cronología no cambian. El valor estimado recupera su tamaño por contenedor (en `styles.css` vuelve a 1.25rem
+   dentro de las dos columnas). */
 @container (min-width: 600px) {
-  .hebra-module-view-main .tyrian-live-session--panel {
+  .tyrian-hebra-surface--main .tyrian-live-session--panel {
     display: flex;
     flex-direction: column;
     column-gap: normal;
   }
-  .hebra-module-view-main .tyrian-live-session__stat-value dd {
+  .tyrian-hebra-surface--main .tyrian-live-session__stat-value dd {
     font-size: clamp(1.25rem, 8cqi, 2rem);
   }
   /* Las cifras no se estiran a todo el ancho: la fila «Por hora» reparte etiqueta y valor a los dos extremos. */
-  .hebra-module-view-main .tyrian-live-session__stats {
+  .tyrian-hebra-surface--main .tyrian-live-session__stats {
     max-width: 24rem;
   }
 }
 
 /* Dentro de la nota el bloque va sobre la hoja (--paper), no sobre --panel. La
    tarjeta usa la misma superficie que el bloque de código de Hebra (app.css). */
-.markdown-editor .cm-hebra-module-code-block {
+[id='hebra-surface-root'].tyrian-hebra-surface--code-block {
   --background-primary: var(--paper);
   --background-secondary: color-mix(in srgb, var(--panel) 82%, var(--paper));
 }
@@ -174,16 +212,14 @@
 
 /* Geometría de la pestaña «Sesión» (maqueta del 6 oct 2026): tres alias de la escala de
    Hebra, ningún número nuevo. `styles.css` lleva su equivalente en px para Obsidian; aquí
-   ganan por especificidad (hueco + clase). Táctil: dianas de 44 y un paso más de icono. */
-:is(.lv1-context-module-el, .hebra-module-view-content, .hebra-module-modal-content)
-  .tyrian-live-session--panel {
+   ganan por especificidad (raíz + clase). Táctil: dianas de 44 y un paso más de icono. */
+[id='hebra-surface-root'] .tyrian-live-session--panel {
   --tyrian-tile: var(--hit-touch-dense, 40px);
   --tyrian-chart-h: calc(var(--space-8) * 3);
   --tyrian-row-icon: var(--space-5);
 }
 @media (pointer: coarse) {
-  :is(.lv1-context-module-el, .hebra-module-view-content, .hebra-module-modal-content)
-    .tyrian-live-session--panel {
+  [id='hebra-surface-root'] .tyrian-live-session--panel {
     --tyrian-tile: var(--hit-touch);
     --tyrian-row-icon: var(--space-6);
   }
@@ -193,14 +229,7 @@
 
 /* `button`: el de `.lv1-context-retry` del inspector (hit-pointer, radius-sm, filete
    --line, --ink, --type-ui-sm, 600). */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  button:where(:not(.clickable-icon, .checkbox-container)) {
+:where([id='hebra-surface-root']) button:where(:not(.clickable-icon, .checkbox-container)) {
   min-height: var(--hit-pointer);
   padding: 0 var(--space-3);
   border: 1px solid var(--line);
@@ -209,14 +238,7 @@
   font-size: var(--type-ui-sm);
   font-weight: 600;
 }
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  button:where(:not(.clickable-icon, .checkbox-container, .mod-cta, .mod-warning)):where(
+:where([id='hebra-surface-root']) button:where(:not(.clickable-icon, .checkbox-container, .mod-cta, .mod-warning)):where(
     :hover:not(:disabled)
   ) {
   background: var(--state-hover);
@@ -227,30 +249,9 @@
    lleva UN elemento (0,0,1, como la regla de `button`) y no `:where()` a secas: el
    `input { font: inherit }` de `app.css` (0,0,1) le ganaba a una regla de especificidad 0
    y los campos salían al tamaño del cuerpo (17 px), medido el 30 sep 2026 en el modal. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  input:where(:not([type='checkbox'], [type='radio'], [type='range'])),
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  select,
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  textarea {
+:where([id='hebra-surface-root']) input:where(:not([type='checkbox'], [type='radio'], [type='range'])),
+:where([id='hebra-surface-root']) select,
+:where([id='hebra-surface-root']) textarea {
   min-height: var(--hit-pointer);
   padding: 0 var(--space-2);
   border: 1px solid var(--line);
@@ -266,28 +267,14 @@
    sección de Ajustes de Hebra (`.lv1-settings-card h2`: `--type-ui-md`); la introducción,
    como una nota de Ajustes (`.lv1-settings-note`: `--type-ui-sm` en `--muted`). Los
    campos ya llevan el tamaño de los de Ajustes (`--type-ui-sm`) en la regla de `input`. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(h2) {
+:where([id='hebra-surface-root']) :where(h2) {
   margin: 0;
   color: var(--ink);
   font-size: var(--type-ui-md);
   font-weight: 600;
   line-height: 1.3;
 }
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(header > p) {
+:where([id='hebra-surface-root']) :where(header > p) {
   margin: var(--space-1) 0 0;
   color: var(--muted);
   font-size: var(--type-ui-sm);
@@ -296,14 +283,7 @@
 /* ---- 3. Clases de Obsidian (§6, «Las que Hebra tiene que estilar») -------------- */
 
 /* `mod-cta`: la acción principal, como `.dialog-actions button.primary`. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  button.mod-cta {
+:where([id='hebra-surface-root']) button.mod-cta {
   /* `button.mod-cta` y no `:where(.mod-cta)`: a especificidad 0 perdía contra el
      `button { background: none }` de `app.css` (0,0,1) y la acción principal salía
      sin relleno (medido en la pestaña «Sesión», 6 oct 2026). */
@@ -314,33 +294,26 @@
 
 /* `mod-warning` suelto: como `.danger-action`; en la hilera de un modal, como
    `.dialog-actions button.primary.danger`. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.mod-warning) {
+:where([id='hebra-surface-root']) :where(.mod-warning) {
   border-color: color-mix(in srgb, var(--danger) 44%, var(--line));
   background: var(--danger-soft);
   color: var(--danger-ink);
 }
-:where(.hebra-module-modal-content .modal-button-container .mod-warning) {
+:where(.tyrian-hebra-surface--modal .modal-button-container .mod-warning) {
   border-color: var(--danger);
   background: var(--danger);
   color: var(--on-danger, var(--panel));
 }
 
 /* `modal-button-container`: la hilera de `.dialog-actions` (a la derecha, al pie). */
-:where(.hebra-module-modal-content .modal-button-container) {
+:where(.tyrian-hebra-surface--modal .modal-button-container) {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-5);
 }
-:where(.hebra-module-modal-content .modal-button-container button) {
+:where(.tyrian-hebra-surface--modal .modal-button-container button) {
   min-height: var(--hit-touch);
   border-radius: var(--radius-md);
   font-weight: 700;
@@ -354,14 +327,7 @@
    automático, sin ancho fijo) crece con su contenido; el 32 × 32 queda de MÍNIMO para
    que el botón de solo icono siga igual. `--size-2-3` (6 px) no tiene paso en Hebra:
    `--space-2`. El `gap` es de Hebra: en Obsidian icono y texto van pegados. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.clickable-icon) {
+:where([id='hebra-surface-root']) :where(.clickable-icon) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -373,25 +339,11 @@
   color: var(--muted);
   white-space: nowrap;
 }
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.clickable-icon:hover) {
+:where([id='hebra-surface-root']) :where(.clickable-icon:hover) {
   background: var(--state-hover);
   color: var(--ink);
 }
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.clickable-icon:active) {
+:where([id='hebra-surface-root']) :where(.clickable-icon:active) {
   background: var(--state-pressed);
 }
 
@@ -401,71 +353,25 @@
    instalación», «Nuevo secreto…» o la carpeta de salida de Tyrian medían 32 de alto
    junto a controles de Hebra de 44. El `--input-height` es el de los campos de Tyrian. */
 @media (pointer: coarse) {
-  .lv1-context-module-el,
-  .hebra-module-view-content,
-  .hebra-module-modal-content,
-  .lv1-modules-panel[data-module-panel],
-  .cm-hebra-module-code-block {
+  [id='hebra-surface-root'] {
     --input-height: var(--hit-touch);
   }
   /* `button` con la especificidad de la regla de §2 (0,0,1) para ganarle por orden; el
      resto, a 0 como la suya. */
-  :where(
-      .lv1-context-module-el,
-      .hebra-module-view-content,
-      .hebra-module-modal-content,
-      .lv1-modules-panel[data-module-panel],
-      .cm-hebra-module-code-block
-    )
-    button:where(:not(.checkbox-container)),
-  :where(
-      .lv1-context-module-el,
-      .hebra-module-view-content,
-      .hebra-module-modal-content,
-      .lv1-modules-panel[data-module-panel],
-      .cm-hebra-module-code-block
-    )
-    input:where(:not([type='checkbox'], [type='radio'], [type='range'])),
-  :where(
-      .lv1-context-module-el,
-      .hebra-module-view-content,
-      .hebra-module-modal-content,
-      .lv1-modules-panel[data-module-panel],
-      .cm-hebra-module-code-block
-    )
-    select,
-  :where(
-      .lv1-context-module-el,
-      .hebra-module-view-content,
-      .hebra-module-modal-content,
-      .lv1-modules-panel[data-module-panel],
-      .cm-hebra-module-code-block
-    )
-    textarea {
+  :where([id='hebra-surface-root']) button:where(:not(.checkbox-container)),
+  :where([id='hebra-surface-root']) input:where(:not([type='checkbox'], [type='radio'], [type='range'])),
+  :where([id='hebra-surface-root']) select,
+  :where([id='hebra-surface-root']) textarea {
     min-height: var(--hit-touch);
   }
-  :where(
-      .lv1-context-module-el,
-      .hebra-module-view-content,
-      .hebra-module-modal-content,
-      .lv1-modules-panel[data-module-panel],
-      .cm-hebra-module-code-block
-    )
-    :where(.clickable-icon) {
+  :where([id='hebra-surface-root']) :where(.clickable-icon) {
     min-width: var(--hit-touch);
   }
 }
 
 /* `svg-icon`: el `<svg>` que pone `setIcon` (HebraHost le da la clase); su tamaño sale
    de `--icon-size`, como en Obsidian. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.svg-icon) {
+:where([id='hebra-surface-root']) :where(.svg-icon) {
   width: var(--icon-size, var(--space-4));
   height: var(--icon-size, var(--space-4));
   flex: none;
@@ -473,14 +379,7 @@
 
 /* `callout` de Tyrian (`session-card.ts`): los tonos de los callouts de Hebra,
    `warning` como `.cm-hebra-callout-warning` y `error` como `.cm-hebra-callout-caution`. */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.callout) {
+:where([id='hebra-surface-root']) :where(.callout) {
   --hebra-callout-accent: var(--accent-text);
   --hebra-callout-surface: color-mix(in srgb, var(--accent-text) 12%, transparent);
   padding: var(--space-3);
@@ -489,25 +388,11 @@
   border-radius: var(--radius-sm);
   background: var(--hebra-callout-surface);
 }
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.callout[data-callout='warning']) {
+:where([id='hebra-surface-root']) :where(.callout[data-callout='warning']) {
   --hebra-callout-accent: var(--warning);
   --hebra-callout-surface: color-mix(in srgb, var(--warning-soft, var(--paper)) 55%, transparent);
 }
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel],
-    .cm-hebra-module-code-block
-  )
-  :where(.callout[data-callout='error']) {
+:where([id='hebra-surface-root']) :where(.callout[data-callout='error']) {
   --hebra-callout-accent: var(--danger);
   --hebra-callout-surface: color-mix(in srgb, var(--danger-soft) 55%, transparent);
 }
@@ -523,13 +408,7 @@
 }
 
 /* ---- 4. Filas de ajustes de `ui.setting` (`setting-row.ts`) -------------------- */
-:where(
-    .lv1-context-module-el,
-    .hebra-module-view-content,
-    .hebra-module-modal-content,
-    .lv1-modules-panel[data-module-panel]
-  )
-  :where(.setting-item) {
+:where([id='hebra-surface-root']:not(.tyrian-hebra-surface--code-block)) :where(.setting-item) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

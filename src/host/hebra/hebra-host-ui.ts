@@ -97,7 +97,7 @@ function registerTyrianView(deps: HebraTyrianUiDeps, view: TyrianViewRegistratio
 		icon: view.icon,
 		placement: view.placement ?? 'column',
 		mount(el: HTMLElement) {
-			deps.surfaces?.prepare(el);
+			deps.surfaces?.prepare(el, 'view');
 			mounted = el;
 			if (view.keepScreenAwake === true) screenAwake.request(view.type, true);
 			run(() => view.mount(el));
@@ -176,7 +176,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 			registerSectionsView: (view) => {
 				const unregister = registerHebraMainView({
 					ui, lane: createLane, report: (error, where) => deps.report(error, where), screenAwake,
-					...(deps.surfaces === undefined ? {} : { prepare: (el: HTMLElement) => deps.surfaces?.prepare(el) }),
+					...(deps.surfaces === undefined ? {} : { prepare: (el: HTMLElement) => deps.surfaces?.prepare(el, 'main') }),
 				}, view);
 				setMainView(view.type);
 				mainTitles.set(view.type, () => view.title());
@@ -245,14 +245,14 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 		},
 		// API 2.0: `el` is a surface of its own inside the note's block, and Hebra sizes it to what is painted.
 		registerCodeBlock: (language, render) => editor.registerCodeBlock(language, (el, source, context) => {
-			deps.surfaces?.prepare(el);
+			deps.surfaces?.prepare(el, 'code-block');
 			// The frontmatter of the note holding the block, shaped like Obsidian's: the core reads
 			// `tc_item_name` from it.
 			Promise.resolve(render(source, el, { frontmatter: context.frontmatter }))
 				.catch((error: unknown) => deps.report(error, `block ${language}`));
 		}),
 		settingsPanel: (panel) => ui.settingsPanel((el) => {
-			deps.surfaces?.prepare(el);
+			deps.surfaces?.prepare(el, 'settings');
 			panel.mount(el);
 			return () => panel.unmount(el);
 		}),
@@ -270,7 +270,7 @@ export function createHebraTyrianUi(deps: HebraTyrianUiDeps): TyrianUiPort {
 				else closeRequested = true;
 			};
 			handle = ui.openModal((content) => {
-				deps.surfaces?.prepare(content);
+				deps.surfaces?.prepare(content, 'modal');
 				request.mount(content, close);
 			}, {
 				...(request.title === undefined ? {} : { title: request.title }),

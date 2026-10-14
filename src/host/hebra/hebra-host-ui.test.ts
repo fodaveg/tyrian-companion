@@ -9,6 +9,7 @@ import { installDomHelpers } from '../dom-polyfill';
 import type { TyrianViewRegistration } from '../tyrian-host';
 import { createHebraTyrianUi, TYRIAN_COMMAND_PREFIX } from './hebra-host-ui';
 import { createMemorySecretsBackend, createPreloadedSecrets } from './secrets';
+import { createHebraSurfaces } from './surface';
 
 // Ported from Hebra's `src/lib/modules/tyrian/hebra-host-ui.test.ts`. Hebra ran it over its REAL
 // `ModuleHostRegistry` (it rendered the dialog, menu, notice and icon); a plugin only sees `api.ui`,
@@ -159,6 +160,38 @@ describe('commands, ribbon, code block and settings panel', () => {
 		const frontmatter = { tc_item_name: 'Ecto', tc_kind: 'gw2_item' };
 		fake.recorded.codeBlocks.get('tyrian-price-history')?.(el, 'item: 19721', { language: 'tyrian-price-history', frontmatter });
 		expect(render).toHaveBeenCalledWith('item: 19721', el, { frontmatter });
+	});
+
+	// hebra-styles.css reads this class: a 2.x surface's document only has #hebra-surface-root.
+	it('marks each surface with its kind before the core paints: view, main section, settings panel, modal and note block', async () => {
+		const v2 = createFakePluginApiV2({ id: 'tyrian-companion', capabilities: ['editor'] });
+		const fake = v2.host;
+		const surfaces = createHebraSurfaces({ appleMobile: false, openExternal: vi.fn(), report: vi.fn() });
+		const ui = createHebraTyrianUi({
+			api: surfacedV2Api(v2), mainView: true, surfaces, translator: () => createTranslator('es'),
+			secrets: await createPreloadedSecrets(createMemorySecretsBackend()), folderPaths: async () => [], openNote: vi.fn(), report: vi.fn(),
+		});
+		const classOnMount: string[] = [];
+		const record = (el: HTMLElement): void => { classOnMount.push(el.className); };
+		ui.registerView(view({ mount: record }));
+		fake.recorded.views[0]?.mount(createDiv());
+		ui.registerSectionsView?.({ type: 'tyrian-main', title: () => 'Main', icon: 'sword', sections: [{ id: 'session', title: () => 'Sesión', icon: 'timer', mount: record, unmount: vi.fn() }] });
+		fake.mainView.open('tyrian-main', 'session');
+		ui.settingsPanel({ mount: record, unmount: vi.fn() });
+		fake.recorded.settingsPanels.at(-1)?.(createDiv());
+		vi.spyOn(fake.api.ui, 'openModal').mockImplementation((mount) => {
+			mount(createDiv());
+			return { close: vi.fn() };
+		});
+		ui.openModal({ mount: (content) => { record(content); } });
+		ui.registerCodeBlock('tyrian-price-history', (_source, el) => { record(el); });
+		fake.recorded.codeBlocks.get('tyrian-price-history')?.(createDiv(), 'item: 1', { language: 'tyrian-price-history', frontmatter: null });
+		// Only the adapter's class (the package's 1.x fake still puts its own on the main section's element).
+		expect(classOnMount.map((names) => names.split(' ').filter((name) => name.startsWith('tyrian-hebra-surface--')).join(' '))).toEqual([
+			'tyrian-hebra-surface--view', 'tyrian-hebra-surface--main', 'tyrian-hebra-surface--settings',
+			'tyrian-hebra-surface--modal', 'tyrian-hebra-surface--code-block',
+		]);
+		surfaces.dispose();
 	});
 
 	it('settingsPanel: mounts in Hebra\'s container and unmounts with it', async () => {

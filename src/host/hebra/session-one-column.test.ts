@@ -28,7 +28,8 @@ describe('the Session panel on the Hebra main screen is one column at any width'
 	it('gives the column layout back where styles.css would turn the panel into a grid (600 px), and nowhere else', () => {
 		expect(block(tyrianCss, '@container (min-width: 600px) {\n\t.tyrian-live-session--panel')).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 2fr)');
 		const override = block(hostCss, '@container (min-width: 600px)');
-		expect(override).toMatch(/\.hebra-module-view-main \.tyrian-live-session--panel \{[^}]*display: flex;[^}]*flex-direction: column;/u);
+		// Plugin API 2.x: the main screen's section is a surface the adapter marks `tyrian-hebra-surface--main` (`surface.ts`).
+		expect(override).toMatch(/\.tyrian-hebra-surface--main \.tyrian-live-session--panel \{[^}]*display: flex;[^}]*flex-direction: column;/u);
 		expect(override).not.toContain('grid-template-columns');
 	});
 

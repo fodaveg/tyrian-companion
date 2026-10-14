@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildHostEsm, HEBRA_STYLES_SOURCES, hebraStyleSheet, isForbiddenSpecifier } from '../build-host-esm.mjs';
+import { buildHostEsm, HEBRA_STYLES_SOURCES, hebraStyleSheet, hebraStylesScopeViolations, isForbiddenSpecifier } from '../build-host-esm.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PROBE_DIR = '.host-esm/probe';
@@ -54,6 +54,20 @@ try {
 	const styles = hebraStyleSheet(ROOT);
 	const [hostCss, obsidianCss] = HEBRA_STYLES_SOURCES.map((source) => readFileSync(resolve(ROOT, source), 'utf8'));
 	check(styles === `${hostCss}\n${obsidianCss}\n`, 'hebra-styles.css is not tyrian-host.css, a newline, styles.css and a newline');
+	// Plugin API 2.x: a surface's document only has `#hebra-surface-root`; a rule scoped to a 1.x slot matches nothing.
+	const scope = hebraStylesScopeViolations(styles);
+	check(scope.length === 0, `hebra-styles.css is not scoped to #hebra-surface-root: ${scope.join('; ')}`);
+	const sabotaged = hebraStylesScopeViolations(`${styles}\n.lv1-context-module-el button { color: red; }\n:where(.hebra-module-view-content) .x {}\n`);
+	check(JSON.stringify(sabotaged) === JSON.stringify([
+		'hebra-styles.css scopes a rule to the 1.x slot .lv1-context-module-el, which no 2.x surface has',
+		'hebra-styles.css scopes a rule to the 1.x slot .hebra-module-view-content, which no 2.x surface has',
+	]), `a rule scoped only to a 1.x slot did not turn red: ${JSON.stringify(sabotaged)}`);
+	check(hebraStylesScopeViolations('/* .lv1-context-module-el */ .hebra-module-setting-toggle {}').length === 1,
+		'a comment naming a 1.x slot, or an adapter class, was taken for a 1.x rule (only the missing root base must count)');
+	check(hebraStylesScopeViolations(styles.replace(/font-family:\s*var\(--ui\)/u, 'font-family: serif')).length === 1,
+		'a sheet without the root\'s font did not turn red');
+	check(!/\[id='hebra-surface-root'\]|tyrian-hebra-surface--/u.test(obsidianCss),
+		'styles.css (Obsidian\'s sheet too) names a Hebra 2.x surface: the scoping belongs in tyrian-host.css');
 
 	await probe('obsidian-in-entry', {
 		'entry.ts': "import 'obsidian';\nexport * from '../../../src/runtime/index';\n",
