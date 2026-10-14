@@ -1,11 +1,11 @@
 // Builds Tyrian as an EXTERNAL Hebra plugin (Hebra's SPEC-PLUGINS-EXTERNOS.md sections 3, 6 and
 // 11.3; R1a before it): bundles `src/host/hebra/entry.ts`, the core plus its Hebra adapter, the way
-// Hebra loads it (ONE ES module, browser platform, everything bundled, imported from a `blob:` URL
-// where a relative or dynamic import has no base) into `hebra-main.mjs` at the repository root,
-// with `hebraShared()` from `hebra-plugin-api` (Tyrian borrows nothing, so it changes nothing and
-// `hebra.json` says `shared: {}`), and writes `hebra-styles.css` next to it: `tyrian-host.css`, a
-// newline, `styles.css`, a newline, the order Hebra injected them in so Tyrian's rule wins at equal
-// specificity. Both files are generated and git-ignored; `release:package` hashes them into
+// Hebra loads it (ONE ES module, browser platform, everything bundled, run in the plugin's own frame,
+// where an import Hebra does not serve has nowhere to come from) into `hebra-main.mjs` at the repository
+// root, with nothing borrowed (plugin API 2.x lends no module: `hebra.json` says `shared: {}`), and
+// writes `hebra-styles.css` next to it: `tyrian-host.css`, a newline, `styles.css`, a newline, the
+// order Hebra injected them in so Tyrian's rule wins at equal specificity (Hebra loads it in each
+// surface). Both files are generated and git-ignored; `release:package` hashes them into
 // `hebra.json`.
 //
 // It FAILS when the bundle would need anything a webview without Node or Electron does not have:
@@ -22,8 +22,8 @@
 //   sources with identifiers renamed, as `esbuild.config.mjs` does for Obsidian, and the markers
 //   and member reads are looked for in it too. Either way a reference in dead code that esbuild
 //   removes is no longer reported, which is right for the file Hebra loads;
-// - any import left in the output (Hebra resolves none), or a bundled copy of a module Hebra lends
-//   (`@codemirror/*`, `@lezer/*`): two copies of `@codemirror/state` break Hebra's editor;
+// - any import left in the output (Hebra resolves none), or a bundled copy of CodeMirror or Lezer
+//   (`@codemirror/*`, `@lezer/*`): the plugin has no editor of its own, and in the 2.x Hebra lends none;
 // - a CSS import, or a package that is not declared in package.json;
 // - for the plugin entry, an output that does not export `activate`.
 //
@@ -36,7 +36,6 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import esbuild from 'esbuild';
-import { hebraShared } from 'hebra-plugin-api/build';
 import ts from 'typescript';
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,7 +46,7 @@ export const HEBRA_STYLES_FILE = 'hebra-styles.css';
 export const HEBRA_STYLES_SOURCES = Object.freeze(['src/host/hebra/tyrian-host.css', 'styles.css']);
 /** What the plugin entry has to export for Hebra (`HebraPluginModule`). */
 const PLUGIN_EXPORTS = ['activate'];
-/** Packages Hebra lends to plugins (`hebra-plugin-api/shared`): never bundled. */
+/** CodeMirror and Lezer, which the 1.x lent and the plugin never needs of its own: never bundled. */
 const LENT_PACKAGE = /(?:^|\/)node_modules\/(?:@codemirror|@lezer)\//u;
 
 const FORBIDDEN_PACKAGES = new Set(['obsidian', 'electron', 'net']);
@@ -105,7 +104,7 @@ export async function buildHostEsm({
 					return { path: args.path, external: true };
 				});
 			},
-		}, hebraShared()],
+		}],
 	});
 	const checked = await esbuild.build(options(false));
 	const result = await esbuild.build(options(true));
@@ -126,7 +125,7 @@ export async function buildHostEsm({
 	}
 	const inputs = Object.keys(result.metafile.inputs);
 	for (const input of inputs.filter((path) => path.endsWith('.css'))) violations.push(`CSS import ${input}`);
-	for (const input of inputs.filter((path) => LENT_PACKAGE.test(path))) violations.push(`bundled copy of ${input}, which Hebra lends`);
+	for (const input of inputs.filter((path) => LENT_PACKAGE.test(path))) violations.push(`bundled copy of ${input}, which the plugin never needs`);
 	const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 	const declared = new Set([...Object.keys(packageJson.dependencies ?? {}), ...Object.keys(packageJson.devDependencies ?? {})]);
 	const packages = [...new Set(inputs.flatMap((path) => packageOf(path) ?? []))].sort();

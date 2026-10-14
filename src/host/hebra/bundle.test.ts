@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type { HebraPluginModule } from 'hebra-plugin-api/v2';
 import { describe, expect, it } from 'vitest';
 
@@ -27,15 +27,21 @@ describe('hebra-main.mjs (build it with npm run build:host-esm)', () => {
 	});
 
 	it('is one ES module that exports activate and runs the real core over the API, in consultation mode', async () => {
-		// happy-dom has no IndexedDB; the bundle reads `window.indexedDB` like it does in Hebra.
-		Object.defineProperty(window, 'indexedDB', { configurable: true, value: new IDBFactory() });
+		// API 2.0: the bundle opens the IndexedDB Hebra serves (`api.storage.indexedDB`, given below), never the frame's,
+		// which here refuses every use.
+		const frameUses: string[] = [];
+		Object.defineProperty(window, 'indexedDB', { configurable: true, value: new Proxy({}, { get: (_target, key) => () => { frameUses.push(String(key)); throw new Error('frame IndexedDB'); } }) });
 		// The path is a constant of this file, nobody's input.
 		// eslint-disable-next-line no-unsanitized/method -- see above.
 		const loaded = await import(/* @vite-ignore */ pathToFileURL(BUNDLE).href) as Partial<HebraPluginModule>;
 		expect(Object.keys(loaded)).toEqual(['activate']);
 		expect(typeof loaded.activate).toBe('function');
 
-		const test = createTyrianTestApi({ capabilities: TYRIAN_CAPABILITIES, http: async () => ({ status: 503, headers: {}, text: '' }) });
+		const test = createTyrianTestApi({
+			capabilities: TYRIAN_CAPABILITIES,
+			http: async () => ({ status: 503, headers: {}, text: '' }),
+			indexedDb: { indexedDB: new IDBFactory(), IDBKeyRange },
+		});
 		const cleanup = await loaded.activate?.(test.api);
 		expect(test.fake.recorded.views.length).toBeGreaterThan(0);
 		expect(test.fake.recorded.commands.every((command) => command.id.startsWith('tyrian-companion:'))).toBe(true);
@@ -44,5 +50,6 @@ describe('hebra-main.mjs (build it with npm run build:host-esm)', () => {
 		// No settings saved: consultation mode, so nothing is written to the library.
 		expect(test.library.writes).toEqual([]);
 		await cleanup?.();
+		expect(frameUses, 'the frame\'s own IndexedDB was used').toEqual([]);
 	}, 30_000);
 });

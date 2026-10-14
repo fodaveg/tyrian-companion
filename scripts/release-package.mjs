@@ -57,17 +57,28 @@ const HEBRA_GENERATED_FILES = Object.freeze([HEBRA_MANIFEST_FILE, HEBRA_MAIN_FIL
  * and ribbon already use, so Tyrian has one icon in Hebra; `sword` had no glyph in Hebra's
  * `renderModuleIcon`, 4 oct 2026), what it uses of the API, the two fixed hosts plus the user's
  * webhook, and nothing borrowed. The description is Hebra's own for the plugin: `manifest.json`'s speaks of Obsidian.
+ *
+ * Plugin API 2.x only (David, 14 Oct 2026, «Migrar Tyrian, sin cortar la 1.x»): `^2.1.0` runs the plugin in
+ * Hebra's isolated frames, and a Hebra without the 2.x keeps the last 1.x release (0.6.63), which its installer
+ * picks as the newest one compatible. `notify.sound` (Hebra plays the alert chime) and `screen.awake` (2.2) are
+ * optional: a Hebra 2.1 loads the plugin and answers `has(...)` false. `network.images` is the one host the UI
+ * paints `<img>` from (every icon goes through the GW2 render service), which the frame's CSP allows only when
+ * declared. `shared` stays empty: the 2.x lends nothing.
  */
 export const HEBRA_PLUGIN_DECLARATION = Object.freeze({
-	apiVersion: '^1.0.0',
+	apiVersion: '^2.1.0',
 	description: 'El compañero de Guild Wars 2: sesiones, inventario y precios, dentro de Hebra.',
 	platforms: Object.freeze(['macos', 'ios', 'linux', 'windows', 'web']),
 	icon: 'sword',
 	capabilities: Object.freeze({
 		required: Object.freeze(['vault.read', 'vault.write', 'editor']),
-		optional: Object.freeze(['http', 'secrets', 'tcp', 'notify.system', 'background', 'screen.awake']),
+		optional: Object.freeze(['http', 'secrets', 'tcp', 'notify.system', 'notify.sound', 'background', 'screen.awake']),
 	}),
-	network: Object.freeze({ hosts: Object.freeze(['api.guildwars2.com', 'api.datawars2.ie']), userHosts: true }),
+	network: Object.freeze({
+		hosts: Object.freeze(['api.guildwars2.com', 'api.datawars2.ie']),
+		userHosts: true,
+		images: Object.freeze(['render.guildwars2.com']),
+	}),
 	shared: Object.freeze({}),
 	ageRating: '4+',
 });
@@ -297,6 +308,7 @@ export function createHebraManifest({ manifest, packageJson, version, files, ico
 		network: {
 			hosts: [...HEBRA_PLUGIN_DECLARATION.network.hosts],
 			userHosts: HEBRA_PLUGIN_DECLARATION.network.userHosts,
+			images: [...HEBRA_PLUGIN_DECLARATION.network.images],
 		},
 		shared: { ...HEBRA_PLUGIN_DECLARATION.shared },
 		files: Object.fromEntries(Object.entries(files).map(([name, bytes]) => [name, `sha256:${sha256Hex(bytes)}`])),
@@ -373,6 +385,25 @@ function isHebraRange(value) {
 	});
 }
 
+/** The major of the first version in a range (Hebra counts a range as of the major of its lower bound); 0 without one. */
+function hebraRangeMajor(range) {
+	const first = /(\d+)\.\d+\.\d+/u.exec(range);
+	return first === null ? 0 : Number(first[1]);
+}
+
+/** `network.images` (API 2.x): exact public hosts, the rule of Hebra's `isPluginImageHost` (read on 2026-10-14). */
+const HEBRA_IMAGE_HOST = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/u;
+const HEBRA_IMAGE_HOST_RESERVED_SUFFIXES = Object.freeze([
+	'localhost', 'localdomain', 'local', 'internal', 'intranet', 'lan', 'home', 'corp', 'private', 'home.arpa', 'arpa',
+	'ts.net', 'onion', 'test', 'example', 'invalid', 'hebra.pro',
+]);
+const HEBRA_MAX_IMAGE_HOSTS = 32;
+
+function isHebraImageHost(host) {
+	return host.length <= 253 && HEBRA_IMAGE_HOST.test(host)
+		&& !HEBRA_IMAGE_HOST_RESERVED_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 /**
  * The checks Hebra runs on `hebra.json` before installing anything (`parsePluginManifest` in
  * Hebra's `src/lib/plugins/manifest.ts`, read on 2026-10-03, not imported: Hebra is private and the
@@ -430,6 +461,20 @@ export function validateHebraManifest(input) {
 		if (isRecord(input.network) && input.network.userHosts !== undefined && typeof input.network.userHosts !== 'boolean') {
 			errors.push('network.userHosts: true or false');
 		}
+		if (isRecord(input.network) && input.network.images !== undefined) {
+			const images = input.network.images;
+			if (!Array.isArray(images) || !images.every((host) => typeof host === 'string' && isHebraImageHost(host))) {
+				errors.push('network.images: list of exact public hosts (no wildcard, internal name or IP)');
+			} else if (images.length > HEBRA_MAX_IMAGE_HOSTS) {
+				errors.push(`network.images: at most ${String(HEBRA_MAX_IMAGE_HOSTS)} hosts`);
+			}
+		}
+	}
+	const declared = isRecord(input.capabilities)
+		? [input.capabilities.required ?? [], input.capabilities.optional ?? []].flat()
+		: [];
+	if (declared.includes('notify.sound') && typeof input.apiVersion === 'string' && hebraRangeMajor(input.apiVersion) < 2) {
+		errors.push('capabilities: notify.sound only exists in API 2.x (apiVersion ^2)');
 	}
 	if (input.shared !== undefined) {
 		if (!isRecord(input.shared)) errors.push('shared: object package -> semver range');
