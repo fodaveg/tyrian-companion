@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import { HttpTransportError } from '../core/http';
 import {
 	isSessionPriceSnapshot,
 	SessionPriceSnapshotService,
@@ -40,6 +41,31 @@ function gateway(body: unknown, status = 200): PublicCatalogGateway & { requestD
 }
 
 describe('SessionPriceSnapshotService', () => {
+	it('treats a 404 on one price batch as missing ids and keeps the other batches', async () => {
+		const ids = Array.from({ length: 201 }, (_, index) => index + 1);
+		const api: PublicCatalogGateway & { requestDetailed: ReturnType<typeof vi.fn> } = {
+			requestDetailed: vi.fn(async (path: string) => {
+				if (path.startsWith('commerce/prices?ids=201&')) {
+					throw new HttpTransportError('http', 404, null, 'Request failed with status 404.');
+				}
+				if (path.startsWith('commerce/prices?')) {
+					const requested = (/ids=([^&]+)/.exec(path)?.[1] ?? '').split(',').map(Number);
+					return { status: 200, headers: {}, body: requested.map((id) => ({
+						id, whitelisted: true, buys: { quantity: 1, unit_price: 5 }, sells: { quantity: 1, unit_price: 9 },
+					})) };
+				}
+				return { status: 200, headers: {}, body: [] };
+			}),
+		};
+		const storageDelta = delta(ids.map((id) => ({ id, before: 0, after: 1 })));
+
+		const result = await new SessionPriceSnapshotService(api, () => capturedAt).capture('session-1', storageDelta);
+
+		expect(result.status).toBe('partial');
+		expect(result.items).toHaveLength(200);
+		expect(result.missingItemIds).toEqual([201]);
+	});
+
 	it('captures bid, ask, timestamp and source for gained items only', async () => {
 		const api = gateway([
 			{ id: 20, whitelisted: false, buys: { quantity: 8, unit_price: 123 }, sells: { quantity: 5, unit_price: 150 } },

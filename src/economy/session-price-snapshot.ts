@@ -69,9 +69,17 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 		let incompleteSides = false;
 		try {
 			for (const batch of chunks(ids, MAX_BATCH_SIZE)) {
-				const response = await this.gateway.requestDetailed(
+				// `allSettled` of one request keeps a per-batch 404 out of the failure path below without a new catch.
+				const [outcome] = await Promise.allSettled([this.gateway.requestDetailed(
 					`commerce/prices?ids=${batch.join(',')}&v=${encodeURIComponent(PINNED_SCHEMA)}`,
-				);
+				)]);
+				// A batch with no listed id answers 404: its ids are missing, the other batches still count.
+				if (outcome.status === 'rejected' && isNotFound(outcome.reason)) {
+					batch.forEach((id) => missing.add(id));
+					continue;
+				}
+				if (outcome.status === 'rejected') throw outcome.reason;
+				const response = outcome.value;
 				if (response.status !== 200 && response.status !== 206) {
 					batch.forEach((id) => missing.add(id));
 					continue;
@@ -97,6 +105,11 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 			await marketDepthPromise,
 		);
 	}
+}
+
+/** Structural check for the transport's 404, so this module keeps no import of the network layer. */
+function isNotFound(error: unknown): boolean {
+	return typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 404;
 }
 
 export function unavailableSessionPriceSnapshot(
