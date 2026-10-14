@@ -131,7 +131,11 @@ export class LiveIngameChannel {
 			// An ended sample may remain historical evidence after a context change. Its ACK never
 			// restores that invalidated epoch, and is never sent to a replacement connection.
 			if (!this.closed) this.options.send(liveIngameAckLine(this.options.nonce, sample.epoch, sample.cursor, status));
-			if (status !== 'stored') { this.invalidate(status === 'not_owner' ? 'source_missing' : 'storage_unavailable'); return; }
+			if (status !== 'stored') {
+				this.options.port.observe?.({ kind: 'commit', commitStatus: status });
+				this.invalidate(status === 'not_owner' ? 'source_missing' : 'storage_unavailable');
+				return;
+			}
 			if (this.closed || this.assembler !== assembler || !assembler.isValid()) return;
 			assembler.stored();
 			if (!duplicate) this.armStale(Date.parse(sample.observedAt));
@@ -182,7 +186,7 @@ export class LiveIngameChannel {
 
 	private readyResponse(message: LiveIngameOpen, status: LiveIngameReadyStatus): void {
 		this.ready = status;
-		if (status !== 'ready') this.epochValid = false;
+		if (status !== 'ready') { this.epochValid = false; this.options.port.observe?.({ kind: 'ready', readyStatus: status }); }
 		this.options.send(liveIngameReadyLine(this.options.nonce, message.epoch, status));
 	}
 
@@ -195,6 +199,7 @@ export class LiveIngameChannel {
 		this.assembler?.invalidate();
 		if (!valid && !force) return;
 		this.ready = null;
+		this.options.port.observe?.({ kind: 'gap', gapReason: reason });
 		if (this.pendingGap === null) this.pendingGap = Object.freeze({ sourceInstance: this.options.sourceInstance,
 			epoch: this.epoch, reason, observedAt: new Date(this.options.now()).toISOString() });
 		if (!this.busy) this.run(async () => {});

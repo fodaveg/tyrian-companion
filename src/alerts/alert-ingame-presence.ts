@@ -3,6 +3,7 @@ import {
 	INGAME_BRIDGE_LIVENESS_TIMEOUT_MS,
 	INGAME_LABYRINTH_MAP_ID,
 	type IngameBridgeClient,
+	type IngameBridgeVersion,
 	type IngameByeReason,
 	type IngameGameContext,
 	type IngameGameState,
@@ -39,6 +40,9 @@ export type IngameConnectionEvent =
 		readonly client: IngameBridgeClient;
 		readonly instance: string;
 		readonly atMs: number;
+		/** What the `hello` said, for the diagnostic log only: presence never reads them. */
+		readonly clientVersion?: string;
+		readonly protocol?: IngameBridgeVersion;
 	}
 	| { readonly kind: 'context'; readonly connectionId: string; readonly context: IngameGameContext; readonly atMs: number }
 	| {

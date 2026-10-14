@@ -40,12 +40,14 @@ import {
 import {
 	createIngameBridgeNonce,
 	type IngameBridgeClient,
+	type IngameBridgeErrorCode,
 } from '../alerts/alert-ingame-protocol';
 import { IngameAlertReceiptTracker, type IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
 import {
 	startAlertIngameServer,
 	type AlertIngameServerHandle,
 	type IngameAlertBroadcast,
+	type IngameBridgeFailure,
 } from '../alerts/alert-ingame-server';
 import { readAlertDelivery, type AlertDeliveryRecordV1 } from '../alerts/alert-delivery-record';
 import type { AlertWebhookTransport } from '../alerts/alert-webhook';
@@ -53,7 +55,7 @@ import { postAlertWebhook } from '../alerts/alert-webhook';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import type { EmittedAlertQueue } from '../alerts/emitted-alert-queue';
 import type { FarmingIngameState } from '../alerts/farming-ingame-state';
-import type { LiveIngamePort } from '../alerts/live-loot-protocol';
+import type { LiveIngameObservation, LiveIngamePort } from '../alerts/live-loot-protocol';
 import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from '../alerts/loot-alert-criteria';
 import type { PriceIngameState } from '../alerts/price-ingame-state';
 import { sha256Text } from '../assets/generic-assets';
@@ -71,6 +73,7 @@ import { liveSourceReliefAt, type LiveSourceConnections } from '../sessions/live
 import type { AlertIngameSecretCopyOutcome } from '../ui/settings-panel-actions';
 import type { TyrianHost } from '../host/tyrian-host';
 import type { LocalDebugActionRunner } from '../core/local-debug-action-runner';
+import type { LocalDebugCode } from '../core/local-debug-contract';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
 import { consulting, fireAndForgetLocal } from './core-actions';
 
@@ -182,6 +185,8 @@ export class AlertRuntime {
 	 * use by `ingamePresenceTracker`, and dropped on unload.
 	 */
 	private alertIngamePresence: IngamePresenceTracker | null = null;
+	/** Host kind of each open connection (by its nonce), only so its close can be logged with it. Dropped on close. */
+	private readonly bridgeClientKinds = new Map<string, IngameBridgeClient>();
 
 	/** @param port What this reads from the core and asks of it; nothing else reaches the core. */
 	constructor(private readonly port: AlertRuntimePort) {}
@@ -225,8 +230,22 @@ export class AlertRuntime {
 	 */
 	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> {
 		const emitter = this.alertEmitter;
-		if (emitter === null) return Promise.resolve({ delivered: [], failed: [], rejected: true });
+		if (emitter === null) {
+			this.recordAlertSkip('emitter_unavailable', alert.kind);
+			return Promise.resolve({ delivered: [], failed: [], rejected: true });
+		}
 		return emitter.emit(alert);
+	}
+
+	/**
+	 * An alert that never reached a channel, said once with a closed `reason`: without it the only trace is a missing
+	 * banner. `reason` and `state` are tokens; no item, quantity or price goes in.
+	 */
+	private recordAlertSkip(reason: string, state: string): void {
+		this.localDebugActions?.event({
+			component: 'notification', action: 'notification_emit', state,
+			level: 'info', phase: 'skip', code: 'skipped', details: { reason },
+		});
 	}
 
 	/**
@@ -238,7 +257,7 @@ export class AlertRuntime {
 	 */
 	dispatchAlert(alert: AlertV1): void {
 		// R1b: only the collector alerts. Nothing in consult produces one; this keeps it that way.
-		if (consulting(this)) return;
+		if (consulting(this)) { this.recordAlertSkip('consult_mode', alertNoticeSource(alert.kind)); return; }
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
 			async () => {
@@ -280,11 +299,19 @@ export class AlertRuntime {
 			alwaysAlertReasons: alwaysAlertReasonsOf(item),
 		}, this.settings.valuableLootThresholdCopper);
 		if (alert !== null) this.dispatchAlert(alert);
+		else this.recordAlertSkip('below_threshold', 'valuable_loot');
 	}
 
 	async emitLiveSessionAlert(intent: LiveAlertOutboxV1) {
-		if (intent.alert === null || this.alertQueue === null || this.unloaded || consulting(this)) return {delivered:[],failed:[],rejected:true};
-		const report = await this.buildAlertEmitter(this.alertQueue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
+		const queue = this.alertQueue;
+		if (intent.alert === null || queue === null || this.unloaded || consulting(this)) {
+			// Which of the four it was is the whole point: the rejection alone cannot tell the queue from unload from consult.
+			const reason = intent.alert === null ? 'no_alert' : queue === null ? 'queue_unavailable'
+				: this.unloaded ? 'plugin_unloaded' : 'consult_mode';
+			this.recordAlertSkip(reason, intent.alert === null ? 'live_alert' : alertNoticeSource(intent.alert.kind));
+			return {delivered:[],failed:[],rejected:true};
+		}
+		const report = await this.buildAlertEmitter(queue,{sessionId:intent.sessionId,outboxId:intent.outboxId}).emit(intent.alert);
 		// The Nexus path skips `dispatchAlert`, so a failed channel would otherwise be written to the outbox only.
 		if (report.failed.length > 0) {
 			this.localDebugActions?.event({
@@ -455,6 +482,7 @@ export class AlertRuntime {
 				now: () => Date.now(),
 				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
 				onConnectionEvent: (event) => { this.onIngameConnectionEvent(event); },
+				onConnectionFailure: (failure) => { this.recordBridgeFailure(failure); },
 				onAlertAck: (ack) => { this.ingameReceipts.acked(ack.alertSeq, ack.client, ack.atMs); },
 				farmingState: () => this.port.getFarmingIngameState(),
 				priceState: () => this.port.getBagPriceIngameState(),
@@ -511,6 +539,56 @@ export class AlertRuntime {
 	private onIngameConnectionEvent(event: IngameConnectionEvent): void {
 		this.liveSourceConnections.apply(event);
 		this.ingamePresenceTracker().apply(event);
+		this.recordBridgeConnection(event);
+	}
+
+	/**
+	 * The bridge's connection lifecycle in the local log. `context` is never recorded (it carries the character's
+	 * name) and neither are the nonce, the instance or the token: only the host kind, its version and the protocol.
+	 */
+	private recordBridgeConnection(event: IngameConnectionEvent): void {
+		if (event.kind === 'authenticated') {
+			this.bridgeClientKinds.set(event.connectionId, event.client);
+			this.localDebugActions?.event({
+				component: 'bridge', action: 'bridge_connection', state: 'authenticated',
+				level: 'info', phase: 'success', code: 'ok',
+				details: { clientKind: event.client, clientVersion: event.clientVersion, protocol: event.protocol },
+			});
+		} else if (event.kind === 'closed') {
+			const clientKind = this.bridgeClientKinds.get(event.connectionId);
+			this.bridgeClientKinds.delete(event.connectionId);
+			this.localDebugActions?.event({
+				component: 'bridge', action: 'bridge_connection', state: 'closed',
+				level: 'info', phase: 'success', code: 'ok',
+				// `durationMs` is the silence before the end: how long ago the last valid frame arrived.
+				details: { clientKind, endReason: event.reason, durationMs: Math.max(0, event.atMs - event.lastSeenAtMs) },
+			});
+		}
+	}
+
+	/** A connection the plugin ended for breaking the contract: the closed code the addon was also sent. */
+	private recordBridgeFailure(failure: IngameBridgeFailure): void {
+		this.localDebugActions?.event({
+			component: 'bridge', action: 'bridge_connection', state: 'rejected',
+			level: 'warn', phase: 'failure', code: bridgeFailureCode(failure.code),
+			details: {
+				reason: failure.code, wasAuthenticated: failure.wasAuthenticated,
+				clientKind: failure.client ?? undefined, protocol: failure.protocol ?? undefined,
+			},
+		});
+	}
+
+	/** What the live channel decided that the addon cannot see on its own: a refused `live_open`, a gap, a failed commit. */
+	private recordBridgeLive(observation: LiveIngameObservation): void {
+		const failed = observation.kind === 'commit' || (observation.kind === 'ready' && observation.readyStatus !== 'not_gameplay');
+		this.localDebugActions?.event({
+			component: 'bridge', action: 'bridge_live', state: observation.kind,
+			level: failed ? 'warn' : 'info', phase: failed ? 'failure' : 'skip',
+			code: failed ? 'precondition_failed' : 'skipped',
+			details: observation.kind === 'ready' ? { readyStatus: observation.readyStatus }
+				: observation.kind === 'gap' ? { gapReason: observation.gapReason }
+					: { result: observation.commitStatus },
+		});
 	}
 
 	/** The selected Nexus producer is the sole source; effective Blish context cannot substitute it. */
@@ -539,6 +617,7 @@ export class AlertRuntime {
 			}) ?? 'not_owner',
 			gap: async (event) => { await this.liveSessions?.gap(event); },
 			onError: (error) => { this.port.recordIngameSessionFailure(error); },
+			observe: (observation) => { this.recordBridgeLive(observation); },
 		};
 	}
 
@@ -761,6 +840,14 @@ export class AlertRuntime {
 			value: formatCopperCompact(alert.totalCopper, this.settings.language),
 		});
 	}
+}
+
+/** The log's closed code for a bridge error code; the bridge code itself travels as `details.reason`. */
+function bridgeFailureCode(code: IngameBridgeErrorCode): LocalDebugCode {
+	if (code === 'auth_rejected') return 'permission_denied';
+	if (code === 'hello_timeout' || code === 'liveness_timeout') return 'timeout';
+	if (code === 'capacity') return 'quota_exceeded';
+	return 'validation_failed';
 }
 
 /** Closed diagnostic cause per alert kind, so a delivery record never carries the visible text. */

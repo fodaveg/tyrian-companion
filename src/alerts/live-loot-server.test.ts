@@ -41,7 +41,8 @@ async function bridge(enabled = true) {
 	const error = vi.fn();
 	const events = vi.fn();
 	const ack = vi.fn();
-	const live: LiveIngamePort = { open, commit, gap, onError: error };
+	const observe = vi.fn();
+	const live: LiveIngamePort = { open, commit, gap, onError: error, observe };
 	const tcp: TyrianTcpServerPort = { listen: async (_port, _host, listener) => {
 		accept = listener; return { address: '127.0.0.1', port: 47823, close: async () => {} };
 	} };
@@ -49,7 +50,7 @@ async function bridge(enabled = true) {
 		schedule: (callback, milliseconds) => setTimeout(callback, milliseconds), cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 	}, { authenticate: () => true, fillRandom: (bytes) => { bytes.fill(++random); }, now: () => Date.now(),
 		onConnectionEvent: events, onAlertAck: ack, farmingState: emptyFarmingIngameState, ...(enabled ? { live } : {}) });
-	return { server, open, commit, gap, error, events, ack, connect: (version = 3, client = 'nexus', instance = 'AAAAAAAAAAAAAAAAAAAAAA') => {
+	return { server, open, commit, gap, error, observe, events, ack, connect: (version = 3, client = 'nexus', instance = 'AAAAAAAAAAAAAAAAAAAAAA') => {
 		const socket = new LiveClient(); accept(socket); socket.hello(version, client, instance); return socket;
 	} };
 }
@@ -106,6 +107,18 @@ describe('live1 authenticated atomic consumer', () => {
 		expect(second.lines.at(-1)).toMatchObject({ type: 'live_ready', status: 'source_conflict' }); expect(h.open).toHaveBeenCalledTimes(1);
 		const blish = h.connect(3, 'blish'); blish.live('live_open', { build: LIVE_INGAME_BUILD, profile: LIVE_INGAME_PROFILE });
 		expect(blish.lines.at(-1)).toMatchObject({ type: 'error', code: 'unexpected_message' }); sample(first); await flush(); expect(h.commit).toHaveBeenCalledTimes(1); await h.server.close();
+	});
+
+	it('tells the observer a refused open, a failed commit and the gap, as closed tokens and never as a row or a character', async () => {
+		vi.useFakeTimers(); const h = await bridge(); const refused = h.connect(); h.open.mockResolvedValueOnce('unsupported_build'); await open(refused);
+		expect(h.observe).toHaveBeenCalledWith({ kind: 'ready', readyStatus: 'unsupported_build' });
+		await h.server.close();
+		const g = await bridge(); const client = g.connect(); await open(client);
+		expect(g.observe).not.toHaveBeenCalled(); // A successful open is not news.
+		g.commit.mockResolvedValueOnce('not_owner'); sample(client); await flush();
+		expect(g.observe).toHaveBeenCalledWith({ kind: 'commit', commitStatus: 'not_owner' });
+		expect(g.observe).toHaveBeenCalledWith({ kind: 'gap', gapReason: 'source_missing' });
+		expect(JSON.stringify(g.observe.mock.calls)).not.toMatch(/Selected Farmer|36038/u); await g.server.close();
 	});
 
 	it('returns only failure receipts for durable failure and records callback errors without leaking them', async () => {

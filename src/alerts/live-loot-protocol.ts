@@ -52,7 +52,17 @@ export interface LiveIngamePort {
 	gap(event: LiveIngameGap): Promise<void>;
 	/** Diagnostics remain host-local; neither exception text nor raw frames are returned to the addon. */
 	onError(error: unknown): void;
+	/**
+	 * Optional diagnostic tap for what the channel decides: a `ready` other than `ready`, a gap and a commit other
+	 * than `stored`. It carries closed tokens only (never a character, nonce or row) and must not throw.
+	 */
+	observe?(observation: LiveIngameObservation): void;
 }
+
+export type LiveIngameObservation =
+	| { readonly kind: 'ready'; readonly readyStatus: Exclude<LiveIngameReadyStatus, 'ready'> }
+	| { readonly kind: 'gap'; readonly gapReason: LiveIngameGapReason }
+	| { readonly kind: 'commit'; readonly commitStatus: Exclude<LiveIngameAckStatus, 'stored'> };
 
 interface LiveIngameHeader {
 	readonly v: 3; readonly nonce: string; readonly seq: number; readonly tag: typeof LIVE_INGAME_TAG;

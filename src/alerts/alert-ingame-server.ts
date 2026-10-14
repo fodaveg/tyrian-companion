@@ -97,6 +97,18 @@ export interface AlertIngameServerTimer {
 	cancel(handle: unknown): void;
 }
 
+/**
+ * A connection the plugin ended for breaking the contract, as the diagnostic log needs it: the closed code only.
+ * Never the frame, the secret, the nonce or the instance.
+ */
+export interface IngameBridgeFailure {
+	readonly code: IngameBridgeErrorCode;
+	/** False for a socket that never completed its `hello`; the authenticated close alone would hide the code (`lost`). */
+	readonly wasAuthenticated: boolean;
+	readonly client: IngameBridgeClient | null;
+	readonly protocol: IngameBridgeVersion | null;
+}
+
 /** Everything the bridge needs besides a socket; `main.ts` owns each capability. */
 export interface AlertIngameBridgeOptions {
 	/**
@@ -107,6 +119,8 @@ export interface AlertIngameBridgeOptions {
 	now(): number;
 	fillRandom(bytes: Uint8Array): void;
 	onConnectionEvent(event: IngameConnectionEvent): void;
+	/** Diagnostic tap for every connection the plugin rejects. It must not throw; the socket does not wait for it. */
+	onConnectionFailure?(failure: IngameBridgeFailure): void;
 	/** H18.38: a v3 `alert_ack` for an alert sent to that same connection. Others are ignored. */
 	onAlertAck?(ack: IngameAlertAck): void;
 	/** Reads cached product state only; a transport tick never starts account work. */
@@ -320,7 +334,12 @@ function broadcastAlertLines(
  * dropped at once, without an answer: a local process opening sockets in a loop gets nothing back.
  */
 function attachClient(socket: TyrianTcpConnection, runtime: BridgeRuntime): void {
-	if (runtime.closing || runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) { socket.destroy(); return; }
+	if (runtime.closing) { socket.destroy(); return; }
+	if (runtime.pending.size >= INGAME_BRIDGE_MAX_PENDING_CONNECTIONS) {
+		runtime.bridge.onConnectionFailure?.({ code: 'capacity', wasAuthenticated: false, client: null, protocol: null });
+		socket.destroy();
+		return;
+	}
 	const connection: BridgeConnection = {
 		socket, phase: 'awaiting_hello', buffered: EMPTY_BYTES, nonce: null, version: 2, client: null,
 		sentAlertSeqs: new Set(), nextSeq: 0, farmingSubscribed: false, farmingSeq: 1, farmingTimer: null,
@@ -485,6 +504,7 @@ function handleHello(connection: BridgeConnection, runtime: BridgeRuntime, recor
 	runtime.bridge.onConnectionEvent({
 		kind: 'authenticated', connectionId: nonce, client: hello.value.client,
 		instance: hello.value.instance, atMs: connection.lastSeenAtMs,
+		clientVersion: hello.value.clientVersion, protocol: hello.value.v,
 	});
 }
 
@@ -527,6 +547,9 @@ function reject(connection: BridgeConnection, runtime: BridgeRuntime, code: Inga
 	connection.buffered = EMPTY_BYTES;
 	connection.socket.end(`${ingameErrorLine(code, connection.version)}\n`);
 	connection.socket.destroySoon();
+	runtime.bridge.onConnectionFailure?.({
+		code, wasAuthenticated, client: connection.client, protocol: wasAuthenticated ? connection.version : null,
+	});
 	if (wasAuthenticated) emitClosed(connection, runtime);
 }
 

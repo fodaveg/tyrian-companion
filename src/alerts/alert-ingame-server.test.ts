@@ -9,6 +9,7 @@ import {
 	type AlertIngameBridgeOptions,
 	type AlertIngameServerHandle,
 	type AlertIngameServerTimer,
+	type IngameBridgeFailure,
 } from './alert-ingame-server';
 import { createNodeTcpServerPort, type NodeTcpServerModule } from '../host/obsidian/obsidian-tcp-server';
 import { IngamePresenceTracker, type IngameConnectionEvent, type IngamePresenceEvent } from './alert-ingame-presence';
@@ -199,6 +200,47 @@ describe('H18.23 in-game bridge, addon to plugin', () => {
 			addon.sendRaw({ v: 2, type: 'heartbeat', nonce: addon.nonce, seq: 1 });
 			await addon.client.closed;
 			expect(addon.client.lines.at(-1)).toBe('{"v":2,"type":"error","code":"sequence_mismatch"}');
+		} finally { await handle.close(); }
+	});
+
+	it('reports the closed code of a connection it rejects, before and after its hello, without the secret or the nonce', async () => {
+		const failures: IngameBridgeFailure[] = [];
+		const { handle } = await startBridge({ onConnectionFailure: (failure) => { failures.push(failure); } });
+		try {
+			const intruder = await LineClient.connect(handle.port);
+			intruder.write(helloLine({ token: 'x'.repeat(43) }));
+			await intruder.closed;
+			expect(failures).toEqual([{ code: 'auth_rejected', wasAuthenticated: false, client: null, protocol: null }]);
+
+			const addon = await AuthenticatedAddon.open(handle.port, 'blish', 3);
+			addon.sendRaw({ v: 3, type: 'heartbeat', nonce: addon.nonce, seq: 1 });
+			await addon.client.closed;
+			expect(failures.at(-1)).toEqual({ code: 'sequence_mismatch', wasAuthenticated: true, client: 'blish', protocol: 3 });
+			expect(JSON.stringify(failures)).not.toContain(SECRET);
+			expect(JSON.stringify(failures)).not.toContain(addon.nonce);
+		} finally { await handle.close(); }
+	});
+
+	it('reports a hello that never came as hello_timeout', async () => {
+		const timer = new ManualTimer();
+		const failures: IngameBridgeFailure[] = [];
+		const { handle } = await startBridge({ helloTimeoutMs: 80, onConnectionFailure: (failure) => { failures.push(failure); } }, timer);
+		try {
+			const mute = await LineClient.connect(handle.port);
+			await waitFor(() => timer.armed(80));
+			timer.fire(80);
+			await mute.closed;
+			expect(failures).toEqual([{ code: 'hello_timeout', wasAuthenticated: false, client: null, protocol: null }]);
+		} finally { await handle.close(); }
+	});
+
+	it('hands the hello version and protocol to the authenticated event', async () => {
+		const { handle, events } = await startBridge();
+		try {
+			const addon = await AuthenticatedAddon.open(handle.port, 'nexus', 3);
+			expect(events[0]).toMatchObject({ kind: 'authenticated', client: 'nexus', clientVersion: '0.2.0', protocol: 3, connectionId: addon.nonce });
+			addon.client.destroy();
+			await waitFor(() => handle.clientCount() === 0);
 		} finally { await handle.close(); }
 	});
 
