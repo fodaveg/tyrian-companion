@@ -1,3 +1,5 @@
+import { EventEmitter } from 'events';
+import type { Server } from 'net';
 import { TFile, type Plugin } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -231,6 +233,24 @@ describe('ObsidianHost secrets, settings and environment', () => {
 		expect(host.environment.pluginId).toBe('other');
 		expect(host.environment.pluginVersion).toBe('1.0.0');
 		expect(host.diagnostics.directory).toContain('test-config-dir');
+	});
+
+	it('reports a TCP server error raised after listening to the diagnostics channel, as the class only', async () => {
+		class FakeServer extends EventEmitter {
+			listen(): this { queueMicrotask(() => { this.emit('listening'); }); return this; }
+			address() { return { address: '127.0.0.1', port: 47823, family: 'IPv4' }; }
+			close(callback?: () => void): this { callback?.(); return this; }
+		}
+		const server = new FakeServer();
+		const host = createObsidianHost(fakePlugin().plugin, { createServer: () => server as unknown as Server });
+		const seen: Array<{ errorName: string }> = [];
+		const dispose = host.diagnostics.onTcpServerError?.((failure) => { seen.push(failure); });
+		await host.tcpServer.listen(47823, '127.0.0.1', () => undefined);
+		server.emit('error', Object.assign(new TypeError('too many open files at 127.0.0.1'), { code: 'EMFILE' }));
+		expect(seen).toEqual([{ errorName: 'TypeError' }]);
+		dispose?.();
+		expect(() => server.emit('error', new Error('after dispose'))).not.toThrow();
+		expect(seen).toHaveLength(1);
 	});
 
 	it('extracts the failure from window error and unhandled rejection events, and stops after dispose', () => {

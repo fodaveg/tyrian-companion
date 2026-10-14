@@ -165,6 +165,12 @@ export interface TyrianDiagnosticsPort {
 	 * (the core logs it as `vault_write/retry`). A host without optimistic writes never calls it.
 	 */
 	onVaultWriteRetry?(listener: (retry: { operation: 'process' | 'save_note'; attempts: number }) => void): TyrianDisposer;
+	/**
+	 * Optional: told, with only the class of the error (never its message, code or address), when the TCP server
+	 * raises an `error` after it is already listening (the core logs it as `bridge_connection/server_error`). A host
+	 * whose server cannot raise one never calls it.
+	 */
+	onTcpServerError?(listener: (failure: { errorName: string }) => void): TyrianDisposer;
 }
 
 export interface TyrianBackgroundPort {

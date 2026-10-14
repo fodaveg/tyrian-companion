@@ -11,7 +11,7 @@ import { localDebugDirectory } from '../../core/local-debug-contract';
 import { indexedDbPriceHistoryPort } from '../indexed-db-price-history';
 import type { TyrianEnvironmentPort, TyrianHost, TyrianKvPort, TyrianPlatform } from '../tyrian-host';
 import { createObsidianHttpPort } from './obsidian-http';
-import { createNodeTcpServerPort } from './obsidian-tcp-server';
+import { createNodeTcpServerPort, type NodeTcpServerModule } from './obsidian-tcp-server';
 import { createObsidianUi } from './obsidian-ui';
 import { createObsidianVault } from './obsidian-vault';
 
@@ -25,7 +25,8 @@ import { createObsidianVault } from './obsidian-vault';
  * `window` and `navigator` when it is called, not when the host is built, so it answers for the
  * vault and window actually open.
  */
-export function createObsidianHost(plugin: Plugin): TyrianHost {
+export function createObsidianHost(plugin: Plugin, net?: NodeTcpServerModule): TyrianHost {
+	const tcpServerErrorListeners = new Set<(failure: { errorName: string }) => void>();
 	const vault = createObsidianVault(plugin);
 	const kv: TyrianKvPort = {
 		get indexedDB() { return window.indexedDB; },
@@ -64,7 +65,11 @@ export function createObsidianHost(plugin: Plugin): TyrianHost {
 		},
 		kv,
 		priceHistory: indexedDbPriceHistoryPort(kv),
-		tcpServer: createNodeTcpServerPort(),
+		tcpServer: createNodeTcpServerPort(net, (error) => {
+			// Only the class of the error reaches the log: its message and `code` can carry an address.
+			const errorName = typeof error?.name === 'string' && error.name.length > 0 ? error.name : 'Error';
+			for (const listener of [...tcpServerErrorListeners]) listener({ errorName });
+		}),
 		notify: {
 			// Optional chaining for the same reason `obsidianPlatform` uses it: an embedding host
 			// without `Platform` must degrade, not throw.
@@ -93,6 +98,10 @@ export function createObsidianHost(plugin: Plugin): TyrianHost {
 		diagnostics: {
 			storage: vault.adapter,
 			get directory() { return localDebugDirectory(plugin.app.vault.configDir); },
+			onTcpServerError: (listener) => {
+				tcpServerErrorListeners.add(listener);
+				return () => { tcpServerErrorListeners.delete(listener); };
+			},
 		},
 		// Obsidian's process is never suspended, so there is nothing to hold.
 		background: { hold: () => () => undefined },

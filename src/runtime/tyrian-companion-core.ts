@@ -433,6 +433,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private uncaughtErrorOff: TyrianDisposer | null = null;
 	private vaultWriteRetryOff: TyrianDisposer | null = null;
+	private tcpServerErrorOff: TyrianDisposer | null = null;
 	private connectivityOff: TyrianDisposer | null = null;
 	private visibilityOff: TyrianDisposer | null = null;
 	private connection!: ConnectionService;
@@ -802,6 +803,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.localDebugActions?.event({
 				component: 'vault', action: 'vault_write', level: 'info', phase: 'retry',
 				code: 'retry_scheduled', attempt: retry.attempts, details: { operation: retry.operation, attempts: retry.attempts },
+			});
+		}) ?? null;
+		// The bridge's TCP server raised an error once listening: only the class of the error, never its message or address.
+		this.tcpServerErrorOff = this.host.diagnostics.onTcpServerError?.((failure) => {
+			this.localDebugActions?.event({
+				component: 'bridge', action: 'bridge_connection', state: 'server_error',
+				level: 'error', phase: 'failure', code: 'unknown_failure', errorName: failure.errorName,
 			});
 		}) ?? null;
 		this.connectivityOff = this.host.environment.onConnectivityChange((online) => {
@@ -1786,6 +1794,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.uncaughtErrorOff = null;
 		this.vaultWriteRetryOff?.();
 		this.vaultWriteRetryOff = null;
+		this.tcpServerErrorOff?.();
+		this.tcpServerErrorOff = null;
 		this.connectivityOff?.();
 		this.connectivityOff = null;
 		this.visibilityOff?.();
