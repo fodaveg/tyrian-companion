@@ -208,6 +208,30 @@ describe('LiveSessionLootTracker', () => {
 			expect(onAlert).not.toHaveBeenCalled();
 		});
 
+		it('does not let a parked reconcile turn the session that replaced it into a complete one with the old rows', async () => {
+			const { tracker, release, requested } = gatedTracker();
+			tracker.begin('old');
+			const pending = tracker.reconcile('old', delta(1, 1));
+			await requested();
+			tracker.begin('new');
+			release();
+			await pending;
+
+			expect(tracker.getState()).toMatchObject({ status: 'observing', sessionId: 'new', rows: [], knownTotalCopper: 0, updatedAt: null });
+		});
+
+		it('leaves the tracker idle after a reset that happens while a reconcile waits', async () => {
+			const { tracker, release, requested } = gatedTracker();
+			tracker.begin('old');
+			const pending = tracker.reconcile('old', delta(1, 1));
+			await requested();
+			tracker.reset();
+			release();
+			await pending;
+
+			expect(tracker.getState()).toEqual({ status: 'idle' });
+		});
+
 		it('leaves the tracker idle, not observing with an empty session id, after a reset', async () => {
 			const { tracker, onAlert, release, requested } = gatedTracker();
 			tracker.begin('old');

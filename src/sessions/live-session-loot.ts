@@ -150,7 +150,10 @@ export class LiveSessionLootTracker {
 			this.rows.clear();
 			this.pendingValuableGains.length = 0;
 			const gains = delta.status === 'invalid' ? [] : delta.itemChanges.filter(({ delta: quantity }) => quantity > 0);
-			const enriched = await this.enrich(gains.map(({ id }) => id));
+			const started = this.state;
+				const enriched = await this.enrich(gains.map(({ id }) => id));
+				// begin() or reset() ran while the network answered: this closing delta belongs to a session that is gone.
+				if (this.state !== started) return;
 			for (const gain of gains) {
 				this.rows.set(gain.id, {
 					itemId: gain.id,
