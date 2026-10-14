@@ -6,6 +6,7 @@ import type {
 	ResolvedLocalDebugActionContext,
 } from './local-debug-action-runner';
 import { HttpTransportError, ResilientHttpTransport, classifyApiRefusal, parseRetryAfter } from './http';
+import { RateLimitCoordinator } from './rate-limit-coordinator';
 
 function response(status: number, headers: Record<string, string> = {}, body: unknown = {}): never {
 	return { status, headers, json: body, text: '', arrayBuffer: new ArrayBuffer(0) } as never;
@@ -218,7 +219,7 @@ describe('ObsidianRequestTransport', () => {
 		expect(request).toHaveBeenCalledTimes(2);
 	});
 
-	it('exposes the bounded fallback delay after repeated 429 responses', async () => {
+	it('does not present its own backoff as a server Retry-After after repeated 429 responses', async () => {
 		const transport = new ResilientHttpTransport({
 			request: async () => response(429),
 			sleep: async () => undefined,
@@ -230,7 +231,41 @@ describe('ObsidianRequestTransport', () => {
 
 		await expect(
 			transport.send({ url: 'https://example.invalid', method: 'GET' }),
-		).rejects.toMatchObject({ status: 429, retryAfterMs: 800 });
+		).rejects.toMatchObject({ status: 429, retryAfterMs: null });
+	});
+
+	it('keeps the real Retry-After on the error after repeated 429 responses', async () => {
+		const transport = new ResilientHttpTransport({
+			request: async () => response(429, { 'retry-after': '2' }),
+			sleep: async () => undefined,
+			maxRetries: 1,
+			...inertTimer,
+		});
+
+		await expect(
+			transport.send({ url: 'https://example.invalid', method: 'GET' }),
+		).rejects.toMatchObject({ status: 429, retryAfterMs: 2_000 });
+	});
+
+	it('lets the rate-limit coordinator apply its fallback cooldown to an exhausted 429 without Retry-After', async () => {
+		let nowMs = 1_000;
+		const coordinator = new RateLimitCoordinator({ now: () => nowMs });
+		const transport = new ResilientHttpTransport({
+			request: async () => response(429),
+			sleep: async () => undefined,
+			random: () => 0.5,
+			baseDelayMs: 400,
+			maxRetries: 1,
+			...inertTimer,
+		});
+
+		const error: unknown = await transport.send({ url: 'https://example.invalid', method: 'GET' })
+			.catch((caught: unknown) => caught);
+		expect(error).toBeInstanceOf(HttpTransportError);
+		coordinator.recordRateLimited((error as HttpTransportError).retryAfterMs);
+		nowMs += 5_000;
+
+		expect(coordinator.status()).toMatchObject({ active: true, remainingMs: 55_000 });
 	});
 
 	it('honors Retry-After seconds and HTTP dates', () => {

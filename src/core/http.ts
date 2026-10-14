@@ -225,7 +225,9 @@ export class ResilientHttpTransport implements HttpTransport {
 					throw new HttpTransportError(
 						'http',
 						response.status,
-						retryDelayMs,
+						// A 429 reports only what the server asked (null without Retry-After) so the rate-limit
+						// coordinator applies its own cooldown; our backoff is not the server's request.
+						response.status === 429 ? retryAfterMs : retryDelayMs,
 						`Request failed with status ${response.status}.`,
 						undefined,
 						response.status === 401 || response.status === 403 ? classifyApiRefusal(response.body) : null,
