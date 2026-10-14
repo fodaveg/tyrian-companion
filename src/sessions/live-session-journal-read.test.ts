@@ -145,6 +145,30 @@ describe('reading a live session journal back from IndexedDB', () => {
 		expect(read.every((entry) => entry.sessionId === SESSION)).toBe(true);
 	});
 
+	it('breaks a tie on observedAt by epoch code order, not by the locale collation of a nonce', async () => {
+		const { factory, name } = await playedSession(1, 4, 1);
+		const database = await openRaw(factory, name);
+		const entries = (await rawEntries(database)).filter((entry) => entry.sessionId === SESSION);
+		const observedAt = entries[0]!.observedAt;
+		// 'a' < 'B' by locale collation, 'B' < 'a' by code: the two orders disagree.
+		const lower = `${'a'.repeat(21)}A`; const upper = `${'B'.repeat(21)}A`;
+		expect(lower.localeCompare(upper)).toBeLessThan(0);
+		const withEpoch = (entry: LiveJournalEntryV1, epoch: string): LiveJournalEntryV1 => ({
+			...JSON.parse(JSON.stringify(entry).replaceAll(EPOCH, epoch).replaceAll(entry.observedAt, observedAt)) as LiveJournalEntryV1, outbox: [] });
+		const first = withEpoch(entries[0]!, lower); const second = withEpoch(entries[1]!, upper);
+		expect(isLiveJournalEntry(first as unknown) && isLiveJournalEntry(second as unknown)).toBe(true);
+		await rewrite(database, (store) => {
+			for (const entry of entries) store.delete([entry.sessionId, entry.epoch, entry.cursor]);
+			for (const entry of [first, second]) store.put(entry, [entry.sessionId, entry.epoch, entry.cursor]);
+		});
+		database.close();
+
+		const store = new IndexedDbSessionRuntimeStore(factory, name);
+		const read = await store.readLiveJournal(SESSION);
+		store.close();
+		expect(read.map((entry) => entry.epoch)).toEqual([upper, lower]);
+	});
+
 	it.each([
 		{ version: 1 as const, samples: 240, every: 7 },
 		{ version: 2 as const, samples: 240, every: 7 },
