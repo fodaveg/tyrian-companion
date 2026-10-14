@@ -33,6 +33,7 @@ const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 	'src/advisor/inventory-equipment-economy.ts',
 	'src/ui/inventory-advisor-controller.ts',
 	'src/ui/inventory-advisor-price-history-block.ts',
+	'src/ui/inventory-advisor-row-detail-body.ts',
 	'src/ui/inventory-advisor-view-model.ts',
 	'src/ui/inventory-sync-panel-view.ts',
 	'src/ui/price-history-panel-view.ts',
@@ -78,6 +79,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 		// no `obsidian` any more, the host mounts this controller (`host/obsidian/obsidian-ui.ts`).
 		imports: ['../host/tyrian-host', './mounted-views', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', '../economy/price-history-model', '../economy/price-history-runtime',
+			// Type-only: the hourly series state of the «1 semana» button; the view reads a stale copy
+			// and the host does the download on the reader's click.
+			'../economy/price-hourly-model',
 			// H18.17: type-only, for the queue-coverage shape a pure model owns (`PriceSeedQueueCoverage`).
 			// The view calls nothing on it; it only reads the count fields H18.17 added to the panel.
 			'../economy/price-seed-model',
@@ -96,6 +100,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				// The price chart of a row's «Detalles»: only downloads one item's seed into the 24 h seed cache,
 				// and the host does nothing at all while the price history is off. Nothing reaches the vault.
 				'actions.ensurePriceHistorySeed',
+				// The «1 semana» window of that chart: a stale read of the hourly series and the download of
+				// one item's public hourly prices on the reader's click. Same shape, nothing reaches the vault.
+				'actions.getPriceHourlyState', 'actions.ensurePriceHourly',
 				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState', 'actions.getSellSignalState',
 				'actions.getPriceSeedQueueCoverage',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings',
@@ -108,16 +115,21 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 		// Locale-independent integer-copper formatting only; no I/O or capability is introduced.
 		// R1c: type-only, the host's `setIcon` (`TyrianUiPort`) in place of Obsidian's.
 		imports: ['../host/tyrian-host', '../core/i18n', '../core/copper-format', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
-			// H13.2: type-only, for the decision union the economy layer owns. The
-			// view maps its `hold` onto the existing `keep` label and calls nothing.
-			'../advisor/inventory-container-economy',
-			// H18.14: the moment stage's closed reason list, to label a row's decision; pure data.
-			'../advisor/inventory-position-recommendation',
+			// 14 oct 2026: the body of a row's «Detalles», shared with Venta; it took with it the
+			// container-economy and position-recommendation imports this file had (see its own policy).
+			'./inventory-advisor-row-detail-body',
 			'../economy/reservation-model', '../economy/sell-signal-runtime', './inventory-advisor-view-model',
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
 			'./sell-signal-line',
 			// The price chart of a row's «Detalles»: a presentation module that mounts the shared chart widget.
 			'./inventory-advisor-price-history-block'],
+		portCalls: [],
+	}],
+	['src/ui/inventory-advisor-row-detail-body.ts', {
+		// The body of a row's «Detalles», shared by the advisor and Venta. Types and pure data only:
+		// H13.2's decision union (type-only), H18.14's closed reason list, the view model and i18n types.
+		imports: ['../core/i18n', '../advisor/inventory-container-economy', '../advisor/inventory-position-recommendation',
+			'./inventory-advisor-view-model'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-advisor-view-model.ts', {
@@ -129,7 +141,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/inventory-advisor-price-history-block.ts', {
 		// Types (`Translator`, the seed state) and the shared chart widget with its pure window list. It reads
 		// the seed through callbacks it is handed (`source.getSeed` / `ensureSeed`), so it has no capability of its own.
-		imports: ['../core/i18n', '../economy/price-seed-panel-service', './price-history-chart-view', './price-history-chart-model'],
+		// `price-hourly-model` is the hourly state type of the «1 semana» window, read through the same callbacks.
+		imports: ['../core/i18n', '../economy/price-seed-panel-service', '../economy/price-hourly-model', './price-history-chart-view', './price-history-chart-model'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-sync-panel-view.ts', {
@@ -139,6 +152,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/price-history-panel-view.ts', {
 		imports: ['../core/i18n', '../economy/price-history-runtime', '../economy/price-history-model',
 			'../economy/price-seed-panel-service', '../economy/price-seed-model',
+			// The pure money formatter of the chart's price labels (copper to gold/silver/copper text).
+			'../sessions/loot-presentation',
 			'./format-time', './price-history-chart-view', './price-history-svg'],
 		portCalls: [],
 	}],
@@ -174,6 +189,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/ui/inventory-advisor-controller.ts',
 			'src/ui/inventory-advisor-item-view.ts',
 			'src/ui/inventory-advisor-price-history-block.ts',
+			'src/ui/inventory-advisor-row-detail-body.ts',
 			'src/ui/inventory-advisor-view-model.ts',
 			'src/ui/inventory-advisor-view.ts',
 			'src/ui/inventory-sync-panel-view.ts',
