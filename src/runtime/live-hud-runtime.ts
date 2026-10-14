@@ -36,8 +36,13 @@ export class LiveHudRuntime {
 	private detach: (() => void) | null = null;
 	/** What the note last said on a device in consult; null before the first read and once nobody listens. */
 	private note: LiveHudData | null = null;
-	/** A read is on its way: a second ask before it lands does not start another. */
+	/** A read is on its way: a second ask before it lands does not start another, it raises `dirty`. */
 	private reading = false;
+	/**
+	 * The note changed while a read was in flight: that read may carry the text before the change, so ONE more read follows it.
+	 * No queue: a read takes the file as it stands, so one is enough for any number of changes that arrived meanwhile.
+	 */
+	private dirty = false;
 	private disposed = false;
 
 	constructor(private readonly options: LiveHudRuntimeOptions) {}
@@ -48,8 +53,9 @@ export class LiveHudRuntime {
 			const live = this.options.local();
 			return { state: live.state, live, source: 'local' };
 		}
-		// A device that switched to consult while the HUD was open has no note yet: ask for it, show «missing» meanwhile.
-		if (this.note === null && this.detach !== null) this.readSoon();
+		// A device that switched to consult while the HUD was open has no note yet: ask for it, show «missing» meanwhile. A read
+		// already in flight will bring it; asking again here would only mark the file as changed when it was not.
+		if (this.note === null && this.detach !== null && !this.reading) this.readSoon();
 		return this.note ?? MISSING;
 	}
 
@@ -78,6 +84,7 @@ export class LiveHudRuntime {
 		this.detach?.();
 		this.detach = null;
 		this.note = null;
+		this.dirty = false;
 	}
 
 	/** A vault event: only the note at its path matters, and only to a device in consult (the collector paints from its session). */
@@ -89,7 +96,8 @@ export class LiveHudRuntime {
 	}
 
 	private readSoon(): void {
-		if (this.reading || this.detach === null) return;
+		if (this.detach === null) return;
+		if (this.reading) { this.dirty = true; return; }
 		this.reading = true;
 		this.options.run(() => this.read());
 	}
@@ -105,6 +113,11 @@ export class LiveHudRuntime {
 			for (const listener of [...this.listeners]) listener();
 		} finally {
 			this.reading = false;
+			// A change landed during this read: look once more, while somebody still listens. A failed read re-reads the same way.
+			if (this.dirty) {
+				this.dirty = false;
+				this.readSoon();
+			}
 		}
 	}
 }

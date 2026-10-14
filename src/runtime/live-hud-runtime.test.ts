@@ -31,12 +31,20 @@ function setup(options: { consulting?: boolean; notes?: Record<string, string>; 
 	const listeners = new Set<(change: TyrianVaultChange) => void>();
 	const reads: string[] = [];
 	const runs: Promise<void>[] = [];
-	const state: { consulting: boolean; failRead: boolean; local: LivePanelLiveV1 } = { consulting: options.consulting ?? true, failRead: options.failRead ?? false, local: emptyLivePanelLive() };
+	const state: { consulting: boolean; failRead: boolean; local: LivePanelLiveV1; gate: Promise<void> | null } = {
+		consulting: options.consulting ?? true, failRead: options.failRead ?? false, local: emptyLivePanelLive(), gate: null,
+	};
 	let subscriptions = 0;
 	const runtimeOptions: LiveHudRuntimeOptions = {
 		vault: {
 			file: (path) => notes.has(path) ? { path } : null,
-			read: async (file) => { reads.push(file.path); if (state.failRead) throw new Error('unreadable'); return notes.get(file.path) ?? ''; },
+			read: async (file) => {
+				reads.push(file.path);
+				// A held read: the text is the one the note has when the gate opens, as a real read that lands late.
+				if (state.gate !== null) await state.gate;
+				if (state.failRead) throw new Error('unreadable');
+				return notes.get(file.path) ?? '';
+			},
 			onChange: (root, listener) => {
 				expect(root).toBe(ROOT);
 				subscriptions += 1;
@@ -115,6 +123,32 @@ describe('LiveHudRuntime on a device in consult', () => {
 		t.change('rename', NOTE, `${ROOT}/Old panel.md`);
 		await t.settle();
 		expect(t.runtime.current().state).toBe('ended');
+	});
+
+	it('reads once more after a change that arrives while a read is in flight, so two quick writes end on the second', async () => {
+		const t = setup({ notes: { [NOTE]: note(activeView(START + 10 * 60_000)) } });
+		t.runtime.subscribe(() => undefined);
+		await t.settle();
+		expect(t.runtime.current().live?.bags).toBe(5);
+
+		// The first write of the sync lands and its read is held; the second write arrives meanwhile.
+		let open!: () => void;
+		t.state.gate = new Promise<void>((resolve) => { open = resolve; });
+		t.notes.set(NOTE, note(activeView(START + 11 * 60_000, { totals: [{ kind: 'item', idNumber: 36038, positive: 6, negative: 0, net: 6 }] })));
+		t.change('modify', NOTE);
+		t.notes.set(NOTE, note(activeView(START + 11 * 60_000 + 5_000, { totals: [{ kind: 'item', idNumber: 36038, positive: 7, negative: 0, net: 7 }] })));
+		t.change('modify', NOTE);
+		expect(t.reads).toHaveLength(2);
+		t.state.gate = null;
+		open();
+		await t.settle();
+		await t.settle();
+		// Exactly one more read, and it is the current file: the HUD ends on the second write, not stuck on the first.
+		expect(t.reads).toHaveLength(3);
+		expect(t.runtime.current().live?.bags).toBe(7);
+		// Nothing else pending: a quiet note is not read again.
+		await t.settle();
+		expect(t.reads).toHaveLength(3);
 	});
 
 	it('keeps what it showed when a read fails, and reports the failure through the host', async () => {
