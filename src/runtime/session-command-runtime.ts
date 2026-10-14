@@ -103,6 +103,8 @@ export interface SessionCommandRuntimePort {
 	emitNotice(message: string, source: 'session_command' | 'pending_start_failed'): void;
 	/** Opens the Companion view. */
 	activateView(): Promise<void>;
+	/** Opens the «En vivo» HUD (the ribbon menu's second entry). */
+	activateLiveHudView(): Promise<void>;
 	/** Reviews a pending proposal (the core's, `LiveSessionRuntime`'s). */
 	reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean>;
 	/** The addon's presence, which the passive session needs. */
@@ -250,6 +252,11 @@ export class SessionCommandRuntime {
 				menu.push({ kind: 'item', title: entry.title, icon: entry.icon, onClick: () => {
 					fireAndForgetLocal(this.localDebugActions,
 						{ component: 'ui', action: 'command_execute', state: 'open_companion' }, () => this.activateView());
+				} });
+			} else if (entry.type === 'open-live') {
+				menu.push({ kind: 'item', title: entry.title, icon: entry.icon, onClick: () => {
+					fireAndForgetLocal(this.localDebugActions,
+						{ component: 'ui', action: 'command_execute', state: 'open_live' }, () => this.port.activateLiveHudView());
 				} });
 			} else {
 				menu.push({ kind: 'item', title: entry.command.name, icon: entry.command.icon,

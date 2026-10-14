@@ -2654,6 +2654,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			notifyRuntimeStarting: () => { core.notifyRuntimeStarting(); },
 			emitNotice: (message, source) => { core.emitNotice(message, source); },
 			activateView: () => core.activateView(),
+			activateLiveHudView: () => core.activateLiveHudView(),
 			reviewPendingProposal: (intent) => core.reviewPendingProposal(intent),
 			getIngamePresence: () => core.getIngamePresence(),
 			startIngameSession: (character) => core.startIngameSession(character),

@@ -395,12 +395,14 @@ describe('session command adapters', () => {
 		const recovery = { status: 'available', state: state('active') } as SessionRecoveryState;
 		const menu = projectSessionMenu(projectSessionCommands(context('idle', { recovery })).filter((command) => command.available));
 		expect(menu.map((entry) => entry.type === 'command' ? entry.command.id : entry.type)).toEqual([
-			'open', 'separator', 'recover-saved-session', 'separator', 'discard-saved-session',
+			'open', 'open-live', 'separator', 'recover-saved-session', 'separator', 'discard-saved-session',
 		]);
 	});
 
 	it('localizes the stable Open menu entry', () => {
 		expect(projectSessionMenu([], 'es')[0]).toEqual({ type: 'open', title: 'Abrir acompañante', icon: 'sword' });
+		expect(projectSessionMenu([], 'es')[1]).toEqual({ type: 'open-live', title: 'Abrir panel en vivo', icon: 'gauge' });
+		expect(projectSessionMenu([], 'en')[1]).toEqual({ type: 'open-live', title: 'Open live panel', icon: 'gauge' });
 	});
 
 	it('routes view recovery and discard actions through the same controller resource', async () => {

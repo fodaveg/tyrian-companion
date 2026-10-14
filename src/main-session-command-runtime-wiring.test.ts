@@ -255,6 +255,31 @@ describe('the core hands the session commands to SessionCommandRuntime', () => {
 			expect(records).toContainEqual(expect.objectContaining({ component: 'ui', action: 'command_execute', state: 'open_companion' }));
 		});
 
+		it('the ribbon menu lists the live panel second, and choosing it opens the HUD and journals open_live', async () => {
+			const { runtime, own } = core();
+			const { registration } = ribbonOf(own);
+			own.commands.setupSessionCommands();
+			await runtime.initializeRuntime();
+			const records: LocalDebugRecordInput[] = [];
+			let id = 0;
+			own.localDebugActions = new LocalDebugActionRunner({
+				diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+				createId: () => `diagnostic-${String(id += 1)}`,
+			});
+			let menu: readonly TyrianMenuEntry[] = [];
+			vi.spyOn(own.host.ui, 'openMenu').mockImplementation((entries) => { menu = entries; });
+			const hud = vi.spyOn(runtime.core as unknown as { activateLiveHudView(): Promise<void> }, 'activateLiveHudView').mockResolvedValue();
+
+			registration().onClick({} as MouseEvent);
+			const items = menu.filter((entry) => entry.kind === 'item');
+			expect(items.slice(0, 2).map((entry) => entry.kind === 'item' ? [entry.title, entry.icon] : null)).toEqual([['Abrir acompañante', 'sword'], ['Abrir panel en vivo', 'gauge']]);
+			const live = items[1];
+			if (live?.kind !== 'item') throw new Error('The menu offered no live panel entry.');
+			live.onClick();
+			await vi.waitFor(() => { expect(hud).toHaveBeenCalledOnce(); });
+			expect(records).toContainEqual(expect.objectContaining({ component: 'ui', action: 'command_execute', state: 'open_live' }));
+		});
+
 		it('collectorMode and unloaded: a stuck live session can be discarded until the device turns to consult, or the plugin unloads', async () => {
 			const { runtime, own } = core();
 			await runtime.initializeRuntime();
