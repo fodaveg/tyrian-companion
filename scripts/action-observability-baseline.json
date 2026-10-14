@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 624,
+		"catch_clause": 626,
 		"promise_catch": 63,
 		"void_expression": 148,
-		"callback_registration": 268
+		"callback_registration": 269
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -7182,6 +7182,61 @@
 						"justification": "The \"activateTyrian\" \"finally\" closes the host's two IndexedDB connections (path index and local files) once stop() and flush(), which still use them, have settled. A failure of those two was already handed to report(error, 'stop') by the catch before it. closeStorage() is synchronous; if it threw, the promise the disposer returns would reject to Hebra and nothing here would report it."
 					},
 					"reason": "Allowlisted callback_registration: The \"activateTyrian\" \"finally\" closes the host's two IndexedDB connections (path index and local files) once stop() and flush(), which still use them, have settled. A failure of those two was already handed to report(error, 'stop') by the catch before it. closeStorage() is synchronous; if it threw, the promise the disposer returns would reject to Hebra and nothing here would report it. Verified registration: \"finally\" in \"activateTyrian\"."
+				}
+			]
+		},
+		"src/host/hebra/hebra-screen-awake.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "9506e76a567eb762bbb4e7e931da2e944c06df7e",
+					"kind": "catch_clause",
+					"line": 41,
+					"column": 5,
+					"endLine": 44,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "supported",
+						"justification": "The \"supported\" catch (\"fallback_return\") calls report with the failure of api.has for screen.awake and answers false, so a Hebra whose has() throws only leaves the screen hold unasked and the live panel works as before; the failure is logged, not hidden."
+					},
+					"reason": "Allowlisted catch_clause: The \"supported\" catch (\"fallback_return\") calls report with the failure of api.has for screen.awake and answers false, so a Hebra whose has() throws only leaves the screen hold unasked and the live panel works as before; the failure is logged, not hidden. Verified recovery: \"fallback_return\" in \"supported\"."
+				},
+				{
+					"id": "9fc6f4c415c2625747c1622340bdf8289aec71e4",
+					"kind": "callback_registration",
+					"line": 63,
+					"column": 5,
+					"endLine": 66,
+					"endColumn": 7,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "request",
+						"justification": "The \"request\" \"then\" callback is the rejection handler of ui.keepScreenOn: it puts back the remembered hold so the next request asks again and hands the failure to report, the adapter failure channel that logs it, so nothing is dropped."
+					},
+					"reason": "Allowlisted callback_registration: The \"request\" \"then\" callback is the rejection handler of ui.keepScreenOn: it puts back the remembered hold so the next request asks again and hands the failure to report, the adapter failure channel that logs it, so nothing is dropped. Verified registration: \"then\" in \"request\"."
+				},
+				{
+					"id": "9256aa6053230027cc08ede17d46e1e8d6de7fba",
+					"kind": "catch_clause",
+					"line": 67,
+					"column": 6,
+					"endLine": 70,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "request",
+						"justification": "The \"request\" catch (\"local_recovery\") handles a keepScreenOn that throws synchronously: it puts back the remembered hold so the next request asks again and calls report, the adapter failure channel that logs it, so the view keeps mounting and nothing is dropped."
+					},
+					"reason": "Allowlisted catch_clause: The \"request\" catch (\"local_recovery\") handles a keepScreenOn that throws synchronously: it puts back the remembered hold so the next request asks again and calls report, the adapter failure channel that logs it, so the view keeps mounting and nothing is dropped. Verified recovery: \"local_recovery\" in \"request\"."
 				}
 			]
 		},
