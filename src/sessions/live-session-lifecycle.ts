@@ -48,7 +48,7 @@ export interface LiveSessionDiagnostic {
 	action: 'session_projection' | 'session_recover';
 	phase: 'success' | 'skip';
 	state: string;
-	details: { reason?: 'other_instance' | 'lease_not_ours' | 'storage_unavailable' | 'persist_failed'; phase?: string; count?: number; itemCount?: number };
+	details: { reason?: 'other_instance' | 'lease_not_ours' | 'storage_unavailable' | 'persist_failed'; phase?: string; outboxCount?: number; queueCount?: number };
 }
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
 interface LiveSessionLifecycleOptions {
@@ -212,8 +212,8 @@ export class LiveSessionLifecycle {
 		if (this.record === null) return;
 		const open = (intent: LiveAlertOutboxV1): boolean => ['awaiting_price', 'ready', 'dispatching'].includes(intent.state);
 		this.diagnose({ action: 'session_recover', phase: 'success', state: 'restored', details: {
-			phase: this.record.phase, count: this.journal.reduce((sum, entry) => sum + entry.outbox.filter(open).length, 0),
-			itemCount: this.sealedForPrune.size,
+			phase: this.record.phase, outboxCount: this.journal.reduce((sum, entry) => sum + entry.outbox.filter(open).length, 0),
+			queueCount: this.sealedForPrune.size,
 		} });
 	}
 	private diagnose(line: LiveSessionDiagnostic): void {

@@ -174,6 +174,8 @@ export interface TyrianEnvironmentPort {
 	readonly platform: TyrianPlatform;
 	/** main.ts:2263 (`apiVersion`, recorded in the pilot profile). */
 	readonly hostVersion: string;
+	/** Which host this is, as a closed token for the diagnostic log (`plugin_load`); absent in a host that does not say. */
+	readonly hostId?: 'obsidian' | 'hebra';
 	/** main.ts:1468/1503/2186 (`manifest.id`). */
 	readonly pluginId: string;
 	/** main.ts:671/1555/1868/2264 (`manifest.version`). */

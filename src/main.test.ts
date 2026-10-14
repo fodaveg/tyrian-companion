@@ -2141,9 +2141,9 @@ describe('deferred runtime boot guard', () => {
 		// the sanitized path leaves nothing behind either listener could attribute a failure to,
 		// so `state` says that plainly, and `details.origin` is the only place the two still differ.
 		expect(globalEvent.mock.calls.map(([context]) => context)).toEqual(expect.arrayContaining([
-			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'window_error', reason: 'stack_foreign' } }),
-			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'unhandled_rejection', reason: 'stack_foreign' } }),
-			expect.objectContaining({ action: 'global_error', errorName: 'TypeError', details: { origin: 'unhandled_rejection', reason: 'stack_ours' } }),
+			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'window_error', ours: false } }),
+			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'unhandled_rejection', ours: false } }),
+			expect.objectContaining({ action: 'global_error', errorName: 'TypeError', details: { origin: 'unhandled_rejection', ours: true, errorName: 'TypeError' } }),
 		]));
 
 		// Session start/stop route through `SessionCommandController`, whose context is
@@ -2182,7 +2182,7 @@ describe('deferred runtime boot guard', () => {
 		const load = run.mock.calls.find(([input]) => input.action === 'plugin_load' && input.details !== undefined);
 		const registeredViewTypes = new Set(registerView.mock.calls.map((call: unknown[]) => call[0]));
 		expect(registeredViewTypes.size).toBeGreaterThan(0);
-		expect(load?.[0].details).toMatchObject({ viewCount: registeredViewTypes.size });
+		expect(load?.[0].details).toMatchObject({ viewCount: registeredViewTypes.size, host: 'obsidian' });
 		run.mockRestore();
 	});
 });

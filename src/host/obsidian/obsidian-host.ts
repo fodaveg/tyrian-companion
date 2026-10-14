@@ -104,6 +104,7 @@ function obsidianEnvironment(plugin: Plugin): TyrianEnvironmentPort {
 	return {
 		get platform() { return obsidianPlatform(); },
 		get hostVersion() { return apiVersion; },
+		hostId: 'obsidian',
 		get pluginId() { return plugin.manifest.id; },
 		get pluginVersion() { return plugin.manifest.version; },
 		isOnline: () => navigator.onLine,

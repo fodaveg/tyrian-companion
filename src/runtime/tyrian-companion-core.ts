@@ -734,6 +734,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			details: {
 				commandCount: PRODUCT_ACTION_IDS.length + STANDALONE_COMMAND_IDS.length,
 				viewCount: viewRegistrars.length,
+				host: this.host.environment.hostId ?? 'unknown',
+				hostVersion: this.host.environment.hostVersion,
 			},
 		}, async () => {
 
@@ -770,10 +772,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
 				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
-				// The class of the error (never its message) and whether our bundle is in the stack. The vocabulary has no
-				// `ours` for `plugin` yet, so the closed `reason` carries it.
+				// The class of the error (never its message) and whether our bundle is in the stack.
 				...(failure instanceof Error && failure.name.length > 0 ? { errorName: failure.name } : {}),
-				details: { origin, reason: failure instanceof Error && /\b(?:hebra-main\.mjs|main\.js)\b/u.test(failure.stack ?? '') ? 'stack_ours' : 'stack_foreign' },
+				details: {
+					origin,
+					ours: failure instanceof Error && /\b(?:hebra-main\.mjs|main\.js)\b/u.test(failure.stack ?? ''),
+					...(failure instanceof Error && failure.name.length > 0 ? { errorName: failure.name } : {}),
+				},
 			});
 		});
 		this.connectivityOff = this.host.environment.onConnectivityChange((online) => {

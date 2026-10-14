@@ -207,7 +207,7 @@ describe('passive live session lifecycle', () => {
 		const lines: unknown[] = [];
 		const restored = new LiveSessionLifecycle({ ...f.options, diagnostic: (line) => { lines.push(line); } });
 		await restored.initialize();
-		expect(lines).toEqual([{ action: 'session_recover', phase: 'success', state: 'restored', details: { phase: 'active', count: 0, itemCount: 0 } }]);
+		expect(lines).toEqual([{ action: 'session_recover', phase: 'success', state: 'restored', details: { phase: 'active', outboxCount: 0, queueCount: 0 } }]);
 		expect(restored.getRuntime()?.sessionId).toBe('session');
 		const empty = new LiveSessionLifecycle({ ...f.options, persistence: new MemorySessionRuntimeStore(), diagnostic: (line) => { lines.push(line); } });
 		await empty.initialize(); expect(lines).toHaveLength(1);

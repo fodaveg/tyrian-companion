@@ -347,6 +347,7 @@ function createEnvironment(deps: HebraHostDeps): TyrianEnvironmentPort {
 		platform: deps.platform,
 		// Obsidian records its `apiVersion` here; Hebra's analogue is the plugin API it implements.
 		hostVersion: api.apiVersion,
+		hostId: 'hebra',
 		pluginId: TYRIAN_PLUGIN_ID,
 		pluginVersion: api.plugin.version,
 		isOnline: () => api.env.online,
