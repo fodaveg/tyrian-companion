@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.6.63: el panel «En vivo» mantiene la pantalla encendida en iPhone y iPad (14 oct 2026)
+## Canal 0.6.63 publicado: el panel «En vivo» mantiene la pantalla encendida en iPhone y iPad (14 oct 2026)
 
-**Candidato; sin publicar.** `main` sobre el canal 0.6.62 publicado (`92007b83`). Detalle en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.63` = `e1b103fb` (atestación; candidato `de0c61c7`).
+Gate local verde (check en UTC con 7954 tests, test 29/29, BRAT PASS); Release 38567541416 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=checked`), release normal; el `hebra.json` publicado declara
+`screen.awake` en optional. `main` sobre el canal 0.6.62 publicado (`92007b83`). Detalle en [CHANGELOG](CHANGELOG.md).
 Pedido por David el 14 oct (tarea de Lumbre b368b2f6), coordinado con la sesión de Hebra; excepción a la congelación de
 Halloween solo para este cambio. Alcance: solo iPhone e iPad, solo la API de plugins 1.x.
 
