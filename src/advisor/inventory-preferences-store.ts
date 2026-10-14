@@ -172,6 +172,11 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 	 * read is never written over, nor one of a future schema, which a newer release on another device wrote and can read.
 	 * Every key is checked and written in one transaction, so a record saved meanwhile is never overwritten. Every record
 	 * must be valid and belong to `vaultId`; `not_empty` when none needed writing.
+	 *
+	 * In a vault whose path changed (DU-02, a new `vaultId` with nothing under it yet) this runs at the start, before the
+	 * question «adopt the previous path's data or start fresh» is answered, so «start fresh» keeps what the copy restored.
+	 * That is deliberate: the copy lives in the vault's own settings and travels with the folder, it is not the previous
+	 * id's local data that question is about, and restoring it is the side that never loses a goal the user wrote.
 	 */
 	async restoreMissingRecords(vaultId: string, records: readonly InventoryPreferencesV1[]): Promise<InventoryPreferencesVaultRestoreResult> {
 		const attempt = this.writeDiagnostics.begin('inventory_preferences', 'write');
