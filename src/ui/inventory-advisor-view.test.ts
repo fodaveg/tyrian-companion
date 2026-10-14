@@ -1636,6 +1636,25 @@ describe('Inventory Advisor view', () => {
 			expect(feedback.attributes.get('aria-live')).toBe('polite');
 		}
 	});
+
+	// Hebra 2.0: the view lives in a surface frame; only the host can use the click's activation (`api.clipboard`).
+	it('copies through the host\'s clipboard when it has one, never the page\'s, and a refusal without a gesture says so', async () => {
+		const pageClipboard = vi.fn();
+		vi.stubGlobal('navigator', { clipboard: { writeText: pageClipboard } });
+		const copyText = vi.fn(async () => undefined);
+		const blocked: InventoryAdvisorViewModel = { ...readyModel(), status: 'blocked', blockedReason: 'capture_snapshot_coverage_incomplete', groups: [] };
+		const mount = render(blocked, 'es', { copyText });
+		only(byClass(mount.elements(), 'tyrian-inventory-advisor__state-copy')).dispatch('click');
+		expect(copyText).toHaveBeenCalledWith('capture_snapshot_coverage_incomplete');
+		expect(pageClipboard).not.toHaveBeenCalled();
+
+		const refusing = render(blocked, 'es', { copyText: () => Promise.reject(Object.assign(new Error('gesto'), { name: 'PluginApiError', code: 'user-activation-required' })) });
+		const feedback = only(byClass(refusing.elements(), 'tyrian-inventory-advisor__copy-status'));
+		only(byClass(refusing.elements(), 'tyrian-inventory-advisor__state-copy')).dispatch('click');
+		await Promise.resolve(); await Promise.resolve();
+		expect(feedback.hidden).toBe(false);
+		expect(feedback.textContent).toBe('No se pudo copiar el detalle técnico.');
+	});
 });
 
 function formatClockFor(iso: string): string {

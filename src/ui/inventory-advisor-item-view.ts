@@ -22,6 +22,8 @@ export const INVENTORY_ADVISOR_VIEW_TYPE = 'tyrian-inventory-advisor-view';
 
 export interface InventoryAdvisorViewActions {
 	getInventoryAdvisorLocale(): Locale;
+	/** The host's clipboard (`TyrianHost.clipboard`); absent, the view writes `navigator.clipboard` itself. */
+	copyInventoryAdvisorText?(text: string): Promise<void>;
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
 	refreshInventoryAdvisor?(): Promise<void>;
 	createInventoryPreferencesEditorSession?(): InventoryPreferencesEditorSession;
@@ -299,6 +301,7 @@ export class InventoryAdvisorItemView {
 				priceHistoryOptIn,
 				rowPriceHistory,
 				sellSignalState: this.actions.getSellSignalState?.() ?? null,
+				...(this.actions.copyInventoryAdvisorText === undefined ? {} : { copyText: (text: string) => this.actions.copyInventoryAdvisorText!(text) }),
 			},
 		);
 	}

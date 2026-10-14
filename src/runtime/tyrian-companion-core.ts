@@ -2069,6 +2069,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		return this.settings.language;
 	}
 
+	/**
+	 * The Asesor's "copy the safe code" through the host's clipboard (Hebra 2.0 writes it in its own document, with the
+	 * click's activation; Obsidian's is `navigator.clipboard`). Called in the click's own task; a refusal rejects.
+	 */
+	copyInventoryAdvisorText(text: string): Promise<void> { return this.host.clipboard.writeText(text); }
+
 	/** The Asesor view model, with the rules expiry checked fresh on every read (`InventoryRuntime`). */
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel { return this.inventory.getInventoryAdvisorViewModel(); }
 

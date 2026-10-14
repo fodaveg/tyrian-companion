@@ -82,6 +82,11 @@ export interface InventoryAdvisorViewPort {
 }
 
 export interface InventoryAdvisorViewInteractions {
+	/**
+	 * Writes the clipboard through the host (Hebra 2.0: the view lives in a surface frame and only Hebra can use the
+	 * click's activation). Absent, `navigator.clipboard`, as in Obsidian. Called in the click's own task.
+	 */
+	copyText?: (text: string) => Promise<void>;
 	preferences?: InventoryPreferencesEditorState;
 	preferencesBusy?: boolean;
 	/**
@@ -359,7 +364,8 @@ function mountInventoryAdvisorView(
 		// `writeText` is called in the click's own task (WebKit spends the user activation on any
 		// earlier `await`); an absent clipboard and a refusal both end in the same message.
 		try {
-			if (navigator.clipboard === undefined) failed();
+			if (interactions.copyText !== undefined) void Promise.resolve(interactions.copyText(code)).catch(() => { failed(); });
+			else if (navigator.clipboard === undefined) failed();
 			else void Promise.resolve(navigator.clipboard.writeText(code)).catch(() => { failed(); });
 		} catch { failed(); }
 	});
