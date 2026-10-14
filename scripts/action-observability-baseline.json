@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 621,
+		"catch_clause": 622,
 		"promise_catch": 62,
-		"void_expression": 147,
-		"callback_registration": 259
+		"void_expression": 148,
+		"callback_registration": 261
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -5006,6 +5006,33 @@
 						"justification": "The \"transaction\" catch is a \"rethrow\" that records the one outcome on the price_history probe, coded timeout when the engine did not answer in time (indexedDbFailureCode), and turns a give-up of withIndexedDbReopen into the store's unavailable error."
 					},
 					"reason": "Allowlisted catch_clause: The \"transaction\" catch is a \"rethrow\" that records the one outcome on the price_history probe, coded timeout when the engine did not answer in time (indexedDbFailureCode), and turns a give-up of withIndexedDbReopen into the store's unavailable error. Verified recovery: \"rethrow\" in \"transaction\"."
+				}
+			]
+		},
+		"src/economy/price-hourly-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/economy/price-hourly-source.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "1949b0caaab67ae481eccfd8a3d7c959929fdbee",
+					"kind": "catch_clause",
+					"line": 43,
+					"column": 4,
+					"endLine": 48,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "fetchPriceHourly",
+						"justification": "The \"fetchPriceHourly\" function turns a transport failure into a no_data result with a \"fallback_return\" the panel shows as failed or empty, never an exception; the HTTP transport has already recorded the request failure on the action context it was given."
+					},
+					"reason": "Allowlisted catch_clause: The \"fetchPriceHourly\" function turns a transport failure into a no_data result with a \"fallback_return\" the panel shows as failed or empty, never an exception; the HTTP transport has already recorded the request failure on the action context it was given. Verified recovery: \"fallback_return\" in \"fetchPriceHourly\"."
 				}
 			]
 		},
@@ -17296,9 +17323,9 @@
 				{
 					"id": "50fb8e87fcda148135e73c5e28668d5638a51acf",
 					"kind": "void_expression",
-					"line": 94,
+					"line": 104,
 					"column": 3,
-					"endLine": 97,
+					"endLine": 107,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -17312,9 +17339,9 @@
 				{
 					"id": "10442c7a1e0bbb18199ec433caeaaff32bb7ecdf",
 					"kind": "callback_registration",
-					"line": 94,
+					"line": 104,
 					"column": 8,
-					"endLine": 97,
+					"endLine": 107,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -17327,11 +17354,44 @@
 					"reason": "Allowlisted callback_registration: The \"request\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"request\"."
 				},
 				{
+					"id": "e650d6a71ae0862455abab394456cc5b9fb4d445",
+					"kind": "void_expression",
+					"line": 116,
+					"column": 3,
+					"endLine": 116,
+					"endColumn": 76,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "Promise.resolve().then",
+						"scope": "requestHourly",
+						"justification": "The \"requestHourly\" owner deliberately detaches \"Promise.resolve().then\"; both of its handlers repaint the block, and the hourly service never rejects because its fetch turns every failure into a state the repaint shows (transport diagnostics are recorded by the HTTP layer)."
+					},
+					"reason": "Allowlisted void_expression: The \"requestHourly\" owner deliberately detaches \"Promise.resolve().then\"; both of its handlers repaint the block, and the hourly service never rejects because its fetch turns every failure into a state the repaint shows (transport diagnostics are recorded by the HTTP layer). Verified target: \"Promise.resolve().then\" in \"requestHourly\"."
+				},
+				{
+					"id": "c635894e3d0de5263db7a85699e0fa59f0257def",
+					"kind": "callback_registration",
+					"line": 116,
+					"column": 8,
+					"endLine": 116,
+					"endColumn": 76,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "requestHourly",
+						"justification": "The \"requestHourly\" owner registers \"then\" with a fulfilment and a rejection handler that both repaint the block from the hourly state; the failure itself is recorded by the HTTP transport diagnostic of the download."
+					},
+					"reason": "Allowlisted callback_registration: The \"requestHourly\" owner registers \"then\" with a fulfilment and a rejection handler that both repaint the block from the hourly state; the failure itself is recorded by the HTTP transport diagnostic of the download. Verified registration: \"then\" in \"requestHourly\"."
+				},
+				{
 					"id": "373d593bf089bcad1572676b8f8cf8e428cb88eb",
 					"kind": "callback_registration",
-					"line": 157,
+					"line": 185,
 					"column": 4,
-					"endLine": 157,
+					"endLine": 185,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -17346,9 +17406,9 @@
 				{
 					"id": "d2078ec8b36b4625ede444bab1633f82f8185f92",
 					"kind": "void_expression",
-					"line": 157,
+					"line": 185,
 					"column": 45,
-					"endLine": 157,
+					"endLine": 185,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -17362,9 +17422,9 @@
 				{
 					"id": "8add74c274859d967fd006fd7e9291f828657a99",
 					"kind": "callback_registration",
-					"line": 165,
+					"line": 193,
 					"column": 4,
-					"endLine": 171,
+					"endLine": 199,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -18490,7 +18550,25 @@
 		"src/ui/price-history-chart-view.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
+			"boundaries": [
+				{
+					"id": "28e7bde2e466690275ae38a7a937b2d3e3fc4399",
+					"kind": "callback_registration",
+					"line": 609,
+					"column": 3,
+					"endLine": 609,
+					"endColumn": 74,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "paintHourly",
+						"justification": "The \"paintHourly\" owner registers \"addEventListener\" for the retry button as a framework callback; the click calls the caller's request, which owns the download and its diagnostics, and repaints from the hourly state."
+					},
+					"reason": "Allowlisted callback_registration: The \"paintHourly\" owner registers \"addEventListener\" for the retry button as a framework callback; the click calls the caller's request, which owns the download and its diagnostics, and repaints from the hourly state. Verified registration: \"addEventListener\" in \"paintHourly\"."
+				}
+			]
 		},
 		"src/ui/price-history-note-block-controller.ts": {
 			"classification": "production_source",
