@@ -107,6 +107,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.getPriceSeedQueueCoverage',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings',
 				'actions.getCollectorMode',
+				// «Copiar detalle técnico» through the host's clipboard (Hebra 2.0 writes it): only the closed-enum safe code.
+				'actions.copyInventoryAdvisorText',
 				// A read of where the host shows this tab: on its main screen the host lists the sections
 				// itself and the shell builds no bar of tabs. It decides presentation only.
 				'actions.hostListsSections'],

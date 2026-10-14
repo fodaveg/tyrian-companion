@@ -25,8 +25,10 @@ const IMPORTS = new Map<string, string[]>([
 	['src/economy/price-history-statistics.ts', ['./price-history-model']],
 	// `../core/indexed-db-open` is reviewed in: it imports nothing at all and holds
 	// only the shared open handshake, so it widens no capability this boundary guards.
+	// `../core/idb-key-range` likewise imports nothing: it only says which `IDBKeyRange` goes with the
+	// host's factory (Hebra's plugin API 2.0 serves its own), so it widens nothing either.
 	['src/economy/price-history-store.ts', [
-		'../core/indexed-db-open', '../core/local-debug-persistence',
+		'../core/idb-key-range', '../core/indexed-db-open', '../core/local-debug-persistence',
 		'./price-history-model', './price-history-statistics',
 	]],
 ]);
@@ -69,7 +71,7 @@ describe('H9.1 price-history architecture boundary', () => {
 		expect(compaction).toContain('this.nextDirtyDay(vaultId)');
 		expect(compaction).toContain('this.pruneSnapshotsBefore(');
 		expect(compactDay).toContain("index('by-vault-captured').getAll(capturedRange(");
-		expect(compactDay).toContain("index('by-vault-day').getAll(IDBKeyRange.only(");
+		expect(compactDay).toContain("index('by-vault-day').getAll(idbKeyRange().only(");
 		expect(compactDay).toContain('buildPriceHistoryDailyAggregates(vaultId, raw)');
 		expect(compactDay).toContain('sameDaily(');
 		expect(readDaily).toContain("'by-vault-item-day'");
