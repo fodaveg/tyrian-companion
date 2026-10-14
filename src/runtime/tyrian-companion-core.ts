@@ -1501,6 +1501,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const readLivePanelSnapshot = (): LivePanelSnapshot => livePanelSnapshot({
 			locale: this.settings.language, view: lifecycle.getView(0, 1), alerts: lifecycle.getAlerts(),
 			loot: this.liveSessionLoot.getState(), itemName: (id) => this.liveEconomy?.entity('item', id)?.name ?? null,
+			itemIcon: (id) => this.liveEconomy?.entity('item', id)?.icon ?? null,
 			gameMagicFind: this.gameMagicFind.current(Date.now()),
 		});
 		this.livePanel = new LivePanelRuntime({

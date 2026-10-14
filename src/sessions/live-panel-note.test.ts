@@ -8,6 +8,7 @@ import {
 	LIVE_PANEL_TRANSPORT_VERSION,
 	emptyLivePanelLive,
 	livePanelLive,
+	liveLootIconUrl,
 	livePanelNotePath,
 	livePanelState,
 	parseLivePanelNote,
@@ -162,10 +163,66 @@ describe('renderLivePanelNote', () => {
 		expect(parseLivePanelNote(text)?.live?.loot.map((row) => row.itemId)).toEqual([200, 199, 198, 197, 196]);
 	});
 
+	describe('item icons in the loot rows', () => {
+		const ICON = 'https://render.guildwars2.com/file/0123456789ABCDEF0123456789abcdef01234567/222122.png';
+		const row = { itemId: 36038, name: 'Bolsa de Halloween', quantity: 12, totalCopper: 90_000 };
+
+		it('round-trips a valid icon as the 5th field and leaves it out when unknown', () => {
+			const text = renderLivePanelNote(input({ loot: [{ ...row, icon: ICON }, { ...row, itemId: 2, totalCopper: 1, icon: null }] }));
+			expect(text).toContain(`  - [ 36038, Bolsa de Halloween, 12, 90000, ${ICON} ]`);
+			expect(text).toContain('  - [ 2, Bolsa de Halloween, 12, 1 ]');
+			expect(parseLivePanelNote(text)?.live?.loot.map((r) => r.icon)).toEqual([ICON, null]);
+		});
+
+		it('still reads the rows of 4 fields written by 0.6.59 and 0.6.60, without icon', () => {
+			const old = renderLivePanelNote(input()); // the default loot has no icon: the 4-field shape
+			expect(old).toContain('[ 36038, Bolsa de Halloween, 12, 90000 ]');
+			expect(parseLivePanelNote(old)?.live?.loot[0]).toEqual({ itemId: 36038, name: 'Bolsa de Halloween', quantity: 12, totalCopper: 90_000, icon: null });
+		});
+
+		it.each([
+			'http://render.guildwars2.com/file/ABCDEF/1.png',
+			'https://render.guildwars2.com.evil.example/file/ABCDEF/1.png',
+			'https://evil.example/file/ABCDEF/1.png',
+			'https://render.guildwars2.com/file/ABCDEF/1.png?x=1',
+			'https://render.guildwars2.com/file/ABCDEF/1.png#frag',
+			'https://render.guildwars2.com/file/ABCDEF/1.svg',
+			'https://render.guildwars2.com/file/XYZ/1.png',
+			'https://user@render.guildwars2.com/file/ABCDEF/1.png',
+			'https://render.guildwars2.com/other/ABCDEF/1.png',
+			'javascript:alert(1)', '', 'not a url',
+		])('turns %j into null instead of painting it', (bad) => {
+			expect(liveLootIconUrl(bad)).toBeNull();
+			const text = renderLivePanelNote(input()).replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', `[ 36038, Bolsa de Halloween, 12, 90000, "${bad}" ]`);
+			expect(parseLivePanelNote(text)?.live?.loot[0]?.icon).toBeNull();
+		});
+
+		it('turns a non-text 5th field into null and rejects a row of 6 fields', () => {
+			const base = renderLivePanelNote(input());
+			const numeric = base.replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', '[ 36038, Bolsa de Halloween, 12, 90000, 7 ]');
+			expect(parseLivePanelNote(numeric)?.live?.loot[0]?.icon).toBeNull();
+			const six = base.replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', `[ 36038, Bolsa de Halloween, 12, 90000, ${ICON}, 1 ]`);
+			expect(parseLivePanelNote(six)).toEqual({ state: 'live', live: null });
+		});
+
+		it('keeps the invalid icon of the collector out of the transport', () => {
+			const live = livePanelLive(input({ loot: [{ ...row, icon: 'https://evil.example/file/AB/1.png' }] }));
+			expect(live.loot[0]?.icon).toBeNull();
+		});
+
+		it('stays under 4 KB with 5 long-named rows that all carry an icon and a three-hour chart', () => {
+			const loot = Array.from({ length: 5 }, (_, index) => ({ itemId: 90_000 + index, name: 'Objeto con un nombre larguísimo de prueba que pasa de sesenta letras '.repeat(2), quantity: 250, totalCopper: 5_000_000 + index, icon: ICON }));
+			const text = renderLivePanelNote(input({ loot, view: view({ chartPoints: points(180), elapsedMs: 180 * 60_000 }) }));
+			const bytes = new TextEncoder().encode(text).length;
+			expect(bytes).toBeLessThan(4096);
+			expect(parseLivePanelNote(text)?.live?.loot.map((r) => r.icon)).toEqual(Array(5).fill(ICON));
+		});
+	});
+
 	it('keeps an item name on one safe line in the body, and quoted in the frontmatter', () => {
 		const text = renderLivePanelNote(input({ loot: [{ itemId: 7, name: 'Ev\nil [x](y) <b>*_: "q"', quantity: 1, totalCopper: 1 }] }));
 		expect(text).toContain('> - Ev il \\[x\\](y) \\<b\\>\\*\\_: "q" ×1');
-		expect(parseLivePanelNote(text)?.live?.loot).toEqual([{ itemId: 7, name: 'Ev il [x](y) <b>*_: "q"', quantity: 1, totalCopper: 1 }]);
+		expect(parseLivePanelNote(text)?.live?.loot).toEqual([{ itemId: 7, name: 'Ev il [x](y) <b>*_: "q"', quantity: 1, totalCopper: 1, icon: null }]);
 	});
 
 	it('cuts an item name longer than the limit in both halves', () => {

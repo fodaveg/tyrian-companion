@@ -60,6 +60,25 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date(NOW)); });
 afterEach(() => { vi.useRealTimers(); document.body.replaceChildren(); });
 
 describe('LiveHudItemView: a live session', () => {
+	it('paints the loot icon only for an official render URL, decorative and lazy, and drops it if it fails to load', async () => {
+		const icon = 'https://render.guildwars2.com/file/0123ABCD/222122.png';
+		const t = harness(local(live({ loot: [
+			{ itemId: 1, name: 'Con icono', quantity: 1, totalCopper: 1, icon },
+			{ itemId: 2, name: 'Ajeno', quantity: 1, totalCopper: 1, icon: 'https://evil.example/file/AB/1.png' },
+			{ itemId: 3, name: 'Sin icono', quantity: 1, totalCopper: 1 },
+		] })));
+		await t.view.onOpen();
+		const images = Array.from(t.contentEl.querySelectorAll('.tyrian-live-hud__loot-icon'));
+		expect(images).toHaveLength(1);
+		const image = images[0]!;
+		expect([image.getAttribute('src'), image.getAttribute('alt'), image.getAttribute('loading'), image.getAttribute('width'), image.getAttribute('height')])
+			.toEqual([icon, '', 'lazy', '24', '24']);
+		expect(t.text('.tyrian-live-hud__loot-name')).toEqual(['Con icono', 'Ajeno', 'Sin icono']);
+		image.dispatchEvent(new Event('error'));
+		expect(t.contentEl.querySelectorAll('.tyrian-live-hud__loot-icon')).toHaveLength(0);
+		expect(t.text('.tyrian-live-hud__loot-name')[0]).toBe('Con icono');
+	});
+
 	it('paints the state line, the six cards and the loot, with the value as the official coins', async () => {
 		const t = harness(local(live()));
 		await t.view.onOpen();

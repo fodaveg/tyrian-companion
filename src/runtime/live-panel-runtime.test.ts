@@ -306,7 +306,7 @@ describe('livePanelSnapshot', () => {
 	});
 
 	it('carries the loot rows with their item ids, and none while the loot tracker is idle', () => {
-		expect(livePanelSnapshot({ locale: 'es', view, alerts: [], loot, itemName: () => null }).loot).toEqual([{ itemId: 9, name: 'Pico', quantity: 1, totalCopper: 1 }]);
+		expect(livePanelSnapshot({ locale: 'es', view, alerts: [], loot, itemName: () => null }).loot).toEqual([{ itemId: 9, name: 'Pico', quantity: 1, totalCopper: 1, icon: null }]);
 		const idle = livePanelSnapshot({ locale: 'es', view, alerts: [], loot: { status: 'idle' }, itemName: () => null });
 		expect(idle.loot).toEqual([]);
 	});

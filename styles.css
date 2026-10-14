@@ -3280,6 +3280,7 @@
 .tyrian-live-hud__loot { display: grid; gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
 .tyrian-live-hud__loot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--size-4-3); min-height: 44px; padding: var(--size-4-1) var(--tyrian-hud-inset); border-radius: var(--radius-s); background: var(--background-secondary); font-size: var(--font-ui-medium); }
 .tyrian-live-hud__loot-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-medium); }
+.tyrian-live-hud__loot-icon { width: 24px; height: 24px; margin-inline-end: var(--size-4-2); border-radius: var(--radius-s); object-fit: contain; vertical-align: middle; }
 .tyrian-live-hud__loot-qty { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tyrian-live-hud__loot-value { font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tyrian-live-hud__empty { padding-inline: var(--tyrian-hud-inset); color: var(--text-muted); }

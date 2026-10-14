@@ -14,7 +14,7 @@
 
 import { createTranslator, type Locale, type Translator } from '../core/i18n';
 import type { TranslationKey } from '../core/i18n';
-import type { LivePanelLiveV1, LivePanelMagicFindSource, LivePanelState } from '../sessions/live-panel-note';
+import { liveLootIconUrl, type LivePanelLiveV1, type LivePanelMagicFindSource, type LivePanelState } from '../sessions/live-panel-note';
 import { formatClock } from './format-time';
 import { formatDecimal } from './format-number';
 import { liveSessionCopy } from './live-session-copy';
@@ -192,7 +192,9 @@ export class LiveHudItemView {
 			const list = root.createEl('ol', { cls: 'tyrian-live-hud__loot' });
 			for (const row of loot) {
 				const li = list.createEl('li', { cls: 'tyrian-live-hud__loot-row' });
-				li.createSpan({ cls: 'tyrian-live-hud__loot-name', text: row.name, attr: { title: row.name } });
+				const name = li.createSpan({ cls: 'tyrian-live-hud__loot-name', attr: { title: row.name } });
+				paintLootIcon(name, row.icon);
+				name.appendText(row.name);
 				li.createSpan({ cls: 'tyrian-live-hud__loot-qty', text: t.t('liveHud.loot.quantity', { quantity: row.quantity }) });
 				const value = li.createSpan({ cls: 'tyrian-live-hud__loot-value' });
 				this.money(value, row.totalCopper, spoken);
@@ -327,4 +329,19 @@ function setFigureEm(dd: HTMLElement, em: number): void {
 function agoText(t: Translator, elapsedMs: number): string {
 	const seconds = Math.max(0, Math.floor(elapsedMs / 1_000));
 	return seconds < 60 ? t.t('liveHud.ago.seconds', { count: seconds }) : t.t('liveHud.ago.minutes', { count: Math.floor(seconds / 60) });
+}
+
+/**
+ * The item's icon before its name in a loot row. Only an official render URL is ever drawn (`liveLootIconUrl`: the note comes
+ * through sync); decorative, since the name is beside it; a load that fails removes it and leaves the name alone.
+ */
+function paintLootIcon(name: HTMLElement, icon: string | null | undefined): void {
+	const src = liveLootIconUrl(icon);
+	if (src === null) return;
+	const image = name.createEl('img', {
+		cls: 'tyrian-live-hud__loot-icon',
+		// `loading` and `referrerpolicy` before `src`: a browser may start the request as soon as `src` is set.
+		attr: { loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer', alt: '', 'aria-hidden': 'true', width: '24', height: '24', src },
+	});
+	image.addEventListener('error', () => { image.remove(); });
 }

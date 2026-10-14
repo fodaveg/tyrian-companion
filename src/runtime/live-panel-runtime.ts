@@ -57,6 +57,8 @@ export function livePanelSnapshot(parts: {
 	readonly alerts: readonly LiveSessionAlertViewV1[];
 	readonly loot: LiveSessionLootState;
 	readonly itemName: (itemId: number) => string | null;
+	/** The item's icon URL from the entity cache; the note keeps it only when it is an official render URL. Absent → no icons. */
+	readonly itemIcon?: (itemId: number) => string | null;
 	/** `LiveGameMagicFind.current(now)`: the game's figure while fresh, else null. */
 	readonly gameMagicFind?: number | null;
 }): LivePanelSnapshot {
@@ -67,7 +69,7 @@ export function livePanelSnapshot(parts: {
 	for (const alert of parts.alerts) if (alert.skipReason === null && (latest === null || alert.observedAt >= latest.observedAt)) latest = alert;
 	return {
 		view: parts.view, valueCopper: liveSessionValue(parts.view), ratePerHourCopper: liveSessionRatePerHour(parts.view),
-		loot: rows.map((row) => ({ itemId: row.itemId, name: row.name, quantity: row.quantity, totalCopper: row.totalCopper })),
+		loot: rows.map((row) => ({ itemId: row.itemId, name: row.name, quantity: row.quantity, totalCopper: row.totalCopper, icon: parts.itemIcon?.(row.itemId) ?? null })),
 		lastDrop: latest === null ? null
 			: { itemId: latest.itemId, name: nameOf(latest.itemId), quantity: latest.quantity, totalCopper: latest.totalCopper, observedAt: latest.observedAt },
 		gameMagicFind: parts.gameMagicFind ?? null,

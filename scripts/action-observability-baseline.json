@@ -5,7 +5,7 @@
 		"catch_clause": 623,
 		"promise_catch": 62,
 		"void_expression": 148,
-		"callback_registration": 265
+		"callback_registration": 266
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -18161,9 +18161,9 @@
 				{
 					"id": "ca39867a878b4aac80343aa9f64553d807466be6",
 					"kind": "callback_registration",
-					"line": 237,
+					"line": 239,
 					"column": 18,
-					"endLine": 237,
+					"endLine": 239,
 					"endColumn": 81,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -18174,6 +18174,23 @@
 						"justification": "The \"armTimer\" owner explicitly handles \"setInterval\": the one-second callback only calls tick, which rewrites the duration and freshness text of nodes it already holds; it performs no action, reaches no store and has no failure to record."
 					},
 					"reason": "Allowlisted callback_registration: The \"armTimer\" owner explicitly handles \"setInterval\": the one-second callback only calls tick, which rewrites the duration and freshness text of nodes it already holds; it performs no action, reaches no store and has no failure to record. Verified registration: \"setInterval\" in \"armTimer\"."
+				},
+				{
+					"id": "331e18e3154c894c97ebc1f62dd5455052c7ee89",
+					"kind": "callback_registration",
+					"line": 300,
+					"column": 2,
+					"endLine": 300,
+					"endColumn": 60,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "paintLootIcon",
+						"justification": "The \"paintLootIcon\" owner registers \"addEventListener\" on an item icon: a failed load only removes the decorative image and leaves the name; it performs no action, reaches no store and has no failure to record."
+					},
+					"reason": "Allowlisted callback_registration: The \"paintLootIcon\" owner registers \"addEventListener\" on an item icon: a failed load only removes the decorative image and leaves the name; it performs no action, reaches no store and has no failure to record. Verified registration: \"addEventListener\" in \"paintLootIcon\"."
 				}
 			]
 		},
