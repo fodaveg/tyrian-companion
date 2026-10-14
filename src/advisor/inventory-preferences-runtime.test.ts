@@ -206,6 +206,39 @@ describe('InventoryPreferencesRuntime', () => {
 		expect(runtime.current()).toMatchObject({ status: 'blocked', code: 'unavailable' });
 	});
 
+	it('holds no loaded record after a failed write: the analysis is stale and nothing more is written until a reload', async () => {
+		const store = new MemoryPreferencesStore();
+		const runtime = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), 'vault-hash');
+		// No record yet: the analysis in force classified with generation 0.
+		await runtime.load(capture('account-a'));
+		expect(runtime.differsFromAnalysis()).toBe(false);
+		const compareAndSwap = store.compareAndSwap.bind(store);
+		store.compareAndSwap = async () => ({ status: 'error', code: 'unavailable' });
+
+		expect(await runtime.upsertGoal(goal('lost'))).toMatchObject({ status: 'blocked', code: 'unavailable' });
+		// What IndexedDB holds is unknown now, so the record the analysis used cannot be taken as the one in force.
+		expect(runtime.differsFromAnalysis()).toBe(true);
+		store.compareAndSwap = compareAndSwap;
+		const writes = store.writes;
+		expect(await runtime.upsertGoal(goal('blind'))).toMatchObject({ status: 'blocked', code: 'unavailable' });
+		expect(store.writes).toBe(writes);
+		// A reload lifts it.
+		expect((await runtime.loadCached()).status).toBe('ready');
+		expect(await runtime.upsertGoal(goal('after-reload'))).toMatchObject({ status: 'ready', goals: [{ goalId: 'after-reload' }] });
+	});
+
+	it('holds no loaded record after a failed write of an editor session either', async () => {
+		const store = new MemoryPreferencesStore();
+		const runtime = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), 'vault-hash');
+		await runtime.load(capture('account-a'));
+		const session = runtime.createEditorSession();
+		expect((await session.load()).status).toBe('ready');
+		store.compareAndSwap = async () => ({ status: 'error', code: 'unavailable' });
+
+		expect(await session.upsertGoal(goal('lost'))).toMatchObject({ status: 'blocked', code: 'unavailable' });
+		expect(runtime.differsFromAnalysis()).toBe(true);
+	});
+
 	it('keeps a local draft state on CAS conflict and blocks future/corrupt/unavailable records', async () => {
 		const store = new MemoryPreferencesStore();
 		const first = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), 'vault-hash');
