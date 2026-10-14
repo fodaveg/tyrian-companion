@@ -401,8 +401,8 @@ describe('session command adapters', () => {
 
 	it('localizes the stable Open menu entry', () => {
 		expect(projectSessionMenu([], 'es')[0]).toEqual({ type: 'open', title: 'Abrir acompañante', icon: 'sword' });
-		expect(projectSessionMenu([], 'es')[1]).toEqual({ type: 'open-live', title: 'Abrir panel en vivo', icon: 'gauge' });
-		expect(projectSessionMenu([], 'en')[1]).toEqual({ type: 'open-live', title: 'Open live panel', icon: 'gauge' });
+		expect(projectSessionMenu([], 'es')[1]).toEqual({ type: 'open-live', title: 'Abrir panel en vivo', icon: 'play' });
+		expect(projectSessionMenu([], 'en')[1]).toEqual({ type: 'open-live', title: 'Open live panel', icon: 'play' });
 	});
 
 	it('routes view recovery and discard actions through the same controller resource', async () => {

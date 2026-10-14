@@ -272,7 +272,7 @@ describe('the core hands the session commands to SessionCommandRuntime', () => {
 
 			registration().onClick({} as MouseEvent);
 			const items = menu.filter((entry) => entry.kind === 'item');
-			expect(items.slice(0, 2).map((entry) => entry.kind === 'item' ? [entry.title, entry.icon] : null)).toEqual([['Abrir acompañante', 'sword'], ['Abrir panel en vivo', 'gauge']]);
+			expect(items.slice(0, 2).map((entry) => entry.kind === 'item' ? [entry.title, entry.icon] : null)).toEqual([['Abrir acompañante', 'sword'], ['Abrir panel en vivo', 'play']]);
 			const live = items[1];
 			if (live?.kind !== 'item') throw new Error('The menu offered no live panel entry.');
 			live.onClick();

@@ -14,7 +14,7 @@ export interface PaletteCommandRegistry {
 
 export type SessionMenuDescriptor =
 	| { type: 'open'; title: string; icon: 'sword' }
-	| { type: 'open-live'; title: string; icon: 'gauge' }
+	| { type: 'open-live'; title: string; icon: 'play' }
 	| { type: 'separator' }
 	| { type: 'command'; command: SessionCommandDescriptor };
 
@@ -71,7 +71,7 @@ export function projectSessionMenu(commands: readonly SessionCommandDescriptor[]
 	const t = createTranslator(locale);
 	const menu: SessionMenuDescriptor[] = [
 		{ type: 'open', title: t.t('commands.openCompanion'), icon: 'sword' },
-		{ type: 'open-live', title: t.t('commands.openLiveHud'), icon: 'gauge' },
+		{ type: 'open-live', title: t.t('commands.openLiveHud'), icon: 'play' },
 	];
 	if (primary.length > 0) menu.push({ type: 'separator' });
 	menu.push(...primary.map((command) => ({ type: 'command', command }) as const));
