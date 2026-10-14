@@ -33,11 +33,12 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({ machineId: 'machine', instanceId: 'host', sessionId,
 		fence: ++fence, acquiredAt: now, renewedAt: now, expiresAt: now + 120_000 });
 	const renew = vi.fn(async (prior: ActiveSessionLeaseHandle) => ({ status: 'renewed' as const, handle: { ...prior, renewedAt: now, expiresAt: now + 120_000 } }));
+	const release = vi.fn(async () => ({ status: 'released' as const }));
 	const coordinator: SessionLeaseCoordinator = { instanceId: 'host',
 		acquire: vi.fn(async (sessionId: string) => ({ status: 'acquired' as const, handle: handle(sessionId) })),
 		renew,
 		assertOwned: vi.fn(async () => owned ? { status: 'owned' as const } : { status: 'lost' as const }),
-		release: vi.fn(async () => ({ status: 'released' as const })), dispose: vi.fn(),
+		release, dispose: vi.fn(),
 	};
 	const options = { coordinator, persistence: store, enabled: () => true, now: () => now, sessionId: () => ++ids === 1 ? 'session' : `session-${ids}`, thresholdCopper: () => 1,
 		setInterval: (callback: () => void) => { interval = callback; return 1; }, clearInterval: () => { interval = null; },
@@ -49,7 +50,7 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 		cursor, contextSeq: 0, sourceElapsedMs: cursor * 1000, mode: cursor === 0 ? 'baseline' : 'sample', itemCoverage: 'complete',
 		currencyCoverage: 'none', unknownPositions: 0, freeSlots: null, rows: [{ kind: 'item', idNumber: 12147, quantity }],
 		observedAt: new Date(now).toISOString(), ...override });
-	return { service, store, source, sample, options, onCommitted, onComplete, renew,
+	return { service, store, source, sample, options, onCommitted, onComplete, renew, release,
 		setNow: (at: number) => { now = at; }, loseLease: () => { owned = false; }, regainLease: () => { owned = true; }, tick: async () => { interval?.(); await service.presence(false, now); } };
 }
 
@@ -262,7 +263,7 @@ describe('passive live session lifecycle', () => {
 		await svc.commit(f.sample(1,1)); await svc.presence(true);
 		expect(sets, 'a later sample does not arm it again').toBe(1);
 		expect(f.renew, 'the cleared interval is the only renewer').not.toHaveBeenCalled();
-		expect(f.options.coordinator.release).not.toHaveBeenCalled();
+		expect(f.release).not.toHaveBeenCalled();
 		await svc.dispose();
 	});
 	it('a real host restart still reclaims as a restart: gap, disconnected, no map observation', async () => {
