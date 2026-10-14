@@ -1520,6 +1520,27 @@ describe('ManualSessionStartService', () => {
 			await service.dispose();
 		});
 
+		it.each(['assertOwned', 'archiveLegacyRuntime'] as const)('releases the old session lease and drops its handle when %s throws', async (failing) => {
+			const factory = new IDBFactory(); const dbName = `legacy-throwing-${failing}`;
+			await seedUnfinishedWithForeignReceipt(factory, dbName);
+			const leases = coordinator(failing === 'assertOwned'
+				? { assertOwned: vi.fn(async () => { throw new Error('Coordination store unavailable.'); }) }
+				: {});
+			const runtimeStore = new IndexedDbSessionRuntimeStore(factory, dbName);
+			if (failing === 'archiveLegacyRuntime') vi.spyOn(runtimeStore, 'archiveLegacyRuntime').mockRejectedValue(new Error('Runtime store unavailable.'));
+			const service = new ManualSessionStartService(leases, { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore }));
+			await service.initialize();
+
+			await expect(service.preserveLegacyForLiveMigration()).rejects.toThrow('unavailable');
+			expect(leases.release).toHaveBeenCalledTimes(1);
+			// No handle is kept: a wake has nothing to renew.
+			service.notifyWake();
+			await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+			expect(leases.renew).not.toHaveBeenCalled();
+			await service.dispose();
+		});
+
 		it('does not announce archived API evidence as a recovery, now or after a restart', async () => {
 			const factory = new IDBFactory(); const dbName = 'legacy-no-recovery-banner';
 			await seedUnfinishedWithForeignReceipt(factory, dbName);

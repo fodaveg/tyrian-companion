@@ -353,8 +353,15 @@ export class ManualSessionStartService {
 			try { await this.coordinator.release(acquired.handle); } catch { /* best effort; the lease expires on its own */ }
 			return false;
 		};
-		if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return await releaseUnused();
-		if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return await releaseUnused();
+		let archived = false;
+		try {
+			if ((await this.coordinator.assertOwned(acquired.handle)).status !== 'owned') return await releaseUnused();
+			if (!await this.runtimeStore.archiveLegacyRuntime(sessionAuthorityFromLease(acquired.handle))) return await releaseUnused();
+			archived = true;
+		} finally {
+			// Either step throwing is a failed attempt too: drop the handle and the lease before the error goes up.
+			if (!archived && this.currentHandle === acquired.handle) await releaseUnused();
+		}
 		this.preservedLegacyRecords.unshift(record); this.recoveryRecord = null;
 		await this.coordinator.release(acquired.handle); this.currentHandle = null;
 		// Preserved evidence is read through `getPreservedLegacyRuntime()`, never offered as a recovery.
