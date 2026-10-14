@@ -12565,11 +12565,11 @@
 					"reason": "Allowlisted void_expression: The \"heartbeat\" owner deliberately detaches \"this.saveActiveEvidence\" so an IndexedDB write never delays or fails the lease renewal; that named operation catches every failure and records it through this.diagnostics.event, so a lost evidence save is never silent. Verified target: \"this.saveActiveEvidence\" in \"heartbeat\"."
 				},
 				{
-					"id": "12d93d7d1b0d3c7570b09f4c1d0b86194a82336b",
+					"id": "b73fea04f90f3947b752740be4d3f16067a85ee3",
 					"kind": "catch_clause",
-					"line": 111,
+					"line": 114,
 					"column": 5,
-					"endLine": 115,
+					"endLine": 119,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12583,9 +12583,9 @@
 				{
 					"id": "7aa4c45ed9d74d0fd5a2e3c98a5c917d2b04ac9d",
 					"kind": "catch_clause",
-					"line": 142,
+					"line": 150,
 					"column": 5,
-					"endLine": 148,
+					"endLine": 156,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
