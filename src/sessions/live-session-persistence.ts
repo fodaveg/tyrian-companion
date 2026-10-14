@@ -117,7 +117,7 @@ export async function readLiveJournal(database: IDBDatabase, sessionId: string):
 			if (!entries.every(isLiveJournalEntry)) { transaction.abort(); return; }
 			result = entries;
 		};
-		transaction.oncomplete = () => resolve(result.sort((left, right) => left.observedAt.localeCompare(right.observedAt)
+		transaction.oncomplete = () => resolve(result.sort((left, right) => (left.observedAt < right.observedAt ? -1 : left.observedAt > right.observedAt ? 1 : 0)
 			|| (left.epoch < right.epoch ? -1 : left.epoch > right.epoch ? 1 : 0) || left.cursor - right.cursor));
 		transaction.onerror = transaction.onabort = () => reject(new Error('Live session journal is unavailable.'));
 	});

@@ -169,6 +169,28 @@ describe('reading a live session journal back from IndexedDB', () => {
 		expect(read.map((entry) => entry.epoch)).toEqual([upper, lower]);
 	});
 
+	it('orders by the observedAt string itself (fixed-format ISO, so code order is chronological), ahead of the cursor', async () => {
+		const { factory, name } = await playedSession(1, 4, 1);
+		const database = await openRaw(factory, name);
+		const entries = (await rawEntries(database)).filter((entry) => entry.sessionId === SESSION);
+		const [first, second] = [entries[0]!, entries[1]!];
+		const later = '2026-10-11T09:00:09.005Z';
+		expect(later > second.observedAt).toBe(true);
+		const lated = { ...JSON.parse(JSON.stringify(first).replaceAll(first.observedAt, later)) as LiveJournalEntryV1, outbox: [] };
+		expect(isLiveJournalEntry(lated as unknown)).toBe(true);
+		await rewrite(database, (store) => {
+			for (const entry of entries) store.delete([entry.sessionId, entry.epoch, entry.cursor]);
+			for (const entry of [lated, second]) store.put(entry, [entry.sessionId, entry.epoch, entry.cursor]);
+		});
+		database.close();
+
+		const store = new IndexedDbSessionRuntimeStore(factory, name);
+		const read = await store.readLiveJournal(SESSION);
+		store.close();
+		expect(read.map((entry) => entry.cursor)).toEqual([second.cursor, first.cursor]);
+		expect(read.map((entry) => entry.observedAt)).toEqual([second.observedAt, later]);
+	});
+
 	it.each([
 		{ version: 1 as const, samples: 240, every: 7 },
 		{ version: 2 as const, samples: 240, every: 7 },
