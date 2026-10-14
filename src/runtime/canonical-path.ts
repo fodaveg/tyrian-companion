@@ -12,6 +12,7 @@
  * - wallet: the `currency=` marker, `Wallet/Currencies/<currency>.md`;
  * - collector status (R1b): frontmatter `tc_kind: gw2_collector_status`, the one fixed path
  *   `Collector status.md`. A second collector has to find it by path to see the first one.
+ * - live panel: frontmatter `tc_kind: gw2_live_panel`, the one fixed path `Live panel.md` the collector rewrites.
  *
  * - live-session summary: frontmatter `tyrian_summary_of` + `tyrian_summary_started_at` (NO `tc_` key on purpose, see
  *   `live-session-summary-note.ts`), the path `summaries/<stamp> - <ref16> - summary.md` its writer builds. Without it a device that
@@ -28,6 +29,7 @@ import type { CanonicalPathFor } from '../host/tyrian-host';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import { inventoryNotePositionId, inventoryNoteRelativePath } from '../inventory/inventory-vault-sync';
 import { COLLECTOR_STATUS_NOTE_RELATIVE_PATH, parseCollectorStatusNote } from './collector-status';
+import { LIVE_PANEL_NOTE_RELATIVE_PATH, parseLivePanelNote } from '../sessions/live-panel-note';
 import { liveSessionSummaryPathIdentity, liveSessionSummaryRelativePath } from '../sessions/live-session-summary-note';
 import { sessionNotePathIdentity, sessionNoteRelativePaths } from '../sessions/session-note-renderer';
 import { walletNoteCurrencyId, walletNoteRelativePath } from '../wallet/wallet-vault-sync';
@@ -51,6 +53,7 @@ export const canonicalPathFor: CanonicalPathFor = (root, noteText) => {
 	const currencyId = walletNoteCurrencyId(text);
 	if (currencyId !== null) return [walletNoteRelativePath(currencyId)];
 	if (parseCollectorStatusNote(text) !== null) return [COLLECTOR_STATUS_NOTE_RELATIVE_PATH];
+	if (parseLivePanelNote(text) !== null) return [LIVE_PANEL_NOTE_RELATIVE_PATH];
 	const summary = liveSessionSummaryPathIdentity(text);
 	if (summary !== null) return [liveSessionSummaryRelativePath(summary.startedAt, summary.sessionRef)];
 	return [];

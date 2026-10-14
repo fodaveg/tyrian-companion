@@ -10,6 +10,7 @@ import { inspectDurableSessionNote } from './session-history';
 import { buildSessionHistoryAggregate } from './session-history-summary';
 import type { AbandonedSessionState } from './session';
 import { renderCollectorStatusNote } from '../runtime/collector-status';
+import { renderLivePanelEmptyNote } from './live-panel-note';
 import { LeyspringNoteWriter, type AchievementsVaultFile, type AchievementsVaultPort } from '../achievements/leyspring-note';
 import { LEYSPRING_MASTERY_ACHIEVEMENT_ID } from '../achievements/leyspring-set';
 import { WalletVaultSyncService, type WalletVaultPort } from '../wallet/wallet-vault-sync';
@@ -724,6 +725,8 @@ describe('durable session history', () => {
 			instanceId: 'collector-instance-1', platform: 'macos', hostVersion: '1.14.0', pluginVersion: '0.2.10',
 			heartbeatAt: '2026-09-29T08:00:00.000Z',
 		}, 'es'));
+		// The live panel note (14 oct 2026) is another of the plugin's own kinds, rewritten in the output folder while a session runs.
+		vault.contents.set('Tyrian Companion/Live panel.md', renderLivePanelEmptyNote('es'));
 		const wallet = (await new WalletVaultSyncService(emptyWalletVault(), 'vault-config').preview('Tyrian Companion', {
 			schemaVersion: 1, capturedAt: '2026-09-29T08:00:01.000Z', locale: 'es',
 			positions: [{ currencyId: 1, quantity: 100, order: 1, name: 'Moneda', icon: null }],
@@ -732,7 +735,7 @@ describe('durable session history', () => {
 		vault.contents.set(wallet.path, wallet.after);
 		const history = new SessionHistoryService(vault);
 		const scan = await history.scan();
-		expect(scan).toMatchObject({ status: 'ok', ignored: 3 });
+		expect(scan).toMatchObject({ status: 'ok', ignored: 4 });
 		if (scan.status !== 'ok') throw new Error('Expected an ok scan.');
 		expect(scan.sessions.map((session) => session.sessionRef)).toEqual(['a'.repeat(64), 'c'.repeat(64)]);
 		await expect(history.readSession('c'.repeat(64))).resolves.toMatchObject({ status: 'found', path: 'Sessions/two.md' });

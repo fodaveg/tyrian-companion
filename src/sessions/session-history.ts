@@ -7,6 +7,7 @@ import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { INVENTORY_NOTE_KIND } from '../inventory/inventory-vault-sync';
 import { COLLECTOR_STATUS_NOTE_KIND } from '../runtime/collector-status';
+import { LIVE_PANEL_NOTE_KIND } from './live-panel-note';
 import { WALLET_NOTE_KIND } from '../wallet/wallet-vault-sync';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import { SESSION_ABANDON_REASONS } from './session';
@@ -1072,7 +1073,7 @@ export const ACHIEVEMENTS_NOTE_KIND = 'gw2_achievements' as const;
  * note that declares one of these kinds but carries a session's identity keys is not exempt.
  */
 const OTHER_TYRIAN_NOTE_KINDS: ReadonlySet<string> = new Set([
-	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND, ACHIEVEMENTS_NOTE_KIND,
+	INVENTORY_NOTE_KIND, WALLET_NOTE_KIND, COLLECTOR_STATUS_NOTE_KIND, ACHIEVEMENTS_NOTE_KIND, LIVE_PANEL_NOTE_KIND,
 ]);
 const SESSION_IDENTITY_KEYS: ReadonlySet<string> = new Set(['tc_session_ref', 'tc_account_ref']);
 /** The Leyspring achievements note legitimately carries `tc_account_ref`; no other exempt kind does. */
