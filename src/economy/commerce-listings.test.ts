@@ -56,6 +56,24 @@ describe('official commerce listings depth', () => {
 		});
 	});
 
+	// Audit fix (14 oct 2026): a one-copper listing owes one copper of each fee, so the fees exceed
+	// the gross. The game still completes the sale and pays nothing, which is how the instant route
+	// (`valueInstantSellDepth`) and `bestSaleNetCopper` already value it; the listing route said
+	// `invalid`, which the disposition kernel then reported as an arithmetic overflow.
+	it('values a one-copper listing at net zero like the instant route instead of invalid', () => {
+		expect(valueCompetitiveListing([{ unitCopper: 1, quantity: 5 }], 1)).toEqual({
+			status: 'complete', requestedQuantity: 1, coveredQuantity: 1, uncoveredQuantity: 0,
+			grossCopper: 1, netCopper: 0, unitCopper: 1,
+		});
+		expect(valueInstantSellDepth([{ unitCopper: 1, quantity: 5 }], 1)).toMatchObject({
+			status: 'complete', grossCopper: 1, netCopper: 0,
+		});
+		expect(valueCompetitiveListing([{ unitCopper: 120, quantity: 1 }], 10)).toMatchObject({
+			grossCopper: 1_200, netCopper: 1_020,
+		});
+		expect(valueCompetitiveListing([{ unitCopper: Number.MAX_SAFE_INTEGER, quantity: 1 }], 2).status).toBe('invalid');
+	});
+
 	it.each([
 		[[{ unitCopper: 90, quantity: 1 }, { unitCopper: 100, quantity: 1 }]],
 		[[{ unitCopper: 100, quantity: 1 }, { unitCopper: 100, quantity: 2 }]],

@@ -358,6 +358,34 @@ describe('recommendContainerDisposition', () => {
 		expect({ ...recommendation.explanation, freshness: kernelFreshness }).toEqual(kernel.explanation);
 	});
 
+	// Audit fix (14 oct 2026): a one-copper ask on a single container is a listing that pays nothing,
+	// not an arithmetic overflow. The listing basis values it at net zero, like the instant basis.
+	it('values a one-copper listing basis at net zero instead of reporting arithmetic overflow', () => {
+		const value = input({ vendorValue: 0, modelEvMicro: 1 });
+		const quote = value.market.quotes.find((entry) => entry.itemId === ITEM_ID)!;
+		quote.bidUnitCopper = null;
+		quote.askUnitCopper = 1;
+		const depth = value.market.depth!.items.find((entry) => entry.itemId === ITEM_ID)!;
+		depth.buys = [];
+		depth.sells = [{ unitCopper: 1, quantity: 1 }];
+		const kernel = calculateContainerDispositionKernel({
+			version: 1, asOf: value.asOf, quantity: 1, container: value.container, model: value.model,
+			market: value.market,
+			policy: {
+				version: value.policy.version, openAdvantageBps: value.policy.openAdvantageBps,
+				maxPriceAgeMs: value.policy.maxPriceAgeMs, maxFutureSkewMs: value.policy.maxFutureSkewMs,
+				saleBasis: 'immediate_and_listing',
+			},
+		});
+		expect(kernel).toMatchObject({
+			status: 'ready',
+			explanation: {
+				preferredSaleBasis: 'listing',
+				sellNow: { route: 'listing', grossCopper: 1, totalFeesCopper: 2, netCopper: 0 },
+			},
+		});
+	});
+
 	it.each([
 		['full', false, 'ready'],
 		['free_to_play', false, 'blocked'],

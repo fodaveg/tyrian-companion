@@ -1,4 +1,4 @@
-import { calculateTradingPostFees, createTradingPostValueWithPolicy } from './gw2-fees';
+import { calculateTradingPostFees } from './gw2-fees';
 
 export interface CommerceListingLevelV1 {
 	unitCopper: number;
@@ -145,11 +145,15 @@ export function valueCompetitiveListing(
 	if (!validQuantity(quantity) || !isCommerceListingLevels(levels, 'sells')) return invalidValue(quantity);
 	const best = levels[0];
 	if (best === undefined) return unavailableValue(quantity);
-	const value = createTradingPostValueWithPolicy('listing', best.unitCopper, quantity);
-	if (value.status !== 'ok') return invalidValue(quantity);
+	const gross = best.unitCopper * quantity;
+	if (!Number.isSafeInteger(gross)) return invalidValue(quantity);
+	const fees = calculateTradingPostFees(gross);
+	if (fees.status !== 'ok') return invalidValue(quantity);
+	// Same floor as the instant route above: a gross this small owes more in
+	// one-copper minimum fees than it earns, and the sale completes paying nothing.
 	return {
 		status: 'complete', requestedQuantity: quantity, coveredQuantity: quantity, uncoveredQuantity: 0,
-		grossCopper: value.value.grossCopper, netCopper: value.value.netCopper, unitCopper: best.unitCopper,
+		grossCopper: gross, netCopper: Math.max(0, gross - fees.fees.totalFeesCopper), unitCopper: best.unitCopper,
 	};
 }
 
