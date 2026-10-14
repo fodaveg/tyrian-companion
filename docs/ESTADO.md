@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.6.58: panel en vivo, ventana «1 semana», «Detalles» en Venta y audit de bugs (14 oct 2026)
+
+**Candidato; sin publicar.** `main` sobre el canal 0.6.57 publicado (`2211305d`). Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 13 y 14 oct (audit de los logs del 13 oct y del código entero, logs de diagnóstico, «Ver resumen»,
+«Detalles» en Venta, «1 semana», panel en vivo) y publicación pedida el 14 oct («publica ambos»), dentro de la
+excepción a la congelación de Halloween.
+
+- Panel en vivo: `src/sessions/live-panel-note.ts` (render Markdown puro, menos de 4 KB, `tc_kind: gw2_live_panel`,
+  `cssclasses: dashboard`) y `src/runtime/live-panel-runtime.ts` (lo escribe solo el recolector, suelo de 10 s, solo si
+  cambió, nunca se borra). Ajuste `livePanelEnabled`, activo por defecto.
+- Medido: Hebra en el PC sincroniza cada 60 s de mediana (p10 26,7 s). Hebra anunció sondeo adaptativo de 5 s en
+  primer plano; hasta que salga, el panel llega al móvil con ese retraso.
+- Ventana «1 semana»: serie horaria pública de datawars2 (1 punto por hora), descargada al pulsar el botón.
+- Gate local sobre `dba4cc66`: `npm run check` VERDE 9/9 y `npm test` VERDE 29/29. El tiempo máximo por test sube de
+  5 s a 15 s (`vitest.config.mts`): tres tests pesados se pasaban con el juego abierto.
+- Sin verificar: el panel en iPhone, iPad y escritorio reales; quitar «Conservar» a la Barra de caramelo en el
+  Obsidian de David; la ventana «1 semana» con la Bolsa de Halloween durante el evento.
+
 ## Canal 0.6.57 publicado: el plugin acepta el ejecutable de la build 208574 de GW2 (13 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.57` = `2211305d` (atestación; candidato `a323af8a`).

@@ -1,5 +1,28 @@
 # Changelog
 
+## Release beta 0.6.58 - Panel en vivo para el móvil, «1 semana» en la gráfica y «Detalles» en Venta
+
+Se actualiza desde la 0.6.57 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Panel en vivo. Durante una sesión, el recolector mantiene una nota «Tyrian en vivo» con el valor, el oro por hora,
+  la duración y el botín de la sesión, en grande y legible en móvil, tableta y escritorio. Se reescribe como mucho
+  cada 10 segundos y solo si algo cambió; al acabar la sesión dice «Sesión terminada». No lleva personaje, cuenta ni
+  mapa. Se apaga en Ajustes, «Panel en vivo para el móvil». Lo rápido que llega a otro dispositivo depende de la
+  sincronización de Hebra.
+- Gráfica de precios. Botón «1 semana» con un punto por hora y la hora local, para ver cómo se mueve un precio durante
+  un evento. La gráfica sigue abriéndose en 3 meses.
+- Venta. Cada fila tiene «Detalles» con lo mismo que la fila del Inventario, gráfica de precios incluida.
+- Sesión. La sesión terminada que se ve en grande tiene su enlace «Ver resumen».
+- Inventario. Un objeto conservado a medias o con «la reserva manda» por error vuelve a ofrecer quitar «Conservar».
+- Arreglos. Las escrituras de Hebra a conexiones ya cerradas dejan de contarse como error. Una vista cerrada deja de
+  repintarse. Si un lote de precios responde 404, los demás lotes se conservan. Una línea de venta por debajo de la
+  comisión mínima vale cero en vez de invalidar la sesión. Ante un 429 agotado se respeta solo el `Retry-After` del
+  servidor. Un contador de logro por encima de su umbral ya no invalida la lectura. Las sesiones ya terminadas no
+  reciben botín que llega tarde de la red. Al descargar el plugin, el latido de la sesión se para siempre.
+- Diagnóstico. El registro de depuración local anota más fallos con vocabulario cerrado y frena las ráfagas de líneas
+  repetidas. `npm run diag:summary` resume ese registro.
+
 ## Release beta 0.6.57 - El plugin acepta la versión de Guild Wars 2 del 13 de octubre
 
 Se actualiza desde la 0.6.56 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
