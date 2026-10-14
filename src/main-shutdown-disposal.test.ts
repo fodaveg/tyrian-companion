@@ -96,4 +96,14 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		expect(dependent.liveSessions.stopTimers).toHaveBeenCalledOnce();
 		expect(dependent.sessions.dispose).not.toHaveBeenCalled();
 	});
+
+	/** The Magic Find expiry is only cleared when one is armed: no `window` is touched otherwise (an unload before any `mf1`). */
+	it('clears the Magic Find expiry on unload without touching window when none is armed', () => {
+		expect(typeof window).toBe('undefined');
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with explicit isolated harnesses below.
+		const clear = (TyrianCompanionCore.prototype as unknown as { clearGameMagicFindExpiry(this: object): void }).clearGameMagicFindExpiry;
+		// A core whose field was never initialised (`undefined`) and one that holds `null` are both "nothing armed".
+		expect(() => { clear.call(Object.create(TyrianCompanionCore.prototype) as object); }).not.toThrow();
+		expect(() => { clear.call(Object.assign(Object.create(TyrianCompanionCore.prototype) as object, { gameMagicFindExpiry: null })); }).not.toThrow();
+	});
 });

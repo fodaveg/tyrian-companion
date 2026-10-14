@@ -2930,7 +2930,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	}
 
 	private clearGameMagicFindExpiry(): void {
-		if (this.gameMagicFindExpiry === null) return;
+		if (this.gameMagicFindExpiry == null) return;
 		window.clearTimeout(this.gameMagicFindExpiry);
 		this.gameMagicFindExpiry = null;
 	}

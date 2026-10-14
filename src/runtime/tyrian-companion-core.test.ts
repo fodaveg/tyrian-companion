@@ -442,7 +442,7 @@ describe('createTyrianRuntime (R1c): the whole core over a neutral host', () => 
 			[INVENTORY_ADVISOR_VIEW_TYPE, 'Inventory advisor', 'package-search'],
 			[SALE_VIEW_TYPE, 'Halloween sale', 'candy'],
 			[ACHIEVEMENTS_VIEW_TYPE, 'Achievements', 'circle-check'],
-			[LIVE_HUD_VIEW_TYPE, 'Live', 'gauge'],
+			[LIVE_HUD_VIEW_TYPE, 'Live', 'play'],
 		]);
 		// A registration is exactly what `registerView` takes: nothing of the section leaks into it.
 		for (const view of registered.views) {
@@ -752,7 +752,7 @@ describe('the three sections on a host with a main screen', () => {
 		expect([view.type, view.title(), view.icon]).toEqual([TYRIAN_MAIN_VIEW_TYPE, 'Tyrian Companion', 'sword']);
 		expect(view.sections.map((section) => [section.id, section.title(), section.icon])).toEqual([
 			['session', 'Session', 'sword'], ['inventory', 'Inventory', 'package-search'], ['sale', 'Sale', 'candy'], ['achievements', 'Achievements', 'circle-check'],
-			['live', 'Live', 'gauge'],
+			['live', 'Live', 'play'],
 		]);
 		for (const section of view.sections) {
 			// Only Achievements carries a badge (the followed count); the others list none.
