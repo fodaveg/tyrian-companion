@@ -55,6 +55,8 @@ export const PRICE_SEED_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
  */
 export const PRICE_SEED_OPERATION_POLICIES = Object.freeze({
 	price_history_seed: Object.freeze({ maxRetries: 0 }),
+	// Same reason: a reader-triggered download must not sleep through a `Retry-After`.
+	price_history_hourly: Object.freeze({ maxRetries: 0 }),
 }) satisfies HttpOperationPolicies;
 
 interface PriceSeedSourceOptions {

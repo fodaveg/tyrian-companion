@@ -1,5 +1,6 @@
 import type { Translator } from '../core/i18n';
 import type { PriceHistoryDailyV1, PriceHistorySide } from '../economy/price-history-model';
+import type { PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import {
@@ -18,8 +19,11 @@ import {
 	priceHistoryChartWindowRange,
 	priceHistoryDateAxisLabels,
 	priceHistoryDateAxisTicks,
+	priceHistoryHourAxisLabels,
 	priceHistoryPriceAxisTicks,
+	formatPriceHistoryHourUtc,
 	PRICE_HISTORY_CHART_ALL_RANGE,
+	PRICE_HISTORY_CHART_HOURLY_WINDOW,
 	PRICE_HISTORY_CHART_WINDOWS,
 	type PriceHistoryChartAggregatedPoint,
 	type PriceHistoryChartAggregationUnit,
@@ -72,6 +76,18 @@ export interface PriceHistoryChartMountOptions {
 	 * width. Clamped to 200..479; default 200. The height stays fixed so the chart does not grow with width.
 	 */
 	readonly compactWidth?: number;
+	/**
+	 * The hourly source of the «1 semana» window. Absent, that window is not offered at all (the chart
+	 * stays as daily as it always was). Present, pressing the button calls `request` (the caller's
+	 * download, which it gates on the price-history opt-in) and the window is drawn from `getState()`,
+	 * read again at every repaint. Opening or repainting the chart never calls `request`.
+	 */
+	readonly hourly?: {
+		readonly getState: () => PriceHourlyState;
+		readonly request: () => void;
+	};
+	/** Told at every paint whether the hourly window is the one on screen, so a caption outside can follow. */
+	readonly onWindowChange?: (hourly: boolean) => void;
 }
 
 interface ChartZoomState {
@@ -147,7 +163,8 @@ export function mountPriceHistoryChart(
 	const document = container.ownerDocument;
 	const geometry = options.layout === 'compact' ? compactGeometry(options.compactWidth) : WIDE_GEOMETRY;
 	const explore = options.explore !== false;
-	const windows = options.windows ?? PRICE_HISTORY_CHART_WINDOWS;
+	const windows = (options.windows ?? PRICE_HISTORY_CHART_WINDOWS)
+		.filter((entry) => options.hourly !== undefined || entry.id !== PRICE_HISTORY_CHART_HOURLY_WINDOW);
 	if (geometry.compact && !container.className.split(/\s+/u).includes('tyrian-price-chart--compact')) container.className += ' tyrian-price-chart--compact';
 
 	const paint = (): void => {
@@ -155,6 +172,14 @@ export function mountPriceHistoryChart(
 		// (Z7-5): without it a keyboard step on a slider or a window button dropped the focus to <body>.
 		const focusKey = focusedControlKey(container);
 		container.replaceChildren();
+		const hourlyOn = options.hourly !== undefined && state.windowId === PRICE_HISTORY_CHART_HOURLY_WINDOW;
+		options.onWindowChange?.(hourlyOn);
+		if (hourlyOn) {
+			container.append(buildToolbar(translator, state, windows, explore, paint, options.hourly.request));
+			paintHourly(container, document, options, geometry, translator, state, paint);
+			if (focusKey !== null) restoreControlFocus(container, focusKey);
+			return;
+		}
 		const range = state.windowId === 'custom'
 			? (state.customRange ?? PRICE_HISTORY_CHART_ALL_RANGE)
 			: priceHistoryChartWindowRange(merged, state.windowId);
@@ -163,8 +188,8 @@ export function mountPriceHistoryChart(
 		const unit = priceHistoryChartAggregationUnit(filtered.length, PLOT_INNER_WIDTH);
 		const aggregated = aggregatePriceHistoryChartPoints(filtered, unit);
 
-		container.append(buildToolbar(translator, state, windows, explore, paint));
-		container.append(buildPlot(document, options, geometry, explore, filtered, aggregated, hasLocal, translator, state, paint));
+		container.append(buildToolbar(translator, state, windows, explore, paint, options.hourly?.request));
+		container.append(buildPlot(document, options, geometry, explore, filtered, aggregated, hasLocal, translator, state, false, paint));
 		if (explore) container.append(buildRangeControls(translator, state, merged, filtered, paint));
 		container.append(buildSummary(translator, filtered));
 		const aggregationNote = buildAggregationNote(translator, unit);
@@ -213,6 +238,7 @@ function buildToolbar(
 	windows: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId }>,
 	explore: boolean,
 	repaint: () => void,
+	requestHourly: (() => void) | undefined,
 ): HTMLElement {
 	const toolbar = createDiv();
 	toolbar.className = 'tyrian-price-chart__toolbar';
@@ -230,6 +256,8 @@ function buildToolbar(
 		const selectWindow = (): void => {
 			state.windowId = window.id;
 			state.customRange = null;
+			// The one place the hourly download starts: the reader's own click on «1 semana».
+			if (window.id === PRICE_HISTORY_CHART_HOURLY_WINDOW) requestHourly?.();
 			repaint();
 		};
 		windowButton.addEventListener('click', selectWindow);
@@ -263,6 +291,7 @@ function buildPlot(
 	hasLocal: boolean,
 	translator: Translator,
 	state: ChartZoomState,
+	hourly: boolean,
 	repaint: () => void,
 ): HTMLElement {
 	const plotWrap = createDiv();
@@ -295,7 +324,9 @@ function buildPlot(
 		label.textContent = formatLootMoney(value, translator.locale).visual;
 		svg.append(label);
 	}
-	const dateLabels = priceHistoryDateAxisLabels(dateTicks, translator.locale, daySpan(aggregated));
+	const dateLabels = hourly
+		? priceHistoryHourAxisLabels(dateTicks, translator.locale)
+		: priceHistoryDateAxisLabels(dateTicks, translator.locale, daySpan(aggregated));
 	for (const [position, tick] of dateTicks.entries()) {
 		const x = round(toOuterX(tick.index));
 		const label = document.createElementNS(SVG_NAMESPACE, 'text');
@@ -308,7 +339,7 @@ function buildPlot(
 		svg.append(label);
 	}
 
-	const dayLevel = aggregated.length === filtered.length && aggregated.every((point) => point.dayCount === 1);
+	const dayLevel = !hourly && aggregated.length === filtered.length && aggregated.every((point) => point.dayCount === 1);
 	if (dayLevel) {
 		// Day-level: the exact plot engine the settings panel has always drawn with (H9.1),
 		// range/median/close geometry included, only re-hosted inside the axis frame above it.
@@ -327,7 +358,7 @@ function buildPlot(
 		svg.append(aggregatedSvg);
 	}
 
-	if (explore) attachDragSelection(svg, plotWrap, geometry, aggregated, state, repaint);
+	if (explore && !hourly) attachDragSelection(svg, plotWrap, geometry, aggregated, state, repaint);
 	plotWrap.append(svg);
 	return plotWrap;
 }
@@ -503,7 +534,11 @@ function buildRangeField(text: string, pointCount: number, value: number): { lab
 	return { label, input };
 }
 
-function buildSummary(translator: Translator, filtered: readonly PriceHistoryChartPoint[]): HTMLElement {
+function buildSummary(
+	translator: Translator,
+	filtered: ReadonlyArray<{ readonly dayUtc: string; readonly value: number | null }>,
+	formatAt: (at: string) => string = (at) => at,
+): HTMLElement {
 	const summary = priceHistoryChartSummary(filtered);
 	const list = createEl('dl');
 	list.className = 'tyrian-price-chart__summary';
@@ -515,7 +550,7 @@ function buildSummary(translator: Translator, filtered: readonly PriceHistoryCha
 		const term = createEl('dt');
 		term.textContent = translator.t(`priceHistory.chart.summary.${key}`);
 		const definition = createEl('dd');
-		definition.textContent = `${formatLootMoney(entry.value, translator.locale).visual} · ${entry.dayUtc}`;
+		definition.textContent = `${formatLootMoney(entry.value, translator.locale).visual} · ${formatAt(entry.dayUtc)}`;
 		row.append(term, definition);
 		list.append(row);
 	}
@@ -529,6 +564,55 @@ function buildAggregationNote(translator: Translator, unit: PriceHistoryChartAgg
 	note.setAttribute('aria-live', 'polite');
 	note.textContent = translator.t(`priceHistory.chart.aggregation.${unit}`);
 	return note;
+}
+
+/**
+ * The hourly window: its own series (one point per UTC hour), never merged with the daily one. Every
+ * state of the download has a visible answer: asking, failed (with a retry that is the reader's click),
+ * nothing published, or the chart with its axes and max/min/last stamped with date and hour.
+ */
+function paintHourly(
+	container: HTMLElement,
+	document: Document,
+	options: PriceHistoryChartMountOptions,
+	geometry: ChartGeometry,
+	translator: Translator,
+	state: ChartZoomState,
+	repaint: () => void,
+): void {
+	const hourly = options.hourly!;
+	const current = hourly.getState();
+	const line = (key: 'priceHistory.chart.hourly.failed' | 'priceHistory.chart.hourly.none' | 'priceHistory.chart.hourly.loading', role: 'status' | 'alert'): HTMLElement => {
+		const element = createEl('p');
+		element.className = 'tyrian-price-chart__hourly-state';
+		element.setAttribute('role', role);
+		element.textContent = translator.t(key);
+		return element;
+	};
+	if (current.status === 'ready' && current.points.length > 0) {
+		const points: PriceHistoryChartPoint[] = current.points.map((point) => ({
+			dayUtc: point.hourUtc, source: 'seed', value: point.askCopper, minValue: null, maxValue: null,
+		}));
+		const aggregated: PriceHistoryChartAggregatedPoint[] = points.map((point) => ({
+			dayUtc: point.dayUtc, source: 'seed', value: point.value, minValue: null, maxValue: null, dayCount: 1,
+		}));
+		container.append(buildPlot(document, options, geometry, false, points, aggregated, false, translator, state, true, repaint));
+		container.append(buildSummary(translator, points, formatPriceHistoryHourUtc));
+		return;
+	}
+	if (current.status === 'failed') {
+		container.append(line('priceHistory.chart.hourly.failed', 'alert'));
+		const retry = createEl('button');
+		retry.type = 'button';
+		retry.textContent = translator.t('priceHistory.chart.hourly.retry');
+		retry.setAttribute(FOCUS_KEY_ATTRIBUTE, 'hourly:retry');
+		retry.addEventListener('click', () => { hourly.request(); repaint(); });
+		container.append(retry);
+	} else if (current.status === 'empty') {
+		container.append(line('priceHistory.chart.hourly.none', 'status'));
+	} else {
+		container.append(line('priceHistory.chart.hourly.loading', 'status'));
+	}
 }
 
 function daySpan(points: ReadonlyArray<{ readonly dayUtc: string }>): number {

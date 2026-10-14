@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { PRICE_HOURLY_IDLE_STATE, type PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
 import { mountPriceHistoryChart } from './price-history-chart-view';
 import { PRICE_HISTORY_CHART_ROW_WINDOWS } from './price-history-chart-model';
@@ -167,6 +168,87 @@ describe('price history chart widget: the opt-in options of a surface that is fo
 			'tyrian-price-chart__date-label tyrian-price-chart__date-label--start',
 			'tyrian-price-chart__date-label tyrian-price-chart__date-label--end',
 		]);
+	});
+});
+
+describe('price history chart widget: the «1 semana» hourly window', () => {
+	const seedDays = Array.from({ length: 300 }, (_unused, index) => ({ dayUtc: dayAt(index), bidCopper: 10, askCopper: 100 + index }));
+	const hours: PriceHourlyState = {
+		status: 'ready',
+		points: [
+			{ hourUtc: '2026-10-13T22:00:00.000Z', askCopper: 346 }, { hourUtc: '2026-10-13T23:00:00.000Z', askCopper: 307 },
+			{ hourUtc: '2026-10-14T00:00:00.000Z', askCopper: 318 }, { hourUtc: '2026-10-14T01:00:00.000Z', askCopper: 313 },
+			{ hourUtc: '2026-10-14T02:00:00.000Z', askCopper: 348 },
+		],
+	};
+	const looking = { daily: [], side: 'ask' as const, seedDays, windows: PRICE_HISTORY_CHART_ROW_WINDOWS, initialWindow: '3m' as const, explore: false };
+	const labels = (container: FakeElement): string[] => walk(container).filter((element) => element.tag === 'button').map((element) => element.textContent ?? '');
+	const pressed = (container: FakeElement): string[] => walk(container)
+		.filter((element) => element.tag === 'button' && element.attributes.get('aria-pressed') === 'true').map((element) => element.textContent ?? '');
+	const hourlyOptions = (state: () => PriceHourlyState, request: () => void) => ({ ...looking, hourly: { getState: state, request } });
+
+	it('offers the week first, keeps 3 months as the pressed default and requests nothing on mount', () => {
+		const mount = createMount();
+		const request = vi.fn();
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('es'), hourlyOptions(() => PRICE_HOURLY_IDLE_STATE, request));
+
+		expect(labels(mount.container)).toEqual(['1 semana', '3 meses', '1 año', 'Todo']);
+		expect(pressed(mount.container)).toEqual(['3 meses']);
+		expect(request).not.toHaveBeenCalled();
+	});
+
+	it('does not offer the week without an hourly source', () => {
+		const mount = createMount();
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), looking);
+
+		expect(labels(mount.container)).toEqual(['3 months', '1 year', 'All']);
+	});
+
+	it('requests exactly once, on the click, and draws hours with date and hour in max/min/last', () => {
+		const mount = createMount();
+		const request = vi.fn();
+		const caption = vi.fn();
+		let current: PriceHourlyState = PRICE_HOURLY_IDLE_STATE;
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			...hourlyOptions(() => current, request), onWindowChange: caption,
+		});
+		expect(caption).toHaveBeenLastCalledWith(false);
+
+		walk(mount.container).find((element) => element.tag === 'button' && element.textContent === '1 week')!.dispatch('click');
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(caption).toHaveBeenLastCalledWith(true);
+		expect(pressed(mount.container)).toEqual(['1 week']);
+		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-chart__hourly-state')).toBe(true);
+
+		current = hours;
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			...hourlyOptions(() => current, request), onWindowChange: caption,
+		});
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(pressed(mount.container)).toEqual(['1 week']);
+		expect(summaryOf(mount.container)).toEqual([
+			'0g 3s 48c · 2026-10-14 02:00 UTC', '0g 3s 7c · 2026-10-13 23:00 UTC', '0g 3s 48c · 2026-10-14 02:00 UTC',
+		]);
+		const dates = walk(mount.container).filter((element) => element.className.startsWith('tyrian-price-chart__date-label')).map((element) => element.textContent);
+		expect(dates[0]).toMatch(/Oct 13.*10:00 PM|Oct 13, 22:00/u);
+		expect(dates.at(-1)).toContain('02:00');
+	});
+
+	it('shows the failure with a retry that asks again, and the empty answer without one', () => {
+		const mount = createMount();
+		const request = vi.fn();
+		let current: PriceHourlyState = { status: 'failed', points: [] };
+		const options = hourlyOptions(() => current, request);
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), options);
+		walk(mount.container).find((element) => element.textContent === '1 week')!.dispatch('click');
+		expect(request).toHaveBeenCalledTimes(1);
+		walk(mount.container).find((element) => element.textContent === 'Retry')!.dispatch('click');
+		expect(request).toHaveBeenCalledTimes(2);
+
+		current = { status: 'empty', points: [] };
+		mountPriceHistoryChart(mount.container as unknown as HTMLElement, createTranslator('en'), options);
+		expect(walk(mount.container).some((element) => element.textContent === 'Retry')).toBe(false);
+		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-chart__hourly-state')).toBe(true);
 	});
 });
 

@@ -27,6 +27,8 @@ export const HTTP_LOGICAL_ENDPOINTS = [
 	// seed. It is named here so diagnostics can count it without ever recording
 	// the URL, exactly like every official route above.
 	'price_history_seed',
+	// The same host's hourly feed, requested only when the reader presses «1 semana».
+	'price_history_hourly',
 ] as const;
 export type HttpLogicalEndpoint = typeof HTTP_LOGICAL_ENDPOINTS[number];
 

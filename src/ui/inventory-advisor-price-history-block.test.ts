@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
+import { PRICE_HOURLY_IDLE_STATE, type PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
 import {
 	mountRowPriceHistoryBlock,
@@ -328,6 +329,52 @@ describe('the price block inside the Inventory tab', () => {
 
 		expect(tab.blocks()).toHaveLength(0);
 	});
+
+	describe('the «1 semana» button', () => {
+		it('history off: no chart, no button, no hourly request', () => {
+			const harness = block({ enabled: false, hourly: {} });
+
+			expect(walk(harness.block.element).filter((element) => element.tag === 'button').map((element) => element.textContent))
+				.toEqual([translator.t('view.optIn.priceHistory.enable')]);
+			expect(harness.hourlyEnsure).toHaveBeenCalledTimes(0);
+		});
+
+		it('opening the block only offers the week: 3 months stays pressed and nothing hourly is requested', () => {
+			const harness = block({ enabled: true, seed: seeded(300), hourly: {} });
+
+			expect(walk(harness.block.element).filter((element) => element.tag === 'button').map((element) => element.textContent))
+				.toEqual(['1 week', '3 months', '1 year', 'All']);
+			expect(pressed(harness.block.element)).toEqual(['3 months']);
+			expect(harness.ensureSeed).toHaveBeenCalledTimes(1);
+			harness.block.update();
+			harness.block.update();
+			expect(harness.hourlyEnsure).toHaveBeenCalledTimes(0);
+		});
+
+		it('pressing it asks once, the footer names the hourly resolution, and the answer repaints with the week pressed', async () => {
+			const answer = Promise.resolve();
+			const harness = block({ enabled: true, seed: seeded(300), hourly: { ensure: () => answer } });
+
+			windowButton(harness.block.element, '1 week').dispatch('click');
+			expect(harness.hourlyEnsure).toHaveBeenCalledTimes(1);
+			expect(harness.hourlyEnsure).toHaveBeenCalledWith(ITEM_ID);
+			expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.legendHourly'));
+
+			harness.hourlyState.current = {
+				status: 'ready',
+				points: [{ hourUtc: '2026-10-14T03:00:00.000Z', askCopper: 318 }, { hourUtc: '2026-10-14T04:00:00.000Z', askCopper: 323 }],
+			};
+			await answer;
+			await Promise.resolve();
+			expect(pressed(harness.block.element)).toEqual(['1 week']);
+			expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.legendHourly'));
+			expect(texts(harness.block.element).join(' ')).toContain('2026-10-14 04:00 UTC');
+			expect(harness.hourlyEnsure).toHaveBeenCalledTimes(1);
+
+			windowButton(harness.block.element, '3 months').dispatch('click');
+			expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.legend'));
+		});
+	});
 });
 
 interface BlockSetup {
@@ -339,6 +386,8 @@ interface BlockSetup {
 	ensure?: () => void | Promise<void>;
 	/** The width the block measures when it paints for the first time. Default 0: a block that is not laid out. */
 	width?: number;
+	/** Gives the block an hourly source (the «1 semana» button); `ensure` is its download. */
+	hourly?: { state?: PriceHourlyState; ensure?: () => void | Promise<void> };
 }
 
 function block(setup: BlockSetup) {
@@ -350,16 +399,20 @@ function block(setup: BlockSetup) {
 	const ensureSeed = vi.fn(setup.ensure ?? (() => undefined));
 	const getSeed = vi.fn(() => seed.current);
 	const onEnable = vi.fn();
+	const hourlyState = { current: setup.hourly?.state ?? PRICE_HOURLY_IDLE_STATE };
+	const hourlyEnsure = vi.fn(setup.hourly?.ensure ?? (() => undefined));
+	const hourlyGet = vi.fn(() => hourlyState.current);
+	const hourly = setup.hourly === undefined ? undefined : { get: hourlyGet, ensure: hourlyEnsure };
 	const real: RowPriceHistoryBlock = mountRowPriceHistoryBlock({
 		itemId: ITEM_ID, itemName: 'Ancient grey amber chunk', hasMarket: setup.hasMarket ?? true,
-		source: () => ({ ...source, getSeed, ensureSeed, onEnable }),
+		source: () => ({ ...source, getSeed, ensureSeed, onEnable, hourly }),
 		translator: () => translator,
 		measureWidth: () => setup.width ?? 0,
 	});
 	// The host attaches the block and then asks it to paint, which is when it measures its width.
 	real.update();
 	const mounted = { element: real.element as unknown as FakeElement, update: () => real.update(), dispose: () => real.dispose() };
-	return { block: mounted, seed, source, ensureSeed, getSeed, onEnable };
+	return { block: mounted, seed, source, ensureSeed, getSeed, onEnable, hourlyEnsure, hourlyState };
 }
 
 interface TabSource { enabled: boolean; seed: PriceHistoryPanelSeedState }

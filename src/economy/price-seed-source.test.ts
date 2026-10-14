@@ -98,7 +98,7 @@ describe('price seed download policy: one attempt, never a retry', () => {
 	});
 
 	it('names the seed endpoint and nothing else, so no ArenaNet route loses its retries', () => {
-		expect(PRICE_SEED_OPERATION_POLICIES).toEqual({ price_history_seed: { maxRetries: 0 } });
+		expect(PRICE_SEED_OPERATION_POLICIES).toEqual({ price_history_seed: { maxRetries: 0 }, price_history_hourly: { maxRetries: 0 } });
 	});
 });
 

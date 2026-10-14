@@ -1,4 +1,5 @@
 import type { Translator } from '../core/i18n';
+import type { PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import { mountPriceHistoryChart } from './price-history-chart-view';
 import { PRICE_HISTORY_CHART_ROW_WINDOWS } from './price-history-chart-model';
@@ -25,6 +26,15 @@ export interface InventoryAdvisorRowPriceHistory {
 	getSeed(itemId: number): PriceHistoryPanelSeedState;
 	/** Downloads (or serves from the 24 h cache) the seed of one item, and repaints the tab when it ends. */
 	ensureSeed(itemId: number): void | Promise<void>;
+	/**
+	 * The hourly series behind the «1 semana» button. Absent, the button is not offered. `get` only
+	 * reads; `ensure` downloads and is called ONLY when the reader presses the button (never when the
+	 * block opens or repaints), and sends nothing while the price history is off.
+	 */
+	hourly?: {
+		get(itemId: number): PriceHourlyState;
+		ensure(itemId: number): void | Promise<void>;
+	};
 	/** The same `enablePriceHistory` the opt-in banner calls: the click is the consent. */
 	onEnable(): void | Promise<void>;
 }
@@ -97,6 +107,15 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		);
 	};
 
+	// The reader pressed «1 semana» (or its retry): ask once and repaint when the answer is in.
+	const requestHourly = (): void => {
+		const source = options.source();
+		if (source === undefined || !source.enabled || source.hourly === undefined) return;
+		const flight = source.hourly.ensure(options.itemId);
+		if (flight === undefined) return;
+		void Promise.resolve(flight).then(() => { paint(); }, () => { paint(); });
+	};
+
 	const stateOf = (source: InventoryAdvisorRowPriceHistory): BlockState => {
 		// No market, no series: there is nothing to turn history on for, so no button is offered either.
 		if (!options.hasMarket) return { kind: 'none' };
@@ -126,22 +145,31 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		}
 		const translator = options.translator();
 		const state = stateOf(source);
-		const key = stateKey(state, translator.locale, options.itemName);
+		const key = stateKey(state, translator.locale, options.itemName, source.hourly?.get(options.itemId));
 		if (key === lastKey) return;
 		lastKey = key;
 		heading.textContent = translator.t('advisor.priceHistory.heading');
 		if (state.kind === 'ready') {
 			// The chart container stays; only its contents (and the text around it) are redrawn.
+			const caption = createEl('figcaption');
+			caption.textContent = translator.t('advisor.priceHistory.legend');
+			const hourlySource = source.hourly;
 			mountPriceHistoryChart(chart, translator, {
 				daily: [], side: 'ask', seedDays: state.days,
 				windows: PRICE_HISTORY_CHART_ROW_WINDOWS, initialWindow: '3m', explore: false, layout, compactWidth,
+				hourly: hourlySource === undefined ? undefined : {
+					getState: () => hourlySource.get(options.itemId),
+					request: requestHourly,
+				},
+				// The footer tells the resolution that is on screen, not the one the other window has.
+				onWindowChange: (hourly) => {
+					caption.textContent = translator.t(hourly ? 'advisor.priceHistory.legendHourly' : 'advisor.priceHistory.legend');
+				},
 			});
 			const figure = createEl('figure');
 			figure.className = 'tyrian-inventory__price-history-figure';
 			figure.setAttribute('role', 'group');
 			figure.setAttribute('aria-label', translator.t('advisor.priceHistory.chartLabel', { name: options.itemName }));
-			const caption = createEl('figcaption');
-			caption.textContent = translator.t('advisor.priceHistory.legend');
 			figure.append(chart, caption);
 			body.replaceChildren(figure);
 			if (state.stale) body.append(statusLine(translator.t('priceHistoryNote.state.staleCache'), 'status'));
@@ -189,12 +217,13 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 }
 
 /** Everything a paint reads besides the translator's strings: equal keys paint the same nodes. */
-function stateKey(state: BlockState, locale: string, itemName: string): string {
+function stateKey(state: BlockState, locale: string, itemName: string, hourly: PriceHourlyState | undefined): string {
 	const base = `${state.kind}:${locale}:${itemName}`;
 	if (state.kind === 'ready') {
+		const hourlyKey = hourly === undefined ? '-' : `${hourly.status}/${String(hourly.points.length)}/${hourly.points.at(-1)?.hourUtc ?? ''}`;
 		const first = state.days[0]?.dayUtc ?? '';
 		const last = state.days.at(-1)?.dayUtc ?? '';
-		return `${base}:${first}:${last}:${String(state.days.length)}:${String(state.stale)}`;
+		return `${base}:${first}:${last}:${String(state.days.length)}:${String(state.stale)}:${hourlyKey}`;
 	}
 	if (state.kind === 'off') return `${base}:${String(state.consultOnly)}:${String(state.busy)}:${String(state.offerVisible)}`;
 	if (state.kind === 'failed') return `${base}:${String(state.storage)}`;

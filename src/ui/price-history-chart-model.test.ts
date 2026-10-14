@@ -13,6 +13,8 @@ import {
 	priceHistoryDateAxisLabels,
 	priceHistoryDateAxisTicks,
 	priceHistoryPriceAxisTicks,
+	formatPriceHistoryHourUtc,
+	priceHistoryHourAxisLabels,
 } from './price-history-chart-model';
 
 describe('price history chart model', () => {
@@ -211,10 +213,25 @@ describe('PRICE_HISTORY_CHART_ROW_WINDOWS', () => {
 
 		expect(range).toEqual({ startDayUtc: dayAt(300 - 90), endDayUtc: dayAt(299) });
 		expect(filterPriceHistoryChartRange(points, range)).toHaveLength(90);
-		expect(PRICE_HISTORY_CHART_ROW_WINDOWS.map((entry) => entry.id)).toEqual(['3m', '1y', 'all']);
+		expect(PRICE_HISTORY_CHART_ROW_WINDOWS.map((entry) => entry.id)).toEqual(['1w', '3m', '1y', 'all']);
 	});
 });
 
 function dayAt(offsetFromEpochAnchor: number): string {
 	return new Date(Date.UTC(2026, 0, 1) + offsetFromEpochAnchor * 86_400_000).toISOString().slice(0, 10);
 }
+
+describe("hourly window helpers", () => {
+	it("labels each tick with UTC day and hour, never the same twice", () => {
+		const ticks = [{ dayUtc: "2026-10-13T22:00:00.000Z" }, { dayUtc: "2026-10-14T04:00:00.000Z" }];
+		const labels = priceHistoryHourAxisLabels(ticks, "en");
+		expect(labels[0]).toContain("13");
+		expect(labels[0]).toContain("22:00");
+		expect(labels[1]).toContain("04:00");
+		expect(priceHistoryHourAxisLabels(ticks, "es")[1]).toContain("oct");
+	});
+
+	it("stamps a summary entry with date and hour", () => {
+		expect(formatPriceHistoryHourUtc("2026-10-14T04:00:00.000Z")).toBe("2026-10-14 04:00 UTC");
+	});
+});

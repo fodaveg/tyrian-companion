@@ -53,7 +53,7 @@ export function mergePriceHistoryChartPoints(
 }
 
 /** The four zoom presets, in the order they are offered. `days: null` is the unbounded "all" window. */
-export type PriceHistoryChartWindowId = '1m' | '3m' | '1y' | '5y' | 'all';
+export type PriceHistoryChartWindowId = '1w' | '1m' | '3m' | '1y' | '5y' | 'all';
 
 export const PRICE_HISTORY_CHART_WINDOWS: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId; readonly days: number | null }> =
 	Object.freeze([
@@ -64,11 +64,14 @@ export const PRICE_HISTORY_CHART_WINDOWS: ReadonlyArray<{ readonly id: PriceHist
 	]);
 
 /**
- * The three presets of a surface that is for looking, not for exploring (the Inventory row): a real
- * 90-day window, one year, everything. A surface opts into this list; the default four are untouched.
+ * The presets of a surface that is for looking, not for exploring (the Inventory row): the last week
+ * (hourly, drawn from its own series, see `price-history-chart-view.ts`), a real 90-day window, one
+ * year, everything. A surface opts into this list; the default four are untouched. The week is only
+ * offered when the caller also hands the chart an hourly source.
  */
 export const PRICE_HISTORY_CHART_ROW_WINDOWS: ReadonlyArray<{ readonly id: PriceHistoryChartWindowId; readonly days: number | null }> =
 	Object.freeze([
+		{ id: '1w', days: 7 },
 		{ id: '3m', days: 90 },
 		{ id: '1y', days: 365 },
 		{ id: 'all', days: null },
@@ -308,4 +311,24 @@ export function priceHistoryChartIndexAtOffset(offsetX: number, plotLeft: number
 
 function clamp(value: number, lo: number, hi: number): number {
 	return Math.min(hi, Math.max(lo, value));
+}
+
+/** The id of the window drawn from the hourly series instead of the daily one. */
+export const PRICE_HISTORY_CHART_HOURLY_WINDOW: PriceHistoryChartWindowId = '1w';
+
+/**
+ * One label per tick for an hourly axis: day, month and hour in UTC (`14 Oct, 04:00`). The span of a
+ * week keeps every tick on a different hour, so no finer level is needed; equal labels cannot occur
+ * for distinct instants of this resolution.
+ */
+export function priceHistoryHourAxisLabels(ticks: ReadonlyArray<{ readonly dayUtc: string }>, locale: Locale): string[] {
+	const format = new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-US', {
+		day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC',
+	});
+	return ticks.map((tick) => format.format(new Date(tick.dayUtc)));
+}
+
+/** `2026-10-14T04:00:00.000Z` as `2026-10-14 04:00 UTC`: the date and hour a summary entry points at. */
+export function formatPriceHistoryHourUtc(hourUtc: string): string {
+	return `${hourUtc.slice(0, 10)} ${hourUtc.slice(11, 16)} UTC`;
 }
