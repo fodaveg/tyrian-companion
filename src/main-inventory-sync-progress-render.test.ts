@@ -81,6 +81,7 @@ describe('inventory sync progress and the open product tabs', () => {
 			companion: new MountedViews(() => { throw new Error('No Companion view is mounted in this test.'); }),
 			inventoryAdvisor: advisors, sale: sales,
 			achievements: new MountedViews(() => { throw new Error('No Achievements view is mounted in this test.'); }),
+			liveHud: new MountedViews(() => { throw new Error('No Live HUD view is mounted in this test.'); }),
 		};
 		const saleRegistration = sales.registration(saleView({ getSaleLocale: () => 'en' }));
 		const advisorRegistration = advisors.registration(inventoryAdvisorView({ getInventoryAdvisorLocale: () => 'en' }));
@@ -305,6 +306,7 @@ describe('Sale tab expiry timer and the plugin unload', () => {
 				inventoryAdvisor: new MountedViews(() => { throw new Error('No advisor view is mounted in this test.'); }),
 				sale: sales,
 				achievements: new MountedViews(() => { throw new Error('No Achievements view is mounted in this test.'); }),
+				liveHud: new MountedViews(() => { throw new Error('No Live HUD view is mounted in this test.'); }),
 			};
 			await sales.registration(saleView({ getSaleLocale: () => 'en' })).mount(content as unknown as HTMLElement);
 			expect(vi.getTimerCount(), 'the view armed its expiry timer').toBe(1);

@@ -13,6 +13,7 @@ interface Spies {
 	advisorProgress: ReturnType<typeof vi.fn>;
 	sale: ReturnType<typeof vi.fn>;
 	achievements: ReturnType<typeof vi.fn>;
+	liveHud: ReturnType<typeof vi.fn>;
 	refreshProductActions: ReturnType<typeof vi.fn>;
 	refreshRibbon: ReturnType<typeof vi.fn>;
 	revealView: ReturnType<typeof vi.fn>;
@@ -21,7 +22,7 @@ interface Spies {
 
 function harness(overrides: { placement?: ViewPlacement | null; ready?: boolean; withSection?: boolean } = {}) {
 	const spies: Spies = {
-		companion: vi.fn(), advisor: vi.fn(), advisorProgress: vi.fn(), sale: vi.fn(), achievements: vi.fn(),
+		companion: vi.fn(), advisor: vi.fn(), advisorProgress: vi.fn(), sale: vi.fn(), achievements: vi.fn(), liveHud: vi.fn(),
 		refreshProductActions: vi.fn(), refreshRibbon: vi.fn(), revealView: vi.fn(async () => undefined), revealSection: vi.fn(async () => undefined),
 	};
 	const mounted = (render: ReturnType<typeof vi.fn>, extra: object = {}) => ({ current: () => [{ render, ...extra }] });
@@ -41,6 +42,7 @@ function harness(overrides: { placement?: ViewPlacement | null; ready?: boolean;
 			inventoryAdvisor: mounted(spies.advisor, { renderProgress: spies.advisorProgress }),
 			sale: mounted(spies.sale),
 			achievements: mounted(spies.achievements),
+			liveHud: mounted(spies.liveHud),
 		} as unknown as LiveViewControllers,
 		get registeredPlacement() { return state.placement; },
 		productActions: { refresh: spies.refreshProductActions },
@@ -57,6 +59,7 @@ describe('LiveViewRuntime repaints', () => {
 		expect(spies.companion).not.toHaveBeenCalled();
 		await Promise.resolve();
 		expect(spies.companion).toHaveBeenCalledOnce();
+		expect(spies.liveHud, 'the Live HUD repaints with the Companion').toHaveBeenCalledOnce();
 		expect(spies.refreshRibbon).toHaveBeenCalledOnce();
 		expect(spies.refreshProductActions).toHaveBeenCalledOnce();
 		runtime.renderViews();
