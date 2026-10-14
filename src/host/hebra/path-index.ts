@@ -306,6 +306,7 @@ export class TyrianPathIndex {
 
 	async setNote(path: string, id: string, mtime: number): Promise<void> {
 		this.#dropId(id);
+		this.#releasePath(path, id);
 		this.#byPath.set(path, { path, kind: 'note', id, mtime });
 		this.#byId.set(id, path);
 		this.#persist();
@@ -313,6 +314,7 @@ export class TyrianPathIndex {
 
 	async setFile(path: string, id: string, mtime: number): Promise<void> {
 		this.#dropId(id);
+		this.#releasePath(path, id);
 		this.#byPath.set(path, { path, kind: 'file', id, mtime });
 		this.#byId.set(id, path);
 		this.#persist();
@@ -320,6 +322,7 @@ export class TyrianPathIndex {
 
 	async setFolder(path: string): Promise<void> {
 		if (this.#byPath.get(path)?.kind === 'folder') return;
+		this.#releasePath(path);
 		this.#byPath.set(path, { path, kind: 'folder' });
 		this.#persist();
 	}
@@ -380,6 +383,13 @@ export class TyrianPathIndex {
 	#dropId(id: string): void {
 		const previousPath = this.#byId.get(id);
 		if (previousPath !== undefined) this.#byPath.delete(previousPath);
+	}
+
+	/** The id that held `path` (other than `keep`) stops pointing at it: overwritten, it no longer
+	 *  owns that path, and a later `deleteById` of it must not drop the new owner. */
+	#releasePath(path: string, keep?: string): void {
+		const previousId = this.#byPath.get(path)?.id;
+		if (previousId !== undefined && previousId !== keep && this.#byId.get(previousId) === path) this.#byId.delete(previousId);
 	}
 
 	/** Indexed notes (for `TyrianVault.markdownFiles()`), in a stable order. */

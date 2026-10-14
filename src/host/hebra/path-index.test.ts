@@ -375,6 +375,30 @@ describe('TyrianPathIndex', () => {
 		expect(reloaded.getIdForPath('b.md')).toBe('note-b');
 	});
 
+	it.each([
+		['setNote', (index: TyrianPathIndex) => index.setNote('a.md', 'note-new', 2)],
+		['setFile', (index: TyrianPathIndex) => index.setFile('a.md', 'file-new', 2)],
+		['setFolder', (index: TyrianPathIndex) => index.setFolder('a.md')],
+	] as const)('%s over a path owned by another id releases that id, so its delete cannot take the new owner', async (_name, take) => {
+		const index = await TyrianPathIndex.load(createMemoryPathIndexKv(), 'lib-1');
+		await index.setNote('a.md', 'note-old', 1);
+		await take(index);
+		const owner = index.isFolder('a.md') ? 'folder' : index.getIdForPath('a.md');
+		expect(index.getPathForId('note-old')).toBeUndefined();
+		expect(index.getKindForId('note-old')).toBeUndefined();
+		await index.deleteById('note-old');
+		expect(index.has('a.md')).toBe(true);
+		expect(index.isFolder('a.md') ? 'folder' : index.getIdForPath('a.md')).toBe(owner);
+	});
+
+	it('re-setting the same id on its own path keeps it', async () => {
+		const index = await TyrianPathIndex.load(createMemoryPathIndexKv(), 'lib-1');
+		await index.setNote('a.md', 'note-a', 1);
+		await index.setNote('a.md', 'note-a', 2);
+		expect(index.getPathForId('note-a')).toBe('a.md');
+		expect(index.toVaultFile('a.md')).toEqual({ path: 'a.md', mtime: 2 });
+	});
+
 	it('batch saves once, and retainOnly drops what is not alive', async () => {
 		const store = createMemoryPathIndexKv();
 		let sets = 0;
