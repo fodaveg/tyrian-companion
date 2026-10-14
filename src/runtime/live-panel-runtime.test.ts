@@ -30,7 +30,7 @@ function activeView(nowMs: number, patch: Partial<LiveSessionViewV1> = {}): Live
 }
 
 function snapshot(view: LiveSessionViewV1): LivePanelSnapshot {
-	return { view, valueCopper: view.valuation.knownNetValueCopper ?? 0, ratePerHourCopper: 150_000, loot: [{ name: 'Hueso', quantity: 3, totalCopper: 300 }], lastDrop: null, sacks: 2 };
+	return { view, valueCopper: view.valuation.knownNetValueCopper ?? 0, ratePerHourCopper: 150_000, loot: [{ itemId: 24358, name: 'Hueso', quantity: 3, totalCopper: 300 }], lastDrop: null };
 }
 
 function memoryVault(initial: Record<string, string> = {}) {
@@ -279,16 +279,15 @@ describe('livePanelSnapshot', () => {
 	it('takes the latest alert that was not skipped, naming it from the entity cache, then the loot rows, then the id', () => {
 		const alerts = [alert('a', iso(START + 60_000), 9, null), alert('b', iso(START + 120_000), 77, 'below_threshold'), alert('c', iso(START + 30_000), 5, null)];
 		const named = livePanelSnapshot({ locale: 'es', view, alerts, loot, itemName: (id) => id === 9 ? 'Pico encantado' : null });
-		expect(named.lastDrop).toEqual({ name: 'Pico encantado', quantity: 2, totalCopper: 90_000, observedAt: iso(START + 60_000) });
+		expect(named.lastDrop).toEqual({ itemId: 9, name: 'Pico encantado', quantity: 2, totalCopper: 90_000, observedAt: iso(START + 60_000) });
 		expect(livePanelSnapshot({ locale: 'es', view, alerts, loot, itemName: () => null }).lastDrop?.name).toBe('Pico');
 		expect(livePanelSnapshot({ locale: 'en', view, alerts: [alerts[2]!], loot, itemName: () => null }).lastDrop?.name).toBe('Item 5');
 		expect(livePanelSnapshot({ locale: 'es', view, alerts: [alerts[1]!], loot, itemName: () => null }).lastDrop).toBeNull();
 	});
 
-	it('counts observed sack gains, and has no count while the loot tracker is idle', () => {
-		expect(livePanelSnapshot({ locale: 'es', view, alerts: [], loot, itemName: () => null }).sacks).toBe(7);
+	it('carries the loot rows with their item ids, and none while the loot tracker is idle', () => {
+		expect(livePanelSnapshot({ locale: 'es', view, alerts: [], loot, itemName: () => null }).loot).toEqual([{ itemId: 9, name: 'Pico', quantity: 1, totalCopper: 1 }]);
 		const idle = livePanelSnapshot({ locale: 'es', view, alerts: [], loot: { status: 'idle' }, itemName: () => null });
-		expect(idle.sacks).toBeNull();
 		expect(idle.loot).toEqual([]);
 	});
 });

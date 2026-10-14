@@ -1,27 +1,37 @@
 /**
- * The live panel note (David, 14 Oct 2026): ONE note at a fixed path that the collector rewrites while a session runs, so the
- * figures can be read from a phone or a tablet in real time. This module is the pure half: the same data always give the same
- * bytes, and the text only has the resolution of a minute (duration, «dato de las 18:42»), so a connected session with nothing new
- * rewrites it at most once a minute (`runtime/live-panel-runtime.ts` writes only when the text changed).
+ * The live panel note (David, 14 Oct 2026): ONE note at a fixed path that the collector rewrites while a session runs, so
+ * the figures can be read from a phone or a tablet in real time. This module is the pure half: the same data always give the
+ * same bytes (`runtime/live-panel-runtime.ts` writes only when the text changed).
  *
- * Layout, top to bottom: the fixed title, the estimated value as the big heading, gold per hour and duration, the addon state
- * and its freshness, the last valuable drop, three consecutive callouts (Hebra and Obsidian's dashboard class paint them as a
- * grid of cards: 3, 2 or 1 columns by width) and the value chart OUTSIDE the cards, at full width, because Mermaid does not
- * draw inside a card. No character, no account, no map: the note travels through sync.
+ * The note is two things at once:
+ * - the TRANSPORT of the «En vivo» HUD (`ui/live-hud-view.ts`): its frontmatter carries the figures the HUD shows, as
+ *   structured `tc_live_*` fields (`LivePanelLiveV1`), so a device in consult mode paints the same numbers the collector sees.
+ *   A field changes only when a VISIBLE figure changes (the value, a bag, the state) or once a minute (the last reading's minute,
+ *   the duration of the body); nothing in it moves every second, so a quiet session costs one write a minute and a drop costs one
+ *   write within the floor. The duration is not sent: the start is, and the HUD counts;
+ * - a readable note for whoever opens it: the fixed title, the estimated value as the big heading, gold per hour and duration,
+ *   the addon state and its freshness, the last valuable drop, three consecutive callouts (Hebra and Obsidian's dashboard
+ *   class paint them as a grid of cards: 3, 2 or 1 columns by width) and the value chart OUTSIDE the cards, at full width,
+ *   because Mermaid does not draw inside a card.
+ * No character, no account, no map: the note travels through sync. Under 4 KB with every loot row and a three-hour chart.
  */
 
-import { parseDocument } from 'yaml';
+import { Document as YamlDocument, isSeq, parseDocument } from 'yaml';
 
 import { formatCopperVisual } from '../core/copper-format';
 import { createTranslator, type Locale, type Translator } from '../core/i18n';
-import { liveItemRateEligible, type LiveSessionViewV1 } from './live-session-model';
+import { liveBagsPerHourMilli, liveObservedBags, type LiveSessionViewV1 } from './live-session-model';
 import { renderSummaryChart } from './live-session-summary-chart';
 
 /** The note, RELATIVE to the output folder, next to `Collector status.md`. */
 export const LIVE_PANEL_NOTE_RELATIVE_PATH = 'Live panel.md';
 export const LIVE_PANEL_NOTE_KIND = 'gw2_live_panel';
-/** The loot card lists this many items, the most valuable first. */
+/** `tc_live_v`: the format of the `tc_live_*` fields. A reader sets aside a later one, never reads it as broken. */
+export const LIVE_PANEL_TRANSPORT_VERSION = 1;
+/** The loot card and the transport list this many items, the most valuable first. */
 export const LIVE_PANEL_LOOT_ROWS = 5;
+/** An item name longer than this is cut in the transport: the HUD shows one line per item and the note stays under 4 KB. */
+export const LIVE_PANEL_NAME_LIMIT = 60;
 const MINUTE_MS = 60_000;
 const DASH = '—';
 
@@ -32,8 +42,17 @@ export function livePanelNotePath(root: string): string {
 
 /** What the panel says about the session, kept in the frontmatter so a later write can tell a finished note from a stale one. */
 export type LivePanelState = 'none' | 'live' | 'stale' | 'disconnected' | 'ended';
+const LIVE_PANEL_STATES: readonly LivePanelState[] = ['none', 'live', 'stale', 'disconnected', 'ended'];
+
+/**
+ * Where the magic find figure comes from. `manual`, `verified` and `unknown` are the account's (`LiveSessionViewV1.magicFind`);
+ * `game` is reserved for the in-game total with buffs that only the addon knows and that does not reach the plugin yet.
+ */
+export type LivePanelMagicFindSource = LiveSessionViewV1['magicFind']['source'] | 'game';
+const MAGIC_FIND_SOURCES: readonly LivePanelMagicFindSource[] = ['manual', 'verified', 'unknown', 'game'];
 
 export interface LivePanelLootRow {
+	readonly itemId: number;
 	readonly name: string;
 	readonly quantity: number;
 	/** What selling the whole pile nets; null while unpriced. */
@@ -57,8 +76,31 @@ export interface LivePanelInput {
 	/** Every loot row; the card keeps the most valuable `LIVE_PANEL_LOOT_ROWS`. */
 	readonly loot: readonly LivePanelLootRow[];
 	readonly lastDrop: LivePanelLastDrop | null;
-	/** Observed Halloween bag gains, or null when the tracker has no count. */
-	readonly sacks: number | null;
+}
+
+/**
+ * The figures of the HUD, as the frontmatter carries them and as the collector computes them locally: the ONE shape both
+ * devices paint from. Every absent figure is null, never 0: the HUD shows a dash for it.
+ */
+export interface LivePanelLiveV1 {
+	readonly version: typeof LIVE_PANEL_TRANSPORT_VERSION;
+	readonly state: LivePanelState;
+	/** The last reading, to the minute (its seconds never reach the note). Null before the first one. */
+	readonly observedAt: string | null;
+	readonly startedAt: string | null;
+	/** Only once the session ended. */
+	readonly endedAt: string | null;
+	/** `liveSessionValue`, or null while nothing is priced. */
+	readonly valueCopper: number | null;
+	/** Gold per hour in copper, whole; null when not eligible. */
+	readonly ratePerHourCopper: number | null;
+	/** `liveObservedBags`. */
+	readonly bags: number | null;
+	/** `liveBagsPerHourMilli`. */
+	readonly bagsPerHourMilli: number | null;
+	readonly magicFind: { readonly value: number | null; readonly source: LivePanelMagicFindSource };
+	/** The most valuable `LIVE_PANEL_LOOT_ROWS`, most valuable first. */
+	readonly loot: readonly LivePanelLootRow[];
 }
 
 /** The state a view and its clock put the panel in. A finished session is `ended`; no session at all is `none`. */
@@ -69,28 +111,59 @@ export function livePanelState(view: LiveSessionViewV1): LivePanelState {
 	return view.sourceState === 'ready' ? 'live' : 'stale';
 }
 
+/** The transport of a view that is not a session: everything null, the state `none`. */
+export function emptyLivePanelLive(): LivePanelLiveV1 {
+	return {
+		version: LIVE_PANEL_TRANSPORT_VERSION, state: 'none', observedAt: null, startedAt: null, endedAt: null, valueCopper: null,
+		ratePerHourCopper: null, bags: null, bagsPerHourMilli: null, magicFind: { value: null, source: 'unknown' }, loot: [],
+	};
+}
+
+/**
+ * The HUD figures of a live session. The collector paints its HUD from this and writes it into the note's frontmatter; a device
+ * in consult reads it back with `parseLivePanelNote`. Same input, same figures.
+ */
+export function livePanelLive(input: Pick<LivePanelInput, 'view' | 'valueCopper' | 'ratePerHourCopper' | 'loot'>): LivePanelLiveV1 {
+	const { view } = input;
+	const state = livePanelState(view);
+	if (state === 'none' || view.startedAt === null) return emptyLivePanelLive();
+	const { valuation } = view;
+	const unpriced = valuation.capturedAt === null && valuation.knownNetValueCopper === null;
+	return {
+		version: LIVE_PANEL_TRANSPORT_VERSION, state,
+		observedAt: minuteOf(view.lastObservationAt), startedAt: view.startedAt,
+		endedAt: state === 'ended' ? view.endedAt : null,
+		valueCopper: unpriced ? null : Math.round(input.valueCopper),
+		ratePerHourCopper: input.ratePerHourCopper === null ? null : Math.round(input.ratePerHourCopper),
+		bags: liveObservedBags(view), bagsPerHourMilli: liveBagsPerHourMilli(view),
+		magicFind: { value: view.magicFind.value, source: view.magicFind.source },
+		loot: rankLoot(input.loot).map((row) => ({ ...row, name: plainName(row.name) })),
+	};
+}
+
 /** The panel note for a view that is not a session (never started, or cleared before this run saw it end). */
 export function renderLivePanelEmptyNote(locale: Locale): string {
 	const t = createTranslator(locale);
-	return [...frontmatter('none'), `# ${t.t('livePanel.title')}`, '', t.t('livePanel.none'), ''].join('\n');
+	return [...frontmatter(emptyLivePanelLive()), `# ${t.t('livePanel.title')}`, '', t.t('livePanel.none'), ''].join('\n');
 }
 
 /** The whole note. Same input, same bytes. */
 export function renderLivePanelNote(input: LivePanelInput): string {
 	const { view } = input;
-	const state = livePanelState(view);
+	const live = livePanelLive(input);
+	const state = live.state;
 	if (state === 'none' || view.startedAt === null) return renderLivePanelEmptyNote(input.locale);
 	const t = createTranslator(input.locale);
-	const out = [...frontmatter(state), `# ${t.t('livePanel.title')}`, '', `# ${valueText(input)}`, ''];
+	const out = [...frontmatter(live), `# ${t.t('livePanel.title')}`, '', `# ${valueText(live)}`, ''];
 	out.push(t.t('livePanel.rate', {
-		rate: input.ratePerHourCopper === null ? DASH : formatCopperVisual(Math.round(input.ratePerHourCopper)),
+		rate: live.ratePerHourCopper === null ? DASH : formatCopperVisual(live.ratePerHourCopper),
 		duration: durationText(view.elapsedMs ?? 0),
 	}), '');
-	out.push(statusText(t, state, input), '');
+	out.push(statusText(t, state, input, live), '');
 	if (state !== 'ended') out.push(dropText(t, input.lastDrop), '');
-	out.push(...callout(t.t('livePanel.card.loot'), lootLines(t, input.loot)), '');
+	out.push(...callout(t.t('livePanel.card.loot'), lootLines(t, live.loot)), '');
 	out.push(...callout(t.t('livePanel.card.coins'), coinLines(t, view)), '');
-	out.push(...callout(t.t('livePanel.card.halloween'), halloweenLines(t, input)), '');
+	out.push(...callout(t.t('livePanel.card.halloween'), halloweenLines(t, live)), '');
 	const chart = renderSummaryChart({
 		points: view.chartPoints, startedAt: view.startedAt, locale: input.locale, gaps: view.gaps,
 		endedAt: state === 'ended' && view.endedAt !== null ? view.endedAt : new Date(Math.floor(input.nowMs / MINUTE_MS) * MINUTE_MS).toISOString(),
@@ -99,8 +172,13 @@ export function renderLivePanelNote(input: LivePanelInput): string {
 	return out.join('\n');
 }
 
-/** Whether `text` is a live panel note (the only kind this module may overwrite), and in what state it was left. */
-export function parseLivePanelNote(text: string): { readonly state: LivePanelState } | null {
+/**
+ * Whether `text` is a live panel note (the only kind this module may overwrite), in what state it was left, and the HUD
+ * figures it carries. `live` is null for a note of this kind without readable figures: one from a build before the transport,
+ * one of a later `tc_live_v`, or one whose fields do not pass the strict reading (a wrong type, a negative count, a name that is
+ * not text); the HUD then says the note is not readable instead of painting half of it. Null for anything that is not this kind.
+ */
+export function parseLivePanelNote(text: string): { readonly state: LivePanelState; readonly live: LivePanelLiveV1 | null } | null {
 	const normalized = text.replace(/\r\n/gu, '\n');
 	if (!normalized.startsWith('---\n')) return null;
 	const end = normalized.indexOf('\n---\n', 3);
@@ -111,18 +189,106 @@ export function parseLivePanelNote(text: string): { readonly state: LivePanelSta
 	if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
 	const record = data as Record<string, unknown>;
 	if (record.tc_kind !== LIVE_PANEL_NOTE_KIND) return null;
-	const state = record.tc_live_state;
-	return { state: state === 'live' || state === 'stale' || state === 'disconnected' || state === 'ended' ? state : 'none' };
+	const state = LIVE_PANEL_STATES.find((candidate) => candidate === record.tc_live_state) ?? 'none';
+	return { state, live: readLive(record, state) };
 }
 
-function frontmatter(state: LivePanelState): string[] {
-	return ['---', `tc_kind: ${LIVE_PANEL_NOTE_KIND}`, `tc_live_state: ${state}`, 'cssclasses:', '  - dashboard', 'obsidianUIMode: preview', '---'];
+/** The `tc_live_*` fields, each checked; one wrong field makes the whole transport unreadable (null). */
+function readLive(record: Record<string, unknown>, state: LivePanelState): LivePanelLiveV1 | null {
+	if (record.tc_live_v !== LIVE_PANEL_TRANSPORT_VERSION) return null;
+	const observedAt = optionalIso(record.tc_live_observed_at);
+	const startedAt = optionalIso(record.tc_live_started_at);
+	const endedAt = optionalIso(record.tc_live_ended_at);
+	const valueCopper = optionalInteger(record.tc_live_value_c, true);
+	const ratePerHourCopper = optionalInteger(record.tc_live_rate_c, true);
+	const bags = optionalInteger(record.tc_live_bags, false);
+	const bagsPerHourMilli = optionalInteger(record.tc_live_bags_h_milli, false);
+	const mf = optionalInteger(record.tc_live_mf, false);
+	const source = MAGIC_FIND_SOURCES.find((candidate) => candidate === record.tc_live_mf_src);
+	const loot = readLoot(record.tc_live_loot);
+	if ([observedAt, startedAt, endedAt, valueCopper, ratePerHourCopper, bags, bagsPerHourMilli, mf].includes(undefined)
+		|| source === undefined || loot === undefined) return null;
+	if (state !== 'none' && startedAt === null) return null;
+	return {
+		version: LIVE_PANEL_TRANSPORT_VERSION, state, observedAt: observedAt!, startedAt: startedAt!, endedAt: endedAt!,
+		valueCopper: valueCopper!, ratePerHourCopper: ratePerHourCopper!, bags: bags!, bagsPerHourMilli: bagsPerHourMilli!,
+		magicFind: { value: mf!, source }, loot,
+	};
 }
 
-function valueText(input: LivePanelInput): string {
-	const { valuation } = input.view;
-	if (valuation.capturedAt === null && valuation.knownNetValueCopper === null) return DASH;
-	return formatCopperVisual(input.valueCopper);
+/** Absent → null; an ISO instant → itself; anything else → undefined (unreadable). */
+function optionalIso(value: unknown): string | null | undefined {
+	if (value === undefined || value === null) return null;
+	// The yaml library reads a bare timestamp as a Date; the note writes ISO text, and both are accepted.
+	if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.toISOString() : undefined;
+	if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return undefined;
+	return value;
+}
+
+/** Absent → null; a safe integer (negative only where `signed`) → itself; anything else → undefined (unreadable). */
+function optionalInteger(value: unknown, signed: boolean): number | null | undefined {
+	if (value === undefined || value === null) return null;
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || (!signed && value < 0)) return undefined;
+	return value;
+}
+
+/** `[[id, name, quantity, copper|null], …]`, at most `LIVE_PANEL_LOOT_ROWS` rows; undefined when any row is not that. */
+function readLoot(value: unknown): LivePanelLootRow[] | undefined {
+	if (value === undefined || value === null) return [];
+	if (!Array.isArray(value) || value.length > LIVE_PANEL_LOOT_ROWS) return undefined;
+	const rows: LivePanelLootRow[] = [];
+	for (const entry of value as unknown[]) {
+		if (!Array.isArray(entry) || entry.length !== 4) return undefined;
+		const [itemId, name, quantity, totalCopper] = entry as unknown[];
+		if (!Number.isSafeInteger(itemId) || (itemId as number) < 0 || typeof name !== 'string' || name.length > LIVE_PANEL_NAME_LIMIT) return undefined;
+		if (!Number.isSafeInteger(quantity)) return undefined;
+		const copper = optionalInteger(totalCopper, true);
+		if (copper === undefined) return undefined;
+		rows.push({ itemId: itemId as number, name, quantity: quantity as number, totalCopper: copper });
+	}
+	return rows;
+}
+
+/**
+ * The frontmatter: the kind and state first (what `parseLivePanelNote` always reads), the `tc_live_*` transport, then the
+ * display hints of the hosts. Built with the yaml library so an item name with quotes or colons is quoted for it; the loot
+ * rows go as flow sequences (`- [ id, name, qty, copper ]`), one line each.
+ */
+function frontmatter(live: LivePanelLiveV1): string[] {
+	const fields: Record<string, unknown> = { tc_kind: LIVE_PANEL_NOTE_KIND, tc_live_state: live.state, tc_live_v: live.version };
+	const put = (key: string, value: unknown): void => { if (value !== null) fields[key] = value; };
+	put('tc_live_observed_at', live.observedAt);
+	put('tc_live_started_at', live.startedAt);
+	put('tc_live_ended_at', live.endedAt);
+	put('tc_live_value_c', live.valueCopper);
+	put('tc_live_rate_c', live.ratePerHourCopper);
+	put('tc_live_bags', live.bags);
+	put('tc_live_bags_h_milli', live.bagsPerHourMilli);
+	put('tc_live_mf', live.magicFind.value);
+	fields.tc_live_mf_src = live.magicFind.source;
+	if (live.loot.length > 0) fields.tc_live_loot = live.loot.map((row) => [row.itemId, row.name, row.quantity, row.totalCopper]);
+	fields.cssclasses = ['dashboard'];
+	fields.obsidianUIMode = 'preview';
+	const document = new YamlDocument(fields);
+	const loot = document.get('tc_live_loot', true);
+	if (isSeq(loot)) for (const row of loot.items) if (isSeq(row)) row.flow = true;
+	return ['---', ...document.toString({ lineWidth: 0 }).trimEnd().split('\n'), '---'];
+}
+
+/** The instant floored to its minute, as ISO; null when missing or unreadable. */
+function minuteOf(value: string | null): string | null {
+	if (value === null) return null;
+	const ms = Date.parse(value);
+	return Number.isFinite(ms) ? new Date(Math.floor(ms / MINUTE_MS) * MINUTE_MS).toISOString() : null;
+}
+
+/** The loot by value, most valuable first (unpriced last, then by name), cut to the rows the card and the transport keep. */
+function rankLoot(loot: readonly LivePanelLootRow[]): LivePanelLootRow[] {
+	return [...loot].sort((a, b) => (b.totalCopper ?? -1) - (a.totalCopper ?? -1) || a.name.localeCompare(b.name, 'en')).slice(0, LIVE_PANEL_LOOT_ROWS);
+}
+
+function valueText(live: LivePanelLiveV1): string {
+	return live.valueCopper === null ? DASH : formatCopperVisual(live.valueCopper);
 }
 
 function durationText(elapsedMs: number): string {
@@ -138,10 +304,10 @@ function clock(value: string | number | null): string {
 	return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
 
-function statusText(t: Translator, state: LivePanelState, input: LivePanelInput): string {
+function statusText(t: Translator, state: LivePanelState, input: LivePanelInput, live: LivePanelLiveV1): string {
 	const { view } = input;
 	switch (state) {
-		case 'ended': return t.t('livePanel.status.ended', { time: clock(view.endedAt), value: valueText(input) });
+		case 'ended': return t.t('livePanel.status.ended', { time: clock(view.endedAt), value: valueText(live) });
 		case 'live': return t.t('livePanel.status.live', { time: clock(view.lastObservationAt) });
 		case 'stale': return view.lastObservationAt === null ? t.t('livePanel.status.noData')
 			: t.t('livePanel.status.stale', { time: clock(view.lastObservationAt) });
@@ -153,7 +319,7 @@ function statusText(t: Translator, state: LivePanelState, input: LivePanelInput)
 function dropText(t: Translator, drop: LivePanelLastDrop | null): string {
 	if (drop === null) return t.t('livePanel.lastDrop.none');
 	return t.t('livePanel.lastDrop', {
-		time: clock(drop.observedAt), name: plain(drop.name), quantity: drop.quantity, value: copperOrDash(drop.totalCopper),
+		time: clock(drop.observedAt), name: markdownSafe(plainName(drop.name)), quantity: drop.quantity, value: copperOrDash(drop.totalCopper),
 	});
 }
 
@@ -161,12 +327,10 @@ function copperOrDash(copper: number | null): string {
 	return copper === null ? DASH : formatCopperVisual(copper);
 }
 
+/** The ranked rows of the transport, as the card lists them. */
 function lootLines(t: Translator, loot: readonly LivePanelLootRow[]): string[] {
-	const ranked = [...loot].sort((a, b) => (b.totalCopper ?? -1) - (a.totalCopper ?? -1) || a.name.localeCompare(b.name, 'en'));
-	if (ranked.length === 0) return [t.t('livePanel.loot.empty')];
-	return ranked.slice(0, LIVE_PANEL_LOOT_ROWS).map((row) => `- ${t.t('livePanel.loot.row', {
-		name: plain(row.name), quantity: row.quantity, value: copperOrDash(row.totalCopper),
-	})}`);
+	if (loot.length === 0) return [t.t('livePanel.loot.empty')];
+	return loot.map((row) => `- ${t.t('livePanel.loot.row', { name: markdownSafe(row.name), quantity: row.quantity, value: copperOrDash(row.totalCopper) })}`);
 }
 
 function coinLines(t: Translator, view: LiveSessionViewV1): string[] {
@@ -176,10 +340,10 @@ function coinLines(t: Translator, view: LiveSessionViewV1): string[] {
 	];
 }
 
-function halloweenLines(t: Translator, input: LivePanelInput): string[] {
-	const { sacks, view } = input;
-	const perHour = sacks !== null && liveItemRateEligible(view) ? String(Math.round(sacks * 36_000_000 / view.observedItemsMs) / 10) : DASH;
-	return [`- ${t.t('livePanel.sacks', { count: sacks ?? DASH })}`, `- ${t.t('livePanel.sacksPerHour', { rate: perHour })}`];
+/** Bags and bags per hour, the same figures the transport carries (one decimal for the rate, as the game shows it). */
+function halloweenLines(t: Translator, live: LivePanelLiveV1): string[] {
+	const perHour = live.bagsPerHourMilli === null ? DASH : String(Math.round(live.bagsPerHourMilli / 100) / 10);
+	return [`- ${t.t('livePanel.sacks', { count: live.bags ?? DASH })}`, `- ${t.t('livePanel.sacksPerHour', { rate: perHour })}`];
 }
 
 /** A callout card: `> [!info] Title` and its lines. */
@@ -187,7 +351,13 @@ function callout(title: string, lines: readonly string[]): string[] {
 	return [`> [!info] ${title}`, ...lines.map((line) => `> ${line}`)];
 }
 
-/** An item name as one safe line of text: no newlines and none of the characters that open Markdown or HTML. */
-function plain(name: string): string {
-	return name.replace(/\s+/gu, ' ').trim().replace(/[\\`*_[\]<>|]/gu, (char) => `\\${char}`);
+/** An item name as one line of plain text, cut to `LIVE_PANEL_NAME_LIMIT`: the shape the transport carries. */
+function plainName(name: string): string {
+	const line = name.replace(/\s+/gu, ' ').trim();
+	return line.length > LIVE_PANEL_NAME_LIMIT ? `${line.slice(0, LIVE_PANEL_NAME_LIMIT - 1)}…` : line;
+}
+
+/** A plain name as safe Markdown: none of the characters that open Markdown or HTML. */
+function markdownSafe(name: string): string {
+	return name.replace(/[\\`*_[\]<>|]/gu, (char) => `\\${char}`);
 }

@@ -4,8 +4,9 @@
  *
  * - Only the COLLECTOR writes. A device in consult mode reads the note through sync and never touches it.
  * - It writes when the view changes (`notify`), at most once every `LIVE_PANEL_WRITE_FLOOR_MS`, and only when the text differs from
- *   what it last wrote. The text has the resolution of a minute, so a connected session with nothing new costs one write a minute;
- *   while a session is shown, a recheck every `LIVE_PANEL_TICK_MS` lets the minute-level text move on when the view itself is quiet.
+ *   what it last wrote. The text changes when a visible figure changes (the value, a bag, the state: the frontmatter carries them for
+ *   the «En vivo» HUD) and otherwise once a minute, so a connected session with nothing new costs one write a minute; while a session
+ *   is shown, a recheck every `LIVE_PANEL_TICK_MS` lets the minute-level text move on when the view itself is quiet.
  *   It arms no interval: a device that never shows a session (consult, or no session) keeps no timer at all.
  * - A note at that path that does not carry `tc_kind: gw2_live_panel` is the player's own and is never overwritten (the same rule
  *   as `collector-status.ts`). The note is never deleted: a deletion leaves a permanent tombstone in Hebra's sync. A finished session
@@ -41,12 +42,12 @@ export interface LivePanelSnapshot {
 	readonly ratePerHourCopper: number | null;
 	readonly loot: readonly LivePanelLootRow[];
 	readonly lastDrop: LivePanelLastDrop | null;
-	readonly sacks: number | null;
 }
 
 /**
  * The snapshot of the live session from what the core already holds. The latest alert that was not skipped is the «last
- * valuable drop»; its name comes from the entity cache, then from the loot rows, then from the item id.
+ * valuable drop»; its name comes from the entity cache, then from the loot rows, then from the item id. The bag count is not
+ * here: the note and the HUD read it from the view itself (`liveObservedBags`), the way the in-game panel does.
  */
 export function livePanelSnapshot(parts: {
 	readonly locale: Locale;
@@ -62,9 +63,9 @@ export function livePanelSnapshot(parts: {
 	for (const alert of parts.alerts) if (alert.skipReason === null && (latest === null || alert.observedAt >= latest.observedAt)) latest = alert;
 	return {
 		view: parts.view, valueCopper: liveSessionValue(parts.view), ratePerHourCopper: liveSessionRatePerHour(parts.view),
-		loot: rows.map((row) => ({ name: row.name, quantity: row.quantity, totalCopper: row.totalCopper })),
-		lastDrop: latest === null ? null : { name: nameOf(latest.itemId), quantity: latest.quantity, totalCopper: latest.totalCopper, observedAt: latest.observedAt },
-		sacks: parts.loot.status === 'idle' ? null : parts.loot.observedSackGains ?? parts.loot.sackQuantity,
+		loot: rows.map((row) => ({ itemId: row.itemId, name: row.name, quantity: row.quantity, totalCopper: row.totalCopper })),
+		lastDrop: latest === null ? null
+			: { itemId: latest.itemId, name: nameOf(latest.itemId), quantity: latest.quantity, totalCopper: latest.totalCopper, observedAt: latest.observedAt },
 	};
 }
 

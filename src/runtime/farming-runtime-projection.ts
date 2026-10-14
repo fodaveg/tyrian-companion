@@ -1,5 +1,5 @@
 import { FARMING_GOAL_MIN_WINDOW_MS } from '../sessions/farming-goal';
-import { liveItemRateEligible, type LiveSessionViewV1 } from '../sessions/live-session-model';
+import { HALLOWEEN_BAG_ITEM_ID, liveItemRateEligible, liveObservedBags, type LiveSessionViewV1 } from '../sessions/live-session-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { IngamePresenceSnapshot } from '../alerts/alert-ingame-presence';
 import { emptyFarmingIngameState, type FarmingIngameState } from '../alerts/farming-ingame-state';
@@ -117,10 +117,10 @@ export function projectLiveFarmingIngameState(input: {
 	output.err = view.phase === 'error' ? 'save' : view.phase === 'active' && ['stale', 'unavailable', 'conflict', 'missing'].includes(view.sourceState) ? 'observe' : null;
 	output.elapsed = view.elapsedMs === null ? null : Math.floor(view.elapsedMs / 1_000);
 	output.age = evidenceAge(view.lastObservationAt, now);
-	const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === 36038);
-	const measured = view.lastObservationAt !== null && (view.itemCoverage === 'complete' || view.itemCoverage === 'none' && view.observedItemsMs > 0);
-	output.observed = bags?.positive ?? (measured ? 0 : null);
-	output.net = bags?.net ?? (measured ? 0 : null);
+	// The same count the live panel note and the «En vivo» HUD show (`liveObservedBags`): one source, one number.
+	const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === HALLOWEEN_BAG_ITEM_ID);
+	output.observed = liveObservedBags(view);
+	output.net = bags?.net ?? (output.observed === null ? null : 0);
 	const band = output.observed === null || !liveItemRateEligible(view)
 		? null : observedRateBand(output.observed * 1_000, view.observedItemsMs, 0);
 	output.lo = band?.low == null ? null : Math.floor(band.low / 1_000);

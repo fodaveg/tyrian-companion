@@ -33,6 +33,31 @@ export function liveItemRateEligible(view: { observedItemsMs: number }): boolean
 	return view.observedItemsMs >= LIVE_RATE_MIN_OBSERVED_MS;
 }
 
+/** The Halloween bag («Trick-or-Treat Bag»), the one item the farm counts. */
+export const HALLOWEEN_BAG_ITEM_ID = 36038;
+
+/**
+ * The bags a live session has gained, read the ONE way every surface reads them (David, 14 oct 2026: the panel on the
+ * phone has to show the same number as the game): the positive side of the bag total, and 0 once the session has measured
+ * anything (a last observation with complete bag coverage, or covered time with no bag at hand). Null while nothing was
+ * measured yet. `projectLiveFarmingIngameState` («bolsas observadas» in the addon) and the live panel note both call this.
+ */
+export function liveObservedBags(view: Pick<LiveSessionViewV1, 'totals' | 'lastObservationAt' | 'itemCoverage' | 'observedItemsMs'>): number | null {
+	const bags = view.totals.find((row) => row.kind === 'item' && row.idNumber === HALLOWEEN_BAG_ITEM_ID);
+	const measured = view.lastObservationAt !== null && (view.itemCoverage === 'complete' || view.itemCoverage === 'none' && view.observedItemsMs > 0);
+	return bags?.positive ?? (measured ? 0 : null);
+}
+
+/**
+ * Bags per hour of covered item time, in thousandths (`bagsPerHourMilli` of the comparison): 18 500 is 18.5 bags/h.
+ * Null under the 15 minutes every live rate needs, or with no bag count.
+ */
+export function liveBagsPerHourMilli(view: Pick<LiveSessionViewV1, 'totals' | 'lastObservationAt' | 'itemCoverage' | 'observedItemsMs'>): number | null {
+	const bags = liveObservedBags(view);
+	if (bags === null || !liveItemRateEligible(view)) return null;
+	return Math.round(bags * 3_600_000_000 / view.observedItemsMs);
+}
+
 export interface LiveInventoryRowV1 { kind: 'item' | 'currency'; idNumber: number; quantity: number }
 /** One complete atomic transport sample, never a causal acquisition event. */
 export interface LiveInventorySampleV1 {
