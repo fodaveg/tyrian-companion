@@ -3,6 +3,7 @@ import { createTranslator, type Locale } from '../core/i18n';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { CollectorMode } from '../core/settings';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
+import type { PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { InventoryAdvisorRowPriceHistory } from './inventory-advisor-price-history-block';
 import { sectionViewDescriptor, type TyrianSectionDescriptor, type TyrianSectionViewSlot, type TyrianViewDescriptor } from './mounted-views';
@@ -40,6 +41,9 @@ export interface SaleViewActions {
 	getPriceHistorySeedState?(itemId: number): PriceHistoryPanelSeedState;
 	/** Downloads (or serves from the 24 h cache) the seed of one item. */
 	ensurePriceHistorySeed?(itemId: number): Promise<void>;
+	/** Hourly series for the «1 semana» button: a stale read, and the download on the reader's click. Both or none. */
+	getPriceHourlyState?(itemId: number): PriceHourlyState;
+	ensurePriceHourly?(itemId: number): Promise<void>;
 	/** In consult this device never downloads history: the row's enable button is disabled with the reason. */
 	getCollectorMode?(): CollectorMode;
 }
@@ -215,15 +219,17 @@ export class SaleItemView {
 	 */
 	private rowPriceHistory(): InventoryAdvisorRowPriceHistory | undefined {
 		if (this.closed || !this.hasRowPriceHistory()) return undefined;
-		// Pending (14 oct 2026): once the block's «1 semana» window lands (`feat/price-chart-week-window`,
-		// `InventoryAdvisorRowPriceHistory.hourly`), this is where Venta hands it the same
-		// `hourly: { get: getPriceHourlyState, ensure: ensurePriceHourly }` the Inventory tab does.
 		return {
 			enabled: this.actions.getPriceHistoryState!().status !== 'disabled',
 			consultOnly: this.actions.getCollectorMode?.() === 'consult',
 			busy: this.priceHistoryBusy,
 			getSeed: (itemId: number) => this.actions.getPriceHistorySeedState!(itemId),
 			ensureSeed: (itemId: number) => this.actions.ensurePriceHistorySeed!(itemId),
+			// The «1 semana» window, the same way the Inventory tab hands it: the block asks only on the reader's click.
+			hourly: this.actions.getPriceHourlyState === undefined || this.actions.ensurePriceHourly === undefined ? undefined : {
+				get: (itemId: number) => this.actions.getPriceHourlyState!(itemId),
+				ensure: (itemId: number) => this.actions.ensurePriceHourly!(itemId),
+			},
 			onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
 		};
 	}

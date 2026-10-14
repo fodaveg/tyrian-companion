@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
+import { PRICE_HOURLY_IDLE_STATE, type PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
 import type { InventoryAdvisorViewRow } from './inventory-advisor-view-model';
@@ -374,6 +375,29 @@ describe('SaleItemView and the rows\' «Detalles»', () => {
 		expect(host.rows()).toHaveLength(2);
 	});
 
+	it('with the hourly actions the open row offers «1 week», asks nothing on opening, and once on the click', async () => {
+		const host = view({ status: 'ready', hourly: true, seeded: true });
+		await host.view.onOpen();
+
+		host.toggle(0, true);
+		const block = only(host.blocks());
+		expect(buttons(block).map((button) => button.textContent)).toEqual(['1 week', '3 months', '1 year', 'All']);
+		expect(host.ensurePriceHourly).toHaveBeenCalledTimes(0);
+
+		windowButton(block, '1 week').dispatch('click');
+		expect(host.ensurePriceHourly).toHaveBeenCalledTimes(1);
+		expect(host.ensurePriceHourly).toHaveBeenCalledWith(FANGS);
+	});
+
+	it('without the hourly actions the row offers the three day windows only', async () => {
+		const host = view({ status: 'ready', seeded: true });
+		await host.view.onOpen();
+
+		host.toggle(0, true);
+
+		expect(buttons(only(host.blocks())).map((button) => button.textContent)).toEqual(['3 months', '1 year', 'All']);
+	});
+
 	it('closing the view drops the open blocks; opened again, every detail starts closed', async () => {
 		const host = view({ status: 'ready' });
 		await host.view.onOpen();
@@ -428,6 +452,10 @@ function sale(setup: SaleSetup) {
 interface ViewSetup {
 	status: PriceHistoryRuntimeState['status'];
 	collectorMode?: 'collector' | 'consult';
+	/** The host offers the hourly series too (the «1 semana» button). */
+	hourly?: boolean;
+	/** The host already has 300 days of seed for every item (a chart to draw); default: nothing yet. */
+	seeded?: boolean;
 }
 
 function view(setup: ViewSetup | null) {
@@ -438,6 +466,7 @@ function view(setup: ViewSetup | null) {
 	let finish: () => void = () => undefined;
 	const enablePriceHistory = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
 	const ensurePriceHistorySeed = vi.fn(async () => undefined);
+	const ensurePriceHourly = vi.fn(async () => undefined);
 	const actions: SaleViewActions = {
 		getSaleLocale: () => 'en',
 		getSaleViewModel: () => current,
@@ -445,13 +474,17 @@ function view(setup: ViewSetup | null) {
 			getPriceHistoryState: () => ({ status: state.status } as PriceHistoryRuntimeState),
 			enablePriceHistory,
 			ensurePriceHistorySeed,
-			getPriceHistorySeedState: () => idle(),
+			getPriceHistorySeedState: () => setup.seeded === true ? seeded(300) : idle(),
 			getCollectorMode: () => setup.collectorMode ?? 'collector',
+			...(setup.hourly === true ? {
+				getPriceHourlyState: (): PriceHourlyState => PRICE_HOURLY_IDLE_STATE,
+				ensurePriceHourly,
+			} : {}),
 		}),
 	};
 	return {
 		view: new SaleItemView(content as unknown as HTMLElement, icons, actions),
-		state, enablePriceHistory, ensurePriceHistorySeed,
+		state, enablePriceHistory, ensurePriceHistorySeed, ensurePriceHourly,
 		finishEnable: (): void => { finish(); },
 		...queries(content),
 	};
