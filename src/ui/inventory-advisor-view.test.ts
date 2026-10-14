@@ -380,6 +380,8 @@ describe('Inventory Advisor view', () => {
 			'tyrian-inventory-advisor__state',
 			// H18.37: "Copiar detalle técnico", hidden unless the state carries a safe code.
 			'clickable-icon tyrian-inventory-advisor__state-copy',
+			// Says so when the clipboard refuses the copy, hidden otherwise.
+			'tyrian-inventory-advisor__copy-status',
 			// H18.18: the outcome of a row's "Conservar", hidden until one is pressed.
 			'tyrian-inventory-advisor__keep-status',
 			'tyrian-inventory-advisor__results',
@@ -390,8 +392,8 @@ describe('Inventory Advisor view', () => {
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
 		expect(mount.section.children[3]!.hidden).toBe(true);
-		expect(mount.section.children[7]!.hidden).toBe(true);
-		expect(text(walk(mount.section.children[8]!))).toContain('Qué hacer ahora');
+		expect(mount.section.children[8]!.hidden).toBe(true);
+		expect(text(walk(mount.section.children[9]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
@@ -1617,8 +1619,22 @@ describe('Inventory Advisor view', () => {
 		copyButton.dispatch('click');
 		expect((navigator as unknown as { clipboard: { writeText: ReturnType<typeof vi.fn> } }).clipboard.writeText)
 			.toHaveBeenCalledWith('capture_snapshot_coverage_incomplete');
+		expect(only(byClass(mount.elements(), 'tyrian-inventory-advisor__copy-status')).hidden).toBe(true);
 		const ready = render(readyModel());
 		expect(only(byClass(ready.elements(), 'tyrian-inventory-advisor__state-copy')).hidden).toBe(true);
+	});
+
+	it('says so when the clipboard refuses the technical detail, or is absent, instead of dropping the rejection', async () => {
+		for (const clipboard of [{ writeText: vi.fn(() => Promise.reject(new Error('NotAllowedError'))) }, undefined]) {
+			vi.stubGlobal('navigator', { clipboard });
+			const mount = render({ ...readyModel(), status: 'blocked', blockedReason: 'capture_snapshot_coverage_incomplete', groups: [] });
+			const feedback = only(byClass(mount.elements(), 'tyrian-inventory-advisor__copy-status'));
+			only(byClass(mount.elements(), 'tyrian-inventory-advisor__state-copy')).dispatch('click');
+			await Promise.resolve(); await Promise.resolve();
+			expect(feedback.hidden).toBe(false);
+			expect(feedback.textContent).toBe('No se pudo copiar el detalle técnico.');
+			expect(feedback.attributes.get('aria-live')).toBe('polite');
+		}
 	});
 });
 

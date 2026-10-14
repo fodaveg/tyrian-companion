@@ -502,7 +502,7 @@ const PINNED = {
 	// Halloween scope: the low-space repaint labels character bags; its pressure fixture now excludes bank slots.
 	repaints: '05098523620b066ed26f32b29a70914f97ab4d0d8b1a75e9478c6a024798a041',
 	/** Elements created to mount 1,371 rows; 36,144 while every closed detail carried its body. */
-	nodesOnMount: 18_110,
+	nodesOnMount: 18_111,
 	/**
 	 * Per key of the search `s, se, sed, seda 1, sed, (empty), 10, (empty)`: rows shown, elements
 	 * created. While every key rebuilt the rows it created 10,336, 5,189, 5,189, 1,882, 5,189,

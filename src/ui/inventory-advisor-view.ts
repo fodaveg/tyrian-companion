@@ -342,9 +342,26 @@ function mountInventoryAdvisorView(
 	ui.setIcon(stateCopyIcon, 'copy');
 	const stateCopyText = createSpan();
 	stateCopyButton.append(stateCopyIcon, stateCopyText);
+	// A refused copy has no other way to reach the player (the code is never rendered as text), so
+	// it says so, as the session card's "Copiar detalle técnico" does with a notice.
+	const stateCopyStatus = createEl('p');
+	stateCopyStatus.className = 'tyrian-inventory-advisor__copy-status';
+	stateCopyStatus.setAttribute('aria-live', 'polite');
+	stateCopyStatus.hidden = true;
 	stateCopyButton.addEventListener('click', () => {
 		const code = model.refreshWarning ?? model.blockedReason;
-		if (code !== undefined) void navigator.clipboard?.writeText(code);
+		if (code === undefined) return;
+		stateCopyStatus.hidden = true;
+		const failed = (): void => {
+			stateCopyStatus.textContent = translator.t('sessionCard.copyTechnicalDetailFailed');
+			stateCopyStatus.hidden = false;
+		};
+		// `writeText` is called in the click's own task (WebKit spends the user activation on any
+		// earlier `await`); an absent clipboard and a refusal both end in the same message.
+		try {
+			if (navigator.clipboard === undefined) failed();
+			else void Promise.resolve(navigator.clipboard.writeText(code)).catch(failed);
+		} catch { failed(); }
 	});
 	// H18.18: the outcome of the last row "Conservar", in its own polite line: the row itself
 	// moves to "keep" (hidden by default) once the preference is saved and reclassified.
@@ -672,7 +689,7 @@ function mountInventoryAdvisorView(
 	function arrangeSections(): void {
 		if (arranged) return;
 		arranged = true;
-		const ordered: HTMLElement[] = [statusLine, controls, syncAssetsHint, optIn, sellSignal, state, stateCopyButton, keepStatus, results, syncStatusPanel];
+		const ordered: HTMLElement[] = [statusLine, controls, syncAssetsHint, optIn, sellSignal, state, stateCopyButton, stateCopyStatus, keepStatus, results, syncStatusPanel];
 		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
 		ordered.push(priceHistoryDisclosure);
 		section.replaceChildren(...ordered);
@@ -815,6 +832,7 @@ function mountInventoryAdvisorView(
 		else state.removeAttribute('role');
 		const technicalCode = model.refreshWarning ?? model.blockedReason;
 		stateCopyButton.hidden = technicalCode === undefined;
+		if (technicalCode === undefined) stateCopyStatus.hidden = true;
 		stateCopyText.textContent = translator.t('advisor.view.copyTechnicalDetail');
 		stateCopyButton.setAttribute('aria-label', translator.t('advisor.view.copyTechnicalDetail'));
 		preferencesEditor?.update();
