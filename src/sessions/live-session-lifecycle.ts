@@ -40,6 +40,16 @@ interface LiveSessionSourceInput { sourceInstance: string; epoch: string; build:
  */
 /** What `discard` did: whether the session left the runtime key, and whether its note was written on the way. */
 interface LiveSessionDiscard { cleared: boolean; note: 'written' | 'not_written' | 'none'; reason?: LiveStopFailure }
+/**
+ * One diagnostic line the lifecycle asks its host to write. Closed words and numbers only: no session id, character,
+ * path or message. `reason` of a `source_conflict` says which of its causes refused; `phase` is the saved session's phase.
+ */
+export interface LiveSessionDiagnostic {
+	action: 'session_projection' | 'session_recover';
+	phase: 'success' | 'skip';
+	state: string;
+	details: { reason?: 'other_instance' | 'lease_not_ours' | 'storage_unavailable' | 'persist_failed'; phase?: string; count?: number; itemCount?: number };
+}
 export const LIVE_SESSION_LEASE_TTL_MS = 300_000;
 interface LiveSessionLifecycleOptions {
 	coordinator: SessionLeaseCoordinator; persistence: LiveSessionPersistence & Pick<SessionRuntimeStore, 'clear'> & Partial<Pick<SessionRuntimeStore, 'forceClear'>>;
@@ -53,6 +63,8 @@ interface LiveSessionLifecycleOptions {
 	 */
 	setTimeout?(callback: () => void, timeoutMs: number): unknown; clearTimeout?(handle: unknown): void; storageTimeoutMs?: number;
 	onStateChange(): void; onError(error: unknown): void;
+	/** Optional diagnostic line (see `LiveSessionDiagnostic`); the host's writer never throws (`LocalDebugActionRunner.event`). */
+	diagnostic?(line: LiveSessionDiagnostic): void;
 	preparation?(): FarmingPreparationSettingsV1; farmingGoal?(): FarmingGoalV1; groupContext?(): 'with_bosses' | 'without_bosses' | null;
 	/** Only a valid declaration is captured; an invalid/unsupported editor draft remains unknown. */
 	declaredBuild?(): DeclaredBuildV1 | null;
@@ -192,7 +204,24 @@ export class LiveSessionLifecycle {
 		return await this.enqueue(async () => {
 			try { await this.loadSaved(); }
 			finally { await this.recoverPruneQueue(); }
+			this.reportRecovered();
 		});
+	}
+	/** Writes the `session_recover` success line once a saved session is back in memory: its phase and what is still owed. */
+	private reportRecovered(): void {
+		if (this.record === null) return;
+		const open = (intent: LiveAlertOutboxV1): boolean => ['awaiting_price', 'ready', 'dispatching'].includes(intent.state);
+		this.diagnose({ action: 'session_recover', phase: 'success', state: 'restored', details: {
+			phase: this.record.phase, count: this.journal.reduce((sum, entry) => sum + entry.outbox.filter(open).length, 0),
+			itemCount: this.sealedForPrune.size,
+		} });
+	}
+	private diagnose(line: LiveSessionDiagnostic): void {
+		this.options.diagnostic?.(line);
+	}
+	private sourceConflict(reason: NonNullable<LiveSessionDiagnostic['details']['reason']>): 'source_conflict' {
+		this.diagnose({ action: 'session_projection', phase: 'skip', state: 'source_conflict', details: { reason } });
+		return 'source_conflict';
 	}
 	/**
 	 * The saved session, read and brought back as far as it can be right now. Never throws: a failure is reported, shown
@@ -348,9 +377,10 @@ export class LiveSessionLifecycle {
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.record?.phase !== 'active' || source.context.state !== 'gameplay') return 'not_gameplay';
 			if (!isNexusLiveBuild(source.build) || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
-			if (this.record.sourceInstance !== null && this.record.sourceInstance !== source.sourceInstance) return 'source_conflict';
+			if (this.record.sourceInstance !== null && this.record.sourceInstance !== source.sourceInstance) return this.sourceConflict('other_instance');
 			// `live_ready` has no status for storage: while it is down this answers as before.
-			if (await this.ready() !== 'owned') return 'source_conflict';
+			const ownership = await this.ready();
+			if (ownership !== 'owned') return this.sourceConflict(ownership === 'unavailable' ? 'storage_unavailable' : 'lease_not_ours');
 			if (this.record.epoch === source.epoch) return 'ready';
 			const previousCharacter = this.record.context?.character ?? null;
 			let next = this.record;
@@ -359,7 +389,7 @@ export class LiveSessionLifecycle {
 				epoch: source.epoch, context: { ...source.context }, lastSample: null, fingerprint: null, lastSourceDisconnectedAt: null,
 				itemComparable: false, currencyComparable: false, sourceState: 'warming_up', sourceReason: null, persistedAt: this.options.now(), connection: 'connected' };
 			next = this.observeMap(next, source.context.mapId, this.options.now());
-			if (await this.persist(next) !== 'saved') return 'source_conflict';
+			if (await this.persist(next) !== 'saved') return this.sourceConflict('persist_failed');
 			// A new epoch is open under a lease that holds: a gap held back for a reclaim that never had to happen is moot.
 			this.record = next; this.lostGap = null; await this.registerCharacter(source.context.character, previousCharacter); this.options.onStateChange(); return 'ready';
 		});

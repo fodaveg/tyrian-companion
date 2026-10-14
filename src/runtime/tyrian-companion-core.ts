@@ -770,7 +770,10 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
 				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
-				details: { origin },
+				// The class of the error (never its message) and whether our bundle is in the stack. The vocabulary has no
+				// `ours` for `plugin` yet, so the closed `reason` carries it.
+				...(failure instanceof Error && failure.name.length > 0 ? { errorName: failure.name } : {}),
+				details: { origin, reason: failure instanceof Error && /\b(?:hebra-main\.mjs|main\.js)\b/u.test(failure.stack ?? '') ? 'stack_ours' : 'stack_foreign' },
 			});
 		});
 		this.connectivityOff = this.host.environment.onConnectivityChange((online) => {
@@ -1439,6 +1442,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// refused claim left `ready` are looked at again here (nothing happens while none is owed) instead of waiting for a mode switch.
 			onStateChange: () => { this.adoptLateCollectorMode(false); this.renderViews(); void this.ingameSessionMarker?.reconcile(); void this.liveSummaries?.observe(); this.liveEconomy?.retryUnclaimedAlerts(); this.sessionStoreRetry?.arm(); },
 			onError: (error) => { this.ingame.recordIngameSessionFailure(error); },
+			diagnostic: (line) => {
+				this.localDebugActions?.event({
+					component: 'session', action: line.action, level: 'info', phase: line.phase,
+					code: line.phase === 'skip' ? 'precondition_failed' : 'ok', state: line.state, details: line.details,
+				});
+			},
 			preparation: () => this.settings.farmingPreparation,
 			declaredBuild: () => { const declaration = readFarmingDeclaredBuild(this.settings.farmingDeclaredBuild);
 				return declaration.status === 'valid' ? declaration.value : null; },

@@ -2119,6 +2119,9 @@ describe('deferred runtime boot guard', () => {
 			expect(registration).toBeDefined();
 			(registration?.[2] as (event: Event) => void)({} as Event);
 		}
+		// A real error whose stack names our bundle: its class and `stack_ours` are logged, never its message or stack.
+		const ours = Object.assign(new TypeError('secret text'), { stack: 'TypeError: secret text\n    at run (plugins/tyrian-companion/main.js:1:1)' });
+		(registerDomEvent.mock.calls.find((call) => call[1] === 'unhandledrejection')?.[2] as (event: unknown) => void)(ours);
 		vi.unstubAllGlobals();
 
 		// The saved-leaf restore this guards against races `onLayoutReady`, so the
@@ -2138,8 +2141,9 @@ describe('deferred runtime boot guard', () => {
 		// the sanitized path leaves nothing behind either listener could attribute a failure to,
 		// so `state` says that plainly, and `details.origin` is the only place the two still differ.
 		expect(globalEvent.mock.calls.map(([context]) => context)).toEqual(expect.arrayContaining([
-			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'window_error' } }),
-			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'unhandled_rejection' } }),
+			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'window_error', reason: 'stack_foreign' } }),
+			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'unhandled_rejection', reason: 'stack_foreign' } }),
+			expect.objectContaining({ action: 'global_error', errorName: 'TypeError', details: { origin: 'unhandled_rejection', reason: 'stack_ours' } }),
 		]));
 
 		// Session start/stop route through `SessionCommandController`, whose context is

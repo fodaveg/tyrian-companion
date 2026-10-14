@@ -187,6 +187,31 @@ describe('passive live session lifecycle', () => {
 		expect(f.service.getView().observationCount).toBe(0); expect(await f.store.readLiveJournal('session')).toEqual([]);
 		await f.service.dispose();
 	});
+	it('tells the three causes of a source_conflict apart with a closed reason', async () => {
+		const lines: unknown[] = [];
+		const f = fixture(); Object.assign(f.options, { diagnostic: (line: unknown) => { lines.push(line); } });
+		const service = new LiveSessionLifecycle(f.options);
+		await service.start('Test'); await service.open(f.source);
+		await service.open({ ...f.source, sourceInstance: 'AwMDAwMDAwMDAwMDAwMDAw' });
+		f.loseLease(); await service.open({ ...f.source, epoch: 'BAQEBAQEBAQEBAQEBAQEBA' });
+		f.regainLease();
+		vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
+		await service.open({ ...f.source, epoch: 'BQUFBQUFBQUFBQUFBQUFBQ' });
+		expect(lines.map((line) => (line as { details: { reason: string } }).details.reason)).toEqual(['other_instance', 'lease_not_ours', 'persist_failed']);
+		expect(lines[0]).toEqual({ action: 'session_projection', phase: 'skip', state: 'source_conflict', details: { reason: 'other_instance' } });
+		await service.dispose();
+	});
+	it('reports the restored phase and what is still owed once a saved session is back, and nothing when none is saved', async () => {
+		const f = fixture(); await f.service.start('Test'); await f.service.dispose();
+		const lines: unknown[] = [];
+		const restored = new LiveSessionLifecycle({ ...f.options, diagnostic: (line) => { lines.push(line); } });
+		await restored.initialize();
+		expect(lines).toEqual([{ action: 'session_recover', phase: 'success', state: 'restored', details: { phase: 'active', count: 0, itemCount: 0 } }]);
+		expect(restored.getRuntime()?.sessionId).toBe('session');
+		const empty = new LiveSessionLifecycle({ ...f.options, persistence: new MemorySessionRuntimeStore(), diagnostic: (line) => { lines.push(line); } });
+		await empty.initialize(); expect(lines).toHaveLength(1);
+		await restored.dispose(); await empty.dispose();
+	});
 	it('failed durable commit leaves no acquisition or cursor and returns storage_unavailable', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
 		const save = vi.spyOn(f.store, 'saveLive').mockResolvedValueOnce({ status: 'error', code: 'unavailable' });
