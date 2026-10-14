@@ -598,6 +598,34 @@ describe('recommendContainerDisposition', () => {
 		expect(result.economicDecision).toEqual(baseline.economicDecision);
 	});
 
+	// Audit fix (14 oct 2026): opening three containers against two buy levels (12c x1, then 10c)
+	// yields an open total that is not a multiple of three. The kernel publishes the per-container
+	// EV as the truncated quotient, so the guard the session note applies must accept exactly that
+	// quotient (and nothing else) instead of demanding `ev * quantity === total`.
+	it('keeps a ready result valid when multi-level depth leaves an open total not divisible by quantity', () => {
+		const value = input({ gainedQuantity: 3, finalQuantity: 3, marketOutcome: true });
+		value.market.quotes.find((quote) => quote.itemId === 1)!.bidUnitCopper = 12;
+		value.market.depth!.items.find((entry) => entry.itemId === 1)!.buys = [
+			{ unitCopper: 12, quantity: 1 }, { unitCopper: 10, quantity: 100_000 },
+		];
+		const result = recommendContainerDisposition(withHold(value, []));
+		expect(result.status).toBe('ready');
+		const open = result.recommendation!.explanation!.open;
+		const total = BigInt(open.totalExpectedMicroCopper);
+		expect(total % 3n).not.toBe(0n);
+		expect(BigInt(open.evPerContainerMicroCopper)).toBe(total / 3n);
+		const persisted: unknown = JSON.parse(JSON.stringify(result));
+		expect(isContainerRecommendationResult(persisted)).toBe(true);
+
+		for (const delta of [1, -1]) {
+			const tampered = JSON.parse(JSON.stringify(result)) as typeof result;
+			const tamperedOpen = tampered.recommendation!.explanation!.open;
+			tamperedOpen.evPerContainerMicroCopper += delta;
+			tampered.recommendation!.explanation!.routes[0]!.open.evPerContainerMicroCopper += delta;
+			expect(isContainerRecommendationResult(tampered)).toBe(false);
+		}
+	});
+
 	it('fails closed on malformed input and arithmetic overflow', () => {
 		expect(recommendContainerDisposition(null)).toMatchObject({ status: 'invalid' });
 		const overflow = input({ gainedQuantity: 2, finalQuantity: 2, vendorValue: 0 });

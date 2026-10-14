@@ -621,7 +621,9 @@ function isEconomicExplanation(
 		!trimmed(value.open.modelId, 128) || !positive(value.open.modelVersion) ||
 		!positive(value.open.sampleContainers) || !nonNegative(value.open.excludedSampleUnits) ||
 		!['excluded', 'observed_only', 'bounded'].includes(String(value.open.rareTreatment)) ||
-		BigInt(value.open.totalExpectedMicroCopper) !== BigInt(value.open.evPerContainerMicroCopper) * BigInt(quantity)) return false;
+		// The kernel publishes the per-container EV as the truncated quotient of the open total:
+		// depth across several buy levels leaves totals that are not a multiple of the quantity.
+		BigInt(value.open.evPerContainerMicroCopper) !== BigInt(value.open.totalExpectedMicroCopper) / BigInt(quantity)) return false;
 	if (!isRecord(value.threshold) || !exactKeys(value.threshold, ['marginBps', 'requiredOpenMicroCopper']) ||
 		!integerRange(value.threshold.marginBps, 0, 10_000) || !decimal(value.threshold.requiredOpenMicroCopper) ||
 		!isRecord(value.comparison) || !exactKeys(value.comparison, ['differenceMicroCopper', 'advantageBps', 'rule']) ||
