@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.7.1: el bloque de histórico de precios se ve entero en Hebra 2.x (14 oct 2026)
+## Canal 0.7.1 publicado: el bloque de histórico de precios se ve entero en Hebra 2.x (14 oct 2026)
 
-**Candidato; sin publicar.** Rama `fix/surface-root-margin` sobre el canal 0.7.0 publicado (`2ec3946d`). Detalle en
-[CHANGELOG](CHANGELOG.md). Mismo encargo y excepción que la 0.7.0.
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.1` = `2dabc23f` (atestación; candidato `f7c5d902`).
+Gate local verde (check con 7984 tests, test 29/29, BRAT PASS); Release 38631312839 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=checked`); los assets publicados son los medidos en el
+arnés. Sobre el canal 0.7.0 publicado (`2ec3946d`). Detalle en [CHANGELOG](CHANGELOG.md). Mismo encargo y excepción que la 0.7.0.
 
 - Causa, medida por la sesión de Hebra en la 0.7.0 publicada (Chromium): la raíz de la superficie del bloque
   (`#hebra-surface-root`) llevaba la clase `tyrian-price-history-note`, con `margin-block` de 12 px. Hebra da al marco
