@@ -399,7 +399,6 @@ export class AssistedDetectionService {
 			this.inactivitySessionId = session.authority.sessionId;
 		}
 		const relevantGainQuantity = accountActivity(delta, this.relevantItemIds);
-		if (relevantGainQuantity === null) return;
 		const observation = this.inactivityDetector.observe({
 			accountId: delta.accountId,
 			beforeSnapshotId: delta.beforeSnapshotId,
@@ -519,12 +518,13 @@ function eligibleSessionContext(context: string): boolean {
 function accountActivity(
 	delta: Exclude<StorageDelta, { status: 'invalid' }>,
 	relevantIds: ReadonlySet<number>,
-): number | null {
+): number {
 	let quantity = 0;
 	for (const change of delta.itemChanges) {
 		if (change.delta <= 0 || !relevantIds.has(change.id)) continue;
 		quantity += change.delta;
-		if (!Number.isSafeInteger(quantity)) return null;
+		// An overflowing gain is still a gain: saturate instead of dropping the reading.
+		if (!Number.isSafeInteger(quantity)) return Number.MAX_SAFE_INTEGER;
 	}
 	if (quantity > 0) return quantity;
 	return delta.itemChanges.filter((change) => change.delta !== 0).length

@@ -230,6 +230,42 @@ describe('AssistedDetectionService', () => {
 		expect(session.status).toBe('active');
 	});
 
+	it('counts a gain whose summed quantity overflows as activity, not as a skipped reading', async () => {
+		const session: SessionState = activeSession();
+		const huge = 2 ** 52;
+		const flood = storageDeltaSnapshot({
+			snapshotId: 'b',
+			startedAt: '2026-08-13T10:15:00.000Z',
+			completedAt: '2026-08-13T10:15:02.000Z',
+			holdings: [
+				looseHolding(36_038, huge, { source: 'bank', slot: 0 }),
+				looseHolding(36_041, huge, { source: 'bank', slot: 1 }),
+			],
+		});
+		const quiet = (id: string, minute: number) => storageDeltaSnapshot({
+			...flood,
+			snapshotId: id,
+			startedAt: new Date(Date.UTC(2026, 7, 13, 10, minute)).toISOString(),
+			completedAt: new Date(Date.UTC(2026, 7, 13, 10, minute, 2)).toISOString(),
+		});
+		const harness = createHarness([
+			snapshot('a', 0, 0), flood, quiet('c', 30), quiet('d', 45),
+		], () => session, 20 * 60_000);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
+		expect(harness.service.getState()).toMatchObject({
+			status: 'stop_proposed',
+			proposal: {
+				quietSince: '2026-08-13T10:15:02.000Z',
+				possibleStop: { from: '2026-08-13T10:00:02.000Z' },
+				lastGainSample: { beforeSnapshotId: 'a', afterSnapshotId: 'b', relevantGainQuantity: Number.MAX_SAFE_INTEGER },
+			},
+		});
+	});
+
 	it('keeps polling paused when durable proposal enqueue fails', async () => {
 		const harness = createHarness([
 			snapshot('a', 0, 0), snapshot('b', 15, 1), snapshot('c', 30, 2),
