@@ -33,7 +33,6 @@ import type { CatalogItem } from '../catalog/public-catalog-model';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { startLocalDebugAction, type LocalDebugActionRunner, type ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import { createTranslator } from '../core/i18n';
-import { openSessionCatalog } from './session-catalog-opening';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { CollectorMode, TyrianSettings } from '../core/settings';
@@ -547,4 +546,44 @@ function sessionEconomyKey(runtime: SessionRuntimeRecord): string | null {
 /** Whether the host paints a remote image inside a line of a note: true unless it declared `capabilities.remoteImages: false`. */
 function hostPaintsRemoteImages(host: { readonly capabilities?: TyrianHost['capabilities'] } | undefined): boolean {
 	return host?.capabilities?.remoteImages !== false;
+}
+
+/**
+ * One opening of the session catalog for everyone who asks while it is being opened. The factory opens an IndexedDB
+ * connection; `sessionCatalog ??= await factory()` let two concurrent readers (the live summary reads names and metadata
+ * with `Promise.all`) each call it, and the one that lost the assignment was never disposed. The pending promise is shared
+ * by factory, so the session note runtime and the price history runtime (same factory, separate ports) join the same opening.
+ */
+
+export interface SessionCatalogPort {
+	readonly sessionCatalogFactory: (() => Promise<PublicCatalogService>) | null;
+	sessionCatalog: PublicCatalogService | null;
+}
+
+const openings = new WeakMap<object, Promise<PublicCatalogService>>();
+const released = new WeakSet<PublicCatalogService>();
+
+export async function openSessionCatalog(port: SessionCatalogPort): Promise<PublicCatalogService> {
+	if (port.sessionCatalog !== null) return port.sessionCatalog;
+	const factory = port.sessionCatalogFactory;
+	// The unload drops the factory: nothing is opened (or reopened) once the plugin has been released.
+	if (factory === null) throw new Error('The session catalog is not available.');
+	let opening = openings.get(factory);
+	if (opening === undefined) { opening = factory(); openings.set(factory, opening); }
+	let opened = false;
+	try {
+		const service = await opening;
+		opened = true;
+		if (port.sessionCatalog !== null) return port.sessionCatalog;
+		if (port.sessionCatalogFactory !== factory) {
+			// Released while it was opening: what was opened has no owner any more.
+			if (!released.has(service)) { released.add(service); service.dispose(); }
+			throw new Error('The session catalog was released while it was opening.');
+		}
+		port.sessionCatalog = service;
+		return service;
+	} finally {
+		// A failed opening is not kept: the next reader tries again.
+		if (!opened && openings.get(factory) === opening) openings.delete(factory);
+	}
 }

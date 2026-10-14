@@ -19,7 +19,7 @@
  * persisted-session boundary: the history's stores belong to that service, this holds none.
  */
 import type { PriceIngameState } from '../alerts/price-ingame-state';
-import { openSessionCatalog } from './session-catalog-opening';
+import { openSessionCatalog } from './session-note-runtime';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import { startLocalDebugAction } from '../core/local-debug-action-runner';

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
-import { openSessionCatalog, type SessionCatalogPort } from './session-catalog-opening';
+import { openSessionCatalog, type SessionCatalogPort } from './session-note-runtime';
 
 function service() { const dispose = vi.fn(); return { instance: { dispose } as unknown as PublicCatalogService, dispose }; }
 function deferred<T>() {
