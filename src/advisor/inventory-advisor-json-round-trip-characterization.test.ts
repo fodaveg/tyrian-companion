@@ -249,7 +249,8 @@ describe('JSON round trip of the advisor contracts: the large report keeps its d
 		expect(outcome(legacyJsonRoundTripUnguarded, producerResult.report)).toBe('accepts');
 		expect(outcome(legacyJsonRoundTripUnguarded, engineInput.input)).toBe('accepts');
 		expect(outcome(legacyJsonRoundTripUnguarded, discardResult)).toBe('accepts');
-	});
+		// Measured 1.7 s alone and 3.7-5.2 s in the gate with the game open: above the 5 s default under load.
+	}, 20_000);
 
 	it('keeps the digests of the input, the report and both results', () => {
 		expect(sha256CanonicalValue(engineInput.input)).toBe('8fd03612bcefc8c4b7110c409bdb06a459353e28a3710be7841265c6697045e8');

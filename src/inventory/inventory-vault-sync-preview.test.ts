@@ -215,7 +215,8 @@ describe('inventory Vault preview: bounded concurrent reads and a classification
 		expect(work).toEqual({ yamlParses: 0, hashes: 0 });
 		expect(second).toEqual(first);
 		expect(second.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
-	});
+		// Measured 5.0 s in the gate with the game open: two previews of 1,371 notes, CPU bound, above the 5 s default.
+	}, 20_000);
 
 	it('classifies a note again when its text changed between two previews, whatever the host says about its date', async () => {
 		// The vault port carries no modification time or revision at all: the text read is the only evidence.
