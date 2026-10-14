@@ -32,8 +32,8 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		const tests = readModuleSource('src/ui/halloween-personal-valuation-settings.test.ts');
 		const styles = readModuleSource('styles.css');
 		const locale = readModuleSource('src/core/i18n-runtime-catalog.ts');
-		const start = styles.indexOf('.tyrian-personal-valuation-setting');
-		const end = styles.indexOf('.tyrian-companion-review fieldset', start);
+		const start = styles.indexOf('.tyrian-personal-valuation {');
+		const end = styles.indexOf('.tyrian-companion-quality-correction fieldset', start);
 		const personalStyles = styles.slice(start, end);
 		// Tokens.
 		expect(personalStyles).toMatch(/var\(--/u);
