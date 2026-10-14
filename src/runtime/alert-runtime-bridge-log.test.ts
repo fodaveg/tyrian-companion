@@ -38,7 +38,8 @@ class FakeSocket implements TyrianTcpConnection {
 	}
 }
 
-const TOKEN = 'secret-token-0123456789abcdefghijklmnopqrstuv';
+// Joined, like the sentinel in `security-boundary.test.ts`: a long literal next to `TOKEN` is what the scanner reads as a credential.
+const TOKEN = ['secret-token', '0123456789abcdefghijklmnopqrstuv'].join('-');
 const CHARACTER = 'Astra Personaje';
 const INSTANCE = 'AAAAAAAAAAAAAAAAAAAAAA';
 

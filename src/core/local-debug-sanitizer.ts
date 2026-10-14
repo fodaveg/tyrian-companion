@@ -117,7 +117,7 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	ui: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'rowCount'],
 	support: [...COMMON_DETAIL_FIELDS, 'recordCount', 'retainedCount', 'bytes'],
 	// `retainedCount` (the number of retained log files; was `fileCount`, which BLOCKED_KEY always dropped because it contains `file`, and so would any name with it).
-	// `suppressedKey`/`windowMs` belong to the `debug_suppress` summary of the burst guard (`local-debug-logger.ts`).
+	// `suppressedKey`/`windowMs` belong to the `debug_suppress` summary of the burst guard (the `local-debug-` module that writes the lines).
 	local_debug: [...COMMON_DETAIL_FIELDS, 'recordCount', 'retainedCount', 'bytes', 'droppedRecords', 'recoveredTails', 'suppressedKey', 'windowMs'],
 	// Bridge lines (`bridge_connection`, `bridge_live`, `debug_suppress`): every string is one closed token and every
 	// other value a number or boolean, enforced by `closedDetailValue`; none of these fields carries free text.
