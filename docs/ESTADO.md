@@ -1,5 +1,28 @@
 # Estado
 
+## Candidato 0.6.62: arreglos de los audits de bugs del 14 oct (14 oct 2026)
+
+**Candidato; sin publicar.** `main` sobre el canal 0.6.61 publicado (`3bfb7d66`). Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 14 oct («has corregido todos los bugs que has encontrado en el audit?», «haz el audit de esas zonas
+en paralelo»): los pendientes del primer audit y un segundo audit de las zonas sin revisar (sesiones manuales y runtime,
+economía de contenedores, asesor, UI y ajustes, núcleo y panel del addon). Va con el addon de Nexus 0.8.12 (`e27f10b`,
+DLL sha256 `f15307ae…23fe`, publicado el 14 oct).
+
+- Copia de preferencias del asesor (DU-13 reescrita en [ARCHITECTURE](ARCHITECTURE.md)): nunca pierde cuentas al
+  escribirse, se repara por cuenta (nunca pisa un registro legible ni uno de esquema futuro) y espera a la restauración.
+- Economía: el validador acepta el valor por contenedor truncado que produce el kernel; un 1 cobre ya no invalida un plan
+  de conservar ni da un motivo equivocado; fechas de festival imposibles rechazadas; tabla legendaria con reloj roto nula;
+  una cola de valor inválida ya no bloquea la recomendación.
+- Sesiones y vault de Hebra: rearme de la detección asistida, nota restaurada de la papelera releída, índice de rutas sin
+  huérfanos, claim sin renovación eterna, lease liberado en la migración, y dos arreglos latentes de la rama manual.
+- UI y ajustes: filtros de Banco/Materiales/Entrega que no divergen, dos variables CSS mapeadas en Hebra, webhook que se
+  guarda al terminar y oculto, plurales, botones y formularios del asesor, portapapeles y CSS muerto.
+- Host y núcleo: el error del servidor TCP de Obsidian llega al diagnóstico; la recuperación del log local salta la línea
+  corrupta y conserva las siguientes; el limitador de concurrencia ya no admite una tarea de más.
+- Descartados con evidencia: rechazos en los modales (las confirmaciones nunca rechazan), `Date.parse` en `gap()`,
+  resumen tras descartar, carrera de `getStore`, `halloweenObservationActive` pasivo a propósito (6e95cfcf).
+- Sin verificar: nada en Obsidian ni Hebra reales.
+
 ## Canal 0.6.61 publicado: el panel «En vivo» corregido desde la captura de David en el iPhone (14 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.61` = `3bfb7d66` (atestación; candidato `8aeebaea`; un

@@ -1,5 +1,27 @@
 # Changelog
 
+## Release beta 0.6.62 - Arreglos de dos revisiones de bugs
+
+Se actualiza desde la 0.6.61 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Asesor de inventario. La copia de tus metas y excepciones de «Conservar» ya no pierde las de otra cuenta al guardar, y
+  una que se corrompa se repara desde la copia. En una línea con parte para descartar y parte para conservar, el descarte
+  ya no sale inválido.
+- Filtros del asesor. Las casillas de Banco, Materiales y Entrega guardan tu elección mientras cargan los datos; ya no
+  desaparecen filas al escribir en la búsqueda.
+- Hebra. El final de Venta ya no queda bajo la barra de estado y el icono de «Conservar» tiene su espacio. Una nota de
+  Tyrian que restauras de la papelera vuelve a verse y no se duplica. Al elegir carpeta, una lista vieja ya no pisa la
+  nueva.
+- Ajustes. El webhook de avisos se guarda al terminar de escribir y no se muestra en claro.
+- Textos. Plurales corregidos («1 objeto», «1 segundo»…). Al copiar un detalle técnico que falla, lo dice.
+- Recomendaciones. Arreglos de cálculo con precios de 1 cobre, con varias bolsas y varios niveles de órdenes, y con
+  fechas de festival.
+- Diagnóstico. El log local conserva las líneas válidas que siguen a una corrupta, y un error del puerto del addon en
+  Obsidian queda registrado.
+- Con el addon de Nexus 0.8.12, el panel del juego corrige el estado en pantallas de carga, el precio caducado, el aviso
+  de bajada del hallazgo mágico y el cambio de personaje.
+
 ## Release beta 0.6.61 - El panel «En vivo» se lee mejor en el móvil
 
 Se actualiza desde la 0.6.60 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
