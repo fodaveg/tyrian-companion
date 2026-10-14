@@ -479,9 +479,11 @@ describe('Inventory Advisor list: accessibility of rows that are kept and moved'
 const PINNED = {
 	combinations: 'bfdf52bd3d2cb89216e600458ecc3e7acd613879612edc5aa1a5891ca979a2fe',
 	searches: '1a7431810c76531c5eb8a368001813bb5bdfeea8e2f436a9205c427b85b4f0dd',
-	openDetails: 'b5d3d5a0859400b28a1a0b4d732028b7a8be13c2c6730485e8534a5f7c27185f',
+	// Re-pinned for 64b83bb2: a `keep` row with neither a keep exception nor `reserved_for_goal` (no_sell, seasonal_hold)
+	// no longer carries the «reservation rules» note. Verified: restoring only that note gives the previous hashes.
+	openDetails: '0d81f1de588fe54b6a9144f661b48c41147de744d117309d07c6101a92de05af',
 	// Halloween scope: the low-space repaint labels character bags; its pressure fixture now excludes bank slots.
-	repaints: 'b2abb6b7aeee4723c45081bbe0ad874c47e21d65ae6bf959ea339c2f102b342e',
+	repaints: '05098523620b066ed26f32b29a70914f97ab4d0d8b1a75e9478c6a024798a041',
 	/** Elements created to mount 1,371 rows; 36,144 while every closed detail carried its body. */
 	nodesOnMount: 18_110,
 	/**
