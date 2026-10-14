@@ -5,7 +5,7 @@
 		"catch_clause": 623,
 		"promise_catch": 62,
 		"void_expression": 148,
-		"callback_registration": 263
+		"callback_registration": 264
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -9135,6 +9135,29 @@
 				}
 			]
 		},
+		"src/runtime/live-panel-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "5be45aeeba37815d50c07fdc7e777a418b804258",
+					"kind": "callback_registration",
+					"line": 157,
+					"column": 16,
+					"endLine": 160,
+					"endColumn": 11,
+					"registration": "setTimeout",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setTimeout",
+						"scope": "arm",
+						"justification": "The \"arm\" timer callback (\"setTimeout\") only hands flush to options.run, which the core wires to fireAndForgetLocal with a diagnostic context (component vault, action vault_write, state live_panel), so a failed write is reported there."
+					},
+					"reason": "Allowlisted callback_registration: The \"arm\" timer callback (\"setTimeout\") only hands flush to options.run, which the core wires to fireAndForgetLocal with a diagnostic context (component vault, action vault_write, state live_panel), so a failed write is reported there. Verified registration: \"setTimeout\" in \"arm\"."
+				}
+			]
+		},
 		"src/runtime/live-session-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -11527,6 +11550,11 @@
 					"reason": "Allowlisted catch_clause: The \"enqueue\" owner applies \"local_recovery\" to a start, stop or link write that threw: it hands the error to the port recordFailure, which main.ts turns into a structured session failure record, and keeps the queue alive for the next presence event. Verified recovery: \"local_recovery\" in \"enqueue\"."
 				}
 			]
+		},
+		"src/sessions/live-panel-note.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/sessions/live-session-characters.ts": {
 			"classification": "production_source",
