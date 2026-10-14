@@ -29,6 +29,9 @@ const jsonReport = jsonReportPath === undefined || jsonReportPath === ''
 export default defineConfig({
 	test: {
 		...jsonReport,
+		// 14 oct 2026: three heavy tests (1–2 s alone) crossed vitest's 5 s default under a loaded machine
+		// (the game running, another suite); a hang still fails, only later.
+		testTimeout: 15_000,
 		// An agent worktree checked out under .claude/ is a full second copy of src/.
 		// Without this, `vitest run` from the repo root collects both copies and reports
 		// roughly double the test count as green.
