@@ -23,6 +23,42 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
+describe('Companion view after close', () => {
+	type Closable = {
+		onClose(): Promise<void>; onOpen(): Promise<void>; render(): void; refreshDynamicStatus(): void;
+		checkConnection(): Promise<void>;
+		scheduleRefresh(projection: unknown, retryAt: number | null, now: number): void;
+	};
+	function harness(getConnectionState: () => unknown, setInterval: () => number, check: Promise<void>): Closable {
+		return Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: { getConnectionState, localDebugViewEvent: vi.fn(), checkConnection: () => check },
+			contentEl: { win: { setInterval, clearInterval: vi.fn() }, doc: { hidden: false } },
+			sectionHidden: false,
+			refreshInterval: null,
+			visibilityCleanup: null,
+		}) as unknown as Closable;
+	}
+
+	it('paints nothing and arms no interval when a pending action resolves after onClose', async () => {
+		let resolve!: () => void;
+		const check = new Promise<void>((r) => { resolve = r; });
+		const getConnectionState = vi.fn(() => ({ status: 'idle' }));
+		const setInterval = vi.fn(() => 1);
+		const view = harness(getConnectionState, setInterval, check);
+		const render = vi.spyOn(view, 'render').mockImplementation(() => undefined);
+		const flow = view.checkConnection();
+		await view.onClose();
+		render.mockRestore();
+		resolve();
+		await flow;
+		expect(getConnectionState).not.toHaveBeenCalled();
+		view.refreshDynamicStatus();
+		view.scheduleRefresh({ refreshEveryMs: 1000 }, null, Date.now());
+		expect(getConnectionState).not.toHaveBeenCalled();
+		expect(setInterval).not.toHaveBeenCalled();
+	});
+});
+
 /**
  * The local-diagnostics banner used to be its own block (`renderLocalDebugWarning`); the session
  * card's redesign (Lote M/N, 9 sep 2026) folds it into the single callout (`buildIncidentCallout`,

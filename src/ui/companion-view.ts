@@ -262,6 +262,9 @@ export class TyrianCompanionView {
 	 *  that just ended), which forces a fresh historial read even if one already succeeded before. */
 	private lastObservedSessionStatus: SessionStatus | null = null;
 
+	/** True between `onClose` and the next `onOpen`: an action resolving then must not repaint or re-arm the tick. */
+	private closed = false;
+
 	constructor(
 		readonly contentEl: HTMLElement,
 		private readonly ui: Pick<TyrianUiPort, 'setIcon' | 'openModal'>,
@@ -270,6 +273,7 @@ export class TyrianCompanionView {
 
 	async onOpen(): Promise<void> {
 		this.actions.localDebugViewEvent?.('open');
+		this.closed = false;
 		this.sectionHidden = false;
 		this.repaintPending = false;
 		this.registerVisibilityPause();
@@ -292,6 +296,7 @@ export class TyrianCompanionView {
 
 	async onClose(): Promise<void> {
 		this.actions.localDebugViewEvent?.('close');
+		this.closed = true;
 		this.sessionHistoryMount?.dispose();
 		this.sessionHistoryMount = null;
 		this.sessionHistoryLocale = null;
@@ -328,6 +333,7 @@ export class TyrianCompanionView {
 	}
 
 	render(): void {
+		if (this.closed) return;
 		if (this.sectionHidden) { this.repaintPending = true; return; }
 		this.repaintPending = false;
 		this.clearRefresh();
@@ -1473,6 +1479,7 @@ export class TyrianCompanionView {
 	}
 
 	private refreshDynamicStatus(): void {
+		if (this.closed) return;
 		const now = Date.now();
 		const projection = this.projectStatus(now);
 		const connection = this.actions.getConnectionState();
@@ -1505,6 +1512,7 @@ export class TyrianCompanionView {
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
+		if (this.closed) return;
 		const live = this.actions.getLiveSessionView?.(0, 1); // only the phase is read: no 200 observations
 		const shouldRefresh = live?.phase === 'active' || live?.phase === 'starting' || live?.phase === 'stopping' || projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now)
 			|| (this.actions.getFarmingReminders?.().length ?? 0) > 0;
