@@ -244,6 +244,39 @@ describe('deferred runtime boot guard', () => {
 	});
 });
 
+describe('a claimed proposal stops renewing whatever throws after the claim', () => {
+	type Intent = Parameters<LiveSessionRuntime['performStopManualSession']>[0];
+	type Claim = Awaited<ReturnType<LiveSessionRuntimePort['pendingProposals']['claim']>>;
+
+	function claimedPort(stopRenewal: () => void): LiveSessionRuntimePort {
+		const base = port();
+		return port({
+			connection: { getState: () => ({ status: 'idle' }) },
+			pendingProposals: {
+				...base.pendingProposals,
+				reconcile: vi.fn(async () => undefined) as unknown as LiveSessionRuntimePort['pendingProposals']['reconcile'],
+				claim: vi.fn(async () => ({ status: 'claimed', proposal: { proposalId: 'proposal-1' } }) as unknown as Claim),
+			},
+			pendingClaimRenewals: { start: () => stopRenewal },
+			// The first thing read after the claim fails.
+			assistedDetection: { ...base.assistedDetection, getState: () => { throw new Error('detector state unreadable'); } },
+		});
+	}
+
+	it.each([
+		['stop', (runtime: LiveSessionRuntime, intent: Intent) => runtime.performStopManualSession(intent)],
+		['start', (runtime: LiveSessionRuntime, intent: Intent) => runtime.startManualSession({ characterName: 'Astra Uno' } as never, intent)],
+	] as const)('%s', async (_name, run) => {
+		const stopRenewal = vi.fn();
+		const runtime = new LiveSessionRuntime(claimedPort(stopRenewal));
+		const intent = { proposalId: 'proposal-1', accountId: 'account', phase: 'stop', binding: {} } as unknown as Intent;
+
+		await expect(run(runtime, intent)).rejects.toThrow('detector state unreadable');
+
+		expect(stopRenewal).toHaveBeenCalledOnce();
+	});
+});
+
 describe('the ways out of a session reset the summary through the port', () => {
 	it('an abandon writes its note, resets the summary to it and arms the detection again', async () => {
 		type AbandonResult = Awaited<ReturnType<LiveSessionRuntimePort['sessions']['abandon']>>;

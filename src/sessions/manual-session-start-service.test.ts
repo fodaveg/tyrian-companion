@@ -432,6 +432,23 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
+	it('a start refused as busy keeps the stopped session\'s delta and its pending stop evidence', async () => {
+		const final = afterSnapshot({ holdings: [looseHolding(100, 5, { source: 'bank', slot: 0 })] });
+		const service = new ManualSessionStartService(coordinator(), {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => structuredClone(final)),
+		}, serviceOptions({ runtimeStore: new MemorySessionRuntimeStore() }));
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({ status: 'stopped', state: { status: 'provisional' } });
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
+
+		expect(service.getState().status).toBe('provisional');
+		expect(service.getProvisionalDelta()).toMatchObject({ afterSnapshotId: 'snapshot-after' });
+		await service.dispose();
+	});
+
 	// H14.1: the classifier is synchronous, so the review resolves the lost items' catalog type
 	// beforehand and only exempts the ones that resolve to Container/Consumable.
 	it('resolves lost items against the catalog before review and exempts a farmed container', async () => {
@@ -1517,6 +1534,27 @@ describe('ManualSessionStartService', () => {
 
 			await expect(service.preserveLegacyForLiveMigration()).resolves.toBe(false);
 			expect(leases.release).toHaveBeenCalledTimes(1);
+			await service.dispose();
+		});
+
+		it.each(['assertOwned', 'archiveLegacyRuntime'] as const)('releases the old session lease and drops its handle when %s throws', async (failing) => {
+			const factory = new IDBFactory(); const dbName = `legacy-throwing-${failing}`;
+			await seedUnfinishedWithForeignReceipt(factory, dbName);
+			const leases = coordinator(failing === 'assertOwned'
+				? { assertOwned: vi.fn(async () => { throw new Error('Coordination store unavailable.'); }) }
+				: {});
+			const runtimeStore = new IndexedDbSessionRuntimeStore(factory, dbName);
+			if (failing === 'archiveLegacyRuntime') vi.spyOn(runtimeStore, 'archiveLegacyRuntime').mockRejectedValue(new Error('Runtime store unavailable.'));
+			const service = new ManualSessionStartService(leases, { capture: vi.fn() },
+				serviceOptions({ automaticAccountCapture: false, runtimeStore }));
+			await service.initialize();
+
+			await expect(service.preserveLegacyForLiveMigration()).rejects.toThrow('unavailable');
+			expect(leases.release).toHaveBeenCalledTimes(1);
+			// No handle is kept: a wake has nothing to renew.
+			service.notifyWake();
+			await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+			expect(leases.renew).not.toHaveBeenCalled();
 			await service.dispose();
 		});
 

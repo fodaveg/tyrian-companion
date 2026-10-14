@@ -100,6 +100,9 @@ export class ManualSessionHeartbeat {
 				void this.saveActiveEvidence();
 				return;
 			}
+			// A failure of a handle the service no longer holds (released, or replaced by another
+			// acquisition while this renewal was out) says nothing about the session it holds now.
+			if (!this.stillHolds(observed)) return;
 			const reason = result.status === 'lost'
 				? 'lease_lost'
 				: result.code === 'clock_anomaly' ? 'clock_anomaly' : 'coordination_unavailable';
@@ -109,10 +112,15 @@ export class ManualSessionHeartbeat {
 				: failure('coordination_unavailable', 'Session coordination became unavailable.');
 			this.failFromAuthority(mapped);
 		} catch {
-			this.logAuthorityFailure('session_heartbeat', 'coordination_unavailable');
-			const mapped = failure('coordination_unavailable', 'Session coordination became unavailable.');
-			this.failFromAuthority(mapped);
+			if (this.stillHolds(observed)) {
+				this.logAuthorityFailure('session_heartbeat', 'coordination_unavailable');
+				this.failFromAuthority(failure('coordination_unavailable', 'Session coordination became unavailable.'));
+			}
 		}
+	}
+
+	private stillHolds(observed: ActiveSessionLeaseHandle): boolean {
+		return this.currentHandle?.sessionId === observed.sessionId && this.currentHandle.fence === observed.fence;
 	}
 
 	stopHeartbeat(): void {

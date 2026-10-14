@@ -106,6 +106,54 @@ describe('AssistedDetectionService', () => {
 		expect(scheduler.starts).toEqual([]);
 	});
 
+	it('honours an arm requested after disarm cancelled a baseline still in flight', async () => {
+		const resolvers: ((value: StorageSnapshot) => void)[] = [];
+		const scheduler = new FakeScheduler();
+		const service = new AssistedDetectionService({
+			snapshots: { capture: () => new Promise((resolve) => { resolvers.push(resolve); }) },
+			getSessionState: idleSession,
+			schedulerFactory: (options) => scheduler.connect(options),
+		});
+
+		const stale = service.arm(900_000);
+		service.disarm('session_stopped');
+		const fresh = service.arm(120_000);
+
+		expect(resolvers).toHaveLength(2);
+		resolvers[0]?.(snapshot('a', 0, 0));
+		await stale;
+		expect(scheduler.starts).toEqual([]);
+		// The stale flight settling must not detach the fresh one: a repeat still deduplicates.
+		expect(service.arm(120_000)).toBe(fresh);
+		expect(resolvers).toHaveLength(2);
+		resolvers[1]?.(snapshot('b', 1, 0));
+		await expect(fresh).resolves.toMatchObject({ status: 'armed', lastSnapshotAt: '2026-08-13T10:01:02.000Z' });
+		expect(scheduler.starts).toEqual([120_000]);
+	});
+
+	it('honours an arm requested after armFromSnapshot superseded a baseline still in flight', async () => {
+		const resolvers: ((value: StorageSnapshot) => void)[] = [];
+		const scheduler = new FakeScheduler();
+		const service = new AssistedDetectionService({
+			snapshots: { capture: () => new Promise((resolve) => { resolvers.push(resolve); }) },
+			getSessionState: idleSession,
+			schedulerFactory: (options) => scheduler.connect(options),
+		});
+
+		const stale = service.arm(900_000);
+		service.armFromSnapshot(snapshot('session-baseline', 0, 0), 120_000);
+		scheduler.publishFatal();
+		expect(service.getState().status).toBe('error');
+		const fresh = service.arm(120_000);
+
+		expect(resolvers).toHaveLength(2);
+		resolvers[0]?.(snapshot('a', 0, 0));
+		resolvers[1]?.(snapshot('b', 1, 0));
+		await stale;
+		await expect(fresh).resolves.toMatchObject({ status: 'armed', lastSnapshotAt: '2026-08-13T10:01:02.000Z' });
+		expect(scheduler.starts).toEqual([120_000, 120_000]);
+	});
+
 	it('proposes a start after two real snapshot deltas with capture gaps', async () => {
 		const harness = createHarness([
 			snapshot('a', 0, 0),
@@ -180,6 +228,42 @@ describe('AssistedDetectionService', () => {
 			proposal: { thresholdMs: 20 * 60_000 },
 		});
 		expect(session.status).toBe('active');
+	});
+
+	it('counts a gain whose summed quantity overflows as activity, not as a skipped reading', async () => {
+		const session: SessionState = activeSession();
+		const huge = 2 ** 52;
+		const flood = storageDeltaSnapshot({
+			snapshotId: 'b',
+			startedAt: '2026-08-13T10:15:00.000Z',
+			completedAt: '2026-08-13T10:15:02.000Z',
+			holdings: [
+				looseHolding(36_038, huge, { source: 'bank', slot: 0 }),
+				looseHolding(36_041, huge, { source: 'bank', slot: 1 }),
+			],
+		});
+		const quiet = (id: string, minute: number) => storageDeltaSnapshot({
+			...flood,
+			snapshotId: id,
+			startedAt: new Date(Date.UTC(2026, 7, 13, 10, minute)).toISOString(),
+			completedAt: new Date(Date.UTC(2026, 7, 13, 10, minute, 2)).toISOString(),
+		});
+		const harness = createHarness([
+			snapshot('a', 0, 0), flood, quiet('c', 30), quiet('d', 45),
+		], () => session, 20 * 60_000);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
+		expect(harness.service.getState()).toMatchObject({
+			status: 'stop_proposed',
+			proposal: {
+				quietSince: '2026-08-13T10:15:02.000Z',
+				possibleStop: { from: '2026-08-13T10:00:02.000Z' },
+				lastGainSample: { beforeSnapshotId: 'a', afterSnapshotId: 'b', relevantGainQuantity: Number.MAX_SAFE_INTEGER },
+			},
+		});
 	});
 
 	it('keeps polling paused when durable proposal enqueue fails', async () => {
@@ -519,6 +603,11 @@ class FakeScheduler {
 	dispose(): void {
 		this.running = false;
 		this.publish('disposed', null);
+	}
+
+	publishFatal(): void {
+		this.running = false;
+		this.publish('fatal', null);
 	}
 
 	async trigger(): Promise<ApiPollOutcome> {

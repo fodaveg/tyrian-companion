@@ -227,6 +227,8 @@ export class AssistedDetectionService {
 		const interval = positiveInteger(intervalMs, 'intervalMs');
 		if (!stableSnapshot(snapshot)) return this.fail('The account baseline was not stable enough to arm detection.');
 		this.generation += 1;
+		// The superseded flight can only settle as a no-op now; a later arm() must not wait on it.
+		this.armFlight = null;
 		this.intervalMs = interval;
 		this.scheduler.stop();
 		this.resetEvidence();
@@ -247,6 +249,8 @@ export class AssistedDetectionService {
 	disarm(reason: AssistedDetectionDisarmReason = 'user'): AssistedDetectionState {
 		if (this.disposed) return this.getState();
 		this.generation += 1;
+		// The cancelled flight can only settle as a no-op now; a later arm() must not wait on it.
+		this.armFlight = null;
 		this.intervalMs = null;
 		this.scheduler.stop();
 		this.resetEvidence();
@@ -395,7 +399,6 @@ export class AssistedDetectionService {
 			this.inactivitySessionId = session.authority.sessionId;
 		}
 		const relevantGainQuantity = accountActivity(delta, this.relevantItemIds);
-		if (relevantGainQuantity === null) return;
 		const observation = this.inactivityDetector.observe({
 			accountId: delta.accountId,
 			beforeSnapshotId: delta.beforeSnapshotId,
@@ -515,12 +518,13 @@ function eligibleSessionContext(context: string): boolean {
 function accountActivity(
 	delta: Exclude<StorageDelta, { status: 'invalid' }>,
 	relevantIds: ReadonlySet<number>,
-): number | null {
+): number {
 	let quantity = 0;
 	for (const change of delta.itemChanges) {
 		if (change.delta <= 0 || !relevantIds.has(change.id)) continue;
 		quantity += change.delta;
-		if (!Number.isSafeInteger(quantity)) return null;
+		// An overflowing gain is still a gain: saturate instead of dropping the reading.
+		if (!Number.isSafeInteger(quantity)) return Number.MAX_SAFE_INTEGER;
 	}
 	if (quantity > 0) return quantity;
 	return delta.itemChanges.filter((change) => change.delta !== 0).length

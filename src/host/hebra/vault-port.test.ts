@@ -594,6 +594,50 @@ describe('createTyrianVaultPort: `synced` with canonicalPathFor (notes from othe
 		expect(index.getIdForPath('A.md')).toBe(id);
 	});
 
+	// A note restored from Hebra's trash used to stay out of the index until the plugin restarted, so
+	// the core created a second note on its path and the next start found two (`path_taken`).
+	it('trashing a note drops it from the index with delete, and restoring it indexes it again as create', async () => {
+		const library = setupLibrary();
+		const { index, changes, emit, vault } = await setup(library);
+		const id = writeForeign(library, 'tyrian:A.md');
+		emit(id, 'synced');
+		await vault.whenIdle();
+		changes.length = 0;
+		const stored = library.notes.get(id);
+		if (stored) stored.trashedAt = Date.now();
+		emit(id, 'trashed');
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'delete', path: 'A.md' }]);
+		expect(index.getPathForId(id)).toBeUndefined();
+		changes.length = 0;
+		if (stored) stored.trashedAt = null;
+		emit(id, 'restored');
+		await vault.whenIdle();
+		expect(changes).toEqual([{ kind: 'create', path: 'A.md' }]);
+		expect(index.getIdForPath('A.md')).toBe(id);
+	});
+
+	it('a restored note whose path another note took meanwhile is not adopted over it', async () => {
+		const library = setupLibrary();
+		const { index, changes, emit, vault } = await setup(library);
+		const id = writeForeign(library, 'tyrian:A.md');
+		emit(id, 'synced');
+		await vault.whenIdle();
+		const stored = library.notes.get(id);
+		if (stored) stored.trashedAt = Date.now();
+		emit(id, 'trashed');
+		await vault.whenIdle();
+		const replacement = await vault.create('A.md', 'tyrian:A.md');
+		const owner = index.getIdForPath(replacement.path);
+		changes.length = 0;
+		if (stored) stored.trashedAt = null;
+		emit(id, 'restored');
+		await vault.whenIdle();
+		expect(changes).toEqual([]);
+		expect(index.getIdForPath('A.md')).toBe(owner);
+		expect(index.getPathForId(id)).toBeUndefined();
+	});
+
 	it('moving a note out of the output folder drops it from the index; moving it inside keeps it', async () => {
 		const library = setupLibrary();
 		library.addFolder('other', 'root', 'Other');

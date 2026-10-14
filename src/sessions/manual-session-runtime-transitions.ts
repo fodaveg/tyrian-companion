@@ -428,13 +428,6 @@ export class ManualSessionTransitions {
 			const reset = transitionSession(this.state, { type: 'reset' });
 			if (reset.status !== 'rejected') this.state = reset.state;
 		}
-		this.lastFailure = null;
-		this.lastStopFailure = null;
-		this.provisionalDelta = null;
-		this.contaminationReview = null;
-		this.priceSnapshot = null;
-		this.authorityFailure = null;
-		this.lastEvidenceSavedAt = 0;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
 		if (this.recoveryState.status !== 'none') {
 			return this.failWithoutLease('busy', 'Recover or discard the saved farming session first.');
@@ -442,6 +435,15 @@ export class ManualSessionTransitions {
 		if (this.state.status !== 'idle') {
 			return this.failWithoutLease('busy', 'A farming session is already in progress.');
 		}
+		// Only a start that may proceed lets go of the previous session's evidence: a refused one
+		// leaves the session in progress (its delta, its stop failure) exactly as it was.
+		this.lastFailure = null;
+		this.lastStopFailure = null;
+		this.provisionalDelta = null;
+		this.contaminationReview = null;
+		this.priceSnapshot = null;
+		this.authorityFailure = null;
+		this.lastEvidenceSavedAt = 0;
 		let normalizedInput: SessionStartInput;
 		try {
 			normalizedInput = normalizeSessionStartInput(input);
