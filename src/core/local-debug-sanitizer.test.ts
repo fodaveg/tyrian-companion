@@ -261,6 +261,14 @@ describe('local debug sanitizer: closed diagnostic vocabulary', () => {
 		expect(record('inventory', { sourcesComplete: 'many', rosterTotal: true, worstStatus: 4 }).details).toBeUndefined();
 	});
 
+	it('keeps the operation and attempts of a vault write retry', () => {
+		const retry = sanitizeLocalDebugRecord({
+			level: 'info', component: 'vault', action: 'vault_write', phase: 'retry', code: 'retry_scheduled', actionId: 'a1', correlationId: 'c1',
+			details: { operation: 'process', attempts: 2 },
+		}, CONTEXT);
+		expect(retry.details).toEqual({ operation: 'process', attempts: 2 });
+	});
+
 	it('is per component: another one never carries them', () => {
 		expect(record('wallet', { ours: true, host: 'hebra', errorName: 'TypeError', outboxCount: 1, worstStatus: 'ok' }).details).toBeUndefined();
 	});

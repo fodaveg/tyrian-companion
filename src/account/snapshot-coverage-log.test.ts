@@ -38,10 +38,10 @@ describe('snapshotCoverageLogCounts', () => {
 		expect(JSON.stringify(counts)).not.toContain('Alpha');
 		const record = sanitizeLocalDebugRecord({
 			level: 'info', component: 'inventory', action: 'inventory_refresh', phase: 'success', code: 'ok',
-			actionId: 'a', correlationId: 'a', details: { coverage: counts },
+			actionId: 'a', correlationId: 'a', details: { ...counts },
 		}, { timestampMs: 0, sequence: 1, pluginVersion: '0' });
-		// The `inventory` allowlist has `coverage`, so the counts ride nested under it, none dropped.
-		expect(LOCAL_DEBUG_DETAIL_ALLOWLIST.inventory).toContain('coverage');
-		expect(record.details).toEqual({ coverage: counts });
+		// The `inventory` allowlist has the flat vocabulary, so the counts ride at the top of `details`, none dropped.
+		for (const key of Object.keys(counts)) expect(LOCAL_DEBUG_DETAIL_ALLOWLIST.inventory).toContain(key);
+		expect(record.details).toEqual({ ...counts });
 	});
 });

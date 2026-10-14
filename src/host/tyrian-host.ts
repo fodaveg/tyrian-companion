@@ -160,6 +160,11 @@ export interface TyrianDiagnosticsPort {
 	readonly storage: LocalDebugStoragePort;
 	/** core/local-debug-contract.ts:122 `localDebugDirectory(configDir)`, read by the writer and main.ts:1477. */
 	readonly directory: string;
+	/**
+	 * Optional: told, with no path and no id, when a vault write converged only after more than one attempt
+	 * (the core logs it as `vault_write/retry`). A host without optimistic writes never calls it.
+	 */
+	onVaultWriteRetry?(listener: (retry: { operation: 'process' | 'save_note'; attempts: number }) => void): TyrianDisposer;
 }
 
 export interface TyrianBackgroundPort {

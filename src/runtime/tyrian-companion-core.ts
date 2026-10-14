@@ -425,6 +425,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 * would leave one more set per run, each holding this dead core.
 	 */
 	private uncaughtErrorOff: TyrianDisposer | null = null;
+	private vaultWriteRetryOff: TyrianDisposer | null = null;
 	private connectivityOff: TyrianDisposer | null = null;
 	private visibilityOff: TyrianDisposer | null = null;
 	private connection!: ConnectionService;
@@ -781,6 +782,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 				},
 			});
 		});
+		// A vault write that converged only on a later attempt: operation and attempts, never a path or an id.
+		this.vaultWriteRetryOff = this.host.diagnostics.onVaultWriteRetry?.((retry) => {
+			this.localDebugActions?.event({
+				component: 'vault', action: 'vault_write', level: 'info', phase: 'retry',
+				code: 'retry_scheduled', attempt: retry.attempts, details: { operation: retry.operation, attempts: retry.attempts },
+			});
+		}) ?? null;
 		this.connectivityOff = this.host.environment.onConnectivityChange((online) => {
 			const handle = () => {
 				const state = online ? 'online' : 'offline';
@@ -1735,6 +1743,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// Z6-2: before anything that can fail, so a rejected drain cannot leave them subscribed to a dead core.
 		this.uncaughtErrorOff?.();
 		this.uncaughtErrorOff = null;
+		this.vaultWriteRetryOff?.();
+		this.vaultWriteRetryOff = null;
 		this.connectivityOff?.();
 		this.connectivityOff = null;
 		this.visibilityOff?.();

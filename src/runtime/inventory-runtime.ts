@@ -204,14 +204,14 @@ export class InventoryRuntime {
 
 	/**
 	 * The success record of a refresh carries how much of the account its capture covered, as counts only
-	 * (`snapshotCoverageLogCounts`, under `coverage`, the key the `inventory` detail allowlist has). It is
-	 * read from the analysis the view now holds and fails open: no analysis, or a read that throws, adds nothing.
+	 * (`snapshotCoverageLogCounts`, flat in `details` with the `inventory` vocabulary). It is read from the
+	 * analysis the view now holds and fails open: no analysis, or a read that throws, adds nothing.
 	 */
 	private snapshotCoverageOutcome(): LocalDebugActionOutcome | undefined {
 		try {
 			const snapshot = this.inventoryAdvisor.analysis({ readOnly: true })?.source.input.snapshot;
 			if (snapshot === undefined) return undefined;
-			return { details: { coverage: snapshotCoverageLogCounts(snapshot.coverage, snapshot.roster) } };
+			return { details: { ...snapshotCoverageLogCounts(snapshot.coverage, snapshot.roster) } };
 		} catch {
 			return undefined;
 		}

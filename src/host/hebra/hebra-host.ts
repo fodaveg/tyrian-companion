@@ -539,6 +539,8 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 	/** The Settings folder pickers mounted now (`ui.pickFolder`): told when the library's folders change. */
 	const folderListeners = new Set<() => void>();
 	const adapter = createLocalFileStorage(deps.fileBackend, libraryId);
+	/** The core's listeners for a vault write that needed a retry; none subscribed, the retry is simply not logged. */
+	const writeRetryListeners = new Set<(retry: { operation: 'process' | 'save_note'; attempts: number }) => void>();
 	const createPort = (folderId: string, pathIndex: TyrianPathIndex) => createTyrianVaultPort({
 		library: api.vault,
 		index: pathIndex,
@@ -546,6 +548,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		canonicalPathFor: (text) => deps.canonicalPathFor(outputFolder, text),
 		onError: (error) => deps.report(error, 'vault.sync'),
 		onNoteSaved: (path, id) => { savedNotes.set(path, id); },
+		onWriteRetry: (retry) => { for (const listener of [...writeRetryListeners]) listener(retry); },
 	});
 	// An indexed file (a Base, the manifest) someone trashes or purges in Hebra (Files, another
 	// device through sync) leaves the index: otherwise `file(path)` would keep returning it and the
@@ -686,7 +689,14 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 			},
 		}),
 		locale: () => api.env.locale(),
-		diagnostics: { storage: adapter, directory: localDebugDirectory(HEBRA_TYRIAN_CONFIG_DIR) },
+		diagnostics: {
+			storage: adapter,
+			directory: localDebugDirectory(HEBRA_TYRIAN_CONFIG_DIR),
+			onVaultWriteRetry: (listener) => {
+				writeRetryListeners.add(listener);
+				return () => { writeRetryListeners.delete(listener); };
+			},
+		},
 		background: { hold: (owner) => background.hold(owner) },
 		environment: createEnvironment(deps),
 		...(deps.bootTrace === undefined ? {} : { bootTrace: deps.bootTrace }),

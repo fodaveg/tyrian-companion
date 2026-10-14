@@ -112,7 +112,8 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	assets: [...COMMON_DETAIL_FIELDS, 'operationCount', 'managed', 'conflict', 'message'],
 	// `failed` is `[{id, reason}]` of an alert delivery (H15.16): the channel id and the rejection's class, never its message.
 	notification: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'failed'],
-	vault: [...COMMON_DETAIL_FIELDS, 'operation', 'managed', 'conflict'],
+	// `attempts` (number): how many tries a vault write needed before it converged (`vault_write/retry`).
+	vault: [...COMMON_DETAIL_FIELDS, 'operation', 'managed', 'conflict', 'attempts'],
 	ui: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'rowCount'],
 	support: [...COMMON_DETAIL_FIELDS, 'recordCount', 'retainedCount', 'bytes'],
 	// `retainedCount` (the number of retained log files; was `fileCount`, which BLOCKED_KEY always dropped because it contains `file`, and so would any name with it).

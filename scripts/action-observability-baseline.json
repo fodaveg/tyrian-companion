@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 622,
+		"catch_clause": 623,
 		"promise_catch": 62,
 		"void_expression": 148,
 		"callback_registration": 261
@@ -222,6 +222,11 @@
 					"reason": "Allowlisted catch_clause: The \"guarded\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"guarded\"."
 				}
 			]
+		},
+		"src/account/snapshot-coverage-log.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/account/storage-delta-model.ts": {
 			"classification": "production_source",
@@ -9111,7 +9116,24 @@
 		"src/runtime/inventory-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
+			"boundaries": [
+				{
+					"id": "88fd17942d8ed13e5871844a4ed29e4cbbce16a4",
+					"kind": "catch_clause",
+					"line": 215,
+					"column": 5,
+					"endLine": 217,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "snapshotCoverageOutcome",
+						"justification": "The \"snapshotCoverageOutcome\" owner explicitly handles \"fallback_return\" as local recovery: it only builds the optional coverage counts of the success record, so a failed read leaves that record without them and hides no product error (the refresh already succeeded and its action owns terminal diagnostics)."
+					},
+					"reason": "Allowlisted catch_clause: The \"snapshotCoverageOutcome\" owner explicitly handles \"fallback_return\" as local recovery: it only builds the optional coverage counts of the success record, so a failed read leaves that record without them and hides no product error (the refresh already succeeded and its action owns terminal diagnostics). Verified recovery: \"fallback_return\" in \"snapshotCoverageOutcome\"."
+				}
+			]
 		},
 		"src/runtime/live-session-runtime.ts": {
 			"classification": "production_source",
