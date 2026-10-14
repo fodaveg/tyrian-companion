@@ -209,6 +209,8 @@ export interface HebraHostHandle {
 	unadopted: readonly TyrianUnadoptedNote[];
 	/** The active language's translator for the adapter's own copy, fresh on every call. */
 	translator: HebraTranslator;
+	/** Readies a surface the adapter paints itself (the unadopted-notes panel), as the core's are (`surface.ts`). */
+	prepareSurface(el: HTMLElement): void;
 	/** Waits for the pending keychain writes. */
 	flush(): Promise<void>;
 	/** Drops what this instance left armed (the pending restart, the watch of indexed files, the
@@ -728,6 +730,7 @@ export async function createHebraHost(deps: HebraHostDeps): Promise<HebraHostHan
 		seed,
 		unadopted,
 		translator,
+		prepareSurface: (el) => surfaces.prepare(el),
 		flush: () => secrets.flush(),
 		dispose: () => {
 			disposed = true;

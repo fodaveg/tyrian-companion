@@ -79,6 +79,19 @@ describe('activateTyrian', () => {
 		expect(flush).toHaveBeenCalledTimes(1);
 	});
 
+	it('readies the surface of the unadopted-notes panel too (is-mobile on an iPhone), not only the core\'s', async () => {
+		const test = createTyrianTestApi({ platform: 'ios' });
+		test.library.addFolder('tc', 'root', 'Tyrian Companion');
+		test.library.addNote('broken', '<!-- tyrian-companion-wallet broken -->\n# Gold', { folderId: 'tc' });
+		const env = environment();
+		const cleanup = await activateTyrian(test.api, env);
+		// The recording core registers no panel: the only one is the unadopted notes'.
+		expect(test.fake.recorded.settingsPanels).toHaveLength(1);
+		test.fake.recorded.settingsPanels[0]?.(document.body.appendChild(document.createElement('div')));
+		expect(document.body.classList.contains('is-mobile')).toBe(true);
+		await cleanup();
+	});
+
 	it('builds every key range with the IDBKeyRange it was given while the plugin runs, and puts the global one back on cleanup', async () => {
 		const given = { bound: vi.fn(), only: vi.fn() } as unknown as typeof IDBKeyRange;
 		const env = environment({ IDBKeyRange: given });

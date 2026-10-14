@@ -127,6 +127,7 @@ export async function activateTyrian(api: HebraPluginApi, environment: HebraRunt
 		seededNow: handle.seed !== null,
 		openNote: (id) => api.workspace.openNote(id),
 		report: (error) => report(error, 'unadopted'),
+		prepare: (el) => handle.prepareSurface(el),
 	});
 	return () => {
 		handle.dispose();

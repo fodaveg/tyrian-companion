@@ -70,6 +70,8 @@ export interface UnadoptedPanelOptions {
 	openNote: (id: string) => void;
 	/** A failing "open" button: the host's diagnostics. */
 	report: (error: unknown) => void;
+	/** Readies the panel's surface before it is painted (API 2.0, `surface.ts`), as the core's panel is. */
+	prepare?: (el: HTMLElement) => void;
 }
 
 /** Paints the list into `el` (the panel's slot). Returns its cleanup. */
@@ -105,7 +107,10 @@ export function registerUnadoptedNotes(
 	options: UnadoptedPanelOptions & { seededNow: boolean },
 ): PluginUnregister {
 	if (options.notes.length === 0) return () => undefined;
-	const unregister = ui.settingsPanel((el) => mountUnadoptedNotesPanel(el, options));
+	const unregister = ui.settingsPanel((el) => {
+		options.prepare?.(el);
+		return mountUnadoptedNotesPanel(el, options);
+	});
 	if (options.seededNow) {
 		const count = options.notes.length;
 		const translator = options.translator();

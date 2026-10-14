@@ -81,4 +81,16 @@ describe('registerUnadoptedNotes', () => {
 		unregister();
 		expect(fake.recorded.settingsPanels).toHaveLength(1);
 	});
+
+	// Hebra 2.0: the panel is a surface frame of its own, readied (is-mobile, web links) before it is painted.
+	it('readies its surface before painting into it', () => {
+		const fake = createFakePluginApi({ id: 'tyrian-companion' });
+		const order: string[] = [];
+		const prepare = vi.fn((el: HTMLElement) => { order.push(`prepare:${String(el.childElementCount)}`); });
+		registerUnadoptedNotes(fake.api.ui, { notes: [duplicate], outputFolder: 'Tyrian Companion', translator: () => createTranslator('es'), seededNow: false, openNote: vi.fn(), report: vi.fn(), prepare });
+		const el = document.body.appendChild(document.createElement('div'));
+		fake.recorded.settingsPanels[0]?.(el);
+		order.push(`painted:${String(el.childElementCount)}`);
+		expect({ calls: prepare.mock.calls.map(([target]) => target === el), order }).toEqual({ calls: [true], order: ['prepare:0', 'painted:1'] });
+	});
 });
