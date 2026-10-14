@@ -317,18 +317,24 @@ function clamp(value: number, lo: number, hi: number): number {
 export const PRICE_HISTORY_CHART_HOURLY_WINDOW: PriceHistoryChartWindowId = '1w';
 
 /**
- * One label per tick for an hourly axis: day, month and hour in UTC (`14 Oct, 04:00`). The span of a
- * week keeps every tick on a different hour, so no finer level is needed; equal labels cannot occur
- * for distinct instants of this resolution.
+ * One label per tick for an hourly axis, in the reader's LOCAL time: day, month and hour (`14 oct 06h`).
+ * Short on purpose: in the compact layout two of them share ~118 px at 11 px, and a week keeps every
+ * tick on a different hour, so no finer level is needed.
  */
 export function priceHistoryHourAxisLabels(ticks: ReadonlyArray<{ readonly dayUtc: string }>, locale: Locale): string[] {
-	const format = new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-US', {
-		day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC',
+	const month = new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-US', { month: 'short' });
+	return ticks.map((tick) => {
+		const at = new Date(tick.dayUtc);
+		return `${String(at.getDate())} ${month.format(at).replace(/\.$/u, '')} ${pad2(at.getHours())}h`;
 	});
-	return ticks.map((tick) => format.format(new Date(tick.dayUtc)));
 }
 
-/** `2026-10-14T04:00:00.000Z` as `2026-10-14 04:00 UTC`: the date and hour a summary entry points at. */
-export function formatPriceHistoryHourUtc(hourUtc: string): string {
-	return `${hourUtc.slice(0, 10)} ${hourUtc.slice(11, 16)} UTC`;
+/** `2026-10-14T04:00:00.000Z` as `2026-10-14 06:00` in the reader's local time (Europe/Madrid in summer). */
+export function formatPriceHistoryHourLocal(hourUtc: string): string {
+	const at = new Date(hourUtc);
+	return `${String(at.getFullYear())}-${pad2(at.getMonth() + 1)}-${pad2(at.getDate())} ${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+}
+
+function pad2(value: number): string {
+	return String(value).padStart(2, '0');
 }

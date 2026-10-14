@@ -151,6 +151,8 @@ import {
 	type PriceSeedQueueCoverage,
 } from '../economy/price-seed-bulk-refresh';
 import { fetchPriceSeed, PRICE_SEED_OPERATION_POLICIES } from '../economy/price-seed-source';
+import { PriceHourlyService } from '../economy/price-hourly-source';
+import type { PriceHourlyState } from '../economy/price-hourly-model';
 import { sellOrWaitSeedMaxDays } from '../economy/sell-or-wait';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from '../inventory/price-history-note-block';
 import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
@@ -492,6 +494,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private priceHistory: PriceHistoryService | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
+	/** The hourly series behind the «1 semana» button; in memory only, asked on the reader's click. */
+	private priceHourly: PriceHourlyService | null = null;
 	/** Set once during `initializeRuntime`; `readCachedPriceSeed`'s own key, reused by `refreshSaleHeroTiming`. */
 	private vaultId: string | null = null;
 	/** Deferred to `capture()`'s own decision-4 pass; never touched from `onload`. */
@@ -1112,6 +1116,11 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			// Both callers, the panel and a note block, are somebody looking at the chart.
 			serialize: priceSeedDownloads.runner('interactive'),
 			diagnostics: this.localDebugActions ?? undefined,
+		});
+		this.priceHourly = new PriceHourlyService({
+			transport: priceSeedTransport,
+			now: () => Date.now(),
+			isEnabled: () => this.settings.priceHistoryEnabled,
 		});
 		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever runs
 		// behind an explicit inventory sync or Sale refresh, itself gated on `priceHistoryEnabled`:
@@ -1759,6 +1768,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		this.priceSeedDownloads?.dispose();
 		this.priceSeedDownloads = null;
 		this.priceHistoryPanelSeed?.dispose();
+		this.priceHourly = null;
 		// Cuts a deferred pass in flight at its next item, drops one that had not started yet, and
 		// closes the read-only seed cache.
 		this.priceSeedBulkRefresh?.dispose();
@@ -2073,6 +2083,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Last known datawars2 seed for one item; a stale read (`PriceHistoryRuntime`). */
 	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState { return this.priceHistoryFacade.getPriceHistorySeedState(itemId); }
+
+	/** Hourly series of one item for the «1 semana» button: a stale read, never a trigger. */
+	getPriceHourlyState(itemId: number): PriceHourlyState { return this.priceHourly?.getState(itemId) ?? { status: 'idle', points: [] }; }
+
+	/** Downloads the hourly series on the reader's click; sends nothing while the price history is off. */
+	ensurePriceHourly(itemId: number): Promise<void> { return this.priceHourly?.ensure(itemId) ?? Promise.resolve(); }
 
 	/** The `tyrian-price-history` code-block handler (`PriceHistoryRuntime`). */
 	private paintPriceHistoryNoteBlockView(source: string, el: HTMLElement, ctx: TyrianCodeBlockContext): Promise<void> {

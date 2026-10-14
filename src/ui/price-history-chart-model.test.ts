@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import {
@@ -13,7 +13,7 @@ import {
 	priceHistoryDateAxisLabels,
 	priceHistoryDateAxisTicks,
 	priceHistoryPriceAxisTicks,
-	formatPriceHistoryHourUtc,
+	formatPriceHistoryHourLocal,
 	priceHistoryHourAxisLabels,
 } from './price-history-chart-model';
 
@@ -222,16 +222,15 @@ function dayAt(offsetFromEpochAnchor: number): string {
 }
 
 describe("hourly window helpers", () => {
-	it("labels each tick with UTC day and hour, never the same twice", () => {
+	beforeAll(() => { process.env.TZ = "Europe/Madrid"; });
+
+	it("labels each tick with the LOCAL day and hour (Madrid, UTC+2 in October), short enough for 280 px", () => {
 		const ticks = [{ dayUtc: "2026-10-13T22:00:00.000Z" }, { dayUtc: "2026-10-14T04:00:00.000Z" }];
-		const labels = priceHistoryHourAxisLabels(ticks, "en");
-		expect(labels[0]).toContain("13");
-		expect(labels[0]).toContain("22:00");
-		expect(labels[1]).toContain("04:00");
-		expect(priceHistoryHourAxisLabels(ticks, "es")[1]).toContain("oct");
+		expect(priceHistoryHourAxisLabels(ticks, "en")).toEqual(["14 Oct 00h", "14 Oct 06h"]);
+		expect(priceHistoryHourAxisLabels(ticks, "es")).toEqual(["14 oct 00h", "14 oct 06h"]);
 	});
 
-	it("stamps a summary entry with date and hour", () => {
-		expect(formatPriceHistoryHourUtc("2026-10-14T04:00:00.000Z")).toBe("2026-10-14 04:00 UTC");
+	it("stamps a summary entry with the local date and hour", () => {
+		expect(formatPriceHistoryHourLocal("2026-10-14T04:00:00.000Z")).toBe("2026-10-14 06:00");
 	});
 });

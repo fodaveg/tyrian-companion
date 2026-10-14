@@ -18,6 +18,8 @@ import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inven
  * rebuilds. Every state of the block has its own case.
  */
 
+// The hourly window shows the reader's local time: pin it so the expectations do not depend on the machine.
+process.env.TZ = 'Europe/Madrid';
 afterEach(() => vi.unstubAllGlobals());
 
 const icons = { setIcon: (el: HTMLElement, icon: string): void => { el.setAttribute('data-icon', icon); } };
@@ -368,7 +370,7 @@ describe('the price block inside the Inventory tab', () => {
 			await Promise.resolve();
 			expect(pressed(harness.block.element)).toEqual(['1 week']);
 			expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.legendHourly'));
-			expect(texts(harness.block.element).join(' ')).toContain('2026-10-14 04:00 UTC');
+			expect(texts(harness.block.element).join(' ')).toContain('2026-10-14 06:00');
 			expect(harness.hourlyEnsure).toHaveBeenCalledTimes(1);
 
 			windowButton(harness.block.element, '3 months').dispatch('click');

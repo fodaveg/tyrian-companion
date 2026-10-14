@@ -545,6 +545,48 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 			expect(ensure).toHaveBeenCalledWith(10);
 		});
 
+		it('history on: the «1 semana» button is in the row, asks nothing until pressed, then asks for THAT item once', async () => {
+			const ensureHourly = vi.fn(async () => undefined);
+			const getHourly = vi.fn(() => ({ status: 'idle' as const, points: [] }));
+			const days = Array.from({ length: 120 }, (_unused, index) => ({
+				dayUtc: new Date(Date.UTC(2026, 5, 1) + index * 86_400_000).toISOString().slice(0, 10), bidCopper: 10, askCopper: 100 + index,
+			}));
+			installDom();
+			const view = new InventoryAdvisorItemView(content(), icons, {
+				...actions(() => 'es', { priceHistory: { state: priceHistoryState({ status: 'collecting' }) } }).value,
+				ensurePriceHistorySeed: async () => undefined,
+				getPriceHistorySeedState: () => ({ status: 'seeded', itemId: 10, days, failureReason: null, retrievedAt: '2026-10-14T00:00:00.000Z' }),
+				getPriceHourlyState: getHourly,
+				ensurePriceHourly: ensureHourly,
+			});
+			await view.onOpen();
+
+			const details = openRow(view.contentEl as unknown as FakeElement);
+			const week = buttonWithText(details, '1 semana');
+			expect(ensureHourly).not.toHaveBeenCalled();
+
+			week.dispatch('click');
+			expect(ensureHourly).toHaveBeenCalledTimes(1);
+			expect(ensureHourly).toHaveBeenCalledWith(10);
+		});
+
+		it('history off: no «1 semana» button and no hourly request even with the hourly actions present', async () => {
+			const host = optInHost();
+			const ensureHourly = vi.fn(async () => undefined);
+			installDom();
+			const view = new InventoryAdvisorItemView(content(), icons, {
+				...host.actions, ensurePriceHistorySeed: async () => undefined,
+				getPriceHistorySeedState: () => ({ status: 'idle', itemId: 10, days: [], failureReason: null, retrievedAt: null }),
+				getPriceHourlyState: () => ({ status: 'idle', points: [] }), ensurePriceHourly: ensureHourly,
+			});
+			await view.onOpen();
+
+			const details = openRow(view.contentEl as unknown as FakeElement);
+
+			expect(text(details)).not.toContain('1 semana');
+			expect(ensureHourly).not.toHaveBeenCalled();
+		});
+
 		it('a host without the seed action renders no block', async () => {
 			installDom();
 			const view = new InventoryAdvisorItemView(content(), icons, actions(() => 'es', { priceHistory: { state: priceHistoryState() } }).value);

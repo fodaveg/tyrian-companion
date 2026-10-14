@@ -7,6 +7,8 @@ import type { PriceSeedDayV1 } from '../economy/price-seed-model';
 import { mountPriceHistoryChart } from './price-history-chart-view';
 import { PRICE_HISTORY_CHART_ROW_WINDOWS } from './price-history-chart-model';
 
+// The hourly window shows the reader's local time: pin it so the expectations do not depend on the machine.
+process.env.TZ = 'Europe/Madrid';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('price history chart widget (H9.1/H9.2 shared)', () => {
@@ -227,11 +229,11 @@ describe('price history chart widget: the «1 semana» hourly window', () => {
 		expect(request).toHaveBeenCalledTimes(1);
 		expect(pressed(mount.container)).toEqual(['1 week']);
 		expect(summaryOf(mount.container)).toEqual([
-			'0g 3s 48c · 2026-10-14 02:00 UTC', '0g 3s 7c · 2026-10-13 23:00 UTC', '0g 3s 48c · 2026-10-14 02:00 UTC',
+			'0g 3s 48c · 2026-10-14 04:00', '0g 3s 7c · 2026-10-14 01:00', '0g 3s 48c · 2026-10-14 04:00',
 		]);
 		const dates = walk(mount.container).filter((element) => element.className.startsWith('tyrian-price-chart__date-label')).map((element) => element.textContent);
-		expect(dates[0]).toMatch(/Oct 13.*10:00 PM|Oct 13, 22:00/u);
-		expect(dates.at(-1)).toContain('02:00');
+		expect(dates[0]).toBe('14 Oct 00h');
+		expect(dates.at(-1)).toBe('14 Oct 04h');
 	});
 
 	it('shows the failure with a retry that asks again, and the empty answer without one', () => {

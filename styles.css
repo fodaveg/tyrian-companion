@@ -1664,6 +1664,13 @@
 	font-style: italic;
 }
 
+/* «1 semana»: the line that stands where the hourly chart will be (asking, failed, nothing published). */
+.tyrian-price-chart__hourly-state {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
 .tyrian-inventory-advisor__scope legend {
 	padding-inline: var(--size-4-1);
 	color: var(--text-muted);

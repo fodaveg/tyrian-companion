@@ -21,7 +21,7 @@ import {
 	priceHistoryDateAxisTicks,
 	priceHistoryHourAxisLabels,
 	priceHistoryPriceAxisTicks,
-	formatPriceHistoryHourUtc,
+	formatPriceHistoryHourLocal,
 	PRICE_HISTORY_CHART_ALL_RANGE,
 	PRICE_HISTORY_CHART_HOURLY_WINDOW,
 	PRICE_HISTORY_CHART_WINDOWS,
@@ -597,7 +597,7 @@ function paintHourly(
 			dayUtc: point.dayUtc, source: 'seed', value: point.value, minValue: null, maxValue: null, dayCount: 1,
 		}));
 		container.append(buildPlot(document, options, geometry, false, points, aggregated, false, translator, state, true, repaint));
-		container.append(buildSummary(translator, points, formatPriceHistoryHourUtc));
+		container.append(buildSummary(translator, points, formatPriceHistoryHourLocal));
 		return;
 	}
 	if (current.status === 'failed') {

@@ -9,6 +9,7 @@ import { disposeInventoryAdvisorView, keepExceptionForItem, renderInventoryAdvis
 import type { PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import type { PriceSeedQueueCoverage } from '../economy/price-seed-model';
+import type { PriceHourlyState } from '../economy/price-hourly-model';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
@@ -55,6 +56,9 @@ export interface InventoryAdvisorViewActions {
 	 * history is off, so opening a row starts no request then. Repaints the tab when it ends.
 	 */
 	ensurePriceHistorySeed?(itemId: number): Promise<void>;
+	/** Hourly series for the «1 semana» button: a stale read, and the download on the reader's click. */
+	getPriceHourlyState?(itemId: number): PriceHourlyState;
+	ensurePriceHourly?(itemId: number): Promise<void>;
 	/**
 	 * H18.17: the bulk seed queue's coverage across the whole watch list, from the last
 	 * "Sincronizar inventario" pass. A stale read, never a trigger.
@@ -246,6 +250,10 @@ export class InventoryAdvisorItemView {
 				busy: this.priceHistoryBusy,
 				getSeed: (itemId: number) => this.actions.getPriceHistorySeedState!(itemId),
 				ensureSeed: (itemId: number) => this.actions.ensurePriceHistorySeed!(itemId),
+				hourly: this.actions.getPriceHourlyState === undefined || this.actions.ensurePriceHourly === undefined ? undefined : {
+					get: (itemId: number) => this.actions.getPriceHourlyState!(itemId),
+					ensure: (itemId: number) => this.actions.ensurePriceHourly!(itemId),
+				},
 				onEnable: priceHistory.onEnable,
 			};
 		const actionController = this.actions.getProductActionController?.();
