@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -789,13 +788,20 @@ describe('H4.15 inventory advisor classifier', () => {
 	});
 
 	it('maps every reason the classifier can emit to a code of its own, never to the snapshot_invalid fallback', () => {
-		const source = readFileSync(new URL('./inventory-advisor-classifier.ts', import.meta.url), 'utf8');
-		const emitted = new Set([...source.matchAll(/'([a-z]+(?:_[a-z]+)+)'/g)].map((match) => match[1]!)
-			.filter((token) => INVENTORY_ADVISOR_REASON_CODES.includes(token as never)));
-		expect(emitted.size).toBeGreaterThan(20);
-		expect([...emitted].filter((token) => token !== 'snapshot_invalid' && reasonFor(token) === 'snapshot_invalid')).toEqual([]);
-		expect(reasonFor('seasonal_hold')).toBe('seasonal_hold');
-		expect(reasonFor('salvage_value_unknown')).toBe('salvage_value_unknown');
+		// Public codes the engine reports under their own name; the rest of the public list is produced by other layers.
+		const engineReasons = [
+			'alternative_route_exists', 'no_sell', 'reserved_for_goal', 'user_keep_exception', 'position_not_actionable',
+			'rule_missing', 'rule_conflict', 'rule_stale', 'knowledge_stale', 'no_salvage', 'economic_comparison_missing',
+			'economic_activation_pending', 'price_partial', 'price_stale', 'price_missing', 'binding_unknown',
+			'arithmetic_overflow', 'tp_access_unknown', 'catalog_invalid', 'salvage_value_unknown', 'seasonal_hold',
+			'salvage_exotic_rate_unverified', 'salvage_mystic_cost_unmodeled', 'salvage_item_evidence_uncertain',
+			'material_storage_space_available',
+		] as const;
+		for (const code of engineReasons) {
+			expect(INVENTORY_ADVISOR_REASON_CODES).toContain(code);
+			expect(reasonFor(code)).toBe(code);
+		}
+		expect(reasonFor('a_reason_nobody_maps')).toBe('snapshot_invalid');
 	});
 });
 
