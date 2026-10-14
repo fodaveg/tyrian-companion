@@ -1454,7 +1454,7 @@ describe('Inventory Advisor view', () => {
 	it('still says "la reserva manda" on a `keep` row without a user exception', () => {
 		const model: InventoryAdvisorViewModel = {
 			...readyModel(),
-			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Material seguro', action: 'keep' })] }],
+			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Material seguro', action: 'keep', reasonCodes: ['reserved_for_goal'] })] }],
 		};
 		const mount = render(model, 'es', {
 			onKeepItem: vi.fn(), onRemoveKeepException: vi.fn(),
@@ -1462,6 +1462,59 @@ describe('Inventory Advisor view', () => {
 		});
 		expect(text(mount.elements())).toContain('la reserva manda');
 		expect(find(mount.elements(), 'button').filter((candidate) => candidate.attributes.get('aria-pressed') !== undefined)).toHaveLength(0);
+	});
+
+	it.each(['no_sell', 'seasonal_hold'] as const)('shows neither the reservation note nor a button on a `%s` keep row without an exception (David, Barra de caramelo)', (code) => {
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Barra de caramelo', action: 'keep', reasonCodes: [code] })] }],
+		};
+		const mount = render(model, 'es', {
+			onKeepItem: vi.fn(), onRemoveKeepException: vi.fn(),
+			preferences: { status: 'ready', goals: [], keepExceptions: [] },
+		});
+		expect(text(mount.elements())).not.toContain('la reserva manda');
+		expect(find(mount.elements(), 'button').filter((candidate) => candidate.attributes.get('aria-pressed') !== undefined)).toHaveLength(0);
+	});
+
+	it('offers the undo on a `keep` row covered by a PARTIAL user exception, without the reservation note', () => {
+		const onRemoveKeepException = vi.fn();
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Material seguro', action: 'keep', reasonCodes: ['user_keep_exception'] })] }],
+		};
+		const mount = render(model, 'es', {
+			onKeepItem: vi.fn(), onRemoveKeepException,
+			preferences: { status: 'ready', goals: [], keepExceptions: [
+				{ version: 1, exceptionId: 'exception-100', itemId: 100, status: 'active', basis: 'available', quantity: { mode: 'minimum', value: 10 }, reason: 'user_keep' },
+			] },
+		});
+		expect(text(mount.elements())).not.toContain('la reserva manda');
+		only(find(mount.elements(), 'button')
+			.filter((candidate) => candidate.attributes.get('aria-label') === 'Conservado. Clic para dejar de conservar Material seguro')).dispatch('click');
+		expect(onRemoveKeepException).toHaveBeenCalledWith('exception-100');
+	});
+
+	it('rebuilds a `keep` row after "Conservado" is undone, so the button no longer carries the removed exception id', () => {
+		let preferences: InventoryPreferencesEditorState = { status: 'ready', goals: [], keepExceptions: [
+			{ version: 1, exceptionId: 'exception-100', itemId: 100, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep' },
+		] };
+		const interactions: InventoryAdvisorViewInteractions = {
+			get preferences() { return preferences; }, onKeepItem: vi.fn(), onRemoveKeepException: vi.fn(),
+		};
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(), contentVersion: 5,
+			groups: [{ key: 'review', rows: [row({ itemId: 100, name: 'Material seguro', action: 'keep', reasonCodes: ['user_keep_exception'] })] }],
+		};
+		const mount = render(model, 'es', interactions);
+		expect(find(mount.elements(), 'button').filter((candidate) => candidate.attributes.get('aria-pressed') === 'true')).toHaveLength(1);
+		preferences = { status: 'ready', goals: [], keepExceptions: [] };
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, icons, model, createTranslator('es'), undefined, interactions);
+		// The preference-only update keeps the table; the next filter event draws the rows from the row cache.
+		const search = only(find(mount.elements(), 'input').filter((input) => input.type === 'search'));
+		search.value = 'Material';
+		search.dispatch('input');
+		expect(find(mount.elements(), 'button').filter((candidate) => candidate.attributes.get('aria-pressed') === 'true')).toHaveLength(0);
 	});
 
 	it('does not read the emptied list of a refused "stop keeping" as done', () => {

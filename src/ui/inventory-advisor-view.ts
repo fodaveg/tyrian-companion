@@ -366,6 +366,7 @@ function mountInventoryAdvisorView(
 	const keepContext = (): RowKeepContext | null => interactions.onKeepItem === undefined ? null : {
 		ui,
 		kept: keptExceptionsByItemId(interactions.preferences),
+		keptAny: keptExceptionsByItemId(interactions.preferences, true),
 		busy: interactions.preferencesBusy === true,
 		track: (row, button) => { keepButtons.set(row, button); },
 		onKeep: (row) => {
@@ -599,7 +600,7 @@ function mountInventoryAdvisorView(
 			clearRowElements();
 		}
 		if (keep !== null) for (const button of keepButtons.values()) button.disabled = keep.busy;
-		const keptIdOf = (row: InventoryAdvisorViewRow): string | null => keep?.kept.get(row.itemId) ?? null;
+		const keptIdOf = (row: InventoryAdvisorViewRow): string | null => keep === null ? null : undoExceptionId(row, keep);
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
 		if (ordered !== null) results.append(renderResults(
@@ -617,8 +618,8 @@ function mountInventoryAdvisorView(
 				legendaryTableExpiredAt: model.legendaryTableExpiredAt ?? null,
 				rowElement: (row) => {
 					let element = rowElements.get(row);
-					// A row the advisor already keeps shows a note, whatever the exceptions say.
-					if (element !== undefined && row.action !== 'keep' && rowKeptIds.get(row) !== keptIdOf(row)) {
+					// Rebuild the row whenever the exception it offers to undo changed (or vanished).
+					if (element !== undefined && rowKeptIds.get(row) !== keptIdOf(row)) {
 						element = undefined;
 						keepButtons.delete(row);
 					}
@@ -1380,6 +1381,8 @@ interface RowKeepContext {
 	readonly ui: IconPainter;
 	/** Items an active whole-stack keep exception already covers, mapped to that exception's id. */
 	readonly kept: ReadonlyMap<number, string>;
+	/** Same, but any active exception of the item, whole-stack or not; only a `keep` row reads it. */
+	readonly keptAny: ReadonlyMap<number, string>;
 	readonly busy: boolean;
 	/**
 	 * Told of the button each row builds, so a change of `busy` reaches the rows already built by
@@ -1401,10 +1404,13 @@ interface RowKeepContext {
  */
 function keepControl(row: InventoryAdvisorViewRow, translator: Translator, keep: RowKeepContext | null): HTMLElement | null {
 	if (keep === null) return null;
-	const kept = keep.kept.get(row.itemId) ?? null;
-	// The user's own keep exception makes the classifier decide `keep` (`user_keep_exception`), so
-	// the row must offer the undo before it reads `keep` as "a reservation decides".
+	const kept = undoExceptionId(row, keep);
+	// The user's own keep exception (even a partial one) makes the classifier decide `keep`
+	// (`user_keep_exception`), so the row must offer the undo before it reads `keep` as "a
+	// reservation decides". A `keep` row with neither the exception nor a reservation (no_sell,
+	// seasonal_hold) has nothing to say and nothing to offer.
 	if (row.action === 'keep' && kept === null) {
+		if (!row.reasonCodes.includes('reserved_for_goal')) return null;
 		const note = createEl('small');
 		note.textContent = translator.t('advisor.view.keep.reservationRules');
 		return note;
@@ -1455,10 +1461,15 @@ export function keepExceptionForItem(itemId: number, existing: readonly KeepExce
  * Items an active whole-stack keep exception covers, mapped to that exception's id so the row's
  * reversible "Conservado" (H18.37) can remove exactly it without a second preferences read.
  */
-function keptExceptionsByItemId(preferences: InventoryPreferencesEditorState | undefined): Map<number, string> {
+function keptExceptionsByItemId(preferences: InventoryPreferencesEditorState | undefined, anyMode = false): Map<number, string> {
 	return new Map((preferences?.keepExceptions ?? [])
-		.filter((entry) => entry.status === 'active' && entry.quantity.mode === 'all')
+		.filter((entry) => entry.status === 'active' && (anyMode || entry.quantity.mode === 'all'))
 		.map((entry) => [entry.itemId, entry.exceptionId]));
+}
+
+/** The exception the row's "Conservado" undoes: a whole-stack one, or any active one on a row already `keep`. */
+function undoExceptionId(row: InventoryAdvisorViewRow, keep: RowKeepContext): string | null {
+	return keep.kept.get(row.itemId) ?? (row.action === 'keep' ? keep.keptAny.get(row.itemId) ?? null : null);
 }
 
 function appendCell(row: HTMLTableRowElement, value: string, className = ''): void {
