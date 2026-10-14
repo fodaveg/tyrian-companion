@@ -1,5 +1,29 @@
 # Estado
 
+## Candidato 0.7.0: Tyrian pasa a la API 2.0 de plugins de Hebra (14 oct 2026)
+
+**Candidato; sin publicar.** Rama `feat/hebra-api-v2` sobre el canal 0.6.63 publicado (`4028cfc1`). Detalle en
+[CHANGELOG](CHANGELOG.md). Encargo de David del 14 oct, por la sesión de Hebra (hebra-39): «Migrar Tyrian, sin cortar
+la 1.x»; lote L10 del plan C1 de Hebra, tarea de Lumbre 4e27e8be. Excepción a la congelación de Halloween solo para
+esta migración.
+
+- `hebra.json`: `apiVersion ^2.1.0`, `shared: {}`, `network.images: ["render.guildwars2.com"]`, `notify.sound` y
+  `screen.awake` opcionales. Pin `hebra-plugin-api#v2.2.0`. El instalador de Hebra elige la release más nueva
+  compatible, así que un Hebra sin la 2.x sigue en la 0.6.63 (`installer.ts` de Hebra, leído el 14 oct).
+- IndexedDB: la fábrica y el `IDBKeyRange` los da Hebra (`entry.ts`, `src/core/idb-key-range.ts`); mismos nombres de
+  base que en la 1.x, que Hebra traslada (L14). En el Mac de David las bases de Tyrian ocupan unos 18 MiB en disco;
+  el tope de Hebra es 128 MiB por plugin.
+- Superficies (`src/host/hebra/surface.ts`): cada vista, sección, panel, modal y bloque prepara su documento (ayudas de
+  DOM, `is-mobile`, enlaces por `ui.openExternal`) y lo suelta en `pagehide`. Sin `instanceof` de clases del DOM.
+- Portapapeles por `api.clipboard`, sonido por `notify.sound` (WAV generado con `OfflineAudioContext`,
+  `src/host/hebra/hebra-alert-sound.ts`), sin respaldo con `Notification` del navegador.
+- Revisión independiente: sin bloqueantes; sus tres hallazgos (fuga por superficie, `IDBKeyRange` global tras soltar,
+  panel sin adoptar sin preparar) arreglados con test visto en rojo. Queda sin tocar `copyLocalDebugEntries`, que puede
+  perder el gesto antes de copiar (ya existía).
+- Sin verificar: nada en un Hebra real (CSP de imágenes, portapapeles con el gesto del marco, sonido, alturas de
+  bloques y modales, `pagehide` de un bloque, `navigator.locks` en WebKitGTK). La sesión de Hebra lo carga en su
+  arnés de C1 (Chromium y WebKit).
+
 ## Canal 0.6.63 publicado: el panel «En vivo» mantiene la pantalla encendida en iPhone y iPad (14 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.63` = `e1b103fb` (atestación; candidato `de0c61c7`).

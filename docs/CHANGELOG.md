@@ -1,5 +1,22 @@
 # Changelog
 
+## Release beta 0.7.0 - Tyrian pasa a la API 2.0 de plugins de Hebra
+
+Se actualiza desde la 0.6.63 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- En Hebra, Tyrian funciona ahora aislado en su propio marco, con la API de plugins 2.x. Necesita un Hebra con la 2.x
+  encendida. Un Hebra sin ella se queda en la 0.6.63, que sigue funcionando igual.
+- Tus datos (historial de precios, Halloween, preferencias del asesor, catálogo, ficheros locales) los copia Hebra al
+  almacén nuevo la primera vez que arranca la 0.7.0. No hace falta hacer nada.
+- Al actualizar, Hebra te pide permiso por dos cosas nuevas, las dos opcionales: reproducir el sonido de los avisos
+  («notify.sound») y cargar los iconos del juego desde render.guildwars2.com.
+- El sonido de los avisos lo reproduce Hebra. Se puede silenciar en Ajustes, en la ficha del plugin.
+- Copiar al portapapeles y abrir enlaces externos pasan por Hebra. Un enlace a un dominio nuevo pide confirmación la
+  primera vez.
+- Sin permiso de notificaciones del sistema, Tyrian ya no intenta una notificación del navegador por su cuenta.
+- En Obsidian no cambia nada.
+
 ## Release beta 0.6.63 - El panel «En vivo» mantiene la pantalla encendida en iPhone y iPad
 
 Se actualiza desde la 0.6.62 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
