@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 import { emptyLiveSessionView } from './live-session-lifecycle';
 import {
@@ -166,18 +167,32 @@ describe('renderLivePanelNote', () => {
 	describe('item icons in the loot rows', () => {
 		const ICON = 'https://render.guildwars2.com/file/0123456789ABCDEF0123456789abcdef01234567/222122.png';
 		const row = { itemId: 36038, name: 'Bolsa de Halloween', quantity: 12, totalCopper: 90_000 };
+		const withIcons = (): string => renderLivePanelNote(input({ loot: [{ ...row, icon: ICON }, { ...row, itemId: 2, totalCopper: 1, icon: null }] }));
 
-		it('round-trips a valid icon as the 5th field and leaves it out when unknown', () => {
-			const text = renderLivePanelNote(input({ loot: [{ ...row, icon: ICON }, { ...row, itemId: 2, totalCopper: 1, icon: null }] }));
-			expect(text).toContain(`  - [ 36038, Bolsa de Halloween, 12, 90000, ${ICON} ]`);
+		it('keeps every loot row at 4 fields and carries the icons in a key of their own, by position', () => {
+			const text = withIcons();
+			expect(text).toContain('  - [ 36038, Bolsa de Halloween, 12, 90000 ]');
 			expect(text).toContain('  - [ 2, Bolsa de Halloween, 12, 1 ]');
+			expect(text).toContain(`tc_live_loot_icons:\n  - ${ICON}\n  - null\n`);
 			expect(parseLivePanelNote(text)?.live?.loot.map((r) => r.icon)).toEqual([ICON, null]);
 		});
 
-		it('still reads the rows of 4 fields written by 0.6.59 and 0.6.60, without icon', () => {
-			const old = renderLivePanelNote(input()); // the default loot has no icon: the 4-field shape
-			expect(old).toContain('[ 36038, Bolsa de Halloween, 12, 90000 ]');
-			expect(parseLivePanelNote(old)?.live?.loot[0]).toEqual({ itemId: 36038, name: 'Bolsa de Halloween', quantity: 12, totalCopper: 90_000, icon: null });
+		it('omits the key when no row has an icon, and reads a note without it with null icons', () => {
+			const text = renderLivePanelNote(input());
+			expect(text).not.toContain('tc_live_loot_icons');
+			expect(parseLivePanelNote(text)?.live?.loot.map((r) => r.icon)).toEqual([null, null, null]);
+		});
+
+		it('is read by the 0.6.59/0.6.60 criterion: same figures, same 4-field rows, the new key is ignored', () => {
+			const text = withIcons();
+			const without = text.replace(/tc_live_loot_icons:\n(?: {2}- .*\n)+/u, '');
+			expect(without).not.toBe(text);
+			const strip = (note: string) => parseLivePanelNote(note)?.live && { ...parseLivePanelNote(note)!.live!, loot: parseLivePanelNote(note)!.live!.loot.map(({ icon: _icon, ...rest }) => rest) };
+			expect(strip(text)).toEqual(strip(without));
+			expect(strip(text)).not.toBeNull();
+			// What those versions checked of each row: an array of exactly 4 fields.
+			const record = parseYaml(text.slice(4, text.indexOf('\n---\n', 3))) as Record<string, unknown>;
+			expect((record.tc_live_loot as unknown[][]).every((entry) => entry.length === 4)).toBe(true);
 		});
 
 		it.each([
@@ -191,30 +206,34 @@ describe('renderLivePanelNote', () => {
 			'https://user@render.guildwars2.com/file/ABCDEF/1.png',
 			'https://render.guildwars2.com/other/ABCDEF/1.png',
 			'javascript:alert(1)', '', 'not a url',
-		])('turns %j into null instead of painting it', (bad) => {
+		])('turns %j into null instead of painting it, without invalidating the note', (bad) => {
 			expect(liveLootIconUrl(bad)).toBeNull();
-			const text = renderLivePanelNote(input()).replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', `[ 36038, Bolsa de Halloween, 12, 90000, "${bad}" ]`);
-			expect(parseLivePanelNote(text)?.live?.loot[0]?.icon).toBeNull();
+			const text = withIcons().replace(ICON, `"${bad}"`);
+			const live = parseLivePanelNote(text)?.live;
+			expect(live?.loot.map((r) => r.icon)).toEqual([null, null]);
+			expect(live?.valueCopper).not.toBeUndefined();
 		});
 
-		it('turns a non-text 5th field into null and rejects a row of 6 fields', () => {
-			const base = renderLivePanelNote(input());
-			const numeric = base.replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', '[ 36038, Bolsa de Halloween, 12, 90000, 7 ]');
-			expect(parseLivePanelNote(numeric)?.live?.loot[0]?.icon).toBeNull();
-			const six = base.replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', `[ 36038, Bolsa de Halloween, 12, 90000, ${ICON}, 1 ]`);
-			expect(parseLivePanelNote(six)).toEqual({ state: 'live', live: null });
+		it('ignores a list of another length or of other types, never failing the note', () => {
+			const text = withIcons();
+			const short = text.replace(`  - ${ICON}\n  - null\n`, `  - ${ICON}\n`);
+			expect(parseLivePanelNote(short)?.live?.loot.map((r) => r.icon)).toEqual([null, null]);
+			const scalar = text.replace(/tc_live_loot_icons:\n(?: {2}- .*\n)+/u, 'tc_live_loot_icons: 7\n');
+			expect(parseLivePanelNote(scalar)?.live?.loot.map((r) => r.icon)).toEqual([null, null]);
+			const numeric = text.replace(ICON, '7');
+			expect(parseLivePanelNote(numeric)?.live?.loot.map((r) => r.icon)).toEqual([null, null]);
 		});
 
-		it('keeps the invalid icon of the collector out of the transport', () => {
-			const live = livePanelLive(input({ loot: [{ ...row, icon: 'https://evil.example/file/AB/1.png' }] }));
-			expect(live.loot[0]?.icon).toBeNull();
+		it('rejects a loot row of 5 fields as before, and keeps an invalid icon of the collector out of the transport', () => {
+			const five = renderLivePanelNote(input()).replace('[ 36038, Bolsa de Halloween, 12, 90000 ]', `[ 36038, Bolsa de Halloween, 12, 90000, ${ICON} ]`);
+			expect(parseLivePanelNote(five)).toEqual({ state: 'live', live: null });
+			expect(livePanelLive(input({ loot: [{ ...row, icon: 'https://evil.example/file/AB/1.png' }] })).loot[0]?.icon).toBeNull();
 		});
 
 		it('stays under 4 KB with 5 long-named rows that all carry an icon and a three-hour chart', () => {
 			const loot = Array.from({ length: 5 }, (_, index) => ({ itemId: 90_000 + index, name: 'Objeto con un nombre larguísimo de prueba que pasa de sesenta letras '.repeat(2), quantity: 250, totalCopper: 5_000_000 + index, icon: ICON }));
 			const text = renderLivePanelNote(input({ loot, view: view({ chartPoints: points(180), elapsedMs: 180 * 60_000 }) }));
-			const bytes = new TextEncoder().encode(text).length;
-			expect(bytes).toBeLessThan(4096);
+			expect(new TextEncoder().encode(text).length).toBeLessThan(4096);
 			expect(parseLivePanelNote(text)?.live?.loot.map((r) => r.icon)).toEqual(Array(5).fill(ICON));
 		});
 	});

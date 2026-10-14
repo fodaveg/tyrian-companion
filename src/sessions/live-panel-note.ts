@@ -59,8 +59,8 @@ export interface LivePanelLootRow {
 	/** What selling the whole pile nets; null while unpriced. */
 	readonly totalCopper: number | null;
 	/**
-	 * The item's icon on the official render host (`liveLootIconUrl`), or null/absent when unknown. The transport carries it as the
-	 * 5th field of a `tc_live_loot` row: a device in consult has no entity cache to look it up in.
+	 * The item's icon on the official render host (`liveLootIconUrl`), or null/absent when unknown. The transport carries it in
+	 * `tc_live_loot_icons`, by row position, apart from the rows: a device in consult has no entity cache to look it up in.
 	 */
 	readonly icon?: string | null;
 }
@@ -237,7 +237,7 @@ function readLive(record: Record<string, unknown>, state: LivePanelState): LiveP
 	return {
 		version: LIVE_PANEL_TRANSPORT_VERSION, state, observedAt: observedAt!, startedAt: startedAt!, endedAt: endedAt!,
 		valueCopper: valueCopper!, ratePerHourCopper: ratePerHourCopper!, bags: bags!, bagsPerHourMilli: bagsPerHourMilli!,
-		magicFind: { value: mf!, source }, loot,
+		magicFind: { value: mf!, source }, loot: readLootIcons(record.tc_live_loot_icons, loot),
 	};
 }
 
@@ -258,30 +258,39 @@ function optionalInteger(value: unknown, signed: boolean): number | null | undef
 }
 
 /**
- * `[[id, name, quantity, copper|null, icon|null], …]`, at most `LIVE_PANEL_LOOT_ROWS` rows; undefined when any row is not that.
- * A row of 4 fields (written by 0.6.59 and 0.6.60) is still read, without icon. An icon that is not an official render URL
- * is null; it does not make the row unreadable.
+ * `[[id, name, quantity, copper|null], …]`, at most `LIVE_PANEL_LOOT_ROWS` rows; undefined when any row is not that. The rows
+ * keep the exact 4-field shape of 0.6.59 and 0.6.60, whose readers reject any other; the icons travel apart (`readLootIcons`).
  */
 function readLoot(value: unknown): LivePanelLootRow[] | undefined {
 	if (value === undefined || value === null) return [];
 	if (!Array.isArray(value) || value.length > LIVE_PANEL_LOOT_ROWS) return undefined;
 	const rows: LivePanelLootRow[] = [];
 	for (const entry of value as unknown[]) {
-		if (!Array.isArray(entry) || (entry.length !== 4 && entry.length !== 5)) return undefined;
-		const [itemId, name, quantity, totalCopper, icon] = entry as unknown[];
+		if (!Array.isArray(entry) || entry.length !== 4) return undefined;
+		const [itemId, name, quantity, totalCopper] = entry as unknown[];
 		if (!Number.isSafeInteger(itemId) || (itemId as number) < 0 || typeof name !== 'string' || name.length > LIVE_PANEL_NAME_LIMIT) return undefined;
 		if (!Number.isSafeInteger(quantity)) return undefined;
 		const copper = optionalInteger(totalCopper, true);
 		if (copper === undefined) return undefined;
-		rows.push({ itemId: itemId as number, name, quantity: quantity as number, totalCopper: copper, icon: liveLootIconUrl(icon) });
+		rows.push({ itemId: itemId as number, name, quantity: quantity as number, totalCopper: copper, icon: null });
 	}
 	return rows;
 }
 
 /**
+ * `tc_live_loot_icons`: one icon per loot row, by position. A key that 0.6.59 and 0.6.60 readers never look at, so the loot
+ * rows stay readable for them. Absent, not a list of the same length as the rows, or a value that is not an official render
+ * URL: that icon is null. It never makes the note unreadable.
+ */
+function readLootIcons(value: unknown, rows: readonly LivePanelLootRow[]): LivePanelLootRow[] {
+	if (!Array.isArray(value) || value.length !== rows.length) return [...rows];
+	return rows.map((row, index) => ({ ...row, icon: liveLootIconUrl((value as unknown[])[index]) }));
+}
+
+/**
  * The frontmatter: the kind and state first (what `parseLivePanelNote` always reads), the `tc_live_*` transport, then the
  * display hints of the hosts. Built with the yaml library so an item name with quotes or colons is quoted for it; the loot
- * rows go as flow sequences (`- [ id, name, qty, copper, icon ]`), one line each (the icon is the 5th field and is left out when unknown, so a row without it keeps the 0.6.59 shape).
+ * rows go as flow sequences (`- [ id, name, qty, copper ]`), one line each; the icons go in `tc_live_loot_icons`, left out when no row has one.
  */
 function frontmatter(live: LivePanelLiveV1): string[] {
 	const fields: Record<string, unknown> = { tc_kind: LIVE_PANEL_NOTE_KIND, tc_live_state: live.state, tc_live_v: live.version };
@@ -295,7 +304,8 @@ function frontmatter(live: LivePanelLiveV1): string[] {
 	put('tc_live_bags_h_milli', live.bagsPerHourMilli);
 	put('tc_live_mf', live.magicFind.value);
 	fields.tc_live_mf_src = live.magicFind.source;
-	if (live.loot.length > 0) fields.tc_live_loot = live.loot.map((row) => (row.icon ? [row.itemId, row.name, row.quantity, row.totalCopper, row.icon] : [row.itemId, row.name, row.quantity, row.totalCopper]));
+	if (live.loot.length > 0) fields.tc_live_loot = live.loot.map((row) => [row.itemId, row.name, row.quantity, row.totalCopper]);
+	if (live.loot.some((row) => row.icon)) fields.tc_live_loot_icons = live.loot.map((row) => row.icon ?? null);
 	fields.cssclasses = ['dashboard'];
 	fields.obsidianUIMode = 'preview';
 	const document = new YamlDocument(fields);
