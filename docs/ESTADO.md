@@ -13,7 +13,9 @@
   raíz. Test con la hoja real (`hebra-styles-surface.test.ts`) y comprobación textual en el build
   (`hebraStylesScopeViolations`), porque happy-dom no distingue la especificidad de `#id` y `[id=…]`. Ninguna otra
   clase que acaba en la raíz de una superficie tiene margen propio.
-- Sin verificar: el alto y el borde en un Hebra real; se mide en el arnés C1 de la sesión de Hebra antes de publicar.
+- Arnés C1 de la sesión de Hebra sobre este candidato (Chromium y WebKit): raíz con margin 0/0; iframe, raíz, html y
+  body de 72 px; borde inferior visible; 0 violaciones de CSP y 0 errores del marco.
+- Sin verificar: nada en una app de Hebra real.
 
 ## Canal 0.7.0 publicado: Tyrian pasa a la API 2.0 de plugins de Hebra (14 oct 2026)
 
