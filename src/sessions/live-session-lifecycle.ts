@@ -142,6 +142,7 @@ export class LiveSessionLifecycle {
 	/** A heartbeat is queued or running: the interval adds no other until it ends. */
 	private beating = false;
 	private disposed = false;
+	private timersStopped = false;
 	private failure = false;
 	/**
 	 * Storage did not answer when this host asked for the saved session, and has not answered since: nobody knows whether
@@ -782,8 +783,12 @@ export class LiveSessionLifecycle {
 			chartPoints: boundedChart(this.chart.points(() => row?.totals ?? [])), magicFind: row?.magicFind ?? { value: null, source: 'unknown' } };
 	}
 
+	/** Ends the heartbeat for good while the store and lease stay as they are: an unload whose drain failed lets the lease lapse by itself. */
+	stopTimers(): void {
+		this.timersStopped = true; if (this.timer !== null) this.options.clearInterval(this.timer); this.timer = null;
+	}
 	async dispose(): Promise<void> {
-		this.disposed = true; if (this.timer !== null) this.options.clearInterval(this.timer); this.timer = null;
+		this.disposed = true; this.stopTimers();
 		await this.queue; if (this.handle !== null) await this.options.coordinator.release(this.handle); this.handle = null;
 	}
 	private async reclaim(): Promise<boolean> {
@@ -1013,7 +1018,7 @@ export class LiveSessionLifecycle {
 		return next;
 	}
 	private armHeartbeat(): void {
-		if (this.timer !== null) return;
+		if (this.timer !== null || this.timersStopped) return;
 		// A beat that finds the last one still queued or running adds nothing. Each wait on storage is bounded, but by
 		// more than the interval: beats queued one behind the other while storage does not answer would each take a wait
 		// of their own to run out, and everything queued after them (a sample's answer, the end of the plugin) with them.

@@ -69,7 +69,7 @@ describe('H14.14 shutdownRuntime disposal', () => {
 			assistedDetection: { dispose: vi.fn() }, halloween: { dispose: vi.fn() },
 		};
 		const dependent = {
-			liveEconomy: { dispose: vi.fn(async () => undefined) }, liveSessions: { dispose: vi.fn(async () => undefined) },
+			liveEconomy: { dispose: vi.fn(async () => undefined) }, liveSessions: { dispose: vi.fn(async () => undefined), stopTimers: vi.fn() },
 			sessions: { dispose: vi.fn(async () => undefined) },
 		};
 		const harness = Object.assign(Object.create(TyrianCompanionCore.prototype) as object, {
@@ -93,6 +93,7 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		// What the bridge's callbacks still use stays alive until the drain succeeds.
 		expect(dependent.liveEconomy.dispose).not.toHaveBeenCalled();
 		expect(dependent.liveSessions.dispose).not.toHaveBeenCalled();
+		expect(dependent.liveSessions.stopTimers).toHaveBeenCalledOnce();
 		expect(dependent.sessions.dispose).not.toHaveBeenCalled();
 	});
 });

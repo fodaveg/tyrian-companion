@@ -226,6 +226,20 @@ describe('passive live session lifecycle', () => {
 		f.setNow(AT+45*60_000); beat!(); await svc.capture();
 		expect(svc.getRuntime()?.phase, 'and the next beats do not close it').toBe('active'); await svc.dispose();
 	});
+	it('stopTimers ends the heartbeat for good without releasing the lease: no more renewals, no re-arming', async () => {
+		const f = fixture(); const cleared = vi.fn(); let sets = 0;
+		const svc = new LiveSessionLifecycle({...f.options,setInterval:() => {sets++;return 1;},clearInterval:cleared});
+		await svc.start('Test'); await svc.open(f.source); await svc.commit(f.sample(0,0)); await svc.presence(true);
+		expect(sets).toBe(1);
+		svc.stopTimers();
+		expect(cleared).toHaveBeenCalledOnce();
+		f.renew.mockClear();
+		await svc.commit(f.sample(1,1)); await svc.presence(true);
+		expect(sets, 'a later sample does not arm it again').toBe(1);
+		expect(f.renew, 'the cleared interval is the only renewer').not.toHaveBeenCalled();
+		expect(f.options.coordinator.release).not.toHaveBeenCalled();
+		await svc.dispose();
+	});
 	it('a real host restart still reclaims as a restart: gap, disconnected, no map observation', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.dispose();
 		f.setNow(AT+60_000); const restored = new LiveSessionLifecycle(f.options); await restored.initialize();

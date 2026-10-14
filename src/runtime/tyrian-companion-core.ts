@@ -1731,6 +1731,9 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		} catch (error) {
 			bridgeFailure = { error };
 		}
+		// The lease heartbeat ends in every case: a failed drain keeps the store and the lease (they lapse by themselves and the
+		// next instance takes them over), but an unloaded instance must not go on renewing a lease the new one competes for.
+		this.liveSessions?.stopTimers();
 		// After the durable bridge drain, always release local ownership even if another disposer fails.
 		try {
 		if (bridgeFailure === null) await this.liveEconomy?.dispose();
