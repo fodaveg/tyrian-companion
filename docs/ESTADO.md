@@ -1,9 +1,11 @@
 # Estado
 
-## Candidato 0.7.0: Tyrian pasa a la API 2.0 de plugins de Hebra (14 oct 2026)
+## Canal 0.7.0 publicado: Tyrian pasa a la API 2.0 de plugins de Hebra (14 oct 2026)
 
-**Candidato; sin publicar.** Rama `feat/hebra-api-v2` sobre el canal 0.6.63 publicado (`4028cfc1`). Detalle en
-[CHANGELOG](CHANGELOG.md). Encargo de David del 14 oct, por la sesión de Hebra (hebra-39): «Migrar Tyrian, sin cortar
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.0` = `b071a1b9` (atestación; candidato `2ae8a762`).
+Gate local verde (check con 7983 tests, test 29/29, BRAT PASS); Release 38627506252 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=checked`). Sobre el canal 0.6.63 publicado (`4028cfc1`).
+Detalle en [CHANGELOG](CHANGELOG.md). Encargo de David del 14 oct, por la sesión de Hebra (hebra-39): «Migrar Tyrian, sin cortar
 la 1.x»; lote L10 del plan C1 de Hebra, tarea de Lumbre 4e27e8be. Excepción a la congelación de Halloween solo para
 esta migración.
 
@@ -20,9 +22,17 @@ esta migración.
 - Revisión independiente: sin bloqueantes; sus tres hallazgos (fuga por superficie, `IDBKeyRange` global tras soltar,
   panel sin adoptar sin preparar) arreglados con test visto en rojo. Queda sin tocar `copyLocalDebugEntries`, que puede
   perder el gesto antes de copiar (ya existía).
-- Sin verificar: nada en un Hebra real (CSP de imágenes, portapapeles con el gesto del marco, sonido, alturas de
-  bloques y modales, `pagehide` de un bloque, `navigator.locks` en WebKitGTK). La sesión de Hebra lo carga en su
-  arnés de C1 (Chromium y WebKit).
+- Arnés C1 de la sesión de Hebra (web de desarrollo con la 2.x, Chromium y WebKit, sin red real) sobre `c5fa59b2`:
+  activa sin errores; las cinco secciones montan; IndexedDB (6 bases) y `storage.device` sobreviven a recargar; el
+  traslado L14 copia una base sembrada sin borrar la original; 0 violaciones de CSP y consola del marco vacía; fuente
+  y botones de Hebra aplicados; modal y panel de Ajustes caben en su hueco. Dos fallos que encontró, arreglados antes
+  de publicar: los estilos no se aplicaban en ninguna superficie 2.x (`c5fa59b2`, acotados a `#hebra-surface-root`) y
+  el margen del `<body>` recortaba el borde inferior del bloque de la nota (`2ae8a762`, este último sin repasar en el
+  arnés).
+- Sin verificar: nada en una app de Hebra real ni con cuenta de GW2 (portapapeles con el gesto del marco, sonido,
+  `pagehide` de un bloque, `navigator.locks` en WebKitGTK, la pantalla encendida en iPhone e iPad). Hebra con la 2.x:
+  macOS 165 e iOS 0.2.162 (TestFlight, API 2.2.0) y la web; Linux (rpm 0.2.0-37) y Windows (0.2.18) con la 2.1.0. La
+  web solo carga Tyrian cuando Hebra añade su origen a `web-plugin-origins.json`.
 
 ## Canal 0.6.63 publicado: el panel «En vivo» mantiene la pantalla encendida en iPhone y iPad (14 oct 2026)
 
