@@ -567,13 +567,13 @@ export class TyrianCompanionSettingTab {
 					let typed = this.plugin.settings.alertWebhookUrl;
 					let saved = typed;
 					let text!: TyrianTextControl;
-					const validate = (): string | 'invalid' => {
+					const validate = (): string | null => {
 						const destination = alertWebhookDestination(typed);
 						if (destination.length === 0 && typed.trim().length > 0) {
 							text.inputEl.setAttr('aria-invalid', 'true');
 							feedback.setAttr('role', 'alert');
 							feedback.setText(this.t('settings.alerts.webhook.invalid'));
-							return 'invalid';
+							return null;
 						}
 						text.inputEl.removeAttribute('aria-invalid');
 						feedback.setAttr('role', 'status');
@@ -583,7 +583,7 @@ export class TyrianCompanionSettingTab {
 					// Saved once per value: `change`, `blur` and closing the tab can all report the same one.
 					const commit = (): void => {
 						const destination = validate();
-						if (destination === 'invalid' || destination === saved) return;
+						if (destination === null || destination === saved) return;
 						saved = destination;
 						void save({ alertWebhookUrl: destination });
 					};
