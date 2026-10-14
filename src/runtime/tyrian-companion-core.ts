@@ -142,7 +142,7 @@ import { SessionStoreRetry } from './session-store-retry';
 import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-runtime';
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
-import { LivePanelRuntime, livePanelSnapshot } from './live-panel-runtime';
+import { LivePanelRuntime, livePanelSnapshot, type LivePanelSnapshot } from './live-panel-runtime';
 import { CollectorReadUnansweredError, loadCollectorMode } from './collector-instance';
 import type { VaultRelocation } from './vault-relocation';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
@@ -265,6 +265,9 @@ import {
 import { MountedViews, sectionsViewRegistration, sectionViewRegistration } from '../ui/mounted-views';
 import { SALE_VIEW_SLOT, SaleItemView, saleSection } from '../ui/sale-item-view';
 import { ACHIEVEMENTS_VIEW_SLOT, AchievementsItemView, achievementsSection } from '../ui/achievements-item-view';
+import { LIVE_HUD_VIEW_SLOT, LiveHudItemView, liveHudSection, type LiveHudData } from '../ui/live-hud-view';
+import { LiveHudRuntime } from './live-hud-runtime';
+import { emptyLivePanelLive, livePanelLive } from '../sessions/live-panel-note';
 import type { AchievementsViewServices, TrackedAchievementToggleResult } from '../ui/achievements-view';
 import { assembleAchievements, type AchievementsAssembly } from './assemble-achievements';
 import type { SaleViewModel } from '../ui/sale-view-model';
@@ -409,6 +412,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			inventoryAdvisor: new MountedViews((container) => new InventoryAdvisorItemView(container, this.host.ui, this)),
 			sale: new MountedViews((container) => new SaleItemView(container, this.host.ui, this)),
 			achievements: new MountedViews((container) => new AchievementsItemView(container, this.host.ui, this)),
+			liveHud: new MountedViews((container) => new LiveHudItemView(container, this)),
 		};
 		return this.viewControllers;
 	}
@@ -628,6 +632,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private collectorHeartbeat: CollectorHeartbeat | null = null;
 	/** The live panel note (`Live panel.md`): written by the collector while a session runs, stopped on unload. */
 	private livePanel: LivePanelRuntime | null = null;
+	/** Where the «En vivo» HUD reads its figures: the live session here, or the live panel note on a device in consult. */
+	private liveHud: LiveHudRuntime | null = null;
 	/**
 	 * R1b: this DEVICE's mode, kept in local `kv` (`runtime/collector-instance.ts`), never in
 	 * `data.json`. The seed on load, this device's stored mode once `initializeRuntime` reads it;
@@ -1488,16 +1494,25 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		for (const entry of this.liveSessions.getUnsettledPriceEntries()) this.liveEconomy.observe(entry);
 		// The live panel note: the collector's, from the LIVE session (not a saved one the player browses); a failed write is only logged.
 		const lifecycle = this.liveSessions;
+		const readLivePanelSnapshot = (): LivePanelSnapshot => livePanelSnapshot({
+			locale: this.settings.language, view: lifecycle.getView(0, 1), alerts: lifecycle.getAlerts(),
+			loot: this.liveSessionLoot.getState(), itemName: (id) => this.liveEconomy?.entity('item', id)?.name ?? null,
+		});
 		this.livePanel = new LivePanelRuntime({
 			vault: labelledVault(host.vault, 'Live panel note'), root: () => this.configuredNotesRoot(),
 			enabled: () => this.settings.livePanelEnabled, collector: () => !consulting(this), locale: () => this.settings.language,
 			writable: () => this.settings.legacyOutputFolder === null && this.settings.legacyManagedAssetsRoot === null,
-			read: () => livePanelSnapshot({ locale: this.settings.language, view: lifecycle.getView(0, 1), alerts: lifecycle.getAlerts(),
-				loot: this.liveSessionLoot.getState(), itemName: (id) => this.liveEconomy?.entity('item', id)?.name ?? null }),
+			read: readLivePanelSnapshot,
 			setTimeout: (callback, ms) => window.setTimeout(callback, ms), clearTimeout: (handle) => { window.clearTimeout(handle); },
 			run: (write) => { fireAndForgetLocal(this.localDebugActions, { component: 'vault', action: 'vault_write', state: 'live_panel' }, write); },
 		});
 		this.livePanel.start();
+		// The «En vivo» HUD: the same figures the note carries (`livePanelLive`), exact to the second here; the note itself on a consult device.
+		this.liveHud = new LiveHudRuntime({
+			vault: labelledVault(host.vault, 'Live panel note'), root: () => this.configuredNotesRoot(), consulting: () => consulting(this),
+			local: () => { const snapshot = readLivePanelSnapshot(); return { ...livePanelLive(snapshot), observedAt: snapshot.view.lastObservationAt }; },
+			run: (read) => { fireAndForgetLocal(this.localDebugActions, { component: 'vault', action: 'vault_read', state: 'live_hud' }, read); },
+		});
 		this.pendingProposals = sessionServices.pendingProposals;
 		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
 		fireAndForgetLocal(this.localDebugActions,
@@ -1662,12 +1677,13 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		const inventory = views.inventoryAdvisor.section(inventoryAdvisorSection(this));
 		const sale = views.sale.section(saleSection(this));
 		const achievements = views.achievements.section(achievementsSection(this));
+		const liveHud = views.liveHud.section(liveHudSection(this));
 		if (placement === 'main') {
 			const mainView = sectionsViewRegistration({
 				type: TYRIAN_MAIN_VIEW_TYPE,
 				title: () => translateRuntime(createTranslator(this.settings.language), 'shell.title'),
 				icon: 'sword',
-			}, [session, inventory, sale, achievements]);
+			}, [session, inventory, sale, achievements, liveHud]);
 			// `wantedPlacement` only answers 'main' on a host that has the method.
 			return [() => ui.registerSectionsView?.(mainView) ?? NO_VIEW];
 		}
@@ -1676,6 +1692,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			() => ui.registerView(sectionViewRegistration(inventory, INVENTORY_ADVISOR_VIEW_SLOT)),
 			() => ui.registerView(sectionViewRegistration(sale, SALE_VIEW_SLOT)),
 			() => ui.registerView(sectionViewRegistration(achievements, ACHIEVEMENTS_VIEW_SLOT)),
+			() => ui.registerView(sectionViewRegistration(liveHud, LIVE_HUD_VIEW_SLOT)),
 		];
 	}
 
@@ -1691,7 +1708,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	 */
 	private relabelListedSections(): void {
 		if (this.registeredPlacement !== 'main') return;
-		for (const section of [companionSection(this), inventoryAdvisorSection(this), saleSection(this), achievementsSection(this)]) {
+		for (const section of [companionSection(this), inventoryAdvisorSection(this), saleSection(this), achievementsSection(this), liveHudSection(this)]) {
 			this.host.ui.updateSection?.(TYRIAN_MAIN_VIEW_TYPE, section.id, { title: section.label() });
 		}
 	}
@@ -1833,6 +1850,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// Writes the panel's final state; it never rejects, and it reads the live session, which is disposed further down.
 		await this.livePanel?.stop();
 		this.livePanel = null;
+		this.liveHud?.dispose();
+		this.liveHud = null;
 		this.alerts.disposeIngamePresence();
 		this.startModal?.close();
 		this.discardModal?.close();
@@ -3557,6 +3576,12 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private async executeProductAction(
 		id: Exclude<ProductActionId, SessionCommandId>,
 	): Promise<ProductActionOutcome> {
+		if (id === 'open-live') {
+			// The «En vivo» HUD, apart from the four-way mapping below that H5.11 freezes by its source text.
+			const navigate = (): Promise<void> => this.activateLiveHudView();
+			await (this.localDebugActions?.run({ component: 'ui', action: 'command_execute', state: 'open_live' }, navigate) ?? navigate());
+			return 'completed';
+		}
 		if (id === 'open-companion' || id === 'open-inventory-advisor' || id === 'open-sale' || id === 'open-achievements') {
 			const state = id === 'open-companion' ? 'open_companion'
 				: id === 'open-inventory-advisor' ? 'open_inventory_advisor'
@@ -3587,7 +3612,7 @@ export class TyrianCompanionCore implements TyrianRuntime {
 
 	/** Maps handled controller states back into the shared action feedback contract. */
 	private productActionOutcome(
-		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'open-sale' | 'open-achievements' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
+		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'open-sale' | 'open-achievements' | 'open-live' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
 	): ProductActionOutcome {
 		if (id === 'disarm-assisted-detection') return detectionActionOutcome(this.getAssistedDetectionState(), 'disarm');
 		if (id === 'refresh-inventory-advisor') return advisorActionOutcome(this.getInventoryAdvisorViewModel());
@@ -3630,6 +3655,18 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private activateSaleView(): Promise<void> { return this.liveView.activateSaleView(); }
 
 	private activateAchievementsView(): Promise<void> { return this.liveView.activateAchievementsView(); }
+
+	private activateLiveHudView(): Promise<void> { return this.liveView.activateLiveHudView(); }
+
+	/** The figures of the «En vivo» HUD (`LiveHudRuntime`); «no session» until the runtime has built the live session. */
+	getLiveHud(): LiveHudData {
+		return this.liveHud?.current() ?? { state: 'none', live: emptyLivePanelLive(), source: 'local' };
+	}
+
+	/** Tells a mounted HUD when the live panel note changed on a device in consult (`LiveHudRuntime.subscribe`). */
+	onLiveHudChange(listener: () => void): () => void {
+		return this.liveHud?.subscribe(listener) ?? (() => undefined);
+	}
 
 }
 

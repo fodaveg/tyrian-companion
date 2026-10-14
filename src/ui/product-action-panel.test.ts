@@ -22,13 +22,14 @@ describe('product action surface', () => {
 	// `review-session` is gone (Lote S, 2026-09-09: nobody reviews a session anymore), so the
 	// session group drops from 7 to 6 and the total from 16 to 15. «Abandonar sesión» (David, 2026-09-24)
 	// brings them back to 7 and 16. The Sale tab's `open-sale` brings the navigation group to 3 and the
-	// total to 17. The Achievements tab's `open-achievements` (L2, 0.6.30) brings them to 4 and 18.
-	it('has exact 18-command parity with the requested 4/7/2/5 groups', () => {
+	// total to 17. The Achievements tab's `open-achievements` (L2, 0.6.30) brings them to 4 and 18. The «En vivo» HUD's
+	// `open-live` (14 oct 2026) brings them to 5 and 19.
+	it('has exact 19-command parity with the requested 5/7/2/5 groups', () => {
 		const controller = createController();
-		expect(PRODUCT_ACTION_IDS).toHaveLength(18);
-		expect(new Set(PRODUCT_ACTION_IDS).size).toBe(18);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(19);
+		expect(new Set(PRODUCT_ACTION_IDS).size).toBe(19);
 		expect(controller.all().find((action) => action.id === 'open-companion')?.group).toBe('navigation');
-		expect(controller.all().filter((action) => action.group === 'navigation')).toHaveLength(4);
+		expect(controller.all().filter((action) => action.group === 'navigation')).toHaveLength(5);
 		expect(controller.all().filter((action) => action.group === 'session')).toHaveLength(7);
 		expect(controller.all().filter((action) => action.group === 'detection')).toHaveLength(2);
 		expect(controller.all().filter((action) => action.group === 'inventory')).toHaveLength(5);
@@ -193,7 +194,7 @@ describe('product action surface', () => {
 		});
 		expect(walk(root).some((element) => element.className.includes('tyrian-action-panel'))).toBe(false);
 		expect(walk(root).some((element) => element.tag === 'aside')).toBe(false);
-		expect(PRODUCT_ACTION_IDS).toHaveLength(18);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(19);
 		mount.dispose();
 	});
 });

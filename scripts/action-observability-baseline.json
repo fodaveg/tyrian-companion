@@ -5,7 +5,7 @@
 		"catch_clause": 623,
 		"promise_catch": 62,
 		"void_expression": 148,
-		"callback_registration": 264
+		"callback_registration": 265
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -9113,6 +9113,92 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/runtime/ingame-session-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "c14294a6f761c399d4b6aacf0e5e9569a8f4255a",
+					"kind": "void_expression",
+					"line": 106,
+					"column": 4,
+					"endLine": 106,
+					"endColumn": 29,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "marker.handle",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.handle\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "8a3f1c01cd601fc7e3aa605f377dd99016293ef7",
+					"kind": "void_expression",
+					"line": 107,
+					"column": 4,
+					"endLine": 108,
+					"endColumn": 104,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.liveSessions.presence",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store. Verified target: \"this.liveSessions.presence\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "e3141c9ac8ed8f43d1e1377ef72b1f31490756f0",
+					"kind": "void_expression",
+					"line": 110,
+					"column": 3,
+					"endLine": 110,
+					"endColumn": 26,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "marker.reconcile",
+						"scope": "startIngameSessionMarking",
+						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
+					},
+					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.reconcile\" in \"startIngameSessionMarking\"."
+				},
+				{
+					"id": "7caf4b09e28778840190f4aa69918394e5a2616c",
+					"kind": "catch_clause",
+					"line": 207,
+					"column": 5,
+					"endLine": 210,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "readIngameSessionLink",
+						"justification": "The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own."
+					},
+					"reason": "Allowlisted catch_clause: The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own. Verified recovery: \"fallback_return\" in \"readIngameSessionLink\"."
+				},
+				{
+					"id": "7de265dcfdf9b8fc2f8ba90addcfe7bca2dfac88",
+					"kind": "catch_clause",
+					"line": 218,
+					"column": 5,
+					"endLine": 220,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "writeIngameSessionLink",
+						"justification": "The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner."
+					},
+					"reason": "Allowlisted catch_clause: The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner. Verified recovery: \"local_recovery\" in \"writeIngameSessionLink\"."
+				}
+			]
+		},
 		"src/runtime/inventory-runtime.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -9134,6 +9220,11 @@
 					"reason": "Allowlisted catch_clause: The \"snapshotCoverageOutcome\" owner explicitly handles \"fallback_return\" as local recovery: it only builds the optional coverage counts of the success record, so a failed read leaves that record without them and hides no product error (the refresh already succeeded and its action owns terminal diagnostics). Verified recovery: \"fallback_return\" in \"snapshotCoverageOutcome\"."
 				}
 			]
+		},
+		"src/runtime/live-hud-runtime.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/runtime/live-panel-runtime.ts": {
 			"classification": "production_source",
@@ -10237,6 +10328,59 @@
 						"callee": "span.failure"
 					},
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				}
+			]
+		},
+		"src/runtime/session-store-retry.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "6a8870286cd816781769e0a74184c5acc4dfdeda",
+					"kind": "void_expression",
+					"line": 50,
+					"column": 4,
+					"endLine": 50,
+					"endColumn": 75,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.reread().finally",
+						"scope": "arm",
+						"justification": "RT-17: in \"arm\", \"this.reread().finally\" runs one attempt detached from its timer. reread never rejects (its catch reports through onDiagnostic, observed); finally clears the in-course mark and arms the next wait, which arms nothing once the plugin is unloaded or the stores answer."
+					},
+					"reason": "Allowlisted void_expression: RT-17: in \"arm\", \"this.reread().finally\" runs one attempt detached from its timer. reread never rejects (its catch reports through onDiagnostic, observed); finally clears the in-course mark and arms the next wait, which arms nothing once the plugin is unloaded or the stores answer. Verified target: \"this.reread().finally\" in \"arm\"."
+				},
+				{
+					"id": "4a5471e13741a158b4cb5d319a03e330904ed9af",
+					"kind": "callback_registration",
+					"line": 50,
+					"column": 9,
+					"endLine": 50,
+					"endColumn": 75,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "arm",
+						"justification": "RT-17: the \"finally\" in \"arm\" ends one attempt: it clears the in-course mark and calls arm(), which only reads both services' state and schedules the next wait (capped at five minutes) or none; the attempt's failures were already reported by reread's catch."
+					},
+					"reason": "Allowlisted callback_registration: RT-17: the \"finally\" in \"arm\" ends one attempt: it clears the in-course mark and calls arm(), which only reads both services' state and schedules the next wait (capped at five minutes) or none; the attempt's failures were already reported by reread's catch. Verified registration: \"finally\" in \"arm\"."
+				},
+				{
+					"id": "d3de9d65652d5b98ff54cff59e692b8bfc4a4a47",
+					"kind": "catch_clause",
+					"line": 84,
+					"column": 5,
+					"endLine": 86,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.port.onDiagnostic"
+					},
+					"reason": "Direct observability call \"this.port.onDiagnostic\" is present inside this catch_clause boundary."
 				}
 			]
 		},
@@ -18139,6 +18283,29 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/ui/live-hud-view.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "ca39867a878b4aac80343aa9f64553d807466be6",
+					"kind": "callback_registration",
+					"line": 237,
+					"column": 18,
+					"endLine": 237,
+					"endColumn": 81,
+					"registration": "setInterval",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setInterval",
+						"scope": "armTimer",
+						"justification": "The \"armTimer\" owner explicitly handles \"setInterval\": the one-second callback only calls tick, which rewrites the duration and freshness text of nodes it already holds; it performs no action, reaches no store and has no failure to record."
+					},
+					"reason": "Allowlisted callback_registration: The \"armTimer\" owner explicitly handles \"setInterval\": the one-second callback only calls tick, which rewrites the duration and freshness text of nodes it already holds; it performs no action, reaches no store and has no failure to record. Verified registration: \"setInterval\" in \"armTimer\"."
+				}
+			]
+		},
 		"src/ui/live-session-coin-badge.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -20004,145 +20171,6 @@
 						"justification": "The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"validateWalletNoteMarker\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"validateWalletNoteMarker\"."
-				}
-			]
-		},
-		"src/runtime/ingame-session-runtime.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "c14294a6f761c399d4b6aacf0e5e9569a8f4255a",
-					"kind": "void_expression",
-					"line": 106,
-					"column": 4,
-					"endLine": 106,
-					"endColumn": 29,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "marker.handle",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.handle\" from the synchronous presence listener; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.handle\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "8a3f1c01cd601fc7e3aa605f377dd99016293ef7",
-					"kind": "void_expression",
-					"line": 107,
-					"column": 4,
-					"endLine": 108,
-					"endColumn": 104,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.liveSessions.presence",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" \"this.liveSessions.presence\" boundary enqueues presence into the lifecycle serial flight whose retained rejection handler records the failure; it never acknowledges source samples or clears the store. Verified target: \"this.liveSessions.presence\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "e3141c9ac8ed8f43d1e1377ef72b1f31490756f0",
-					"kind": "void_expression",
-					"line": 110,
-					"column": 3,
-					"endLine": 110,
-					"endColumn": 26,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "marker.reconcile",
-						"scope": "startIngameSessionMarking",
-						"justification": "The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure."
-					},
-					"reason": "Allowlisted void_expression: The \"startIngameSessionMarking\" owner deliberately detaches \"marker.reconcile\" to catch up with a presence that started before the runtime was ready; that named operation never rejects, because its queue catches every failure and records it through recordIngameSessionFailure. Verified target: \"marker.reconcile\" in \"startIngameSessionMarking\"."
-				},
-				{
-					"id": "7caf4b09e28778840190f4aa69918394e5a2616c",
-					"kind": "catch_clause",
-					"line": 207,
-					"column": 5,
-					"endLine": 210,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "fallback_return",
-						"scope": "readIngameSessionLink",
-						"justification": "The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own."
-					},
-					"reason": "Allowlisted catch_clause: The \"readIngameSessionLink\" owner applies \"fallback_return\" when the per-vault local storage throws: it records the error through recordIngameSessionFailure and returns null, so the marker treats a running session as adopted and never closes it on its own. Verified recovery: \"fallback_return\" in \"readIngameSessionLink\"."
-				},
-				{
-					"id": "7de265dcfdf9b8fc2f8ba90addcfe7bca2dfac88",
-					"kind": "catch_clause",
-					"line": 218,
-					"column": 5,
-					"endLine": 220,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "writeIngameSessionLink",
-						"justification": "The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner."
-					},
-					"reason": "Allowlisted catch_clause: The \"writeIngameSessionLink\" owner applies \"local_recovery\" when the per-vault local storage write throws: it records the error through recordIngameSessionFailure; the link stays in memory for this window, and only a reload loses the automatic owner. Verified recovery: \"local_recovery\" in \"writeIngameSessionLink\"."
-				}
-			]
-		},
-		"src/runtime/session-store-retry.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"id": "6a8870286cd816781769e0a74184c5acc4dfdeda",
-					"kind": "void_expression",
-					"line": 50,
-					"column": 4,
-					"endLine": 50,
-					"endColumn": 75,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.reread().finally",
-						"scope": "arm",
-						"justification": "RT-17: in \"arm\", \"this.reread().finally\" runs one attempt detached from its timer. reread never rejects (its catch reports through onDiagnostic, observed); finally clears the in-course mark and arms the next wait, which arms nothing once the plugin is unloaded or the stores answer."
-					},
-					"reason": "Allowlisted void_expression: RT-17: in \"arm\", \"this.reread().finally\" runs one attempt detached from its timer. reread never rejects (its catch reports through onDiagnostic, observed); finally clears the in-course mark and arms the next wait, which arms nothing once the plugin is unloaded or the stores answer. Verified target: \"this.reread().finally\" in \"arm\"."
-				},
-				{
-					"id": "4a5471e13741a158b4cb5d319a03e330904ed9af",
-					"kind": "callback_registration",
-					"line": 50,
-					"column": 9,
-					"endLine": 50,
-					"endColumn": 75,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "arm",
-						"justification": "RT-17: the \"finally\" in \"arm\" ends one attempt: it clears the in-course mark and calls arm(), which only reads both services' state and schedules the next wait (capped at five minutes) or none; the attempt's failures were already reported by reread's catch."
-					},
-					"reason": "Allowlisted callback_registration: RT-17: the \"finally\" in \"arm\" ends one attempt: it clears the in-course mark and calls arm(), which only reads both services' state and schedules the next wait (capped at five minutes) or none; the attempt's failures were already reported by reread's catch. Verified registration: \"finally\" in \"arm\"."
-				},
-				{
-					"id": "d3de9d65652d5b98ff54cff59e692b8bfc4a4a47",
-					"kind": "catch_clause",
-					"line": 84,
-					"column": 5,
-					"endLine": 86,
-					"endColumn": 4,
-					"classification": "observed",
-					"evidence": {
-						"type": "direct_observability_call",
-						"callee": "this.port.onDiagnostic"
-					},
-					"reason": "Direct observability call \"this.port.onDiagnostic\" is present inside this catch_clause boundary."
 				}
 			]
 		}

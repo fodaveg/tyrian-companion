@@ -12,6 +12,7 @@ import { COMPANION_VIEW_TYPE } from '../../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../../ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from '../../ui/sale-item-view';
 import { ACHIEVEMENTS_VIEW_TYPE } from '../../ui/achievements-item-view';
+import { LIVE_HUD_VIEW_TYPE } from '../../ui/live-hud-view';
 import { activateTyrian } from './hebra-runtime';
 
 /**
@@ -24,7 +25,7 @@ import { activateTyrian } from './hebra-runtime';
  */
 
 /** The sections as views of their own, in the order the core registers them (the sidebar placement). */
-const OWN_VIEWS = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE];
+const OWN_VIEWS = [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE, LIVE_HUD_VIEW_TYPE];
 const PLACEMENT_ROW = 'Dónde se muestra';
 
 /** What these tests read of the core besides its public methods. */
@@ -128,9 +129,9 @@ describe('(a) a Hebra without the main view: everything as before', () => {
 		expect(core.mainViewSupported()).toBe(false);
 		expect(started.inside.registeredPlacement).toBe('sidebar');
 		expect(test.fake.recorded.views.map(({ id, placement }) => [id, placement])).toEqual([
-			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'], [ACHIEVEMENTS_VIEW_TYPE, 'dialog'],
+			[COMPANION_VIEW_TYPE, 'column'], [INVENTORY_ADVISOR_VIEW_TYPE, 'dialog'], [SALE_VIEW_TYPE, 'dialog'], [ACHIEVEMENTS_VIEW_TYPE, 'dialog'], [LIVE_HUD_VIEW_TYPE, 'dialog'],
 		]);
-		expect(test.fake.recorded.views.map(({ title }) => title)).toEqual(['Acompañante de Tyria', 'Asesor de inventario', 'Venta de Halloween', 'Logros']);
+		expect(test.fake.recorded.views.map(({ title }) => title)).toEqual(['Acompañante de Tyria', 'Asesor de inventario', 'Venta de Halloween', 'Logros', 'En vivo']);
 		expect(settingsRows(started).names).not.toContain(PLACEMENT_ROW);
 		expect(test.fake.recorded.ribbon[0]).not.toHaveProperty('viewId');
 
@@ -166,6 +167,7 @@ describe('(b) a Hebra with the main view and the default choice', () => {
 			{ id: 'inventory', title: 'Inventario', icon: 'package-search' },
 			{ id: 'sale', title: 'Venta', icon: 'candy' },
 			{ id: 'achievements', title: 'Logros', icon: 'circle-check', badge: null },
+			{ id: 'live', title: 'En vivo', icon: 'gauge' },
 		]);
 		expect(test.fake.viewTitle(TYRIAN_MAIN_VIEW_TYPE)).toBe('Tyrian Companion');
 		expect(test.fake.recorded.views).toEqual([]);
@@ -288,20 +290,20 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 		order.length = 0;
 
 		await core.updateViewPlacement('main');
-		expect(order.slice(0, 5)).toEqual([
+		expect(order.slice(0, 6)).toEqual([
 			`unregister ${COMPANION_VIEW_TYPE}`, `unregister ${INVENTORY_ADVISOR_VIEW_TYPE}`, `unregister ${SALE_VIEW_TYPE}`,
-			`unregister ${ACHIEVEMENTS_VIEW_TYPE}`,
+			`unregister ${ACHIEVEMENTS_VIEW_TYPE}`, `unregister ${LIVE_HUD_VIEW_TYPE}`,
 			`register ${TYRIAN_MAIN_VIEW_TYPE}`,
 		]);
 		order.length = 0;
 
 		await core.updateViewPlacement('sidebar');
-		expect(order.slice(0, 5)).toEqual([
+		expect(order.slice(0, 6)).toEqual([
 			`unregister ${TYRIAN_MAIN_VIEW_TYPE}`,
 			`register ${COMPANION_VIEW_TYPE}`, `register ${INVENTORY_ADVISOR_VIEW_TYPE}`, `register ${SALE_VIEW_TYPE}`,
-			`register ${ACHIEVEMENTS_VIEW_TYPE}`,
+			`register ${ACHIEVEMENTS_VIEW_TYPE}`, `register ${LIVE_HUD_VIEW_TYPE}`,
 		]);
-		expect(order.slice(5)).toEqual(['tick']);
+		expect(order.slice(6)).toEqual(['tick']);
 		await started.cleanup();
 	}, 30_000);
 });
@@ -309,7 +311,7 @@ describe('(d) changing the choice in Settings swaps what is registered, without 
 describe('(d) what is left open and mounted after the swap, in each direction', () => {
 	it('shares no view id between the two placements, so neither swap can keep anything open', () => {
 		expect(OWN_VIEWS).not.toContain(TYRIAN_MAIN_VIEW_TYPE);
-		expect(new Set([...OWN_VIEWS, TYRIAN_MAIN_VIEW_TYPE]).size).toBe(5);
+		expect(new Set([...OWN_VIEWS, TYRIAN_MAIN_VIEW_TYPE]).size).toBe(6);
 	});
 
 	it('main screen to sidebar: the main view is unmounted whole and nothing is open, not even a moment later', async () => {
@@ -645,12 +647,16 @@ describe('(g) the plugin\'s own bar of tabs', () => {
 		}
 
 		await core.updateViewPlacement('sidebar');
-		for (const type of OWN_VIEWS) {
+		for (const type of OWN_VIEWS.filter((candidate) => candidate !== LIVE_HUD_VIEW_TYPE)) {
 			const el = hebra!.ownViews.open(type);
 			await vi.waitFor(() => expect(el.querySelector('.tyrian-product-shell__nav'), `${type}: no bar`).not.toBeNull());
 			expect(Array.from(el.querySelectorAll('.tyrian-product-shell__nav button:not(.tyrian-product-shell__settings)')).map((tab) => tab.textContent))
 				.toEqual(['Sesión', 'Inventario', 'Venta', 'Logros']);
 		}
+		// «En vivo» is a display surface: no shell, no bar, no button, in either placement.
+		const hud = hebra!.ownViews.open(LIVE_HUD_VIEW_TYPE);
+		await vi.waitFor(() => expect(hud.querySelector('.tyrian-live-hud')).not.toBeNull());
+		expect(hud.querySelector('.tyrian-product-shell, nav, button')).toBeNull();
 		await started.cleanup();
 	}, 30_000);
 });

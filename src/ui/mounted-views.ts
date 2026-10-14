@@ -14,8 +14,8 @@ export interface MountableView {
 /** Everything a `TyrianViewRegistration` says about a view except how to mount it. */
 export type TyrianViewDescriptor = Omit<TyrianViewRegistration, 'mount' | 'unmount'>;
 
-/** The plugin's sections. Stable: the same in every language, version and host. */
-export type TyrianSectionId = 'session' | 'inventory' | 'sale' | 'achievements';
+/** The plugin's sections. Stable: the same in every language, version and host. `live` is the «En vivo» HUD. */
+export type TyrianSectionId = 'session' | 'inventory' | 'sale' | 'achievements' | 'live';
 
 /** What a section says about itself, wherever a host shows it; `MountedViews.section` adds how it mounts. */
 export interface TyrianSectionDescriptor {

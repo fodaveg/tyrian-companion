@@ -24,13 +24,14 @@ import { ACHIEVEMENTS_VIEW_TYPE } from '../ui/achievements-item-view';
 import { refreshBackgroundStatus } from '../ui/background-status-refresh';
 import { COMPANION_VIEW_TYPE, type TyrianCompanionView } from '../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE, type InventoryAdvisorItemView } from '../ui/inventory-advisor-item-view';
+import { LIVE_HUD_VIEW_TYPE, type LiveHudItemView } from '../ui/live-hud-view';
 import type { MountedViews, TyrianSectionId } from '../ui/mounted-views';
 import { SALE_VIEW_TYPE, type SaleItemView } from '../ui/sale-item-view';
 import type { InventoryVaultSyncRunState } from '../ui/inventory-vault-sync-run-controller';
 import type { ProductActionController } from '../ui/product-action-controller';
 import type { ViewPlacement } from './view-placement';
 
-/** The ONE view of a host's main screen that lists the four sections (`TyrianUiPort.registerSectionsView`). */
+/** The ONE view of a host's main screen that lists the five sections (`TyrianUiPort.registerSectionsView`). */
 export const TYRIAN_MAIN_VIEW_TYPE = 'tyrian-main-view';
 
 /**
@@ -42,6 +43,8 @@ export interface LiveViewControllers {
 	readonly inventoryAdvisor: MountedViews<InventoryAdvisorItemView>;
 	readonly sale: MountedViews<SaleItemView>;
 	readonly achievements: MountedViews<AchievementsItemView>;
+	/** The «En vivo» HUD: repainted with the Companion, since both read the live session. */
+	readonly liveHud: MountedViews<LiveHudItemView>;
 }
 
 /**
@@ -117,6 +120,7 @@ export class LiveViewRuntime {
 		this.productActions?.refresh();
 		this.commands.refreshSessionRibbon();
 		for (const view of this.mountedViews.companion.current()) view.render();
+		for (const view of this.mountedViews.liveHud.current()) view.render();
 	}
 
 	renderInventoryAdvisorViews(): void {
@@ -171,6 +175,11 @@ export class LiveViewRuntime {
 
 	async activateAchievementsView(): Promise<void> {
 		await this.revealSection('achievements', ACHIEVEMENTS_VIEW_TYPE);
+	}
+
+	/** Opens the «En vivo» HUD: on the main screen its section, otherwise its own view (Obsidian: its own tab). */
+	async activateLiveHudView(): Promise<void> {
+		await this.revealSection('live', LIVE_HUD_VIEW_TYPE);
 	}
 
 	/**

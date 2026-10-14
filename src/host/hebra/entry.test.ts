@@ -13,6 +13,7 @@ import { COMPANION_VIEW_TYPE } from '../../ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from '../../ui/inventory-advisor-item-view';
 import { SALE_VIEW_TYPE } from '../../ui/sale-item-view';
 import { ACHIEVEMENTS_VIEW_TYPE } from '../../ui/achievements-item-view';
+import { LIVE_HUD_VIEW_TYPE } from '../../ui/live-hud-view';
 import { activate } from './entry';
 
 /**
@@ -117,14 +118,14 @@ const failures = (records: readonly LocalDebugRecordInput[]): string[] => record
 const es = createTranslator('es');
 
 describe('the Hebra plugin activated through entry.ts', { timeout: 15_000 }, () => {
-	it('registers the Companion, Inventory and Sale views and the command that opens Sale', async () => {
+	it('registers the Companion, Inventory, Sale, Achievements and Live views and the command that opens Sale', async () => {
 		const activated = await activatePlugin();
 		await activated.booted();
 
 		expect({
 			views: activated.test.fake.recorded.views.map(({ id }) => id),
 			openSale: activated.test.fake.recorded.commands.some(({ id }) => id === 'tyrian-companion:open-sale'),
-		}).toEqual({ views: [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE], openSale: true });
+		}).toEqual({ views: [COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE, SALE_VIEW_TYPE, ACHIEVEMENTS_VIEW_TYPE, LIVE_HUD_VIEW_TYPE], openSale: true });
 	});
 
 	it('paints Sale out of loading, in the final state of a device that only consults, once the runtime is up', async () => {
