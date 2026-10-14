@@ -1,25 +1,39 @@
 # Estado
 
-## Candidato 0.6.59: sección «En vivo», el HUD de cifras grandes (14 oct 2026)
+## Candidato 0.6.60: el panel «En vivo» muestra el hallazgo mágico del juego (14 oct 2026)
 
-**Candidato; sin publicar.** `main` sobre el canal 0.6.58 publicado (`107b8b54`). Detalle en [CHANGELOG](CHANGELOG.md).
-Publicación sin preguntar según la decisión de David del 10 oct («no me preguntes mas por las releases»). Pedido por David el 14 oct durante el evento («no quería una nota.
+**Candidato; sin publicar.** `main` sobre el canal 0.6.59 publicado (`28f46d62`). Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 14 oct («y el hallazgo mágico»). Va con el addon de Nexus 0.8.11 (`2a64012`), que es quien lee la cifra.
+
+- El MF del juego con buffs viaja por `mf1` negociado ([SPEC del puente](SPEC-puente-ingame.md)): el plugin anuncia
+  `mf_cap` solo a `client: nexus` en v3; el addon responde con `mf_state` (`mf` entero o `null`, `ageMs`) al cambiar, cada
+  60 s mientras se mantiene y como mucho uno cada 5 s, y `null` tras 30 s sin captura o en la selección de personaje.
+  El HUD y la nota lo enseñan como «MF en el juego» (`tc_live_mf_src: game`) mientras tiene menos de dos minutos
+  (`src/sessions/live-game-magic-find.ts`); si no, el de la cuenta.
+- Compatibilidad: el addon 0.8.10 ignora `mf_cap` (tipo desconocido, `ServerLine::Ignored`) y el plugin sigue con el MF de
+  la cuenta; el plugin 0.6.59 nunca anuncia `mf_cap` y el addon 0.8.11 no le manda nada. Probado en los dos repos.
+- Sin verificar: la cifra real en el cable y que coincide con el panel del addon (viaja redondeada al entero).
+
+## Canal 0.6.59 publicado: sección «En vivo», el HUD de cifras grandes (14 oct 2026)
+
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.6.59` = `28f46d62` (segunda atestación; la primera,
+`42018b34`, salió roja en CI por cinco tests que fijaban instantes de Madrid y fallaban en UTC; arreglo `409d8f4e`).
+Gate local verde (check en UTC con 7816 tests, test 29/29, BRAT PASS); CI 38532798324 y Release 38534255950 en verde;
+`release:brat-verify` PASS con 8 assets (`downloaded-bytes=not-checked`), release normal. `main` sobre el canal 0.6.58
+publicado (`107b8b54`). Detalle en [CHANGELOG](CHANGELOG.md). Publicación sin preguntar según la decisión de David del
+10 oct («no me preguntes mas por las releases»). Pedido por David el 14 oct durante el evento («no quería una nota.
 quería un puto panel dentro del plugin. una especie de dashboard o hud», «se puede mostrar el numero de bolsas y bolsas
 por hora? como en el juego?», «y el hallazgo mágico»).
 
 - Quinta sección «En vivo» (`src/ui/live-hud-view.ts`, comando `open-live` «Abrir panel en vivo»): estado, seis tarjetas
-  (valor, oro/h, bolsas, bolsas/h, MF en el juego o de la cuenta, duración) y el botín que más vale. En la pantalla principal de Hebra
+  (valor, oro/h, bolsas, bolsas/h, MF de la cuenta, duración) y el botín que más vale. En la pantalla principal de Hebra
   ocupa la pantalla entera del iPhone o iPad; en Obsidian abre en su propia pestaña. Sin personaje, cuenta ni mapa.
 - Transporte: el frontmatter de `Live panel.md` lleva los campos `tc_live_*` (`tc_live_v: 1`); el recolector escribe
   cuando cambia una cifra visible, dentro del suelo de 10 s; un dispositivo en consulta lee la nota al montar el HUD y en
   cada `vault.onChange` sobre esa ruta (`src/runtime/live-hud-runtime.ts`). Detalle en [ARCHITECTURE](ARCHITECTURE.md).
 - Bolsas y bolsas/h: la misma lectura de `view.totals` que el panel del juego (`liveObservedBags`), también en la nota.
-- MF del juego con buffs (rama `feat/game-magic-find`, con el addon de Nexus 0.8.11 en `feat/mf-on-wire`, sin publicar):
-  viaja por `mf1` negociado (`mf_cap` → `mf_state`) y el HUD y la nota lo enseñan como «MF en el juego»
-  (`tc_live_mf_src: game`) mientras tiene menos de dos minutos; si no, el de la cuenta. Plugin 0.6.58 y addon 0.8.10
-  siguen funcionando con la versión nueva del otro (probado en los dos repos).
 - Sin verificar: el render en iPhone, iPad, Obsidian y Hebra reales; la latencia real del transporte por la sincronización
-  de Hebra (medida antes: 60 s de mediana); el MF del juego real en el cable.
+  de Hebra (medida antes: 60 s de mediana).
 
 ## Canal 0.6.58 publicado: panel en vivo, ventana «1 semana», «Detalles» en Venta y audit de bugs (14 oct 2026)
 

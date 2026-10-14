@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.6.60 - El panel «En vivo» muestra el hallazgo mágico del juego
+
+Se actualiza desde la 0.6.59 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Panel «En vivo». La tarjeta del hallazgo mágico enseña el del juego, con los buffs que lleves, el mismo que pinta el
+  panel del addon. Hace falta el addon de Nexus 0.8.11. Sin él, o si el addon lleva más de dos minutos sin leerlo, la
+  tarjeta vuelve al de la cuenta y lo dice.
+- Con el addon 0.8.10 todo sigue funcionando como antes.
+
 ## Release beta 0.6.59 - Panel «En vivo» dentro del plugin, con cifras grandes para el móvil
 
 Se actualiza desde la 0.6.58 publicada. No se ha visto todavía en un Obsidian ni en un Hebra reales.
