@@ -360,7 +360,7 @@ function mountInventoryAdvisorView(
 		// earlier `await`); an absent clipboard and a refusal both end in the same message.
 		try {
 			if (navigator.clipboard === undefined) failed();
-			else void Promise.resolve(navigator.clipboard.writeText(code)).catch(failed);
+			else void Promise.resolve(navigator.clipboard.writeText(code)).catch(() => { failed(); });
 		} catch { failed(); }
 	});
 	// H18.18: the outcome of the last row "Conservar", in its own polite line: the row itself
