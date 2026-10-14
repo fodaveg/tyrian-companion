@@ -9,14 +9,18 @@ export function createLimiter(limit: number): <T>(task: () => Promise<T>) => Pro
 
 	return async <T>(task: () => Promise<T>): Promise<T> => {
 		if (active >= limit) {
+			// The slot is handed over by whoever frees it, still counted in `active`: counting it here, after the
+			// waiter resumes, left a window where a new caller saw a free slot and ran next to the waiter (limit+1).
 			await new Promise<void>((resolve) => queue.push(resolve));
+		} else {
+			active += 1;
 		}
-		active += 1;
 		try {
 			return await task();
 		} finally {
-			active -= 1;
-			queue.shift()?.();
+			const next = queue.shift();
+			if (next === undefined) active -= 1;
+			else next();
 		}
 	};
 }
