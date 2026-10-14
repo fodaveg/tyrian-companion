@@ -312,7 +312,8 @@ describe('Live loot list: nodes built per paint (audit 3.5)', () => {
 		const companion = activeCompanion(rows);
 		const list = lootList(companion.contentEl);
 		await companion.view.onClose();
-		companion.view.render();
+		// A closed view paints nothing (4a966705); reopening is what builds the fresh list.
+		await companion.view.onOpen();
 		expect(id(lootList(companion.contentEl))).not.toBe(id(list));
 	});
 });
