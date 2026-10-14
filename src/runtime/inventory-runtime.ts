@@ -28,6 +28,7 @@ import type { InventoryAdvisorContextualPresentationSource } from '../advisor/in
 import type { InventoryObjectResultsV1 } from '../advisor/inventory-object-result';
 import {
 	inventoryPreferencesBackupWritableOver,
+	mergeInventoryPreferencesBackup,
 	sameInventoryPreferencesBackup,
 	type InventoryPreferencesBackupV1,
 	type InventoryPreferencesBackupWriteOutcome,
@@ -316,8 +317,8 @@ export class InventoryRuntime {
 
 	/**
 	 * DU-13: writes the copy of the inventory preferences into the host's settings, over the settings as they are now
-	 * (`loadSettingsBase`), in the same write chain as every other save. A copy equal to the stored one is not written
-	 * again. Nothing is written with settings from a newer release (DU-04), over a stored copy of a version this release
+	 * (`loadSettingsBase`), in the same write chain as every other save, merged over the stored copy so that no account
+	 * of it is dropped (`mergeInventoryPreferencesBackup`). A result equal to the stored copy is not written again. Nothing is written with settings from a newer release (DU-04), over a stored copy of a version this release
 	 * does not know (only the newer release can read it), or once the plugin is unloaded, except the `final` write the
 	 * copy starts as it is disposed. A failed save rejects, for the copy to record.
 	 */
@@ -328,10 +329,12 @@ export class InventoryRuntime {
 			const base = await this.loadSettingsBase();
 			if (base === null) return 'read_only';
 			if (!inventoryPreferencesBackupWritableOver(base.inventoryPreferencesBackup)) return 'future_kept';
-			if (sameInventoryPreferencesBackup(base.inventoryPreferencesBackup, backup)) return 'unchanged';
-			await this.host.settings.save({ ...base, inventoryPreferencesBackup: backup });
+			// An account the stored copy has and `backup` does not (IndexedDB lacks it or cannot read it) is kept.
+			const merged = mergeInventoryPreferencesBackup(base.inventoryPreferencesBackup, backup);
+			if (sameInventoryPreferencesBackup(base.inventoryPreferencesBackup, merged)) return 'unchanged';
+			await this.host.settings.save({ ...base, inventoryPreferencesBackup: merged });
 			// Memory takes only the key this method owns, as `recordInventorySyncOutcome` does.
-			this.settings = { ...this.settings, inventoryPreferencesBackup: structuredClone(backup) };
+			this.settings = { ...this.settings, inventoryPreferencesBackup: structuredClone(merged) };
 			return 'saved';
 		});
 	}

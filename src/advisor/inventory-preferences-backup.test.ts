@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	BackedUpInventoryPreferencesStore,
 	InventoryPreferencesBackup,
+	mergeInventoryPreferencesBackup,
 	readInventoryPreferencesBackup,
 	type InventoryPreferencesBackupV1,
 	type InventoryPreferencesBackupWriteOutcome,
@@ -201,6 +202,28 @@ describe('inventory preferences copy: writes after a change', () => {
 		// Nothing of the other vault was even read: no unreadable record is counted.
 		expect(world.outcomes('backup_write')).toEqual([['success', 'ok', 'backup_saved', { count: 1 }]]);
 		world.dispose();
+	});
+});
+
+describe('inventory preferences copy: merge over the stored copy', () => {
+	it('keeps every stored account the new copy does not carry, and takes the new copy for the ones it does', () => {
+		const stored = copyOf([['account-alpha', ['goal-old'], []], ['account-beta', [], ['keep-b']], ['account-gamma', ['goal-g'], []]]);
+		const fresh = copyOf([['account-alpha', ['goal-new'], []]]);
+
+		expect(mergeInventoryPreferencesBackup(stored, fresh)).toEqual(copyOf([
+			['account-alpha', ['goal-new'], []], ['account-beta', [], ['keep-b']], ['account-gamma', ['goal-g'], []],
+		]));
+		// Even an empty read of IndexedDB never empties the copy.
+		expect(mergeInventoryPreferencesBackup(stored, copyOf([]))).toEqual(stored);
+	});
+
+	it.each([
+		['no stored copy', null],
+		['a corrupt stored copy', 'not a copy'],
+		['a stored copy of a future version', { version: 2, accounts: [] }],
+	])('adds nothing from %s', (_label, stored) => {
+		const fresh = copyOf([['account-alpha', ['goal-a'], []]]);
+		expect(mergeInventoryPreferencesBackup(stored, fresh)).toEqual(fresh);
 	});
 });
 
