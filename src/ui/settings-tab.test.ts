@@ -84,6 +84,30 @@ describe('essential alert threshold', () => {
 		expect(updates).toEqual([{ valuableLootThresholdCopper: 420_000 }]);
 	});
 
+	it('the alert webhook is saved when the field is left, never per key, and an invalid one never on close', async () => {
+		const plugin = settingsPlugin();
+		const updates: Array<Partial<TyrianSettings>> = [];
+		const original = plugin.updateSettings;
+		plugin.updateSettings = async (update: Partial<TyrianSettings>) => { updates.push(update); await original(update); };
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert webhook (optional)');
+		if (definition === undefined) throw new Error('Expected the alert webhook setting.');
+		const control = renderControl(definition, 'text');
+
+		for (const prefix of ['https://h', 'https://hooks.example', 'https://hooks.example/a']) await control.change(prefix);
+		expect(updates, 'a keystroke saved a prefix').toEqual([]);
+		await control.commit();
+		await control.blur();
+		expect(updates).toEqual([{ alertWebhookUrl: 'https://hooks.example/a' }]);
+
+		await control.change('http://insecure.example');
+		expect(control.ariaInvalid).toBe('true');
+		tab.unmount();
+		for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+		expect(updates).toEqual([{ alertWebhookUrl: 'https://hooks.example/a' }]);
+	});
+
 	it('Z10: leaving the field with blur saves it, and an invalid value is never saved on close', async () => {
 		const plugin = settingsPlugin();
 		const updates: Array<Partial<TyrianSettings>> = [];

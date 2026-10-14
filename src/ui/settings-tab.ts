@@ -119,6 +119,7 @@ export class TyrianCompanionSettingTab {
 	private maintenanceOpen = false;
 	/** Saves what the alert-threshold field holds, if it is a new valid value; null before the row renders. */
 	private commitThreshold: (() => void) | null = null;
+	private commitWebhook: (() => void) | null = null;
 	private commitOutputFolder: (() => void) | null = null;
 	/** Lets go of the output-folder picker the row attached (in Hebra it listens to the library's folders). */
 	private disposeOutputFolderPicker: (() => void) | null = null;
@@ -236,6 +237,11 @@ export class TyrianCompanionSettingTab {
 	unmount(): void {
 		this.commitThreshold?.();
 		this.commitThreshold = null;
+		this.commitWebhook?.();
+		this.commitWebhook = null;
+		if (this.ingameSecretConfirmTimer !== null) window.clearTimeout(this.ingameSecretConfirmTimer);
+		this.ingameSecretConfirmTimer = null;
+		this.ingameSecretConfirming = false;
 		this.commitOutputFolder?.();
 		this.commitOutputFolder = null;
 		this.releaseOutputFolderPicker();
@@ -555,21 +561,42 @@ export class TyrianCompanionSettingTab {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
-					setting.addText((text) => text
-						.setValue(this.plugin.settings.alertWebhookUrl)
-						.onChange(async (value) => {
-							const destination = alertWebhookDestination(value);
-							if (destination.length === 0 && value.trim().length > 0) {
-								text.inputEl.setAttr('aria-invalid', 'true');
-								feedback.setAttr('role', 'alert');
-								feedback.setText(this.t('settings.alerts.webhook.invalid'));
-								return;
-							}
-							text.inputEl.removeAttribute('aria-invalid');
-							feedback.setAttr('role', 'status');
-							feedback.setText('');
-							await save({ alertWebhookUrl: destination });
-						}));
+					// As the threshold: typing only validates; the destination is saved when the field is left
+					// or confirmed. Saving per key persisted every valid https prefix of a URL being typed
+					// or pasted, and a rejected write rebuilt the page under the caret.
+					let typed = this.plugin.settings.alertWebhookUrl;
+					let saved = typed;
+					let text!: TyrianTextControl;
+					const validate = (): string | 'invalid' => {
+						const destination = alertWebhookDestination(typed);
+						if (destination.length === 0 && typed.trim().length > 0) {
+							text.inputEl.setAttr('aria-invalid', 'true');
+							feedback.setAttr('role', 'alert');
+							feedback.setText(this.t('settings.alerts.webhook.invalid'));
+							return 'invalid';
+						}
+						text.inputEl.removeAttribute('aria-invalid');
+						feedback.setAttr('role', 'status');
+						feedback.setText('');
+						return destination;
+					};
+					// Saved once per value: `change`, `blur` and closing the tab can all report the same one.
+					const commit = (): void => {
+						const destination = validate();
+						if (destination === 'invalid' || destination === saved) return;
+						saved = destination;
+						void save({ alertWebhookUrl: destination });
+					};
+					this.commitWebhook = commit;
+					setting.addText((control) => {
+						text = control;
+						// A webhook URL is a bearer capability: not shown in clear on screen.
+						control.inputEl.type = 'password';
+						control.inputEl.autocomplete = 'off';
+						control.setValue(typed).onChange((value) => { typed = value; validate(); });
+						control.inputEl.addEventListener('change', commit);
+						control.inputEl.addEventListener('blur', commit);
+					});
 				},
 			},
 			{
