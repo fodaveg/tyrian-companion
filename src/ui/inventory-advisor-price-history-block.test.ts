@@ -497,7 +497,7 @@ function row(): InventoryAdvisorViewRow {
 	return {
 		id: '#/explanations/0/0', itemId: ITEM_ID, name: 'Ancient grey amber chunk', icon: null,
 		ownedQuantity: 3, availableQuantity: 3, action: 'sell', quantity: 3,
-		allocations: [{ positionRef: '#/positions/0', quantity: 3, location: { source: 'bank', slot: 1 } }],
+		allocations: [{ positionRef: '#/positions/0', quantity: 3, location: { source: 'shared_inventory', slot: 1 } }],
 		reasonCodes: ['rule_missing'], protectionReasons: [],
 		value: { status: 'available', copper: 4_000, route: 'instant_sell' },
 		marketComparison: null, burden: null,
