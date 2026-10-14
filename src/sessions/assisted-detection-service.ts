@@ -227,6 +227,8 @@ export class AssistedDetectionService {
 		const interval = positiveInteger(intervalMs, 'intervalMs');
 		if (!stableSnapshot(snapshot)) return this.fail('The account baseline was not stable enough to arm detection.');
 		this.generation += 1;
+		// The superseded flight can only settle as a no-op now; a later arm() must not wait on it.
+		this.armFlight = null;
 		this.intervalMs = interval;
 		this.scheduler.stop();
 		this.resetEvidence();
@@ -247,6 +249,8 @@ export class AssistedDetectionService {
 	disarm(reason: AssistedDetectionDisarmReason = 'user'): AssistedDetectionState {
 		if (this.disposed) return this.getState();
 		this.generation += 1;
+		// The cancelled flight can only settle as a no-op now; a later arm() must not wait on it.
+		this.armFlight = null;
 		this.intervalMs = null;
 		this.scheduler.stop();
 		this.resetEvidence();

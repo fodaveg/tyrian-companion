@@ -106,6 +106,54 @@ describe('AssistedDetectionService', () => {
 		expect(scheduler.starts).toEqual([]);
 	});
 
+	it('honours an arm requested after disarm cancelled a baseline still in flight', async () => {
+		const resolvers: ((value: StorageSnapshot) => void)[] = [];
+		const scheduler = new FakeScheduler();
+		const service = new AssistedDetectionService({
+			snapshots: { capture: () => new Promise((resolve) => { resolvers.push(resolve); }) },
+			getSessionState: idleSession,
+			schedulerFactory: (options) => scheduler.connect(options),
+		});
+
+		const stale = service.arm(900_000);
+		service.disarm('session_stopped');
+		const fresh = service.arm(120_000);
+
+		expect(resolvers).toHaveLength(2);
+		resolvers[0]?.(snapshot('a', 0, 0));
+		await stale;
+		expect(scheduler.starts).toEqual([]);
+		// The stale flight settling must not detach the fresh one: a repeat still deduplicates.
+		expect(service.arm(120_000)).toBe(fresh);
+		expect(resolvers).toHaveLength(2);
+		resolvers[1]?.(snapshot('b', 1, 0));
+		await expect(fresh).resolves.toMatchObject({ status: 'armed', lastSnapshotAt: '2026-08-13T10:01:02.000Z' });
+		expect(scheduler.starts).toEqual([120_000]);
+	});
+
+	it('honours an arm requested after armFromSnapshot superseded a baseline still in flight', async () => {
+		const resolvers: ((value: StorageSnapshot) => void)[] = [];
+		const scheduler = new FakeScheduler();
+		const service = new AssistedDetectionService({
+			snapshots: { capture: () => new Promise((resolve) => { resolvers.push(resolve); }) },
+			getSessionState: idleSession,
+			schedulerFactory: (options) => scheduler.connect(options),
+		});
+
+		const stale = service.arm(900_000);
+		service.armFromSnapshot(snapshot('session-baseline', 0, 0), 120_000);
+		scheduler.publishFatal();
+		expect(service.getState().status).toBe('error');
+		const fresh = service.arm(120_000);
+
+		expect(resolvers).toHaveLength(2);
+		resolvers[0]?.(snapshot('a', 0, 0));
+		resolvers[1]?.(snapshot('b', 1, 0));
+		await stale;
+		await expect(fresh).resolves.toMatchObject({ status: 'armed', lastSnapshotAt: '2026-08-13T10:01:02.000Z' });
+		expect(scheduler.starts).toEqual([120_000, 120_000]);
+	});
+
 	it('proposes a start after two real snapshot deltas with capture gaps', async () => {
 		const harness = createHarness([
 			snapshot('a', 0, 0),
@@ -519,6 +567,11 @@ class FakeScheduler {
 	dispose(): void {
 		this.running = false;
 		this.publish('disposed', null);
+	}
+
+	publishFatal(): void {
+		this.running = false;
+		this.publish('fatal', null);
 	}
 
 	async trigger(): Promise<ApiPollOutcome> {
