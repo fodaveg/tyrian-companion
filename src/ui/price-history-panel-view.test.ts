@@ -226,10 +226,24 @@ describe('price-history panel', () => {
 		const rows = walk(mount.container).filter((element) => element.tag === 'tr').slice(1);
 		const cellsOf = (row: FakeElement): string[] => row.children.map((cell) => cell.textContent ?? '');
 		expect(rows).toHaveLength(2);
-		expect(cellsOf(rows[0]!)).toEqual(['2026-08-27', 'datawars2 (third party)', '—', '—', '—', '100']);
-		expect(cellsOf(rows[1]!)).toEqual(['2026-08-29', 'Own capture', '140', '140', '140', '140']);
+		expect(cellsOf(rows[0]!)).toEqual(['2026-08-27', 'datawars2 (third party)', '—', '—', '—', '0 gold, 1 silver and 0 copper']);
+		expect(cellsOf(rows[1]!)).toEqual(['2026-08-29', 'Own capture', ...Array<string>(4).fill('0 gold, 1 silver and 40 copper')]);
 		const seedNote = walk(mount.container).find((element) => element.className === 'tyrian-price-history__seed-note');
 		expect(seedNote?.textContent).toBe('History extended with datawars2: 1 days before your own capture.');
+	});
+
+	it('writes the accessible table money as spoken coins, with the half-copper median rounded', () => {
+		const mount = createMount();
+		const entry = daily('2026-08-29', 12_345);
+		const half = { ...entry, ask: { ...entry.ask!, medianCopperX2: 24_691 } };
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('es'), {
+			state: { ...state('ready'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [half] },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const row = walk(mount.container).filter((element) => element.tag === 'tr')[1]!;
+		expect(row.children.slice(2).map((cell) => cell.textContent)).toEqual([
+			'1 oro, 23 plata y 45 cobre', '1 oro, 23 plata y 45 cobre', '1 oro, 23 plata y 46 cobre', '1 oro, 23 plata y 45 cobre',
+		]);
 	});
 
 	// H14.2: last-sample/next-capture go through the same today/yesterday-or-short-date wrapper

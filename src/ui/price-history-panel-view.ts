@@ -4,6 +4,7 @@ import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-ser
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1, PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
 import type { PriceSeedDayV1, PriceSeedQueueCoverage } from '../economy/price-seed-model';
+import { formatLootMoney } from '../sessions/loot-presentation';
 import { mountPriceHistoryChart } from './price-history-chart-view';
 
 export {
@@ -361,8 +362,13 @@ function provenanceTable(
 		const tableRow = createEl('tr');
 		const day = row.dayUtc === provisional ? translator.t('priceHistory.provisional', { day: row.dayUtc }) : row.dayUtc;
 		const sourceLabel = translator.t(`priceHistory.table.source.${row.source}`);
-		for (const value of [day, sourceLabel, row.min, row.max, row.median, row.close]) {
-			const cell = createEl('td'); cell.textContent = value === null || value === undefined ? '—' : String(value); tableRow.append(cell);
+		// Money is spoken coins ("1 gold, 23 silver and 45 copper"), not a bare copper count nor the
+		// visual "1g 23s 45c" a screen reader spells letter by letter; the half-copper median rounds.
+		const money = (copper: number | null | undefined): string => (
+			copper === null || copper === undefined ? '—' : formatLootMoney(Math.round(copper), translator.locale).accessible
+		);
+		for (const value of [day, sourceLabel, money(row.min), money(row.max), money(row.median), money(row.close)]) {
+			const cell = createEl('td'); cell.textContent = value; tableRow.append(cell);
 		}
 		tbody.append(tableRow);
 	}
