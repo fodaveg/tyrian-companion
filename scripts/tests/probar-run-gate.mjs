@@ -152,6 +152,9 @@ function testManifestCoversDeclaredScripts() {
 		// GR-15: the C spike runs in its own `ci.yml` job, only when `spikes/` changes; the release-workflow
 		// contract fails if that job disappears, so leaving it out of the manifest is not a silent drop.
 		if (name === 'test:h8-crossover-spike') continue;
+		// The Hebra surface e2e (David, 15 Oct 2026) need a Hebra checkout, its dev server and a browser,
+		// and take minutes: they stay out of the five-minute gate on purpose and are launched by hand.
+		if (name === 'test:e2e:hebra') continue;
 		for (const piece of command.split('&&').map((part) => part.trim())) {
 			if (!manifestCommands.has(piece)) uncovered.push(`${name} -> ${piece}`);
 		}

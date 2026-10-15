@@ -175,6 +175,48 @@ Al terminar, si no necesitas el registro, desactívalo y usa **Limpiar registros
 
 ---
 
+## e2e de la superficie de Hebra (automáticos, fuera del gate)
+
+Desde la 0.7.x Tyrian se pinta en los marcos de la API de plugins 2.x de Hebra. Hebra comprueba el
+contrato del host; la geometría de la interfaz de Tyrian dentro de esos marcos la comprueban estos e2e
+de Playwright (`e2e/hebra-surface/`, `playwright.hebra-surface.config.ts`). Instalan el bundle de Hebra
+de este árbol (`npm run build:host-esm` y un `hebra.json` generado como en `release:package`) en una
+Hebra web de desarrollo con la API 2.x, firmado con la clave de TEST de Hebra, con la red externa
+cortada y respuestas falsas, y miden:
+
+- **Navegación** (`navegacion.spec.ts`), en escritorio (1440 × 900) y en iPhone (390 × 844, táctil):
+  con Tyrian en la pantalla principal (el valor por defecto), Hebra lista las cinco secciones (Sesión,
+  Inventario, Venta, Logros, En vivo) y cada una se abre en su marco, visible, sin desbordar en
+  horizontal (`scrollWidth <= clientWidth`), con la raíz `tyrian-hebra-surface--main` y `is-mobile` en
+  el `<body>` de la superficie solo en iPhone. Ahí el shell lleva su fila de herramientas y NO su barra
+  de pestañas (`.tyrian-product-shell__nav`): la navegación es la lista de Hebra. La barra de pestañas
+  solo existe con «Dónde se muestra» › «Barra lateral» y esa colocación aún no tiene e2e.
+- **Botón de la cinta en iPhone** (`cinta-iphone.spec.ts`): `[data-module-ribbon="tyrian-companion"]`
+  en el cajón de la biblioteca es visible, cabe en la pantalla, recibe el toque en su centro y
+  «Abrir acompañante» abre la vista principal con su marco visible y `is-mobile`.
+- **Bloque de precio** (`bloque-precio.spec.ts`, escritorio): un bloque `tyrian-price-history` en una
+  nota mide 72 px en todos los niveles (el `<iframe>`, el `<html>`, el `<body>` y `#hebra-surface-root`
+  del marco), la raíz no tiene margen, empieza arriba y su borde inferior queda dentro del marco. Con
+  el bundle de la 0.7.0 se pone rojo: margen 12, raíz entre 12 y 84, `html` y `body` a 96.
+
+Cómo se lanzan (una suite pesada a la vez en la máquina):
+
+    npm run test:e2e:hebra                                   # Chromium
+    TYRIAN_E2E_BROWSER=webkit npm run test:e2e:hebra         # WebKit
+    TYRIAN_HEBRA_BUNDLE_DIR=<carpeta> npm run test:e2e:hebra # otro bundle (p. ej. una release)
+
+- `HEBRA_REPO` apunta al checkout de Hebra (por defecto `~/code/hebra`); se usa su servidor de
+  desarrollo y su `node_modules`. Sin ese checkout o sin su `node_modules`, los specs se SALTAN con un
+  mensaje que lo dice: un salto no es un verde.
+- `TYRIAN_HEBRA_BUNDLE_DIR` es una carpeta con `hebra.json`, `hebra-main.mjs` y `hebra-styles.css`
+  (`gh release download <tag> --pattern 'hebra*'`); sin ella se construye el de este árbol.
+- Playwright va fijado a la misma versión que Hebra (`@playwright/test` 1.62.1) para reutilizar sus
+  navegadores ya descargados; no se descargan otros.
+- No están en `npm run check`, `npm test` ni el gate: dependen de un checkout de Hebra y tardan
+  minutos. Los resultados quedan en `test-results-hebra-surface/` (ignorado por git).
+
+---
+
 ## Anexo técnico
 
 - **Qué cubre este guion y qué no.** Es la instalación y carga en un cliente real (HP-03: nada con

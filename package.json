@@ -10,6 +10,7 @@
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"build:host-esm": "node scripts/build-host-esm.mjs",
 		"test:host-esm": "node scripts/tests/probar-build-host-esm.mjs",
+		"test:e2e:hebra": "playwright test -c playwright.hebra-surface.config.ts",
 		"lint": "eslint . --cache --cache-location node_modules/.cache/eslint",
 		"test": "node scripts/run-gate.mjs test",
 		"test:h8-crossover-spike": "bash scripts/tests/probar-h8-crossover-spike.sh",
@@ -77,6 +78,7 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
+		"@playwright/test": "1.62.1",
 		"@types/node": "^22.15.17",
 		"esbuild": "0.25.5",
 		"eslint": "^9.39.4",

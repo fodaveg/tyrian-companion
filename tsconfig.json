@@ -19,5 +19,5 @@
 		"lib": ["ES2021", "DOM"],
 		"types": ["node", "vitest/globals"]
 	},
-	"include": ["src/**/*.ts", "scripts/**/*.ts", "vitest.config.mts", "vitest.guardrails.config.mts", "vitest.hebra-bundle.config.mts"]
+	"include": ["src/**/*.ts", "scripts/**/*.ts", "e2e/**/*.ts", "playwright.hebra-surface.config.ts", "vitest.config.mts", "vitest.guardrails.config.mts", "vitest.hebra-bundle.config.mts"]
 }

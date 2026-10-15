@@ -18,6 +18,10 @@ coverage/
 /hebra-main.mjs
 /hebra-styles.css
 /hebra.json
+# The Hebra surface e2e (`npm run test:e2e:hebra`): Playwright's results and the bundle it installs.
+/test-results-hebra-surface/
+/test-results-hebra-surface-bundle/
+/playwright-report/
 /native/mumble-helper/target/
 /native/mumble-helper/UNSIGNED-NOT-FOR-RELEASE.txt
 .env

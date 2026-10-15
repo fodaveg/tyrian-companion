@@ -35,7 +35,9 @@ export default defineConfig({
 		// An agent worktree checked out under .claude/ is a full second copy of src/.
 		// Without this, `vitest run` from the repo root collects both copies and reports
 		// roughly double the test count as green.
-		exclude: [...configDefaults.exclude, '.claude/**', 'src/platform/**', 'src/host/hebra/bundle.test.ts', ...frozenSourceTextTests],
+		// `e2e/**` are Playwright specs (`npm run test:e2e:hebra`), outside the gate: vitest's default
+		// `*.spec.ts` pattern would collect them and fail on Playwright's `test`.
+		exclude: [...configDefaults.exclude, '.claude/**', 'e2e/**', 'src/platform/**', 'src/host/hebra/bundle.test.ts', ...frozenSourceTextTests],
 	},
 	resolve: {
 		alias: {
