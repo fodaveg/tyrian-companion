@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.7.4 - Tyrian toma los colores del tema de Hebra
+
+Se actualiza desde la 0.7.3. No se ha visto todavía en una app de Hebra real.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- En Hebra 2.x, el fondo de las vistas y de los ajustes de Tyrian salía gris (`#1e1e1e`) en vez del color de tu tema.
+  Ahora los ajustes usan el panel del tema y la pantalla principal, la hoja, como antes de la 0.7.0.
+- Los desplegables dejan el control gris del sistema y usan los colores del tema.
+- En Obsidian no cambia nada.
+
 ## Release beta 0.7.3 - Tyrian acepta el ejecutable de GW2 del parche del 15 oct
 
 Se actualiza desde la 0.7.2 publicada. No se ha visto todavía en una app de Hebra real.

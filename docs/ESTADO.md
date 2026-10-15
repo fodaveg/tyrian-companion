@@ -1,5 +1,21 @@
 # Estado
 
+## Candidato 0.7.4: el fondo de las superficies de Tyrian sigue el tema de Hebra (15 oct 2026)
+
+**Candidato, sin publicar.** Sobre la etiqueta `0.7.3` (`d18655ed`). Detalle en [CHANGELOG](CHANGELOG.md). Fallo visto
+por David el 15 oct en Hebra del Fedora con el tema Aquelarre («el color es distinto al de hebra»).
+
+- Medido por píxel en sus capturas: cuerpo de la vista y de los ajustes `#1e1e1e`, que no es ningún token de Hebra (el
+  `--panel` de Aquelarre es `#17121f` y `--paper` `#221a2d`); desplegable `#343434`. El naranja de los botones es el
+  `--accent` de Aquelarre y se queda.
+- Causa: con la API 2.x Hebra deja el marco transparente y el fondo es del plugin
+  (`plugin-surface.ts:558-560` de Hebra, `SPEC-PLUGINS-EXTERNOS.md` §5.5.2); Tyrian no pintaba `html`, y salía el lienzo
+  oscuro por defecto de WebKitGTK 2.54. Regresión de la 0.7.0 (marco aislado); en la 1.x se veía el fondo de Hebra.
+- `e4f1ecd6`: `src/host/hebra/tyrian-host.css` pinta `html[data-hebra-surface]` con `var(--panel)` y, si contiene una
+  superficie principal o de bloque de código (`:has`), con `var(--paper)`; los `select` llevan `appearance: none` y una
+  flecha con `currentColor`. Tests en `hebra-styles-surface.test.ts`; prueba negativa: sin las reglas, 2 rojos.
+- Sin verificar: el píxel en WebKitGTK real (probado en happy-dom) y `:has` en ese motor.
+
 ## Candidato 0.7.3: el plugin acepta el ejecutable de la build 208704 de GW2 (15 oct 2026)
 
 **Candidato, sin publicar.** Sobre el canal 0.7.2 publicado (`976a2686`) más `381c9024` de `main`. Detalle en
