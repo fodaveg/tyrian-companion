@@ -1,5 +1,14 @@
 # Changelog
 
+## Release beta 0.7.5 - Tyrian vuelve a arrancar al abrir Hebra
+
+Se actualiza desde la 0.7.4 publicada. No se ha visto todavía en una app de Hebra real.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Al abrir Hebra con Tyrian ya instalado, Tyrian no arrancaba: Hebra lo retiraba a los 15 segundos. Pasaba porque el
+  arranque esperaba a releer el registro de diagnóstico del plugin, que crece durante el día y llegó a tardar más que eso.
+- Ahora ese registro se carga en segundo plano y Tyrian se activa sin esperarlo. En Obsidian la carga también termina antes.
+
 ## Release beta 0.7.4 - Tyrian toma los colores del tema de Hebra
 
 Se actualiza desde la 0.7.3. No se ha visto todavía en una app de Hebra real.

@@ -1,5 +1,23 @@
 # Estado
 
+## Candidato 0.7.5: activate() ya no espera al registro de diagnóstico (15 oct 2026)
+
+**Candidato, sin publicar.** Sobre la etiqueta `0.7.4` (`4ce73add`) más `51d502a9`. Detalle en [CHANGELOG](CHANGELOG.md).
+Arreglo pedido por David a través de la sesión de Hebra (hebra-0a, «quiero que lo arregles»).
+
+- Medido por hebra-0a (rpm de Hebra 0.2.0-41, Linux): `plugins.activate-stalled {phase:"sin-activated", calls:109,
+  pending:0}` y `plugins.load-failed` a los 15,0 s en cada arranque en frío; en caliente (rpm 39) la 0.7.4 sí se activó.
+- Causa, medida: el `onload` del core acababa con `await runtime.start()`, que solo espera a `localDebug.initialize()`;
+  esa inicialización relee el `debug.jsonl` activo con una transacción de IndexedDB por cada trozo de 4 KiB (9 + 1 por
+  trozo). En el registro de David, `debug_initialize` pasó de 1,5 s (0 trozos) a 10,1 s (~150 trozos, 09:37 UTC, arranque
+  en caliente); en frío, compartiendo hilo con el arranque de Hebra, pasaba de 15 s. No es un evento de Hebra sin entregar
+  (el único, `api.ui.onReady`, llegó) ni el índice de rutas (`seedTyrianPathIndex` terminó a +1,5 s).
+- `98eb16f2`: `src/runtime/tyrian-companion-core.ts` lanza `runtime.start()` sin esperarlo; el fallo de carga de ajustes
+  se sigue esperando y relanzando antes. Test en `hebra-boot-silent-storage.test.ts`: con el almacén callado,
+  `activate()` resuelve a 0 ms virtuales (10 000 ms sin el arreglo, rojo con la línea vieja).
+- Sigue pendiente: la inicialización del registro cuesta una transacción por trozo (ahora en segundo plano); leerlo en
+  una sola transacción la haría constante. Sin verificar: el arranque en frío en la Hebra real.
+
 ## Canal 0.7.4 publicado: el fondo de las superficies de Tyrian sigue el tema de Hebra (15 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.4` = `4ce73add` (atestación; candidato `822eab6a`).
