@@ -171,6 +171,14 @@ describe('passive live session lifecycle', () => {
 		await expect(g.service.open(g.source)).resolves.toBe('ready');
 		await g.service.dispose();
 	});
+	it('accepts the build 208704 executable, keeps the earlier ones, and still refuses an unknown hash', async () => {
+		const f = fixture(); await f.service.start('Test');
+		await expect(f.service.open({ ...f.source, build: '960c3e454847525993eb3266845ee37377511b8039635a7fbad6fd5592cb61ba' })).resolves.toBe('ready');
+		await f.service.dispose();
+		const g = fixture(); await g.service.start('Test');
+		await expect(g.service.open({ ...g.source, build: 'b'.repeat(64) })).resolves.toBe('unsupported_build');
+		await g.service.dispose();
+	});
 	it('a stored record carrying either accepted build stays valid, an unknown one does not', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
 		const record = f.service.getRuntime()!;
