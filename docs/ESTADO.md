@@ -19,8 +19,10 @@ Arreglo pedido por David a través de la sesión de Hebra (hebra-0a, «quiero qu
 - `98eb16f2`: `src/runtime/tyrian-companion-core.ts` lanza `runtime.start()` sin esperarlo; el fallo de carga de ajustes
   se sigue esperando y relanzando antes. Test en `hebra-boot-silent-storage.test.ts`: con el almacén callado,
   `activate()` resuelve a 0 ms virtuales (10 000 ms sin el arreglo, rojo con la línea vieja).
+- Visto en la Hebra real del Fedora de David (medido por hebra-0a): arranque en frío de las 13:58:19 con
+  `plugins.activated` de Tyrian a +1,5 s, y los ficheros instalados con los sha256 de la release.
 - Sigue pendiente: la inicialización del registro cuesta una transacción por trozo (ahora en segundo plano); leerlo en
-  una sola transacción la haría constante. Sin verificar: el arranque en frío en la Hebra real.
+  una sola transacción la haría constante.
 
 ## Canal 0.7.4 publicado: el fondo de las superficies de Tyrian sigue el tema de Hebra (15 oct 2026)
 
