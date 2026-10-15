@@ -1,5 +1,14 @@
 # Changelog
 
+## Release beta 0.7.3 - Tyrian acepta el ejecutable de GW2 del parche del 15 oct
+
+Se actualiza desde la 0.7.2 publicada. No se ha visto todavía en una app de Hebra real.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- GW2 se actualizó el 15 oct (build 208704). La sesión en vivo decía «Versión del juego no compatible» y no contaba nada.
+  El plugin acepta ahora el ejecutable nuevo; los dos anteriores siguen valiendo para tus sesiones guardadas.
+- Esta versión sola no devuelve las lecturas: hace falta también el addon de Nexus que lea esa build.
+
 ## Release beta 0.7.2 - Las notas de sesión largas vuelven a sincronizar en Hebra
 
 Se actualiza desde la 0.7.1 publicada. No se ha visto todavía en una app de Hebra real.

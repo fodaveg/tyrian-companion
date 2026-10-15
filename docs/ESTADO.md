@@ -1,5 +1,22 @@
 # Estado
 
+## Candidato 0.7.3: el plugin acepta el ejecutable de la build 208704 de GW2 (15 oct 2026)
+
+**Candidato, sin publicar.** Sobre el canal 0.7.2 publicado (`976a2686`) más `381c9024` de `main`. Detalle en
+[CHANGELOG](CHANGELOG.md). Arreglo urgente dentro de la excepción a la congelación de Halloween, tras el fallo que David
+vio en vivo el 15 oct.
+
+- Medido en el Fedora de David: GW2 se parcheó el 15 oct a las 10:36 CEST (Nexus `LastGameBuild: 208704`); el
+  `Gw2-64.exe` nuevo (43065736 bytes) tiene sha256 `960c3e45…61ba`. `Nexus.log` registra
+  `live: unavailable -> unsupported_build` desde las 10:42:01 con el addon 0.8.12.
+- `01957180`: `src/sessions/live-session-model.ts` añade `NEXUS_LIVE_BUILD_208704` a `NEXUS_LIVE_BUILDS` (conjunto
+  cerrado; las builds del 6 y del 13 oct siguen valiendo). Test en `live-session-lifecycle.test.ts`; prueba negativa: sin
+  la constante, 1 rojo. `docs/SPEC-live-loot.md` §9 lo recoge.
+- **Esta release sola no devuelve las muestras.** Falta la recertificación estática del addon de Nexus para la build
+  208704 (repo `tyrian-companion-nexus`, addon 0.8.13), que solo puede hacerse en el Fedora, donde está el ejecutable.
+- La release lleva `hebra.json.minisig`, que `release:brat-verify` exige desde `67838a60`; se firma en el Mac de David
+  (`npm run release:sign -- 0.7.3`) después del run de Release.
+
 ## Canal 0.7.2 publicado: el registro de la sesión sale de la nota a un fichero `.json` (15 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.2` = `5e826ce1` (atestación; candidato `26d435bb`).
