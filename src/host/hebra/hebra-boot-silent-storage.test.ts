@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBootTrace } from '../../core/boot-trace';
 import type { LocalDebugRecordInput } from '../../core/local-debug-contract';
 import { LocalDebugLogger } from '../../core/local-debug-logger';
+import { SETTINGS_SCHEMA_VERSION } from '../../core/settings';
 import { createTyrianRuntime } from '../../runtime/tyrian-companion-core';
 import { createTyrianTestApi, hebraSettingsKey, type TyrianTestApi } from '../../test/hebra-plugin-fakes';
 import { engineIdle, hangStorage, hangTransactions, resumeStorage, trackedIndexedDb, type TrackedIndexedDb } from '../../test/indexed-db-connections';
@@ -71,12 +72,12 @@ function manualWindowTimers() {
 type Clock = ReturnType<typeof manualWindowTimers>;
 
 /** A Hebra with the output folder and one Tyrian note in it, and the debug log on so the start is written down. */
-function hebraWithOutputFolder(): TyrianTestApi {
+function hebraWithOutputFolder(extraSettings: Record<string, unknown> = {}): TyrianTestApi {
 	const test = createTyrianTestApi({ platform: 'linux' });
 	test.library.addFolder('tc', 'root', OUTPUT_FOLDER);
 	test.library.addNote('wallet', '<!-- tyrian-companion-wallet broken -->\n# Gold', { folderId: 'tc' });
 	test.local.set(hebraSettingsKey('tyrian-companion', test.library.libraryId()), JSON.stringify({
-		outputFolder: OUTPUT_FOLDER, debugLoggingEnabled: true, debugLoggingLevel: 'debug',
+		outputFolder: OUTPUT_FOLDER, debugLoggingEnabled: true, debugLoggingLevel: 'debug', ...extraSettings,
 	}));
 	return test;
 }
@@ -93,6 +94,8 @@ async function driveUntil(done: () => boolean, clock: Clock, tracked: TrackedInd
 }
 
 interface SilentBoot {
+	/** Virtual milliseconds at which `activate()` resolved: what Hebra waits for, within `PLUGIN_FRAME_BOOT_TIMEOUT_MS`. */
+	activatedAtMs: number;
 	/** Virtual milliseconds at which `runtimeReady` first read true. */
 	readyAtMs: number;
 	/** Virtual milliseconds at which `thenUntil` held (`readyAtMs` without it). */
@@ -112,8 +115,9 @@ interface SilentBoot {
  */
 async function bootWithEngine(
 	tracked: TrackedIndexedDb, thenUntil?: (records: readonly LocalDebugRecordInput[], core: BootCore) => boolean,
+	extraSettings: Record<string, unknown> = {},
 ): Promise<SilentBoot> {
-	const test = hebraWithOutputFolder();
+	const test = hebraWithOutputFolder(extraSettings);
 	const clock = manualWindowTimers();
 	// The session lease opens its database on the page's own `window.indexedDB`: the same factory the host is given.
 	vi.stubGlobal('indexedDB', tracked.factory);
@@ -137,7 +141,9 @@ async function bootWithEngine(
 
 	// No `failures` of the test's own: the host's failures reach the core through its default channel, which holds the ones
 	// reported before the core subscribes (the path index fails while the host is being built). A listener here would take them.
-	const plugin: { core: BootCore | null; cleanup: PluginCleanup | null; failure: unknown } = { core: null, cleanup: null, failure: null };
+	const plugin: { core: BootCore | null; cleanup: PluginCleanup | null; failure: unknown; activatedAtMs: number } = {
+		core: null, cleanup: null, failure: null, activatedAtMs: Number.NaN,
+	};
 	void activateTyrian(test.api, {
 		indexedDB: tracked.factory,
 		window: Object.assign(Object.create(window) as Window, {
@@ -145,7 +151,7 @@ async function bootWithEngine(
 		}),
 		bootTrace: createBootTrace(() => clock.nowMs, 0),
 		createRuntime: (host) => { const runtime = createTyrianRuntime(host); plugin.core = runtime as unknown as BootCore; return runtime; },
-	}).then((done) => { plugin.cleanup = done; }, (error: unknown) => { plugin.failure = error; });
+	}).then((done) => { plugin.cleanup = done; plugin.activatedAtMs = clock.nowMs; }, (error: unknown) => { plugin.failure = error; });
 
 	const booted = (): boolean => plugin.failure !== null
 		|| (plugin.core !== null && plugin.cleanup !== null && (plugin.core.runtimeReady || plugin.core.runtimeFailure !== null));
@@ -165,7 +171,7 @@ async function bootWithEngine(
 	await driveUntil(() => stopped, clock, tracked, 'while stopping');
 	const stoppedAtMs = clock.nowMs;
 	test.unloadPlugin();
-	return { readyAtMs, watchedUntilMs, stoppedAtMs, opened, records };
+	return { activatedAtMs: plugin.activatedAtMs, readyAtMs, watchedUntilMs, stoppedAtMs, opened, records };
 }
 
 /** The virtual time each open of the path index database was asked at. */
@@ -264,5 +270,30 @@ describe('the Hebra start with the session store silent on a consult device', { 
 			return true;
 		});
 		expect(seen).toEqual(['consult error error', 'consult idle none']);
+	});
+});
+
+/**
+ * Measured in Hebra (rpm 0.2.0-41, Linux, 15 Oct 2026): `activate()` waited for the diagnostic log to read its active file
+ * back, one transaction per 4 KiB chunk of `debug.jsonl`. That wait grew with the file (1.5 s with it empty, 10.1 s with
+ * ~150 chunks on a warm update) and, on a cold start, ran past the 15 s Hebra gives `activate()`
+ * (`PLUGIN_FRAME_BOOT_TIMEOUT_MS`): the plugin was withdrawn with every API call answered. The log is the core's own
+ * bookkeeping: it comes up on its own, in the background, and `activate()` does not wait for it.
+ */
+describe('the Hebra start with the diagnostic log store silent', { timeout: 15_000 }, () => {
+	it('activates and becomes ready without waiting for the diagnostic log', async () => {
+		const tracked = trackedIndexedDb();
+		tracked.hangOnly = (name) => name.endsWith('local-files');
+		hangStorage(tracked);
+		// A schema version, or `migrateSettings` reads the debug switch as never chosen and leaves the log off.
+		const boot = await bootWithEngine(tracked, undefined, { schemaVersion: SETTINGS_SCHEMA_VERSION });
+
+		// The log was really on, over the silent store: it opened (and is still waiting on) the local files database.
+		expect(boot.opened.some((line) => line.endsWith('local-files'))).toBe(true);
+		// Nothing else is silent, so no deadline of the start runs out: `activate()` resolves before any timer moves the clock.
+		expect(boot.activatedAtMs).toBe(0);
+		expect(boot.readyAtMs).toBe(0);
+		// The log never came up (its first write is still waiting on the silent store) and the start did not wait for it.
+		expect(bootMs(boot)).not.toHaveProperty('diagnostics');
 	});
 });
