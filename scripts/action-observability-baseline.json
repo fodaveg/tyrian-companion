@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 631,
+		"catch_clause": 636,
 		"promise_catch": 67,
 		"void_expression": 149,
-		"callback_registration": 273
+		"callback_registration": 274
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -12105,11 +12105,27 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "b9546c55840e4d158eb009a5d3966d95e3919258",
+					"kind": "catch_clause",
+					"line": 152,
+					"column": 5,
+					"endLine": 152,
+					"endColumn": 28,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "migrate",
+						"justification": "The \"migrate\" owner handles \"fallback_return\" for the move of a note's payload to its file as best-effort: any failure leaves the note exactly as it was (the file is written before the note, and the note is replaced only by compare-and-swap), and the listing it runs inside owns diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"migrate\" owner handles \"fallback_return\" for the move of a note's payload to its file as best-effort: any failure leaves the note exactly as it was (the file is written before the note, and the note is replaced only by compare-and-swap), and the listing it runs inside owns diagnostics. Verified recovery: \"fallback_return\" in \"migrate\"."
+				},
+				{
 					"id": "ef07a7d9e7c49827528eda0389cf0265575889c6",
 					"kind": "catch_clause",
-					"line": 153,
+					"line": 186,
 					"column": 5,
-					"endLine": 153,
+					"endLine": 186,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14320,9 +14336,9 @@
 				{
 					"id": "5e8920cb187cca99f66b4a535661449fd24929e7",
 					"kind": "catch_clause",
-					"line": 498,
+					"line": 514,
 					"column": 6,
-					"endLine": 498,
+					"endLine": 514,
 					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14336,9 +14352,9 @@
 				{
 					"id": "67362c396acd3540c821609fb0fbc901f6a5bff4",
 					"kind": "catch_clause",
-					"line": 502,
+					"line": 518,
 					"column": 6,
-					"endLine": 502,
+					"endLine": 518,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14352,9 +14368,9 @@
 				{
 					"id": "4f44fce05a01db37cb7e6cbc912c4ae909d0c8e4",
 					"kind": "catch_clause",
-					"line": 517,
+					"line": 533,
 					"column": 5,
-					"endLine": 520,
+					"endLine": 536,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14368,9 +14384,9 @@
 				{
 					"id": "ee642c2378bb20d99369fb59482dfab40bc02d2b",
 					"kind": "catch_clause",
-					"line": 561,
+					"line": 577,
 					"column": 6,
-					"endLine": 561,
+					"endLine": 577,
 					"endColumn": 106,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14384,9 +14400,9 @@
 				{
 					"id": "8880287b45d549af852cfcd4eb25e16ebd33fc35",
 					"kind": "catch_clause",
-					"line": 578,
+					"line": 594,
 					"column": 5,
-					"endLine": 581,
+					"endLine": 597,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14400,9 +14416,9 @@
 				{
 					"id": "f99fc2d7cb2b844e8cd234475f4b69156753f6a4",
 					"kind": "catch_clause",
-					"line": 597,
+					"line": 613,
 					"column": 5,
-					"endLine": 600,
+					"endLine": 616,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14416,9 +14432,9 @@
 				{
 					"id": "a87850de46cc5bd2bbdc3b792faddb762f710b1e",
 					"kind": "callback_registration",
-					"line": 605,
+					"line": 621,
 					"column": 18,
-					"endLine": 607,
+					"endLine": 623,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14433,9 +14449,9 @@
 				{
 					"id": "83ba5f30ad4e2a6e8a3b8c304e459b990f8bdd38",
 					"kind": "catch_clause",
-					"line": 624,
+					"line": 640,
 					"column": 5,
-					"endLine": 627,
+					"endLine": 643,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14449,9 +14465,9 @@
 				{
 					"id": "ae813b045a9592e18458609c0d999f321a6f4c0a",
 					"kind": "callback_registration",
-					"line": 644,
+					"line": 660,
 					"column": 18,
-					"endLine": 646,
+					"endLine": 662,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14466,9 +14482,9 @@
 				{
 					"id": "2daa9840e3c4d0c0bae9c05617c650cc87d99470",
 					"kind": "catch_clause",
-					"line": 669,
+					"line": 685,
 					"column": 5,
-					"endLine": 675,
+					"endLine": 691,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14480,11 +14496,27 @@
 					"reason": "Allowlisted catch_clause: The \"scrubInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"scrubInternal\"."
 				},
 				{
+					"id": "e1a5945377bd95e51414879abd87dc7cc7373183",
+					"kind": "catch_clause",
+					"line": 706,
+					"column": 9,
+					"endLine": 709,
+					"endColumn": 8,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "scrubInternal",
+						"justification": "The \"scrubInternal\" owner handles \"fallback_return\" by recording the failure with logFailure and answering an unavailable scrub result before it touches the note; the enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"scrubInternal\" owner handles \"fallback_return\" by recording the failure with logFailure and answering an unavailable scrub result before it touches the note; the enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"scrubInternal\"."
+				},
+				{
 					"id": "f8ae64acec0af346df65af28acf6f1addf0a7828",
 					"kind": "catch_clause",
-					"line": 691,
+					"line": 723,
 					"column": 7,
-					"endLine": 697,
+					"endLine": 729,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14498,9 +14530,9 @@
 				{
 					"id": "75159cb51ba90c2d79128c631d26178d9a58aaf6",
 					"kind": "catch_clause",
-					"line": 711,
+					"line": 743,
 					"column": 51,
-					"endLine": 711,
+					"endLine": 743,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14514,9 +14546,9 @@
 				{
 					"id": "b2cb49480de55ca45fe5636fec610ba471926d6e",
 					"kind": "catch_clause",
-					"line": 748,
+					"line": 792,
 					"column": 5,
-					"endLine": 751,
+					"endLine": 795,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14530,9 +14562,9 @@
 				{
 					"id": "04b5b9d69ce2d08ec2765d90ffeaa6115e7d1b85",
 					"kind": "catch_clause",
-					"line": 768,
+					"line": 812,
 					"column": 3,
-					"endLine": 775,
+					"endLine": 819,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14546,9 +14578,9 @@
 				{
 					"id": "5dd4765ca86365c74ab6651326387976b01aee80",
 					"kind": "catch_clause",
-					"line": 784,
+					"line": 828,
 					"column": 5,
-					"endLine": 784,
+					"endLine": 828,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14562,9 +14594,9 @@
 				{
 					"id": "6dd084086a7242a18daef4fff8b04e1eda7d467f",
 					"kind": "catch_clause",
-					"line": 997,
+					"line": 1042,
 					"column": 4,
-					"endLine": 997,
+					"endLine": 1042,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14578,9 +14610,9 @@
 				{
 					"id": "e3d7530da2c5dfa1853079c48fc22b8c8346652d",
 					"kind": "catch_clause",
-					"line": 1139,
+					"line": 1184,
 					"column": 2,
-					"endLine": 1139,
+					"endLine": 1184,
 					"endColumn": 24,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14730,9 +14762,9 @@
 				{
 					"id": "da8f4628fdba7cb895586a99d0711861659cd67c",
 					"kind": "callback_registration",
-					"line": 48,
+					"line": 49,
 					"column": 18,
-					"endLine": 50,
+					"endLine": 51,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14745,11 +14777,28 @@
 					"reason": "Allowlisted callback_registration: The \"write\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"write\"."
 				},
 				{
-					"id": "b88111e24d350028911ae6445f6373c23271c07b",
+					"id": "1094d06156430d3837df96c9d186e90a7cd54c76",
 					"kind": "callback_registration",
-					"line": 63,
+					"line": 66,
 					"column": 18,
-					"endLine": 72,
+					"endLine": 67,
+					"endColumn": 101,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "writeLive",
+						"justification": "The \"writeLive\" \"then\" boundary awaits persistence verification or removes an in-memory flight; failure never releases the durable runtime."
+					},
+					"reason": "Allowlisted callback_registration: The \"writeLive\" \"then\" boundary awaits persistence verification or removes an in-memory flight; failure never releases the durable runtime. Verified registration: \"then\" in \"writeLive\"."
+				},
+				{
+					"id": "65881c470a3fafb51814e177080a1badc81b66b4",
+					"kind": "callback_registration",
+					"line": 66,
+					"column": 18,
+					"endLine": 76,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -14762,11 +14811,11 @@
 					"reason": "Allowlisted callback_registration: The \"writeLive\" \"then\" boundary awaits persistence verification or removes an in-memory flight; failure never releases the durable runtime. Verified registration: \"then\" in \"writeLive\"."
 				},
 				{
-					"id": "2984641304f6721685e94545c049b8a898ad63f5",
+					"id": "c6ddb5aa580467ea6eade489b724fcce14172cb8",
 					"kind": "callback_registration",
-					"line": 63,
+					"line": 66,
 					"column": 18,
-					"endLine": 72,
+					"endLine": 76,
 					"endColumn": 146,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14781,9 +14830,9 @@
 				{
 					"id": "23dd0b5a635fce414a1fa21e816145ce0d907b4b",
 					"kind": "catch_clause",
-					"line": 71,
+					"line": 75,
 					"column": 6,
-					"endLine": 71,
+					"endLine": 75,
 					"endColumn": 148,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14795,11 +14844,27 @@
 					"reason": "Allowlisted catch_clause: The \"writeLive\" \"fallback_return\" boundary awaits persistence verification or removes an in-memory flight; failure never releases the durable runtime. Verified recovery: \"fallback_return\" in \"writeLive\"."
 				},
 				{
+					"id": "9cafeca66dabd90ca56ed83a706abaeff4fc2835",
+					"kind": "catch_clause",
+					"line": 86,
+					"column": 3,
+					"endLine": 86,
+					"endColumn": 26,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "writePayloadFile",
+						"justification": "The \"writePayloadFile\" owner handles \"fallback_return\" by reporting a payload file that could not be written as false; writeLive turns that into an unavailable result, so the note is not written and the caller owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"writePayloadFile\" owner handles \"fallback_return\" by reporting a payload file that could not be written as false; writeLive turns that into an unavailable result, so the note is not written and the caller owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"writePayloadFile\"."
+				},
+				{
 					"id": "604bc82c1f93a3871ec7c4baf356aa9de52ed852",
 					"kind": "callback_registration",
-					"line": 86,
+					"line": 98,
 					"column": 18,
-					"endLine": 88,
+					"endLine": 100,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -14814,9 +14879,9 @@
 				{
 					"id": "ddf0c12edb95244345eb69843bb13ef0f0a49c90",
 					"kind": "catch_clause",
-					"line": 105,
+					"line": 117,
 					"column": 6,
-					"endLine": 111,
+					"endLine": 123,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14830,9 +14895,9 @@
 				{
 					"id": "7ec53fbb88e22238ae99271beaedc97aca9acd08",
 					"kind": "catch_clause",
-					"line": 112,
+					"line": 124,
 					"column": 5,
-					"endLine": 114,
+					"endLine": 126,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -14846,9 +14911,9 @@
 				{
 					"id": "7119977c5937e3f67604c5495569d5ba1288a12b",
 					"kind": "catch_clause",
-					"line": 129,
+					"line": 141,
 					"column": 5,
-					"endLine": 137,
+					"endLine": 149,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -20571,6 +20636,49 @@
 					"reason": "Direct observability call \"this.port.onDiagnostic\" is present inside this catch_clause boundary."
 				}
 			]
+		},
+		"src/sessions/live-session-payload-file.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "32d2c47c2cbe360fa5ead310e80b5bcb620604ad",
+					"kind": "catch_clause",
+					"line": 50,
+					"column": 5,
+					"endLine": 50,
+					"endColumn": 27,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "liveSessionPayloadReader",
+						"justification": "The \"liveSessionPayloadReader\" owner handles \"fallback_return\" for a payload file that cannot be read or created: a missing or unsynced file is the explicit payload_missing state, never a verdict on the note, and the writer or history that calls it owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"liveSessionPayloadReader\" owner handles \"fallback_return\" for a payload file that cannot be read or created: a missing or unsynced file is the explicit payload_missing state, never a verdict on the note, and the writer or history that calls it owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"liveSessionPayloadReader\"."
+				},
+				{
+					"id": "a9d199591b5c8192f9fe6786563b31fbe8b4e733",
+					"kind": "catch_clause",
+					"line": 78,
+					"column": 2,
+					"endLine": 82,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "writeLiveSessionPayloadFile",
+						"justification": "The \"writeLiveSessionPayloadFile\" owner handles \"rethrow\" for a payload file that cannot be read or created: a missing or unsynced file is the explicit payload_missing state, never a verdict on the note, and the writer or history that calls it owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"writeLiveSessionPayloadFile\" owner handles \"rethrow\" for a payload file that cannot be read or created: a missing or unsynced file is the explicit payload_missing state, never a verdict on the note, and the writer or history that calls it owns terminal diagnostics. Verified recovery: \"rethrow\" in \"writeLiveSessionPayloadFile\"."
+				}
+			]
+		},
+		"src/test/live-session-payload-files.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		}
 	}
 }
