@@ -179,6 +179,12 @@ npm run release:sign -- <versión> --reemplazar     # sustituye una firma ya sub
 `manifest.json`, para poder firmar una release anterior. Tras firmar, `release:brat-verify` ya puede dar `PASS`
 con nueve assets. Si las releases pasaran a ser inmutables, habría que firmar en borrador antes de publicar.
 
+**Aviso a Hebra web.** La web de Hebra (app.hebra.pro) solo sirve las versiones de Tyrian que su lista revisada
+`src/lib/plugins/frame/web-plugin-origins.json` (repo de Hebra) recoge con la versión y el sha256 de `hebra-main.mjs`
+y `hebra-styles.css`. Cada release nueva que entra en el índice de hebra-plugins deja parada la publicación web de
+Hebra hasta que esa lista se actualiza. Tras firmar, manda a la sesión de Hebra (hebra-39) una línea con la versión
+y qué ficheros del plugin cambian (`hebra-main.mjs`, `hebra-styles.css`, `hebra.json`).
+
 Referencias del contrato:
 
 - [Cómo Obsidian descarga plugins](https://github.com/obsidianmd/obsidian-releases/blob/master/README.md#how-community-plugins-are-pulled)
