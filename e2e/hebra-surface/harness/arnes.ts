@@ -305,8 +305,66 @@ export async function openLibrary(page: Page): Promise<void> {
 
 /** On iPhone the library's chrome lives in a drawer; opens it when it is closed. */
 export async function openDrawerIfNeeded(page: Page): Promise<void> {
+	if (await page.locator('.lv1-app[data-nav-open="true"]').count() > 0) return;
 	const drawer = page.getByRole('button', { name: 'Abrir biblioteca' });
-	if (await drawer.isVisible()) await drawer.click();
+	if (await drawer.isVisible()) {
+		await drawer.click();
+		await expect(page.locator('.lv1-app')).toHaveAttribute('data-nav-open', 'true');
+	}
+}
+
+/** On iPhone, closes the library drawer when it is open (its scrim, «Cerrar biblioteca», takes the taps). */
+export async function closeDrawerIfOpen(page: Page): Promise<void> {
+	if (await page.locator('.lv1-app[data-nav-open="true"]').count() === 0) return;
+	await page.getByRole('button', { name: 'Cerrar biblioteca' }).click();
+	await expect(page.locator('.lv1-app')).toHaveAttribute('data-nav-open', 'false');
+}
+
+/** «Nota nueva» with a title and `body` typed into the editor, which is left blurred. */
+export async function writeNote(page: Page, title: string, body: string): Promise<void> {
+	await closeDrawerIfOpen(page);
+	await page.getByRole('button', { name: 'Nota nueva' }).click();
+	const field = page.getByLabel('Título de la nota');
+	await field.fill(title);
+	await field.press('Enter');
+	await expect(page.locator('.lv1-editor .cm-content')).toBeFocused();
+	await page.keyboard.insertText(body);
+	// Out of the editor, so CodeMirror paints a block's widget instead of its source.
+	await page.locator('.lv1-editor .cm-content').evaluate((el) => { (el as HTMLElement).blur(); });
+}
+
+/**
+ * «Dónde se muestra» › «Barra lateral» in Tyrian's settings, reached the way a user does from the main
+ * view: the shell's settings button («Ajustes de Tyrian Companion») opens Hebra's Settings on Tyrian's
+ * panel, a `tyrian-hebra-surface--settings` frame. Settings are closed afterwards.
+ */
+export async function chooseSidebarPlacement(page: Page): Promise<void> {
+	await openCompanion(page);
+	const main = page.locator(`[data-module-main="${MAIN_VIEW}"] iframe`).filter({ visible: true }).first();
+	await main.contentFrame().getByRole('button', { name: 'Ajustes de Tyrian Companion' }).click();
+	let settings: Frame | undefined;
+	await expect.poll(async () => {
+		settings = undefined;
+		for (const frame of await visibleSurfaces(page)) {
+			if (await frame.locator('#hebra-surface-root.tyrian-hebra-surface--settings').count() > 0) settings = frame;
+		}
+		return settings !== undefined;
+	}, { timeout: 30_000, message: 'Tyrian\'s settings panel' }).toBe(true);
+	const select = settings!.locator('.setting-item').filter({ hasText: 'Dónde se muestra' }).locator('select');
+	await expect(select).toBeVisible({ timeout: 30_000 });
+	await select.selectOption('sidebar');
+	await expect(select).toHaveValue('sidebar');
+	await page.locator('.lv1-settings').getByRole('button', { name: 'Cerrar', exact: true }).first().click();
+	await expect(page.locator('.lv1-settings')).toHaveCount(0);
+	// The main view goes away with the placement.
+	await expect(page.locator(`[data-module-main="${MAIN_VIEW}"]`)).toHaveCount(0, { timeout: 30_000 });
+}
+
+/** Tyrian's ribbon button → `entry` of its menu. */
+export async function ribbonEntry(page: Page, entry: string): Promise<void> {
+	await openDrawerIfNeeded(page);
+	await page.locator(`[data-module-ribbon="${PLUGIN_ID}"]`).first().click();
+	await page.getByRole('menuitem', { name: entry }).click();
 }
 
 /** Settings › Plugins: installs (third-party switch + consent), turns the plugin on and closes Settings. */
@@ -341,9 +399,7 @@ export const MAIN_VIEW = 'tyrian-main-view';
 
 /** Tyrian's ribbon button → «Abrir acompañante»: the main view, open on a section. */
 export async function openCompanion(page: Page): Promise<void> {
-	await openDrawerIfNeeded(page);
-	await page.locator(`[data-module-ribbon="${PLUGIN_ID}"]`).first().click();
-	await page.getByRole('menuitem', { name: 'Abrir acompañante' }).click();
+	await ribbonEntry(page, 'Abrir acompañante');
 	await expect(page.locator(`[data-module-main="${MAIN_VIEW}"]`)).toBeVisible({ timeout: 30_000 });
 }
 

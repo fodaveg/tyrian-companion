@@ -8,28 +8,21 @@
  * frame, `<html>` and `<body>` measured 96 and the last 12 px, bottom border included, were clipped. 0.7.1
  * (`f9a5b247`) fixed it with `#hebra-surface-root { margin: 0 }`.
  *
- * With the network cut (`arnes.ts`) the block paints its no-connection state; that is the 72 px measured
- * by Hebra's C1 harness on 14 Oct 2026, and what this spec holds.
+ * With the network cut (`arnes.ts`) the block paints «Este objeto no forma parte del piloto de histórico en
+ * la nota.»: 72 px on desktop, the height Hebra's C1 harness measured on 14 Oct 2026. On the iPhone
+ * (390 px) that sentence wraps to a second line and the block measures 87 px, at every level and with its
+ * bottom border in view (measured here on 15 Oct 2026, Chromium and WebKit): the height is the content's,
+ * and what this spec holds on both is that every level agrees, no margin and the border inside.
  */
 import type { Frame, Page } from '@playwright/test';
 
-import { installAndEnable, openLibrary } from './harness/arnes';
+import { installAndEnable, openLibrary, writeNote } from './harness/arnes';
 import { expect, skipWithoutHebra, test } from './harness/navegador';
 
 skipWithoutHebra();
 
-const BLOCK_HEIGHT = 72;
-
-async function writeNoteWithBlock(page: Page): Promise<void> {
-	await page.getByRole('button', { name: 'Nota nueva' }).click();
-	const title = page.getByLabel('Título de la nota');
-	await title.fill('Historial de precios');
-	await title.press('Enter');
-	await expect(page.locator('.lv1-editor .cm-content')).toBeFocused();
-	await page.keyboard.insertText('Antes\n\n```tyrian-price-history\nitemId: 19684\n```\n\nDespués.');
-	// Out of the block's source lines, so CodeMirror paints the widget instead of the source.
-	await page.locator('.lv1-editor .cm-content').evaluate((el) => { (el as HTMLElement).blur(); });
-}
+/** The block's height per project: one line of text on desktop, two at the iPhone's 390 px. */
+const BLOCK_HEIGHTS: Record<string, number> = { escritorio: 72, iphone: 87 };
 
 interface BlockGeometry {
 	frame: number;
@@ -68,11 +61,12 @@ async function measure(page: Page, frame: Frame): Promise<BlockGeometry> {
 	return { frame: hole?.height ?? Number.NaN, ...inside };
 }
 
-test('price block: frame, html, body and root at 72 px, no root margin, bottom border inside the frame', async ({ page }, testInfo) => {
-	test.skip(testInfo.project.name !== 'escritorio', 'the note editor is measured on the desktop project');
+test('price block: frame, html, body and root at the same height (72 px on desktop), no root margin, bottom border inside the frame', async ({ page }, testInfo) => {
+	const BLOCK_HEIGHT = BLOCK_HEIGHTS[testInfo.project.name] ?? Number.NaN;
 	await openLibrary(page);
 	await installAndEnable(page);
-	await writeNoteWithBlock(page);
+	// On iPhone `writeNote` closes the library drawer first: its scrim would take the tap on «Nota nueva».
+	await writeNote(page, 'Historial de precios', 'Antes\n\n```tyrian-price-history\nitemId: 19684\n```\n\nDespués.');
 
 	const iframe = page.locator('.cm-hebra-module-code-block iframe');
 	await expect(iframe).toHaveCount(1, { timeout: 30_000 });
@@ -80,11 +74,19 @@ test('price block: frame, html, body and root at 72 px, no root margin, bottom b
 	if (frame === null || frame === undefined) throw new Error('the block iframe has no frame');
 	// The block paints asynchronously (the core, then the price request): wait until it settles.
 	await expect.poll(async () => (await measure(page, frame)).text, { timeout: 30_000 }).not.toBe('');
-	await expect.poll(async () => (await measure(page, frame)).frame, { timeout: 30_000 }).toBe(BLOCK_HEIGHT);
+	// Hebra resizes the frame to the root after each paint: settled when two reads 500 ms apart agree.
+	let previous = Number.NaN;
+	await expect.poll(async () => {
+		const now = (await measure(page, frame)).frame;
+		const settled = now === previous;
+		previous = now;
+		return settled;
+	}, { timeout: 30_000, intervals: [500] }).toBe(true);
 	const geometry = await measure(page, frame);
 	await testInfo.attach('geometria-bloque.json', { body: JSON.stringify(geometry, null, 2), contentType: 'application/json' });
 
 	expect(geometry.rootClass).toContain('tyrian-hebra-surface--code-block');
+	expect.soft(geometry.frame, 'the frame Hebra gives the block').toBe(BLOCK_HEIGHT);
 	// Soft, so a regression reports every symptom at once (0.7.0: margin 12, top 12, bottom 84, html/body 96).
 	expect.soft(geometry.rootMargin, '#hebra-surface-root has no outer margin').toBe('0px 0px 0px 0px');
 	expect.soft(geometry.rootTop, 'the root starts at the top of the frame').toBe(0);

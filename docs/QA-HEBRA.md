@@ -190,14 +190,21 @@ cortada y respuestas falsas, y miden:
   horizontal (`scrollWidth <= clientWidth`), con la raíz `tyrian-hebra-surface--main` y `is-mobile` en
   el `<body>` de la superficie solo en iPhone. Ahí el shell lleva su fila de herramientas y NO su barra
   de pestañas (`.tyrian-product-shell__nav`): la navegación es la lista de Hebra. La barra de pestañas
-  solo existe con «Dónde se muestra» › «Barra lateral» y esa colocación aún no tiene e2e.
+  solo existe con «Dónde se muestra» › «Barra lateral» (lo que medía `library-tyrian-r5` de Hebra en
+  la 1.x): el mismo spec la elige en los ajustes de Tyrian, abre una nota (una vista lateral la
+  necesita en escritorio; en iPhone, nota, «Volver a la lista» y cajón), y con «Abrir acompañante»
+  comprueba que la barra se ve dentro del marco con sus cuatro pestañas (Sesión, Inventario, Venta,
+  Logros), que cada una lleva a su sección, que ni la barra ni la página desbordan, `is-mobile` solo
+  en iPhone, y que «En vivo» se abre desde «Abrir panel en vivo» con `.tyrian-live-hud`.
 - **Botón de la cinta en iPhone** (`cinta-iphone.spec.ts`): `[data-module-ribbon="tyrian-companion"]`
   en el cajón de la biblioteca es visible, cabe en la pantalla, recibe el toque en su centro y
   «Abrir acompañante» abre la vista principal con su marco visible y `is-mobile`.
-- **Bloque de precio** (`bloque-precio.spec.ts`, escritorio): un bloque `tyrian-price-history` en una
-  nota mide 72 px en todos los niveles (el `<iframe>`, el `<html>`, el `<body>` y `#hebra-surface-root`
-  del marco), la raíz no tiene margen, empieza arriba y su borde inferior queda dentro del marco. Con
-  el bundle de la 0.7.0 se pone rojo: margen 12, raíz entre 12 y 84, `html` y `body` a 96.
+- **Bloque de precio** (`bloque-precio.spec.ts`, escritorio e iPhone): un bloque `tyrian-price-history` en una
+  nota mide lo mismo en todos los niveles (el `<iframe>`, el `<html>`, el `<body>` y
+  `#hebra-surface-root` del marco): 72 px en escritorio y 87 en iPhone, donde el texto de «no forma
+  parte del piloto» pasa a dos líneas a 390 px. La raíz no tiene margen, empieza arriba y su borde
+  inferior queda dentro del marco. Con el bundle de la 0.7.0 se pone rojo: margen 12, raíz que empieza
+  en 12 y acaba por debajo del marco, `html` y `body` 24 px más altos que el marco.
 
 Cómo se lanzan (una suite pesada a la vez en la máquina):
 
