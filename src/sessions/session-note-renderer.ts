@@ -221,7 +221,38 @@ export async function mergeRenderedSessionNote(
 	return { status: 'ok', content: `${serializeFrontmatter(rendered.frontmatter, parsed.humanLines, parsed.tags)}${body}` };
 }
 
-const NOTES_HEADING = /^## (?:Mis notas|My notes)$/mu;
+/**
+ * Rewrites a stored session note in place: `frontmatter` keys replace the value of the `tc_` key they name (a new key goes after
+ * the last `tc_` one; `undefined` removes it) and `blocks` replace the content of the managed blocks they name, rehashed. Every other managed block, the
+ * human frontmatter lines and tags, and everything outside the blocks (title, «Mis notas») keep their text. Null when the note's
+ * frontmatter or blocks are not intact.
+ */
+export async function rewriteStoredSessionNote(
+	existing: string,
+	frontmatter: Record<string, string | number | null | undefined>,
+	blocks: Partial<Record<SessionNoteBlockId, string>>,
+): Promise<string | null> {
+	const parsed = parseFrontmatter(existing);
+	if (parsed === null) return null;
+	const patched: Record<string, string | number | null> = { ...parsed.frontmatter };
+	for (const [key, value] of Object.entries(frontmatter)) {
+		if (value === undefined) delete patched[key]; else patched[key] = value;
+	}
+	const ranges = await managedBlockRanges(parsed.body);
+	if (ranges === null) return null;
+	const lines = parsed.body.split('\n');
+	for (let index = ranges.length - 1; index >= 0; index -= 1) {
+		const range = ranges[index]!;
+		const content = blocks[range.id];
+		if (content === undefined) continue;
+		const hash = await sha256Text(content);
+		lines.splice(range.start, range.end - range.start + 1,
+			`<!-- tyrian-companion:managed:start:${range.id} sha256=${hash} -->\n${content}\n<!-- tyrian-companion:managed:end:${range.id} -->`);
+	}
+	return `${serializeFrontmatter(patched, parsed.humanLines, parsed.tags)}${lines.join('\n')}`;
+}
+
+const NOTES_HEADING =/^## (?:Mis notas|My notes)$/mu;
 const DATA_START = '<!-- tyrian-companion:managed:start:provenance';
 const DATA_END = '<!-- tyrian-companion:managed:end:provenance -->';
 

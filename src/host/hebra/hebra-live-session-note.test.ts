@@ -130,6 +130,47 @@ describe('Tyrian in Hebra: a finished live session saves its note and frees the 
 		await cleanup();
 	}, 30_000);
 
+	it('the session\'s payload goes to a library file written before the note, and the note keeps no JSON', async () => {
+		const test = collectorHebra();
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		const first = await playUntilGameExit(core, 'a', FIRST_EPOCH);
+		const [noteId] = liveNotes(test); expect(noteId, 'the finished session has its note').toBeDefined();
+		const payload = payloadFile(test);
+		expect(payload.name, 'named by the session reference, never by the title').toMatch(/^[a-f0-9]{64}\.json$/u);
+		const note = test.library.notes.get(noteId!)!.body;
+		expect(note, 'the note names the file and holds none of the payload').toContain(`tc_payload_file: "sessions/data/${payload.name}"`);
+		expect(note).toContain('tc_payload_version: 3');
+		expect(note).not.toContain('```json'); expect(note).not.toContain('"journal"');
+		expect(test.library.readText(payload.id)).toContain('"journal"');
+		expect(test.library.writes.indexOf(`fileCreate:${payload.name}`), 'the file first, the note after it').toBeLessThan(test.library.writes.indexOf(`noteCreate:${noteId!}`));
+		expect(first).toBeTruthy();
+		await cleanup();
+	}, 30_000);
+
+	it('a device that has the note but not yet the payload file lists nothing for it, writes nothing, and lists the session once the file arrives', async () => {
+		const test = collectorHebra();
+		const written = await activate(test, new IDBFactory());
+		await playUntilGameExit(written.core, 'a', FIRST_EPOCH);
+		await vi.waitFor(() => { expect(summaryNotes(test), 'the summary follows the full note').toHaveLength(1); });
+		await written.cleanup();
+		const [noteId] = liveNotes(test); const before = test.library.notes.get(noteId!)!.body;
+		// The library synced the note and the file's row, but this device does not have the file's bytes yet.
+		const payload = payloadFile(test); const blobRead = test.library.blobRead.bind(test.library);
+		test.library.blobRead = async (hash) => (hash === payload.sha256 ? null : await blobRead(hash));
+
+		now += 60_000;
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		const writes = test.library.writes.length;
+		expect(await core.listLiveSessionHistory(), 'the session cannot be read yet, and is not reported as broken').toHaveLength(0);
+		expect(test.library.notes.get(noteId!)!.body, 'the note is as it was').toBe(before);
+		expect(test.library.notes.get(noteId!)!.trashedAt, 'and not in the trash').toBeNull();
+		expect(test.library.writes.slice(writes), 'nothing was written, regenerated or replaced').toEqual([]);
+
+		test.library.blobRead = blobRead;
+		expect(await core.listLiveSessionHistory(), 'the next listing reads it as soon as the file is here').toHaveLength(1);
+		await cleanup();
+	}, 30_000);
+
 	it('a finished session left without its note is saved when the plugin loads, and the next connection starts a new session', async () => {
 		const test = collectorHebra();
 		const factory = new IDBFactory();
@@ -372,6 +413,13 @@ function summaryNotes(test: TyrianTestApi): { id: string; body: string }[] {
 	return [...test.library.notes.values()]
 		.filter((note) => note.trashedAt === null && /^tyrian_summary_of:/mu.test(note.body))
 		.map((note) => ({ id: note.id, body: note.body }));
+}
+
+/** The library file that holds the payload of the live session, whatever else (the managed-assets manifest) the folder holds. */
+function payloadFile(test: TyrianTestApi) {
+	const files = [...test.library.files.values()].filter((file) => file.trashedAt === null && /^[a-f0-9]{64}\.json$/u.test(file.name));
+	expect(files, 'one payload file for the one session').toHaveLength(1);
+	return files[0]!;
 }
 
 function liveNotes(test: TyrianTestApi): string[] {

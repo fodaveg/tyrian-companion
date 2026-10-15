@@ -22,7 +22,7 @@ import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-m
 import { prepareLiveSessionPayload, prepareLiveSessionSnapshot } from './live-session-note-model';
 import { renderLiveSessionSummary } from './live-session-summary-note';
 import { sha256Text } from './session-note-renderer';
-import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, renderLiveSessionNote } from '../test/live-session-payload-files';
 
 const INSTANCE = 'AQEBAQEBAQEBAQEBAQEBAQ';
 const EPOCH = 'AgICAgICAgICAgICAgICAg';
@@ -52,6 +52,13 @@ function fixture(store = new MemorySessionRuntimeStore()) {
 		observedAt: new Date(now).toISOString(), ...override });
 	return { service, store, source, sample, options, onCommitted, onComplete, renew, release,
 		setNow: (at: number) => { now = at; }, loseLease: () => { owned = false; }, regainLease: () => { owned = true; }, tick: async () => { interval?.(); await service.presence(false, now); } };
+}
+
+/** The vault `findSealedLiveNotes` reads: the notes (`vault`) and the payload files they name (`payloads`), by vault path. */
+function filesOf(vault: ReadonlyMap<string, string>, payloads: ReadonlyMap<string, string>) {
+	const find = (path: string): string | undefined => vault.get(path) ?? payloads.get(path);
+	return { markdownFiles: () => [...vault.keys()].map((path) => ({ path })), file: (path: string) => find(path) === undefined ? null : { path },
+		read: async (file: { path: string }) => find(file.path) ?? '' };
 }
 
 describe('passive live session lifecycle', () => {
@@ -676,14 +683,15 @@ describe('passive live session lifecycle', () => {
 		describe('the journals no queue names (sessions sealed by 0.6.12 or earlier, before the queue existed)', () => {
 			/** Three sessions sealed with their note written to `vault`, a fourth left active, and no queue at all: what 0.6.12 left behind. */
 			async function sealedBeforeTheQueue(extra: Partial<ConstructorParameters<typeof LiveSessionLifecycle>[0]> = {}) {
-				const vault = new Map<string, string>();
+				const vault = new Map<string, string>(); const payloads = new Map<string, string>();
 				const sealed = await earlierHost(3, false, { ...extra, onComplete: async (record, journal, format) => {
 					const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'es', outputFolder: 'Tyrian' });
 					if (rendered.status !== 'ok') throw new Error('The note did not render.');
-					vault.set(rendered.note.preferredPath, rendered.note.content); return rendered.note.preferredPath;
+					vault.set(rendered.note.preferredPath, rendered.note.content); payloads.set(`Tyrian/${rendered.payloadFile.relative}`, rendered.payloadFile.content);
+					return rendered.note.preferredPath;
 				} });
 				await sealed.f.store.savePruneQueue([]);
-				const files = { markdownFiles: () => [...vault.keys()].map((path) => ({ path })), read: async (file: { path: string }) => vault.get(file.path) ?? '' };
+				const files = filesOf(vault, payloads);
 				return { ...sealed, vault, files };
 			}
 			it('a host that starts again prunes the ones whose note the vault holds, and only those', async () => {
@@ -714,14 +722,15 @@ describe('passive live session lifecycle', () => {
 				expect(await findSealedLiveNotes(files, ids.slice(0,1))).toEqual(new Map([[ids[0]!, whole]]));
 			});
 			it('a closed session that still holds the runtime key is never pruned, valid note or not', async () => {
-				const vault = new Map<string, string>();
+				const vault = new Map<string, string>(); const payloads = new Map<string, string>();
 				const { f, ids, first, host, lengths, queued } = await earlierHost(1, true, { onComplete: async (record, journal, format) => {
 					const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'es', outputFolder: 'Tyrian' });
 					if (rendered.status !== 'ok') throw new Error('The note did not render.');
-					vault.set(rendered.note.preferredPath, rendered.note.content); return rendered.note.preferredPath;
+					vault.set(rendered.note.preferredPath, rendered.note.content); payloads.set(`Tyrian/${rendered.payloadFile.relative}`, rendered.payloadFile.content);
+					return rendered.note.preferredPath;
 				} });
 				await first.dispose(); await f.store.savePruneQueue([]); expect(vault.size).toBe(2);
-				const files = { markdownFiles: () => [...vault.keys()].map((path) => ({ path })), read: async (file: { path: string }) => vault.get(file.path) ?? '' };
+				const files = filesOf(vault, payloads);
 				const sealedNotes = vi.fn(async (sessionIds: readonly string[]) => await findSealedLiveNotes(files, sessionIds));
 				const next = host({ sealedNotes }); await next.service.initialize();
 				for (let beats = 0; beats < 4; beats += 1) await next.beat();
@@ -939,10 +948,11 @@ describe('passive live session lifecycle', () => {
 	});
 	describe('the history scrub and a sealed session (Z2-3)', () => {
 		/** The vault the note goes to, and the writer that puts it back whenever the load asks for it. */
+		const LIVE_NOTE_PATH = 'Tyrian/sessions/2026/live.md';
 		function notesVault() {
 			const contents = new Map<string,string>();
 			const vault: SessionHistoryVault = {
-				markdownFiles: () => [...contents.keys()].map((path) => ({ path })), exists: (path) => contents.has(path),
+				markdownFiles: () => [...contents.keys()].filter((path) => path.endsWith('.md')).map((path) => ({ path })), exists: (path) => contents.has(path),
 				file: (path): SessionHistoryFile | null => contents.has(path) ? { path } : null, read: async (file) => contents.get(file.path)!,
 				process: async (file, update) => { contents.set(file.path, update(contents.get(file.path)!)); },
 				createFolder: async () => undefined, create: async (path, content) => { contents.set(path, content); return { path }; },
@@ -954,7 +964,8 @@ describe('passive live session lifecycle', () => {
 			f.onComplete.mockImplementation((async (record: Parameters<typeof renderLiveSessionNote>[0]['record'], journal: Parameters<typeof renderLiveSessionNote>[0]['journal'], format: Parameters<typeof renderLiveSessionNote>[0]['format']) => {
 				const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'es', outputFolder: 'Tyrian' });
 				if (rendered.status !== 'ok') throw new Error('The note did not render.');
-				contents.set('Sessions/live.md', rendered.note.content); return 'Sessions/live.md';
+				// Inside the layout of the output folder, which is how a note finds the payload file it names.
+				contents.set(LIVE_NOTE_PATH, rendered.note.content); contents.set(`Tyrian/${rendered.payloadFile.relative}`, rendered.payloadFile.content); return LIVE_NOTE_PATH;
 			}) as never);
 			await f.service.start('Test'); await f.service.open(f.source); await f.service.commit(f.sample(0,0)); await f.service.commit(f.sample(1,3));
 			await expect(f.service.stop(AT+2000)).resolves.toBe(true);
@@ -972,11 +983,13 @@ describe('passive live session lifecycle', () => {
 			if (preview.status !== 'ready') throw new Error(`Expected a ready preview, got ${preview.status}.`);
 			await expect(history.scrub(preview.token, authority)).resolves.toMatchObject({ status: 'erased', erased: 1 });
 			expect(f.service.getRuntime(), 'the sealed record no longer holds the runtime key').toBeNull();
-			const scrubbed = contents.get('Sessions/live.md');
+			const scrubbed = contents.get(LIVE_NOTE_PATH);
+			// The payload file holds the whole session: the scrub left it empty, not just the note.
+			expect([...contents.entries()].filter(([path]) => path.endsWith('.json')).map(([, text]) => text)).toEqual(['']);
 			await f.service.dispose();
 			const reloaded = new LiveSessionLifecycle(f.options); await reloaded.initialize();
 			expect(reloaded.getRuntime()).toBeNull(); expect(f.onComplete, 'nothing writes the note back').toHaveBeenCalledOnce();
-			expect(contents.get('Sessions/live.md')).toBe(scrubbed); expect(contents.size).toBe(1);
+			expect(contents.get(LIVE_NOTE_PATH)).toBe(scrubbed); expect(contents.size).toBe(2);
 			expect(await new LiveSessionHistoryService(vault).list()).toMatchObject({ status: 'ok', sessions: [] });
 			await expect(reloaded.start('Test')).resolves.not.toBeNull();
 			await reloaded.dispose();
@@ -1359,16 +1372,21 @@ describe('passive live session lifecycle', () => {
 			await f.service.commit(f.sample(0,0,{epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`})); f.setNow(t+1000);
 			await f.service.commit(f.sample(1,2,{epoch:`${String.fromCharCode(66+index)}${'A'.repeat(20)}Q`})); f.setNow(t+2000); await f.service.stop(t+2000);
 			const rendered = await renderLiveSessionNote({record:f.service.getRuntime()!,journal:f.service.getJournal(),format:f.service.getSessionFormat(),locale:'es',outputFolder:'Tyrian'});
-			if (rendered.status !== 'ok') throw new Error('The note did not render.'); contents.set(name,rendered.note.content);
+			if (rendered.status !== 'ok') throw new Error('The note did not render.');
+			// The note, and the payload file it names, which is what the history keeps (and counts) of a session.
+			contents.set(`Tyrian/sessions/2026/${name}`,rendered.note.content); contents.set(`Tyrian/${rendered.payloadFile.relative}`,rendered.payloadFile.content);
 		}
-		const size = contents.get('a.md')!.length; const reads: string[] = [];
-		const vault = { markdownFiles: () => [...contents.keys()].map((path) => ({ path, mtime: 10 })), read: async (file: { path: string }) => { reads.push(file.path); return contents.get(file.path)!; } } as unknown as SessionHistoryVault;
+		const noteA = 'Tyrian/sessions/2026/a.md'; const noteB = 'Tyrian/sessions/2026/b.md';
+		const size = contents.get(noteA)!.length + [...contents.entries()].find(([path]) => path.endsWith('.json'))![1].length; const reads: string[] = [];
+		// Only the notes are counted as reads: the payload files are read along with them.
+		const vault = { markdownFiles: () => [...contents.keys()].filter((path) => path.endsWith('.md')).map((path) => ({ path, mtime: 10 })), file: (path: string) => contents.has(path) ? { path } : null,
+			read: async (file: { path: string }) => { if (file.path.endsWith('.md')) reads.push(file.path); return contents.get(file.path)!; } } as unknown as SessionHistoryVault;
 		const roomy = new LiveSessionHistoryService(vault); await roomy.list(); reads.length = 0; await roomy.list();
 		expect(reads, 'with room both stay remembered').toEqual([]);
 		const tight = new LiveSessionHistoryService(vault, Math.floor(size * 1.5)); await tight.list(); reads.length = 0; await tight.list();
-		expect(reads, 'with room for one, the second is not remembered and is read again').toEqual(['b.md']);
+		expect(reads, 'with room for one, the second is not remembered and is read again').toEqual([noteB]);
 		const none = new LiveSessionHistoryService(vault, size - 1); await none.list(); reads.length = 0; await none.list();
-		expect(reads, 'a note over the budget is never kept').toEqual(['a.md','b.md']);
+		expect(reads, 'a note over the budget is never kept').toEqual([noteA,noteB]);
 		await f.service.dispose();
 	});
 	it('restores the journal without acquisitions and requires a new baseline after host restart', async () => {

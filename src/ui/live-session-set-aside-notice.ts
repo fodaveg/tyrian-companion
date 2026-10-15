@@ -7,11 +7,13 @@ const COPY = {
 	en: {
 		newer_version: (n: number, paths: string) => `${n === 1 ? '1 saved session note was' : `${String(n)} saved session notes were`} written by a newer version of the plugin and cannot be read here: ${paths}. ${n === 1 ? 'It was' : 'They were'} left untouched; update the plugin to see ${n === 1 ? 'it' : 'them'}.`,
 		unreadable: (n: number, paths: string) => `${n === 1 ? '1 saved session note is' : `${String(n)} saved session notes are`} unreadable or was edited inside its managed blocks: ${paths}. ${n === 1 ? 'It was' : 'They were'} left untouched and ${n === 1 ? 'is' : 'are'} not counted here.`,
+		payload_missing: (n: number, paths: string) => `${n === 1 ? '1 saved session note has' : `${String(n)} saved session notes have`} no session data file on this device yet: ${paths}. ${n === 1 ? 'It was' : 'They were'} left untouched and ${n === 1 ? 'is' : 'are'} not counted here until the file arrives by sync.`,
 		more: (n: number) => `and ${String(n)} more`,
 	},
 	es: {
 		newer_version: (n: number, paths: string) => `${n === 1 ? '1 nota de sesión guardada la escribió' : `${String(n)} notas de sesión guardadas las escribió`} una versión más nueva del plugin y no se puede${n === 1 ? '' : 'n'} leer aquí: ${paths}. Se ${n === 1 ? 'ha dejado intacta' : 'han dejado intactas'}; actualiza el plugin para verla${n === 1 ? '' : 's'}.`,
 		unreadable: (n: number, paths: string) => `${n === 1 ? '1 nota de sesión guardada es ilegible o se editó' : `${String(n)} notas de sesión guardadas son ilegibles o se editaron`} dentro de sus bloques gestionados: ${paths}. Se ${n === 1 ? 'ha dejado intacta y no cuenta' : 'han dejado intactas y no cuentan'} aquí.`,
+		payload_missing: (n: number, paths: string) => `${n === 1 ? '1 nota de sesión guardada aún no tiene' : `${String(n)} notas de sesión guardadas aún no tienen`} el fichero de datos de la sesión en este dispositivo: ${paths}. Se ${n === 1 ? 'ha dejado intacta y no cuenta' : 'han dejado intactas y no cuentan'} aquí hasta que el fichero llegue por la sincronización.`,
 		more: (n: number) => `y ${String(n)} más`,
 	},
 } as const;
@@ -20,7 +22,7 @@ const COPY = {
 export function liveSessionSetAsideNotice(locale: 'es' | 'en', setAside: readonly LiveSessionSetAside[]): string[] {
 	const copy = COPY[locale];
 	const lines: string[] = [];
-	for (const reason of ['newer_version', 'unreadable'] as const) {
+	for (const reason of ['newer_version', 'unreadable', 'payload_missing'] as const) {
 		const paths = setAside.filter((row) => row.reason === reason).map((row) => row.path);
 		if (paths.length === 0) continue;
 		const named = paths.slice(0, NAMED_PATHS).join(', ');

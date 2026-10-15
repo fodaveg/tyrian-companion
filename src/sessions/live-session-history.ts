@@ -3,6 +3,8 @@ export type { LiveSessionSetAside } from './live-session-comparison';
 import { settlePersistedIngameReceipt } from '../alerts/alert-ingame-receipt';
 import { buildLiveChart, GOLD_CURRENCY_ID, liveItemValueCopper } from './live-session-reducer';
 import type { LiveChartPointV1, LivePriceBasis, LiveSessionViewV1, LiveTotalV1 } from './live-session-model';
+import { liveSessionPayloadReader, outputFolderOfSessionNote, writeLiveSessionPayloadFile } from './live-session-payload-file';
+import { migrateLiveSessionNoteToFile } from './live-session-note-renderer';
 import { inspectLiveHistoryNote, type LiveHistoryNoteOutcome, type SessionHistoryFile, type SessionHistoryVault, type SessionNoteReads,
 	type SharedNoteRead } from './session-history';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
@@ -57,6 +59,8 @@ export class LiveSessionHistoryService {
 	/** What each listed note inspected to, against the mtime it had: an unchanged note is not read again. Never kept for a note without a real mtime. */
 	private readonly inspected = new Map<string,{ mtime: number; outcome: NoteOutcome; bytes: number }>();
 	private inspectedBytes = 0;
+	/** The notes whose migration to a payload file was tried in this run. */
+	private readonly migrationTried = new Set<string>();
 	/**
 	 * `cacheBytes` bounds the note text behind the remembered session payloads; a note that would exceed it is simply not remembered.
 	 * `reads` are the durable history's shared reads (Z24): this history reads through them, and keeps what the durable history
@@ -68,7 +72,8 @@ export class LiveSessionHistoryService {
 	}
 	/** Keeps another history's read of a note under this history's own rule: a real mtime, and the same budget. */
 	private keepRead(file: SessionHistoryFile, read: SharedNoteRead): void {
-		if (file.mtime === undefined || file.mtime <= 0 || this.inspected.get(file.path)?.mtime === file.mtime) return;
+		// A note whose payload file is missing is never kept: the file can arrive without the note changing, and then it must be read again.
+		if (file.mtime === undefined || file.mtime <= 0 || this.inspected.get(file.path)?.mtime === file.mtime || read.live.kind === 'payload_missing') return;
 		this.remember(file.path, { mtime: file.mtime, outcome: read.live, bytes: read.liveBytes });
 	}
 	private forget(path: string): void {
@@ -120,7 +125,31 @@ export class LiveSessionHistoryService {
 			const read = await (await this.reads.read(file, 'join')).inspect();
 			return { outcome: read.live, bytes: read.liveBytes };
 		}
-		return await inspectLiveHistoryNote(await this.vault.read(file));
+		return await inspectLiveHistoryNote(await this.vault.read(file), liveSessionPayloadReader(this.vault, file.path));
+	}
+
+	/**
+	 * Moves the payload of a saved note of version 1 or 2 out of its text, once: the payload file first (the same text, the
+	 * session's own hash), then the note, replacing only the frontmatter keys and the provenance block through a compare-and-swap
+	 * on the text read here. A note whose payload does not verify, or that changed meanwhile, is left as it is; any failure is
+	 * swallowed because the listing does not depend on it, and the next listing tries again. Returns true when the note was rewritten.
+	 */
+	private async migrate(file: SessionHistoryFile): Promise<boolean> {
+		// A note that did not migrate is not tried again until the plugin restarts: whatever stopped it will not change by itself.
+		if (this.migrationTried.has(file.path)) return false;
+		this.migrationTried.add(file.path);
+		try {
+			const current = this.vault.file(file.path);
+			const folder = outputFolderOfSessionNote(file.path);
+			if (current === null || folder === null) return false;
+			const before = await this.vault.read(current);
+			const migrated = await migrateLiveSessionNoteToFile(before);
+			if (migrated === null) return false;
+			await writeLiveSessionPayloadFile(this.vault, folder, migrated.sessionRef, migrated.payloadFile.content);
+			let applied = false;
+			await this.vault.process(current, (text) => { applied = text === before; return applied ? migrated.content : text; });
+			return applied;
+		} catch { return false; }
 	}
 
 	private async scan(): Promise<{ status: 'ok'; sessions: StoredLiveSessionPayloadV1[]; ignored: number; setAside: LiveSessionSetAside[] }
@@ -137,9 +166,13 @@ export class LiveSessionHistoryService {
 				if (outcome === undefined || outcome.mtime !== file.mtime) {
 					const inspected = await this.readNote(file);
 					outcome = { mtime: file.mtime ?? 0, outcome: inspected.outcome, bytes: inspected.bytes };
-					if (cacheable) this.remember(file.path, outcome); else this.forget(file.path);
+					// Never kept for a missing payload file: it can arrive by sync without the note changing.
+					if (cacheable && inspected.outcome.kind !== 'payload_missing') this.remember(file.path, outcome); else this.forget(file.path);
 				}
 				const note = outcome.outcome;
+				if (note.kind === 'payload_missing') { setAside.push({ path: file.path, reason: 'payload_missing' }); continue; }
+				// A note that still carries its payload in the text moves it to its own file, once; what is read next time is the new note.
+				if (note.kind === 'live' && note.inline && await this.migrate(file)) this.forget(file.path);
 				// A note this build cannot use is set aside with its path, never moved or rewritten, and never costs the others their listing.
 				if (note.kind === 'invalid') { invalid += 1; setAside.push({ path: file.path, reason: 'unreadable' }); continue; }
 				if (note.kind === 'unsupported') { setAside.push({ path: file.path, reason: 'newer_version' }); continue; }
@@ -160,7 +193,7 @@ export class LiveSessionHistoryService {
  * collision), and counts only when it reads as a valid live note of that same session. A note moved or renamed is not found:
  * its session reads as one without a note, which only ever keeps a journal. Only the candidate notes are read, never the vault.
  */
-export async function findSealedLiveNotes(vault: Pick<SessionHistoryVault, 'markdownFiles' | 'read'>, sessionIds: readonly string[]): Promise<Map<string, string>> {
+export async function findSealedLiveNotes(vault: Pick<SessionHistoryVault, 'markdownFiles' | 'read'> & Partial<Pick<SessionHistoryVault, 'file'>>, sessionIds: readonly string[]): Promise<Map<string, string>> {
 	const found = new Map<string, string>(); if (sessionIds.length === 0) return found;
 	const refs = new Map<string, string>(); for (const sessionId of sessionIds) refs.set(await sha256Text(sessionId), sessionId);
 	const names = new Map<string, string>(); for (const ref of refs.keys()) { names.set(` - ${ref.slice(0, 16)}.md`, ref); names.set(` - ${ref}.md`, ref); }
@@ -168,7 +201,9 @@ export async function findSealedLiveNotes(vault: Pick<SessionHistoryVault, 'mark
 		const cut = file.path.lastIndexOf(' - '); const ref = cut < 0 ? undefined : names.get(file.path.slice(cut));
 		const sessionId = ref === undefined ? undefined : refs.get(ref);
 		if (ref === undefined || sessionId === undefined || found.has(sessionId)) continue;
-		const { outcome } = await inspectLiveHistoryNote(await vault.read(file));
+		// A note whose payload file is missing here is not proven: it is not found, and nothing is retired on its account.
+		const { outcome } = await inspectLiveHistoryNote(await vault.read(file),
+			vault.file === undefined ? undefined : liveSessionPayloadReader({ file: vault.file.bind(vault), read: vault.read.bind(vault) }, file.path));
 		if (outcome.kind === 'live' && outcome.session.sessionRef === ref) found.set(sessionId, file.path);
 	}
 	return found;

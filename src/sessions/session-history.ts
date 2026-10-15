@@ -1,5 +1,6 @@
 import { inspectLiveSessionNote, type LiveSessionNoteInspection } from './live-session-note-renderer';
 import type { StoredLiveSessionPayloadV1 } from './live-session-note-model';
+import { liveSessionPayloadFilePath, liveSessionPayloadReader, liveSessionPayloadVaultPath, type LiveSessionPayloadReader } from './live-session-payload-file';
 import { canonicalJson } from '../core/canonical-sha256';
 import { isFarmingGoal, isFarmingGoalProgress, type FarmingGoalV1, type FarmingGoalProgress } from './farming-goal';
 import { parseDurableSessionComparison, parseSessionSackObservation, type DurableSessionComparisonMetadata, type SessionSackObservation } from './session-comparison-metadata';
@@ -251,10 +252,17 @@ interface ScrubPlanItem {
 	expectedContent: string;
 	expectedHash: string;
 	scrubbedContent: string;
+	/** A version 3 note: the payload file that holds the session's data and the text it had at preview. It is emptied before the note is scrubbed. */
+	payloadPath?: string;
+	expectedPayload?: string;
 }
 
 /** What the live history makes of one note; `ignored` is a note that is neither a live session nor a broken durable one. */
-export type LiveHistoryNoteOutcome = { kind: 'invalid' } | { kind: 'unsupported' } | { kind: 'ignored' } | { kind: 'live'; session: StoredLiveSessionPayloadV1 };
+export type LiveHistoryNoteOutcome = { kind: 'invalid' } | { kind: 'unsupported' } | { kind: 'ignored' }
+	/** A version 3 live note whose payload file is not on this device (yet): it is never kept, because the file can arrive without the note changing. */
+	| { kind: 'payload_missing' }
+	/** `inline` is a note of version 1 or 2, whose payload is still in its text (the migration to a payload file picks those up). */
+	| { kind: 'live'; session: StoredLiveSessionPayloadV1; inline: boolean };
 
 /** One read of a note, inspected for both histories at once (Z24). `liveBytes` is the text the live history counts against its cache. */
 export interface SharedNoteRead {
@@ -386,7 +394,7 @@ export class SessionNoteReads {
 	private async inspectAndShare(file: SessionHistoryFile, content: string, token: object | null, generation: number, since: number,
 		settle: () => void): Promise<SharedNoteRead> {
 		try {
-			const read = await inspectNoteForHistories(content);
+			const read = await inspectNoteForHistories(content, liveSessionPayloadReader(this.vault, file.path));
 			if (token !== null && generation === this.generation) {
 				const stale = (this.lastChange.get(file.path) ?? 0) > since;
 				for (const peer of this.peers) peer(file, read, stale);
@@ -407,20 +415,28 @@ export class SessionNoteReads {
 	}
 }
 
-/** Both histories' inspection of one note text, the live one computed once and handed to the durable one. */
-async function inspectNoteForHistories(content: string): Promise<SharedNoteRead> {
-	const live = await inspectLiveSessionNote(content);
+/**
+ * Both histories' inspection of one note text, the live one computed once and handed to the durable one. `readPayload` reads
+ * the payload file of a version 3 note.
+ */
+async function inspectNoteForHistories(content: string, readPayload?: LiveSessionPayloadReader): Promise<SharedNoteRead> {
+	// The live history counts what it keeps against a byte budget: for a note of version 3 that is the payload file it read, not the short note.
+	let payloadChars = 0;
+	const counting: LiveSessionPayloadReader | undefined = readPayload === undefined ? undefined
+		: async (relative) => { const text = await readPayload(relative); payloadChars = text?.length ?? 0; return text; };
+	const live = await inspectLiveSessionNote(content, counting);
 	const durable = await inspectDurableSessionNote(content, live);
 	const outcome: LiveHistoryNoteOutcome = live.status === 'invalid' ? { kind: 'invalid' }
 		: live.status === 'unsupported' ? { kind: 'unsupported' }
-			: live.status === 'non_candidate' ? (durable.status === 'invalid' ? { kind: 'invalid' } : { kind: 'ignored' })
-				: { kind: 'live', session: live.session };
-	return { content, durable, live: outcome, liveBytes: outcome.kind === 'live' ? content.length : 0 };
+			: live.status === 'payload_missing' ? { kind: 'payload_missing' }
+				: live.status === 'non_candidate' ? (durable.status === 'invalid' ? { kind: 'invalid' } : { kind: 'ignored' })
+					: { kind: 'live', session: live.session, inline: live.storage === 'inline' };
+	return { content, durable, live: outcome, liveBytes: outcome.kind === 'live' ? content.length + payloadChars : 0 };
 }
 
-/** The live history's inspection of one note, for a live history that shares no reads. */
-export async function inspectLiveHistoryNote(content: string): Promise<{ outcome: LiveHistoryNoteOutcome; bytes: number }> {
-	const read = await inspectNoteForHistories(content);
+/** The live history's inspection of one note, for a live history that shares no reads. `readPayload` reads the payload file of a version 3 note. */
+export async function inspectLiveHistoryNote(content: string, readPayload?: LiveSessionPayloadReader): Promise<{ outcome: LiveHistoryNoteOutcome; bytes: number }> {
+	const read = await inspectNoteForHistories(content, readPayload);
 	return { outcome: read.live, bytes: read.liveBytes };
 }
 
@@ -677,6 +693,22 @@ export class SessionHistoryService {
 					if (before === item.scrubbedContent) { progress.alreadyAbsent += 1; continue; }
 					return { status: 'conflict', ...progress, message: 'A scrub target changed after preview.' };
 				}
+				// The data goes first: a note left behind with its file emptied is still a note to scrub on the next run, while a
+				// file left behind with its note scrubbed would hold the session's data with nothing to say so.
+				if (item.payloadPath !== undefined) {
+					const payload = this.vault.file(item.payloadPath);
+					if (payload !== null) {
+						try {
+							await this.vault.process(payload, (value) => value === item.expectedPayload ? '' : value);
+							if (await this.vault.read(payload) !== '') {
+								return { status: 'conflict', ...progress, message: 'A scrub target changed after preview.' };
+							}
+						} catch (error) {
+							this.logFailure('vault_write', 'scrub', error);
+							return { status: 'unavailable', ...progress, message: 'A scrub target could not be updated safely.' };
+						}
+					}
+				}
 				const outcome: { value: 'erased' | 'changed' } = { value: 'changed' };
 				let current = '';
 				if (!lease.isLive()) return { status: 'blocked', ...progress, message: 'Session runtime, recovery, or detector is not idle.' };
@@ -709,9 +741,18 @@ export class SessionHistoryService {
 		for (const file of this.vault.markdownFiles()) {
 			let content: string;
 			try { content = await this.vault.read(file); } catch { invalid += 1; continue; }
-			const live = await inspectLiveSessionNote(content);
+			const live = await inspectLiveSessionNote(content, liveSessionPayloadReader(this.vault, file.path));
 			// A note of a newer payload format cannot be scrubbed by a build that cannot read it: the plan fails closed, as for an unreadable one.
+			// So does a note whose payload file is not here: scrubbing the note alone would leave the session's data behind.
+			// The one exception is the file a scrub already emptied (a run that stopped before the note): nothing is left in it to erase.
 			if (live.status === 'unsupported') { invalid += 1; continue; }
+			if (live.status === 'payload_missing') {
+				const emptied = await liveSessionPayloadReader(this.vault, file.path)(live.file) === '';
+				const scrubbed = emptied ? await scrubStoredSessionNote(content) : null;
+				if (scrubbed === null) { invalid += 1; continue; }
+				items.push({ path: file.path, sessionRef: live.sessionRef, expectedContent: content, expectedHash: await sha256Text(content), scrubbedContent: scrubbed });
+				continue;
+			}
 			const decoded = live.status === 'ok' ? live : await decodeDurableSession(content);
 			if (decoded.status !== 'ok') {
 				if (decoded.status === 'invalid') invalid += 1;
@@ -719,8 +760,11 @@ export class SessionHistoryService {
 			}
 			const scrubbedContent = await scrubStoredSessionNote(content);
 			if (scrubbedContent === null) { invalid += 1; continue; }
+			const payloadPath = live.status === 'ok' && live.storage === 'file'
+				? liveSessionPayloadVaultPath(file.path, liveSessionPayloadFilePath(live.session.sessionRef)) : null;
 			items.push({ path: file.path, sessionRef: decoded.session.sessionRef, expectedContent: content,
-				expectedHash: await sha256Text(content), scrubbedContent });
+				expectedHash: await sha256Text(content), scrubbedContent,
+				...(payloadPath === null || live.status !== 'ok' ? {} : { payloadPath, expectedPayload: canonicalJson(live.session) }) });
 		}
 		const refs = new Set<string>();
 		const duplicates = items.some((item) => refs.has(item.sessionRef) || !refs.add(item.sessionRef));
@@ -795,7 +839,8 @@ export async function inspectDurableSessionNote(content: string, known?: LiveSes
 	if (live.status === 'ok') return { status: 'non_candidate' };
 	if (live.status === 'invalid') return { status: 'invalid' };
 	// A live note of a newer payload format is none of the durable (API) history's business, and no reason to fail it.
-	if (live.status === 'unsupported') return { status: 'non_candidate' };
+	// Neither is one whose payload file has not reached this device: it is a live note, not a broken durable one.
+	if (live.status === 'unsupported' || live.status === 'payload_missing') return { status: 'non_candidate' };
 	const note = await inspectStoredSessionNote(content);
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;

@@ -9,6 +9,7 @@ import { LEGACY_LIVE_SESSION_FORMAT, LIVE_SESSION_FORMAT_KEY, LiveSessionFormatU
 import { LiveSessionLifecycle } from './live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveSessionFormat, type LiveSessionRuntimeRecord } from './live-session-model';
 import { inspectLiveSessionNote, provenanceJsonLines, renderLiveSessionNote } from './live-session-note-renderer';
+import { inlineLiveSessionNote } from '../test/live-session-payload-files';
 import type { SessionLeaseCoordinator } from './manual-session-start-service';
 import type { SessionHistoryVault } from './session-history';
 import { sha256Text } from './session-note-renderer';
@@ -69,7 +70,10 @@ function host(w: World, options: { starts?: LiveSessionFormat; vaultRefuses?: bo
 			// A fixed zone (UTC+2): the title carries the local hour of the start, and the pinned bytes must not depend on the machine's.
 			const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'en', outputFolder: 'Sessions', utcOffsetMinutes: () => 120 });
 			if (rendered.status !== 'ok') return null;
-			w.closed.push({ record, journal, format, content: rendered.note.content, path: rendered.note.preferredPath }); return rendered.note.preferredPath;
+			// What these tests pin is the payload and the figures of each format. They read it from the note of version 1 or 2 that builds up to
+			// 0.7.1 wrote for the session (payload inside the text), rebuilt from the real one; the note of version 3 has its own tests.
+			const content = await inlineLiveSessionNote(rendered.note.content, rendered.session, 'en');
+			w.closed.push({ record, journal, format, content, path: rendered.note.preferredPath }); return rendered.note.preferredPath;
 		} });
 	const requestDetailed = vi.fn(async (path: string) => ({ status: 200, headers: {}, body: path.slice(path.indexOf('ids=') + 4).split(',').map(Number)
 		.filter((id) => bids[id] !== undefined).map((id) => ({ id, whitelisted: true,

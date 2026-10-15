@@ -13,6 +13,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveSessionRuntimeRecord, ty
 import { DEFAULT_FARMING_PREPARATION } from '../sessions/farming-goal-preparation';
 import { reduceLiveInventorySample } from '../sessions/live-session-reducer';
 import { renderLiveSessionNote, inspectLiveSessionNote } from '../sessions/live-session-note-renderer';
+import { inlineLiveSessionNote } from '../test/live-session-payload-files';
 import { SESSION_NOTE_BLOCK_IDS } from '../sessions/session-note-model';
 import { sha256Text } from '../sessions/session-note-renderer';
 import { inspectDurableSessionNote } from '../sessions/session-history';
@@ -42,7 +43,9 @@ async function completedNote(id: string, declaredBuild?: DeclaredBuildV1 | null)
 	record = { ...record, phase: 'complete', endedAt: iso(2), mapIntervals: [{ mapId: 866, fromMs: AT, toMs: AT + 2000 }] };
 	const rendered = await renderLiveSessionNote({ record, journal, format: { noteVersion: 1, priceBasis: 'instant_sell_net' }, locale: 'es', outputFolder: 'Sessions' });
 	if (rendered.status !== 'ok') throw new Error(rendered.reason);
-	return rendered.note.content;
+	// The note of version 1 that builds up to 0.7.1 wrote (payload inside the text): notes written before the payload moved to its own
+	// file keep being read, and this file is about the comparison built from them. Version 3 notes have their own tests.
+	return await inlineLiveSessionNote(rendered.note.content, rendered.session, 'es');
 }
 async function legacyNote(): Promise<string> {
 	const fields = { tc_schema: 2, tc_kind: 'gw2_farming_session', tc_session_ref: 'a'.repeat(64), tc_account_ref: 'b'.repeat(64),

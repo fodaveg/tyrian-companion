@@ -1,6 +1,7 @@
 import { canonicalJson } from '../core/canonical-sha256';
 import { renderLiveSessionNote, inspectLiveSessionNote } from './live-session-note-renderer';
 import type { LiveSessionNoteInput } from './live-session-note-model';
+import { liveSessionPayloadReader, outputFolderOfSessionNote, writeLiveSessionPayloadFile } from './live-session-payload-file';
 import { errorClassName } from '../core/local-debug-error-details';
 import { ensureFoldersBySegments } from '../core/vault-folders';
 import { prepareSessionNote, type SessionNoteInput } from './session-note-model';
@@ -60,18 +61,29 @@ export class SessionNoteWriter {
 		const pending = this.liveFlights.get(rendered.note.sessionRef);
 		if (pending) return pending.payload === payload ? pending.flight
 			: { status: 'conflict', message: 'A different live session revision is being written.' };
-		const flight = this.writeRendered(rendered.note).then(async (result): Promise<SessionNoteWriteResult> => {
+		// The payload file goes first and the note after it: a note that names a file always finds it on this device. A file that
+		// already holds the same text is not written again.
+		const flight = this.writePayloadFile(rendered).then((written) => written ? this.writeRendered(rendered.note) : {
+			status: 'unavailable' as const, message: 'The live session payload file could not be written.' }).then(async (result): Promise<SessionNoteWriteResult> => {
 			if (result.status !== 'written' && result.status !== 'unchanged') return result;
 			try {
 				const file = this.vault.file(result.path);
 				if (file === null) return { status: 'unavailable', message: 'The live session note could not be verified.' };
-				const verified = await inspectLiveSessionNote(await this.vault.read(file));
+				const verified = await inspectLiveSessionNote(await this.vault.read(file),liveSessionPayloadReader(this.vault,result.path));
 				return verified.status === 'ok' && canonicalJson(verified.session) === payload ? result
 					: { status: 'conflict', message: 'The persisted live session evidence does not match the completed session.' };
 			} catch (error) { return { status: 'unavailable', message: 'The live session note could not be verified.', errorName: errorClassName(error) }; }
 		}).finally(() => { if (this.liveFlights.get(rendered.note.sessionRef)?.flight === flight) this.liveFlights.delete(rendered.note.sessionRef); });
 		this.liveFlights.set(rendered.note.sessionRef,{ payload, flight });
 		return flight;
+	}
+
+	/** Writes the payload file the rendered live note names; false when the host refused, with the error class logged by the caller's result. */
+	private async writePayloadFile(rendered: { note: RenderedSessionNote<null>; payloadFile: { relative: string; content: string } }): Promise<boolean> {
+		const folder = outputFolderOfSessionNote(rendered.note.preferredPath);
+		if (folder === null) return false;
+		try { await writeLiveSessionPayloadFile(this.vault,folder,rendered.note.sessionRef,rendered.payloadFile.content); return true; }
+		catch { return false; }
 	}
 
 	/**

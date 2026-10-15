@@ -1,32 +1,56 @@
 import { canonicalJson } from '../core/canonical-sha256';
 import { normalizeSessionOutputFolder, type SessionNoteBlockId } from './session-note-model';
-import { assembleNote, inspectStoredSessionNote, readStoredSessionBlocks, sha256Text, type RenderedSessionNote } from './session-note-renderer';
-import { isStoredLiveSessionPayload, LIVE_SESSION_MAX_PAYLOAD_VERSION, liveSessionLocalDateTime, liveSessionTitleStamp, liveSessionUtcOffsetLabel, prepareLiveSessionPayload,
+import { assembleNote, inspectStoredSessionNote, readStoredSessionBlocks, rewriteStoredSessionNote, sha256Text, type RenderedSessionNote } from './session-note-renderer';
+import { isLiveSessionPayloadFileRef, liveSessionPayloadFilePath, type LiveSessionPayloadReader } from './live-session-payload-file';
+import { isStoredLiveSessionPayload, LIVE_SESSION_FILE_NOTE_VERSION, LIVE_SESSION_MAX_PAYLOAD_VERSION, liveSessionLocalDateTime, liveSessionTitleStamp, liveSessionUtcOffsetLabel, prepareLiveSessionPayload,
 	systemUtcOffsetMinutes, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
 import { computeSummaryFigures, formatSummaryDuration } from './live-session-summary-figures';
 import { keys, liveItemValueCopper } from './live-session-reducer';
 
 const LIVE_NOTE_KEYS = ['tc_schema','tc_kind','tc_source','tc_session_ref','tc_account_ref','tc_locale','tc_started_at',
 	'tc_ended_at','tc_payload_version','tc_payload_sha256'];
+/** A note whose payload lives in a file of its own (`tc_payload_version` 3) names it with one more key. */
+const LIVE_FILE_NOTE_KEYS = [...LIVE_NOTE_KEYS,'tc_payload_file'];
 export type LiveSessionNoteInspection =
-	| { status: 'ok'; session: StoredLiveSessionPayloadV1 }
+	/** `storage` says where the payload was read from: the text of the note (versions 1 and 2) or the file the note names (version 3). */
+	| { status: 'ok'; session: StoredLiveSessionPayloadV1; storage: 'inline' | 'file' }
+	/**
+	 * A version 3 note whose payload file is not here (it has not reached this device yet, or was not asked for): neither readable
+	 * nor invalid. Nothing may rewrite, regenerate, delete or trash a note for this; `file` is the path relative to the output folder.
+	 */
+	| { status: 'payload_missing'; sessionRef: string; file: string }
 	/** A live note of a payload format newer than this reader knows (`version`): set aside, neither read nor invalid, and never touched. */
 	| { status: 'unsupported'; version: number }
 	| { status: 'non_candidate' } | { status: 'invalid' };
 
-/** Six established managed regions, with portable full evidence under the provenance hash. */
+/** What a note of version 3 says in place of the payload: where the complete record is. */
+function payloadFileSentence(es: boolean, file: string): string {
+	return es ? `El registro completo de la sesión está en el fichero \`${file}\` (ruta relativa a la carpeta de salida); lo gestiona el plugin, no lo edites.`
+		: `The complete record of the session is in the file \`${file}\` (path relative to the output folder); the plugin manages it, do not edit it.`;
+}
+/** The sentence a note of version 1 or 2 has just before its inline payload. */
+const LEGACY_PROVENANCE_SENTENCE = {
+	es: 'El siguiente registro conserva la sesión completa para recuperarla y exportarla en otra instalación.',
+	en: 'The following record preserves the complete session for recovery and export on another installation.',
+};
+
+/** The file that holds the payload of a version 3 note: the path relative to the output folder and its exact text. */
+export interface LiveSessionPayloadFile { relative: string; content: string }
+
+/** Six established managed regions; the full evidence is a payload file of its own, named by the note and checked by its hash. */
 export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promise<
-	{ status: 'ok'; note: RenderedSessionNote<null>; session: StoredLiveSessionPayloadV1 } | { status: 'invalid'; reason: string }> {
+	{ status: 'ok'; note: RenderedSessionNote<null>; session: StoredLiveSessionPayloadV1; payloadFile: LiveSessionPayloadFile } | { status: 'invalid'; reason: string }> {
 	try {
 		const folder = normalizeSessionOutputFolder(input.outputFolder);
 		if (folder === null || !['es','en'].includes(input.locale)) return { status: 'invalid', reason: 'invalid_input' };
 		const session = await prepareLiveSessionPayload(input);
 		if (session === null) return { status: 'invalid', reason: 'invalid_live_evidence' };
 		const payload = canonicalJson(session);
+		const payloadFilePath = liveSessionPayloadFilePath(session.sessionRef);
 		const es = input.locale === 'es';
 		const frontmatter = { tc_schema: 7, tc_kind: 'session', tc_source: 'nexus_inventory', tc_session_ref: session.sessionRef,
 			tc_account_ref: null, tc_locale: input.locale, tc_started_at: session.startedAt, tc_ended_at: session.endedAt,
-			tc_payload_version: session.version, tc_payload_sha256: await sha256Text(payload),
+			tc_payload_version: LIVE_SESSION_FILE_NOTE_VERSION, tc_payload_sha256: await sha256Text(payload), tc_payload_file: payloadFilePath,
 			descripcion: es ? 'Cambios de inventario observados durante la conexión al juego.' : 'Inventory changes observed during the game connection.' };
 		const label = (spanish: string, english: string): string => es ? spanish : english;
 		const money = (value: number | null): string => value === null ? '—' : `${String(value)} c`;
@@ -129,14 +153,12 @@ export async function renderLiveSessionNote(input: LiveSessionNoteInput): Promis
 				`- ${label('Precios capturados','Price snapshot')}: ${valuation.capturedAt === null ? '—' : localAndUtc(valuation.capturedAt)} · ${valuation.priceBasis === 'instant_sell_gross'
 					? label('venta inmediata, precio bruto por unidad; la comisión se descuenta sobre el total de cada venta','instant selling, gross price per unit; the commission is taken over the total of each sale')
 					: label('venta inmediata neta','net instant selling')}`,
-				label('El siguiente registro conserva la sesión completa para recuperarla y exportarla en otra instalación.',
-					'The following record preserves the complete session for recovery and export on another installation.'),
-				'```json',payload,'```',
+				payloadFileSentence(es,payloadFilePath),
 			].join('\n'),
 		};
 		// The title sits outside the managed blocks: no reader takes anything from it, and a note already written keeps the one it has
 		// (the writer only replaces the blocks of an existing note), so this names the notes created from here on.
-		return { status: 'ok', session, note: await assembleNote(session.sessionRef,null,session.startedAt,folder,input.locale,frontmatter,contents,
+		return { status: 'ok', session, payloadFile: { relative: payloadFilePath, content: payload }, note: await assembleNote(session.sessionRef,null,session.startedAt,folder,input.locale,frontmatter,contents,
 			{ heading: `${liveSessionTitleStamp(session.startedAt,input.utcOffsetMinutes)} · ${label('Sesión completa','Full session')}`, notes: label('Mis notas','My notes'), notesBeforeData: true }) };
 	} catch { return { status: 'invalid', reason: 'live_note_unavailable' }; }
 }
@@ -154,8 +176,14 @@ export function provenanceJsonLines(text: string): string[] {
 	}
 }
 
-/** A valid live note is a distinct history source, never an API net-delta compatibility record. */
-export async function inspectLiveSessionNote(content: string): Promise<LiveSessionNoteInspection> {
+/**
+ * A valid live note is a distinct history source, never an API net-delta compatibility record.
+ *
+ * `readPayload` reads the payload file a version 3 note names. Without it (a caller that only needs to classify the note) a
+ * version 3 note answers `payload_missing`; with it, a file that is absent answers the same. A file that IS there and does not
+ * verify makes the note `invalid`, exactly as an inline payload that does not verify always has.
+ */
+export async function inspectLiveSessionNote(content: string, readPayload?: LiveSessionPayloadReader): Promise<LiveSessionNoteInspection> {
 	const frontmatter = content.startsWith('---\n') ? content.slice(4,content.indexOf('\n---\n',4)) : '';
 	if (!/^(?:tc_schema:.*7|tc_kind:.*session|tc_source:.*nexus_inventory)/mu.test(frontmatter)
 		|| /^tc_kind: "gw2_farming_session"$/mu.test(frontmatter) && !/^tc_schema: 7$/mu.test(frontmatter)
@@ -170,20 +198,52 @@ export async function inspectLiveSessionNote(content: string): Promise<LiveSessi
 		&& Number.isSafeInteger(fm.tc_payload_version) && fm.tc_payload_version > LIVE_SESSION_MAX_PAYLOAD_VERSION) {
 		return { status: 'unsupported', version: fm.tc_payload_version };
 	}
-	if (note.hasInvalidScalar || !note.managedBlocksValid || !keys(note.frontmatter,LIVE_NOTE_KEYS)) return { status: 'invalid' };
+	const fileNote = fm.tc_payload_version === LIVE_SESSION_FILE_NOTE_VERSION;
+	if (note.hasInvalidScalar || !note.managedBlocksValid || !keys(note.frontmatter,fileNote ? LIVE_FILE_NOTE_KEYS : LIVE_NOTE_KEYS)) return { status: 'invalid' };
 	if (fm.tc_schema !== 7 || fm.tc_kind !== 'session' || fm.tc_source !== 'nexus_inventory' || fm.tc_account_ref !== null
-		|| fm.tc_payload_version !== 1 && fm.tc_payload_version !== 2 || !['es','en'].includes(fm.tc_locale as string)) return { status: 'invalid' };
-	const blocks = await readStoredSessionBlocks(content);
-	const payloads = blocks === null ? [] : provenanceJsonLines(blocks.provenance);
-	if (payloads.length !== 1) return { status: 'invalid' };
+		|| fm.tc_payload_version !== 1 && fm.tc_payload_version !== 2 && !fileNote || !['es','en'].includes(fm.tc_locale as string)) return { status: 'invalid' };
+	let serialized: string;
+	if (fileNote) {
+		// The reference may only be the one path the session's own reference gives: nothing else a note says is ever read.
+		if (!isLiveSessionPayloadFileRef(fm.tc_payload_file,fm.tc_session_ref)) return { status: 'invalid' };
+		const stored = await readPayload?.(fm.tc_payload_file) ?? null;
+		// An empty file is what a scrub leaves behind (the data is gone): it holds nothing to read, so it is missing, not corrupt.
+		if (stored === null || stored === '') return { status: 'payload_missing', sessionRef: fm.tc_session_ref as string, file: fm.tc_payload_file };
+		serialized = stored;
+	} else {
+		const blocks = await readStoredSessionBlocks(content);
+		const payloads = blocks === null ? [] : provenanceJsonLines(blocks.provenance);
+		if (payloads.length !== 1) return { status: 'invalid' };
+		serialized = payloads[0]!;
+	}
 	try {
-		const serialized = payloads[0]!;
 		const session: unknown = JSON.parse(serialized);
+		// The payload keeps its own format (1 or 2) wherever it lives; only an inline note must agree with its `tc_payload_version`.
 		if (!isStoredLiveSessionPayload(session) || canonicalJson(session) !== serialized
-			|| session.version !== fm.tc_payload_version || await sha256Text(serialized) !== fm.tc_payload_sha256 || session.sessionRef !== fm.tc_session_ref
+			|| !fileNote && session.version !== fm.tc_payload_version || await sha256Text(serialized) !== fm.tc_payload_sha256 || session.sessionRef !== fm.tc_session_ref
 			|| session.startedAt !== fm.tc_started_at || session.endedAt !== fm.tc_ended_at) return { status: 'invalid' };
-		return { status: 'ok', session };
+		return { status: 'ok', session, storage: fileNote ? 'file' : 'inline' };
 	} catch { return { status: 'invalid' }; }
+}
+
+/**
+ * Moves the payload of a note of version 1 or 2 out of its text: the same note, its managed blocks except the provenance one
+ * and its human regions (title, «Mis notas») untouched, with `tc_payload_version: 3` and `tc_payload_file`. Null when the note is
+ * not one of those, its inline payload does not verify (it is left as it is), or its provenance block is not the one this build wrote.
+ */
+export async function migrateLiveSessionNoteToFile(content: string): Promise<{ content: string; sessionRef: string; payloadFile: LiveSessionPayloadFile } | null> {
+	const inspected = await inspectLiveSessionNote(content);
+	if (inspected.status !== 'ok' || inspected.storage !== 'inline') return null;
+	const blocks = await readStoredSessionBlocks(content);
+	const lines = blocks?.provenance.split('\n');
+	const fence = lines?.indexOf('```json') ?? -1;
+	if (lines === undefined || fence < 1 || fence + 3 !== lines.length || lines[fence + 2] !== '```') return null;
+	const locale = (await inspectStoredSessionNote(content))?.frontmatter.tc_locale;
+	if (locale !== 'es' && locale !== 'en' || lines[fence - 1] !== LEGACY_PROVENANCE_SENTENCE[locale]) return null;
+	const relative = liveSessionPayloadFilePath(inspected.session.sessionRef);
+	const migrated = await rewriteStoredSessionNote(content,{ tc_payload_version: LIVE_SESSION_FILE_NOTE_VERSION, tc_payload_file: relative },
+		{ provenance: [...lines.slice(0,fence - 1),payloadFileSentence(locale === 'es',relative)].join('\n') });
+	return migrated === null ? null : { content: migrated, sessionRef: inspected.session.sessionRef, payloadFile: { relative, content: canonicalJson(inspected.session) } };
 }
 function escapeMarkdown(value: string): string { return value.replace(/[\p{Cc}]/gu,' ').replace(/[\\|<>]/gu,(match) => `\\${match}`); }
 function gapReason(reason: StoredLiveSessionPayloadV1['gaps'][number]['reason'], es: boolean): string {

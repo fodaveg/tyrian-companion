@@ -5,7 +5,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type 
 import { liveItemValueCopper, reduceLiveInventorySample } from './live-session-reducer';
 import { LEGACY_LIVE_SESSION_FORMAT } from './live-session-format';
 import { knownLiveDisplayNames, prepareLiveSessionPayload, type LiveSessionNoteInput, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
-import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, renderLiveSessionNote } from '../test/live-session-payload-files';
 import { LiveSessionHistoryService } from './live-session-history';
 import { SessionHistoryService, type SessionHistoryVault } from './session-history';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
@@ -2136,14 +2136,14 @@ describe('the changes of map and the readable full note', () => {
 			expect(session.version).toBe(version);
 			expect(note.blocks.results.content).toContain('### Tramos de mapa');
 			expect(note.content.indexOf('## Mis notas')).toBeLessThan(note.content.indexOf('managed:start:provenance'));
-			expect(await inspectLiveSessionNote(note.content)).toEqual({ status: 'ok', session });
+			expect(await inspectLiveSessionNote(note.content)).toEqual({ status: 'ok', session, storage: 'file' });
 		});
 		it('does not touch the frontmatter, the path or the data', async () => {
 			const { note, session } = await fullOf(threeMaps());
 			expect(Object.keys(note.frontmatter)).toEqual(['tc_schema', 'tc_kind', 'tc_source', 'tc_session_ref', 'tc_account_ref', 'tc_locale', 'tc_started_at',
-				'tc_ended_at', 'tc_payload_version', 'tc_payload_sha256', 'descripcion']);
+				'tc_ended_at', 'tc_payload_version', 'tc_payload_sha256', 'tc_payload_file', 'descripcion']);
 			expect(note.preferredPath).toBe(`Tyrian Companion/sessions/2026/2026-10-08 153000Z - ${session.sessionRef.slice(0, 16)}.md`);
-			expect(await inspectLiveSessionNote(note.content)).toEqual({ status: 'ok', session });
+			expect(await inspectLiveSessionNote(note.content)).toEqual({ status: 'ok', session, storage: 'file' });
 		});
 	});
 
@@ -2162,7 +2162,7 @@ describe('the changes of map and the readable full note', () => {
 			expect(after.slice(heading, data)).toBe(`## Mis notas\n${mine.replace(/\n+$/u, '')}\n\n`);
 			expect(after).toContain('aliases: [Mía]');
 			expect(after.endsWith('<!-- tyrian-companion:managed:end:provenance -->\n')).toBe(true);
-			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session });
+			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session, storage: 'file' });
 			expect(await writer.writeLive(input)).toEqual({ status: 'unchanged', path: note.preferredPath });
 		});
 		it('keeps the blank lines the user left at the end of the section', async () => {
@@ -2209,7 +2209,7 @@ describe('the changes of map and the readable full note', () => {
 			expect(after).toContain(' · Sesión completa\n\n[[Tyrian Companion/summaries/2026-10-08 153000Z - 0123456789abcdef - summary|Resumen]]\n\n<!-- tyrian-companion:managed:start:summary');
 			expect(await linkFullNoteToSummary(vault, args)).toBe('present');
 			expect(vault.contents.get(FULL_NOTE)).toBe(after);
-			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session });
+			expect(await inspectLiveSessionNote(after)).toEqual({ status: 'ok', session, storage: 'file' });
 		});
 		it('writes it by id where the host names notes by id (Hebra), in English', async () => {
 			const { vault, session } = await written();

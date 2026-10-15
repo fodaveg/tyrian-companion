@@ -8,7 +8,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type 
 import { reduceLiveInventorySample } from './live-session-reducer';
 import { LEGACY_LIVE_SESSION_FORMAT, liveSessionFormatOf } from './live-session-format';
 import { isStoredLiveSessionPayload, prepareLiveSessionPayload, type LiveSessionNoteInput } from './live-session-note-model';
-import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inspectLiveSessionNote, renderLiveSessionNote } from '../test/live-session-payload-files';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
 import { inspectDurableSessionNote, SessionHistoryService, SessionHistoryRuntimeAuthority, type SessionHistoryVault } from './session-history';
 import { LiveSessionHistoryService, liveSessionViewFromStored, liveSessionAlertsFromStored } from './live-session-history';
@@ -73,6 +73,11 @@ class TestVault implements SessionNoteVault {
 	}
 }
 
+/** Puts a rendered note in the vault with the payload file it names, the way a synced library holds both. */
+function seedNote(vault: TestVault, result: Awaited<ReturnType<typeof rendered>>, content = result.note.content, path = result.note.preferredPath): void {
+	vault.contents.set(path,content); vault.contents.set(`Tyrian Companion/${result.payloadFile.relative}`,result.payloadFile.content);
+}
+
 function historyVault(vault: TestVault): SessionHistoryVault {
 	return { markdownFiles: () => vault.markdownFiles(),exists: (path) => vault.exists(path),file: (path) => vault.contents.has(path) ? {path} : null,
 		read: (file) => vault.read(file),createFolder: (path) => vault.createFolder(path),create: (path,content) => vault.create(path,content),
@@ -90,7 +95,7 @@ describe('portable live session notes', () => {
 		expect(session.totals).toEqual([{kind: 'item',idNumber: 12147,positive: 4,negative: 0,net: 4}]);
 		expect(session.valuation).toMatchObject({ positiveItemValueKnownCopper: 40,netItemValueKnownCopper: 40,coinNetCopper: null,knownNetValueCopper: null });
 		expect(session.farmingGoal).toEqual({version: 1,kind: 'bags',targetBags: 500});
-		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session});
+		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session,storage: 'file'});
 		expect(await inspectDurableSessionNote(note.content)).toEqual({status: 'non_candidate'});
 		expect(sessionNotePathIdentity(note.content)).toEqual({sessionRef: session.sessionRef,baselineCompletedAt: session.startedAt});
 		expect(canonicalPathFor('Tyrian Companion',note.content)).toContain(note.preferredPath.replace('Tyrian Companion/',''));
@@ -205,7 +210,8 @@ describe('live note write verification and CAS', () => {
 		expect((await writer.writeLive(input)).status).toBe('unchanged');
 		expect(vault.contents.get(first.path)).toContain('Human field notes.\n\nConcurrent human note.');
 		expect(vault.contents.get(first.path)).toContain('aliases: [Personal]');
-		expect(vault.contents.size).toBe(1);
+		// One note and the payload file it names, written once.
+		expect(vault.markdownFiles()).toHaveLength(1); expect(vault.contents.size).toBe(2);
 	});
 	it('keeps the completed runtime when create reports success but durable evidence is corrupted', async () => {
 		const vault = new TestVault(); vault.createMutation = (content) => content.replace('Champiñón','corrupted');
@@ -244,18 +250,18 @@ describe('the title of the full note', () => {
 		expect(h1(summary.note.content).startsWith('# 2026-10-06 14.00 · Resumen · ')).toBe(true);
 		// The zone moves the title and the local hours the blocks write, and nothing else: same path, same frontmatter, same data block, to the byte.
 		expect(eastNote.preferredPath).toBe(note.preferredPath); expect(eastNote.collisionPath).toBe(note.collisionPath);
-		expect(eastNote.frontmatter).toEqual(note.frontmatter); expect(await inspectLiveSessionNote(eastNote.content)).toEqual({status: 'ok',session});
+		expect(eastNote.frontmatter).toEqual(note.frontmatter); expect(await inspectLiveSessionNote(eastNote.content)).toEqual({status: 'ok',session,storage: 'file'});
 		expect(eastNote.blocks.decision.serialized).toBe(note.blocks.decision.serialized);
 	});
 	it('is read by nobody: a note with the title every note had until 0.6.18 gives the same session and the same path', async () => {
-		const {note,session} = await rendered(); const old = note.content.replace(h1(note.content),OLD_TITLE);
+		const result = await rendered(); const {note,session} = result; const old = note.content.replace(h1(note.content),OLD_TITLE);
 		expect(h1(old)).toBe(OLD_TITLE);
 		expect(await inspectLiveSessionNote(old)).toEqual(await inspectLiveSessionNote(note.content));
 		expect((await inspectLiveSessionNote(old)).status).toBe('ok');
 		expect(sessionNotePathIdentity(old)).toEqual(sessionNotePathIdentity(note.content));
 		expect(canonicalPathFor('Tyrian Companion',old)).toEqual(canonicalPathFor('Tyrian Companion',note.content));
 		expect(await readStoredSessionBlocks(old)).toEqual(await readStoredSessionBlocks(note.content));
-		const vault = new TestVault(); vault.contents.set(note.preferredPath,old);
+		const vault = new TestVault(); seedNote(vault,result,old);
 		const listed = await new LiveSessionHistoryService(historyVault(vault)).list();
 		expect(listed.status === 'ok' && { refs: listed.sessions.map((entry) => entry.sessionRef),setAside: listed.setAside }).toEqual({refs: [session.sessionRef],setAside: []});
 	});
@@ -282,8 +288,9 @@ describe('the title of the full note', () => {
 		const after = vault.contents.get(path)!;
 		expect(h1(after)).toBe(OLD_TITLE);
 		expect(after).toContain('Champiñón silvestre'); expect(after).not.toContain('Sesión completa');
-		expect((await inspectLiveSessionNote(after)).status).toBe('ok');
-		expect(vault.contents.size).toBe(1);
+		// The payload file is the same session's, rewritten for the new name: the reader must see the new one.
+		expect((await inspectLiveSessionNote(after,async (relative) => vault.contents.get(`Tyrian Companion/${relative}`) ?? null)).status).toBe('ok');
+		expect(vault.markdownFiles()).toHaveLength(1);
 	});
 });
 
@@ -316,14 +323,14 @@ describe('the changes of map in the full note', () => {
 		// Two maps add the table of their stretches at the foot of the results, and nothing above it moves.
 		expect(note.blocks.results.content.startsWith(plain.note.blocks.results.content)).toBe(true);
 		expect(note.blocks.results.content.slice(plain.note.blocks.results.content.length)).toMatch(/^\n### Tramos de mapa\n/u);
-		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session});
+		expect(await inspectLiveSessionNote(note.content)).toEqual({status: 'ok',session,storage: 'file'});
 		expect(session).toEqual({...plain.session,mapIntervals: [{mapId: 866,fromMs: AT,toMs: AT + 1000},{mapId: 873,fromMs: AT + 1000,toMs: AT + 2000}]});
 		// The lines are text of the summary block only: the note without them is the same evidence, under the same payload hash.
 		const old = await asBefore(note);
 		expect((await readStoredSessionBlocks(old))!.summary).not.toContain('- Mapa 8');
 		expect((await readStoredSessionBlocks(old))!.summary).toBe(plain.note.blocks.summary.content);
 		expect((await readStoredSessionBlocks(old))!.provenance).toBe(note.blocks.provenance.content);
-		expect(await inspectLiveSessionNote(old)).toEqual({status: 'ok',session});
+		expect(await inspectLiveSessionNote(old)).toEqual({status: 'ok',session,storage: 'file'});
 	});
 	it('a note already written gains the lines when its session is written again: no conflict, «Mis notas» and the human frontmatter stay, same data', async () => {
 		const input: LiveSessionNoteInput = mapped(); const {note,session} = await rendered(input); const path = note.preferredPath;
@@ -337,10 +344,10 @@ describe('the changes of map in the full note', () => {
 		const blocks = await readStoredSessionBlocks(after);
 		expect(blocks).toEqual(Object.fromEntries(Object.entries(note.blocks).map(([id,block]) => [id,block.content])));
 		expect(blocks!.provenance).toBe((await readStoredSessionBlocks(written))!.provenance);
-		expect(await inspectLiveSessionNote(after)).toEqual({status: 'ok',session});
+		expect(await inspectLiveSessionNote(after)).toEqual({status: 'ok',session,storage: 'file'});
 		// And from then on the same session again changes nothing.
 		expect(await writer.writeLive(input)).toEqual({status: 'unchanged',path});
-		expect(vault.contents.get(path)).toBe(after); expect(vault.contents.size).toBe(1);
+		expect(vault.contents.get(path)).toBe(after); expect(vault.markdownFiles()).toHaveLength(1);
 	});
 });
 
@@ -348,9 +355,12 @@ describe('portable payload byte compatibility', () => {
 	it('writes a session that has no format mark (one from before the mark) in exactly the version 1 bytes of the golden fixtures, whatever a new session gets', async () => {
 		const pinned = await rendered(); const unmarked = await renderLiveSessionNote({...fixture(),format: liveSessionFormatOf(undefined,'sensitive-local-session-id')});
 		if (unmarked.status !== 'ok') throw new Error(unmarked.reason);
-		expect(unmarked.note.content).toContain('tc_payload_version: 1\n');
+		// The note says version 3 (the payload is in its own file); the payload inside that file is still the version 1 one.
+		expect(unmarked.note.content).toContain('tc_payload_version: 3\n');
 		expect(unmarked.note.content).toBe(pinned.note.content);
+		expect(unmarked.payloadFile).toEqual(pinned.payloadFile);
 		expect(unmarked.session.version).toBe(1);
+		expect(JSON.parse(unmarked.payloadFile.content)).toMatchObject({version: 1});
 		// The mark of another session says nothing about this one.
 		const foreign = await renderLiveSessionNote({...fixture(),format: liveSessionFormatOf({version: 1,sessionId: 'another',noteVersion: 2,priceBasis: 'instant_sell_gross'},'sensitive-local-session-id')});
 		if (foreign.status !== 'ok') throw new Error(foreign.reason);
@@ -422,16 +432,16 @@ describe('explicit active export snapshots', () => {
 
 describe('vault live history, exports and privacy', () => {
 	it('recovers the full journal from a synced note without any local store or API', async () => {
-		const {note,session} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content);
+		const result = await rendered(); const {session} = result; const vault = new TestVault(); seedNote(vault,result);
 		const service = new LiveSessionHistoryService(historyVault(vault));
 		expect(await service.list()).toEqual({status: 'ok',ignored: 0,setAside: [],sessions: [{sessionRef: session.sessionRef,startedAt: session.startedAt,endedAt: session.endedAt,observationCount: 2,estimatedValueCopper: 40,itemCount: session.totals.filter((row) => row.kind === 'item').reduce((sum,row) => sum + row.net,0),items: session.totals.filter((row) => row.kind === 'item' && row.net !== 0).map((row) => ({idNumber: row.idNumber,net: row.net})),currencies: []}]});
 		expect(await service.select(session.sessionRef)).toEqual({status: 'found',session});
 		expect(await new SessionHistoryService(historyVault(vault)).scan()).toEqual({status: 'ok',sessions: [],ignored: 1});
 	});
 	it('fails closed on corrupt or duplicate live histories', async () => {
-		const {note} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content); vault.contents.set('duplicate.md',note.content);
+		const result = await rendered(); const {note} = result; const vault = new TestVault(); seedNote(vault,result); vault.contents.set('Tyrian Companion/sessions/2026/duplicate.md',note.content);
 		expect((await new LiveSessionHistoryService(historyVault(vault)).list()).status).toBe('conflict');
-		vault.contents.delete('duplicate.md'); vault.contents.set(note.preferredPath,note.content.replace('Champiñón','corrupt'));
+		vault.contents.delete('Tyrian Companion/sessions/2026/duplicate.md'); vault.contents.set(note.preferredPath,note.content.replace('Champiñón','corrupt'));
 		expect((await new SessionHistoryService(historyVault(vault)).scan()).status).toBe('conflict');
 	});
 	it.each(['timeline','summary'] as const)('exports all 1,000 observations in %s CSV and JSON, preserving price and unknown currency', async (kind) => {
@@ -475,7 +485,7 @@ describe('vault live history, exports and privacy', () => {
 		expect(vault.contents.get(result.path)).toBe('existing export'); expect(process).not.toHaveBeenCalled();
 	});
 	it('includes live notes in the existing byte-bound privacy scrub and retains human regions', async () => {
-		const {note} = await rendered(); const vault = new TestVault(); vault.contents.set(note.preferredPath,note.content + '\nHuman memory.\n');
+		const result = await rendered(); const {note} = result; const vault = new TestVault(); seedNote(vault,result,note.content + '\nHuman memory.\n');
 		const service = new SessionHistoryService(historyVault(vault));
 		const authority = new SessionHistoryRuntimeAuthority(() => ({sessionStatus: 'idle',recoveryStatus: 'none',detectorStatus: 'disarmed'}));
 		const preview = await service.previewScrub(authority); expect(preview.status).toBe('ready');
@@ -483,6 +493,9 @@ describe('vault live history, exports and privacy', () => {
 		expect((await service.scrub(preview.token,authority)).status).toBe('erased');
 		const content = vault.contents.get(note.preferredPath)!; expect(content).toContain('Human memory.');
 		expect(content).not.toContain('tc_'); expect(content).not.toContain('Champiñón'); expect(await readStoredSessionBlocks(content)).toBeNull();
+		// The payload file holds the whole session: the scrub empties it before it touches the note.
+		expect(vault.contents.get(`Tyrian Companion/${result.payloadFile.relative}`)).toBe('');
+		const again = await service.previewScrub(authority); expect(again).toMatchObject({status: 'ready',sessions: 0});
 	});
 });
 

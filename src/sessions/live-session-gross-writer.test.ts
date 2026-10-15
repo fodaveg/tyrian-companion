@@ -10,6 +10,7 @@ import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveInventorySampleV1, type 
 import { newLiveSessionFormat } from './live-session-format';
 import { LIVE_SESSION_NOTE_WRITE_VERSION, prepareLiveSessionPayload } from './live-session-note-model';
 import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inlineLiveSessionNote } from '../test/live-session-payload-files';
 import { createLiveAlertIntent, decideLiveAlert } from './live-session-outbox';
 import { computeSummaryFigures } from './live-session-summary-figures';
 import type { SessionHistoryVault } from './session-history';
@@ -49,7 +50,9 @@ function harness(bids: Readonly<Record<number, number>> = { [ITEM]: 8 }) {
 		onComplete: async (record, journal, format) => {
 			const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'en', outputFolder: 'Sessions' });
 			if (rendered.status !== 'ok') return null;
-			closed.push({ record, journal, format }); notes.push({ path: rendered.note.preferredPath, content: rendered.note.content }); return rendered.note.preferredPath;
+			// The note of version 2 that builds up to 0.7.1 wrote (payload inside the text), rebuilt from the real one: this file is about the
+			// gross prices a session keeps and saves, and the note of version 3 has its own tests.
+			closed.push({ record, journal, format }); notes.push({ path: rendered.note.preferredPath, content: await inlineLiveSessionNote(rendered.note.content, rendered.session, 'en') }); return rendered.note.preferredPath;
 		} });
 	economy.current = new LiveSessionEconomy({ lifecycle, gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now: () => now }), now: () => now,
 		catalog: async () => ({}), cachedItems: async () => ({}), currencies: async () => ({ currencies: {}, coverage: {} }), cachedCurrencies: async () => ({}),

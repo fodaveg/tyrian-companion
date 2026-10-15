@@ -10,7 +10,7 @@ import { SessionHistoryRuntimeAuthority, SessionHistoryService, type SessionHist
 import { isEmptySample } from './live-session-reducer';
 import { isStoredLiveSessionPayload, prepareLiveSessionPayload, prepareLiveSessionSnapshot,
 	type LiveSessionPayloadVersion, type StoredLiveSessionPayloadV1 } from './live-session-note-model';
-import { inspectLiveSessionNote, renderLiveSessionNote } from './live-session-note-renderer';
+import { inlineLiveSessionNote, inspectLiveSessionNote, renderLiveSessionNote } from '../test/live-session-payload-files';
 import { SessionNoteWriter, type SessionNoteFile, type SessionNoteVault } from './session-note-writer';
 import { canonicalJson } from '../core/canonical-sha256';
 import { sha256Text } from './session-note-renderer';
@@ -28,7 +28,7 @@ const formatOf = (version: LiveSessionPayloadVersion): LiveSessionFormat => ({ n
 /** A lifecycle over an in-memory store that starts its sessions in note `noteVersion`; the completed session is rendered in the format it started in. */
 function harness(noteVersion: LiveSessionPayloadVersion, store = new MemorySessionRuntimeStore()) {
 	let now = AT; let fence = 0; let interval: (() => void) | null = null;
-	const written: { path: string; content: string; record: unknown; journal: readonly LiveJournalEntryV1[] }[] = [];
+	const written: { path: string; content: string; payloadFile: { relative: string; content: string }; session: StoredLiveSessionPayloadV1; record: unknown; journal: readonly LiveJournalEntryV1[] }[] = [];
 	const onCommitted = vi.fn();
 	const handle = (sessionId: string): ActiveSessionLeaseHandle => ({ machineId: 'machine', instanceId: 'host', sessionId, fence: ++fence, acquiredAt: now, renewedAt: now, expiresAt: now + 120_000 });
 	const coordinator: SessionLeaseCoordinator = { instanceId: 'host',
@@ -41,7 +41,7 @@ function harness(noteVersion: LiveSessionPayloadVersion, store = new MemorySessi
 		onComplete: async (record: Parameters<typeof renderLiveSessionNote>[0]['record'], journal: readonly LiveJournalEntryV1[], format: LiveSessionFormat) => {
 			const rendered = await renderLiveSessionNote({ record, journal, format, locale: 'en', outputFolder: 'Sessions' });
 			if (rendered.status !== 'ok') return null;
-			written.push({ path: rendered.note.preferredPath, content: rendered.note.content, record, journal }); return rendered.note.preferredPath;
+			written.push({ path: rendered.note.preferredPath, content: rendered.note.content, payloadFile: rendered.payloadFile, session: rendered.session, record, journal }); return rendered.note.preferredPath;
 		} };
 	const service = new LiveSessionLifecycle(options);
 	const source = { sourceInstance: INSTANCE, epoch: EPOCH, build: NEXUS_LIVE_BUILD, profile: NEXUS_LIVE_PROFILE,
@@ -87,10 +87,14 @@ class MapVault {
 async function visibleFigures(h: Harness) {
 	const view = h.service.getView(0, 5000);
 	const note = h.written[0]!; const vault = new MapVault(); vault.contents.set(note.path, note.content);
+	vault.contents.set(`Sessions/${note.payloadFile.relative}`, note.payloadFile.content);
+	// `note` below is the note of version 1 or 2 the same session had up to 0.7.1 (its payload inside the text): the tests that follow
+	// are about what a payload of each version holds and how a note of each is read.
+	const inline = await inlineLiveSessionNote(note.content, note.session, 'en');
 	const history = new LiveSessionHistoryService(vault.asHistory());
 	const listed = await history.list(); if (listed.status !== 'ok') throw new Error('history');
 	const found = await history.select(listed.sessions[0]!.sessionRef); if (found.status !== 'found') throw new Error('select');
-	return { payload: found.session, note: note.content, journal: note.journal,
+	return { payload: found.session, note: inline, journal: note.journal,
 		figures: { live: { totals: view.totals, valuation: view.valuation, observedItemsMs: view.observedItemsMs, observedCurrenciesMs: view.observedCurrenciesMs,
 			elapsedMs: view.elapsedMs, chartPoints: view.chartPoints, gaps: view.gaps, observationCount: view.observationCount, observations: view.observations,
 			lastObservationAt: view.lastObservationAt, phase: view.phase },
@@ -290,7 +294,9 @@ describe('the note: what is written, what is read, what is set aside', () => {
 			const complete = { ...capture.record, phase: 'complete' as const, endedAt: iso(60) };
 			const written = await renderLiveSessionNote({ record: complete, journal: capture.journal, format: capture.format, locale: 'en', outputFolder: 'Sessions' });
 			if (written.status !== 'ok') throw new Error('render');
-			expect(written.note.content).toContain(`tc_payload_version: ${String(version)}`);
+			// The note says it keeps its payload in a file (3); the payload in that file is of the format the session started in.
+			expect(written.note.content).toContain('tc_payload_version: 3\n');
+			expect(JSON.parse(written.payloadFile.content)).toMatchObject({ version });
 			expect(written.session.version).toBe(version);
 		}
 	});
@@ -298,7 +304,7 @@ describe('the note: what is written, what is read, what is set aside', () => {
 		for (const version of [1, 2] as const) {
 			const { note, payload } = await finished(version);
 			expect(note).toContain(`tc_payload_version: ${String(version)}`);
-			expect(await inspectLiveSessionNote(note)).toEqual({ status: 'ok', session: payload });
+			expect(await inspectLiveSessionNote(note)).toEqual({ status: 'ok', session: payload, storage: 'inline' });
 		}
 	});
 	it('refuses a note whose header and payload name different versions', async () => {
@@ -307,9 +313,9 @@ describe('the note: what is written, what is read, what is set aside', () => {
 	});
 	it('sets aside a note of a version later than it knows, whatever else about it', async () => {
 		const { note } = await finished(2);
-		const future = note.replace('tc_payload_version: 2', 'tc_payload_version: 3');
-		expect(await inspectLiveSessionNote(future)).toEqual({ status: 'unsupported', version: 3 });
-		expect(await inspectLiveSessionNote(future.replace(/```json\n[^\n]+\n```/u, '```json\n{"nothing":"you know"}\n```'))).toEqual({ status: 'unsupported', version: 3 });
+		const future = note.replace('tc_payload_version: 2', 'tc_payload_version: 4');
+		expect(await inspectLiveSessionNote(future)).toEqual({ status: 'unsupported', version: 4 });
+		expect(await inspectLiveSessionNote(future.replace(/```json\n[^\n]+\n```/u, '```json\n{"nothing":"you know"}\n```'))).toEqual({ status: 'unsupported', version: 4 });
 		for (const broken of ['0', '-1', '1.5', '"2"', 'null']) {
 			expect((await inspectLiveSessionNote(note.replace('tc_payload_version: 2', `tc_payload_version: ${broken}`))).status, broken).toBe('invalid');
 		}
@@ -317,8 +323,8 @@ describe('the note: what is written, what is read, what is set aside', () => {
 	it('lists the valid notes of the library and names, never touches, the ones it set aside', async () => {
 		const { note } = await finished(2); const old = await finished(1);
 		const vault = new MapVault();
-		vault.contents.set('Sessions/old.md', old.note.replace(/session-[^\n]*/u, (m) => m));
-		const future = note.replace('tc_payload_version: 2', 'tc_payload_version: 3');
+		vault.contents.set('Sessions/sessions/2026/old.md', old.note.replace(/session-[^\n]*/u, (m) => m));
+		const future = note.replace('tc_payload_version: 2', 'tc_payload_version: 4');
 		const broken = note.replace('<!-- tyrian-companion:managed:end:', 'edited\n<!-- tyrian-companion:managed:end:');
 		vault.contents.set('Sessions/future.md', future); vault.contents.set('Sessions/broken.md', broken);
 		const before = new Map(vault.contents);
@@ -327,7 +333,9 @@ describe('the note: what is written, what is read, what is set aside', () => {
 		expect(listed).toMatchObject({ status: 'ok', sessions: [{ sessionRef: old.payload.sessionRef }],
 			setAside: [{ path: 'Sessions/broken.md', reason: 'unreadable' }, { path: 'Sessions/future.md', reason: 'newer_version' }] });
 		expect(await service.loadComparison()).toMatchObject({ status: 'ok', comparison: { completedSessions: 1 }, setAside: [{ path: 'Sessions/broken.md', reason: 'unreadable' }, { path: 'Sessions/future.md', reason: 'newer_version' }] });
-		expect(vault.contents).toEqual(before);
+		// The listing moved the payload of the one valid note (written before 0.7.2) out of its text; the ones it set aside are byte for byte what they were.
+		for (const path of ['Sessions/future.md', 'Sessions/broken.md']) expect(vault.contents.get(path)).toBe(before.get(path));
+		expect(vault.contents.get('Sessions/sessions/2026/old.md')).toContain('tc_payload_version: 3');
 		// The API history does not take a future live note for a broken one.
 		vault.contents.delete('Sessions/broken.md');
 		expect(await new SessionHistoryService(vault.asHistory()).scan()).toMatchObject({ status: 'ok' });
@@ -336,7 +344,7 @@ describe('the note: what is written, what is read, what is set aside', () => {
 		const { note } = await finished(2); const vault = new MapVault(); vault.contents.set('Sessions/a.md', note);
 		const authority = new SessionHistoryRuntimeAuthority(() => ({ sessionStatus: 'idle', recoveryStatus: 'none', detectorStatus: 'disarmed' }));
 		expect((await new SessionHistoryService(vault.asHistory()).previewScrub(authority)).status).toBe('ready');
-		vault.contents.set('Sessions/b.md', note.replace('tc_payload_version: 2', 'tc_payload_version: 3').replace(/tc_session_ref: "[a-f0-9]+"/u, 'tc_session_ref: "' + 'a'.repeat(64) + '"'));
+		vault.contents.set('Sessions/b.md', note.replace('tc_payload_version: 2', 'tc_payload_version: 4').replace(/tc_session_ref: "[a-f0-9]+"/u, 'tc_session_ref: "' + 'a'.repeat(64) + '"'));
 		expect((await new SessionHistoryService(vault.asHistory()).previewScrub(authority)).status).toBe('conflict');
 	});
 	it('still refuses two notes of one session: nothing says which of them is the session', async () => {
@@ -349,12 +357,12 @@ describe('the note: what is written, what is read, what is set aside', () => {
 		const input = { record: { ...capture.record, phase: 'complete' as const, endedAt: iso(60) }, journal: capture.journal, format: capture.format, locale: 'en' as const, outputFolder: 'Sessions' };
 		const vault = new MapVault(); const writer = new SessionNoteWriter(vault.asNotes());
 		const first = await writer.writeLive(input); if (first.status !== 'written') throw new Error(JSON.stringify(first));
-		const future = vault.contents.get(first.path)!.replace('tc_payload_version: 1', 'tc_payload_version: 3');
+		const future = vault.contents.get(first.path)!.replace('tc_payload_version: 3', 'tc_payload_version: 4');
 		vault.contents.set(first.path, future);
 		expect(await writer.writeLive(input)).toMatchObject({ status: 'conflict' });
 		expect(vault.contents.get(first.path)).toBe(future);
 		// A supported newer format of the same session is a plain update, as before: the local journal is the authority.
-		vault.contents.set(first.path, future.replace('tc_payload_version: 3', 'tc_payload_version: 2'));
+		vault.contents.set(first.path, future.replace('tc_payload_version: 4', 'tc_payload_version: 2'));
 		expect((await writer.writeLive(input)).status).not.toBe('conflict');
 	});
 	it('serializes the same payload the validator reads (canonical form is the checksum)', async () => {

@@ -123,9 +123,10 @@ async function main(): Promise<void> {
 			});
 			if (rendered.status !== "ok") return null;
 			const content = rendered.note.content;
-			noteBytes = Buffer.byteLength(content, "utf8");
+			// The note and the payload file it names are what one session persists: the budget counts both.
+			noteBytes = Buffer.byteLength(content, "utf8") + Buffer.byteLength(rendered.payloadFile.content, "utf8");
 			// A RangeError here (the pre-fix 8 MiB line) must fail the case, not be swallowed by the lifecycle.
-			noteReadable = (await inspectLiveSessionNote(content)).status === "ok";
+			noteReadable = (await inspectLiveSessionNote(content, async () => rendered.payloadFile.content)).status === "ok";
 			return "Sessions/bench-live.md";
 		},
 	});

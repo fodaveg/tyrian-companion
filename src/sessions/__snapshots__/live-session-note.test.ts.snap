@@ -10,8 +10,9 @@ tc_account_ref: null
 tc_locale: "es"
 tc_started_at: "2026-10-06T12:00:00.000Z"
 tc_ended_at: "2026-10-06T12:00:02.000Z"
-tc_payload_version: 1
+tc_payload_version: 3
 tc_payload_sha256: "7ea38aba0a45959fadf7f20d88440a38fd02df9d25bf0f81d13b529ff5b50154"
+tc_payload_file: "sessions/data/e1cb9c6c917aef3fb6d1b4870c97482ab2e082d756f27efe343d057953d66457.json"
 descripcion: "Cambios de inventario observados durante la conexión al juego."
 tags: ["gw2/session"]
 ---
@@ -67,14 +68,11 @@ Ninguna acción en el juego se ejecuta desde esta nota.
 
 ## Mis notas
 
-<!-- tyrian-companion:managed:start:provenance sha256=9517e233bf061024fa01d447ae24b9cc9930bc19bbba4804da5f1a5cacbe4c78 -->
+<!-- tyrian-companion:managed:start:provenance sha256=d80d2e54289bccd6a950931d8ba5c6d36b491a52ecc7d347fe9deec3e5d8af7e -->
 ## Procedencia
 - Fuente: Nexus · observación de inventario
 - Precios capturados: 2026-10-06 14:00:00 (2026-10-06T12:00:00.000Z) · venta inmediata neta
-El siguiente registro conserva la sesión completa para recuperarla y exportarla en otra instalación.
-\`\`\`json
-{"accountRef":null,"build":"27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c","coverage":{"currencies":"none","currencyIds":[],"freeSlots":8,"items":"complete","lastObservationAt":"2026-10-06T12:00:02.000Z"},"endedAt":"2026-10-06T12:00:02.000Z","farmingGoal":{"kind":"bags","targetBags":500,"version":1},"gaps":[],"groupContext":"without_bosses","journal":[{"breakBefore":false,"cursor":0,"epoch":"AgICAgICAgICAgICAgICAg","observations":[],"observedAt":"2026-10-06T12:00:00.000Z","outbox":[],"version":1},{"breakBefore":false,"cursor":1,"epoch":"AgICAgICAgICAgICAgICAg","observations":[{"after":2,"before":0,"cause":"unknown","coverage":"observed_interval","cursor":1,"delta":2,"epoch":"AgICAgICAgICAgICAgICAg","id":"AgICAgICAgICAgICAgICAg/1/item/12147","idNumber":12147,"kind":"item","observedAt":"2026-10-06T12:00:01.000Z","source":"nexus_inventory","sourceElapsedMs":1000,"version":1,"windowStartAt":"2026-10-06T12:00:00.000Z"}],"observedAt":"2026-10-06T12:00:01.000Z","outbox":[],"version":1},{"breakBefore":false,"cursor":2,"epoch":"AgICAgICAgICAgICAgICAg","observations":[{"after":4,"before":2,"cause":"unknown","coverage":"observed_interval","cursor":2,"delta":2,"epoch":"AgICAgICAgICAgICAgICAg","id":"AgICAgICAgICAgICAgICAg/2/item/12147","idNumber":12147,"kind":"item","observedAt":"2026-10-06T12:00:02.000Z","source":"nexus_inventory","sourceElapsedMs":2000,"version":1,"windowStartAt":"2026-10-06T12:00:01.000Z"}],"observedAt":"2026-10-06T12:00:02.000Z","outbox":[],"version":1}],"magicFind":{"source":"unknown","value":null},"mapCoveragePartial":false,"mapIntervals":[],"observationCount":2,"observedCurrenciesMs":0,"observedItemsMs":2000,"preparation":{"enabled":false,"foodReminderMinutes":null,"manualMagicFindBonus":null,"utilityReminderMinutes":null,"version":1},"profile":"owned-bags-v3","sampleCount":3,"sessionRef":"e1cb9c6c917aef3fb6d1b4870c97482ab2e082d756f27efe343d057953d66457","source":"nexus_inventory","startedAt":"2026-10-06T12:00:00.000Z","totals":[{"idNumber":12147,"kind":"item","negative":0,"net":4,"positive":4}],"valuation":{"capturedAt":"2026-10-06T12:00:00.000Z","coinNetCopper":null,"knownNetValueCopper":null,"netItemValueKnownCopper":40,"positiveItemValueKnownCopper":40,"priceBasis":"instant_sell_net","prices":[{"itemId":12147,"unitCopper":10}],"unpricedItemIds":[]},"version":1}
-\`\`\`
+El registro completo de la sesión está en el fichero \`sessions/data/e1cb9c6c917aef3fb6d1b4870c97482ab2e082d756f27efe343d057953d66457.json\` (ruta relativa a la carpeta de salida); lo gestiona el plugin, no lo edites.
 <!-- tyrian-companion:managed:end:provenance -->
 "
 `;

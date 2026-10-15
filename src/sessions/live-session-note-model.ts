@@ -12,7 +12,14 @@ import { sha256Text } from './session-note-renderer';
 
 /** The payload formats and the one a new session of this build gets are defined with the model; they are used from here. */
 export { LIVE_SESSION_NOTE_WRITE_VERSION, type LiveSessionPayloadVersion } from './live-session-model';
-export const LIVE_SESSION_MAX_PAYLOAD_VERSION = 2;
+/**
+ * The newest note format this build reads. Notes of `tc_payload_version` 1 and 2 carry the canonical payload inside the text;
+ * a note of 3 (`LIVE_SESSION_FILE_NOTE_VERSION`) keeps it in a separate `.json` file and names it with `tc_payload_file`. The
+ * payload's own `version` (what `LiveSessionPayloadVersion` says) is still 1 or 2 inside that file.
+ */
+export const LIVE_SESSION_MAX_PAYLOAD_VERSION = 3;
+/** The `tc_payload_version` of a note whose payload lives in its own file, not in the text of the note (hotfix 0.7.2). */
+export const LIVE_SESSION_FILE_NOTE_VERSION = 3;
 
 /** Synced evidence excludes local authority, source process identity, account and raw snapshots. */
 export interface StoredLiveSessionPayloadV1 {

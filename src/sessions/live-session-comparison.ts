@@ -59,9 +59,10 @@ export interface LiveSessionComparison {
 }
 /**
  * A live note the history could not use and left exactly where it was: `newer_version` is a payload format later than this build
- * reads (a newer plugin wrote it), `unreadable` a candidate that is broken (or edited inside its managed blocks).
+ * reads (a newer plugin wrote it), `unreadable` a candidate that is broken (or edited inside its managed blocks),
+ * `payload_missing` a note whose payload file has not reached this device yet (it counts again once it does).
  */
-export interface LiveSessionSetAside { path: string; reason: 'newer_version' | 'unreadable' }
+export interface LiveSessionSetAside { path: string; reason: 'newer_version' | 'unreadable' | 'payload_missing' }
 export type LiveSessionComparisonState = { status: 'idle' | 'loading' | 'unavailable' }
 	| { status: 'conflict'; invalid: number; duplicates: number }
 	| { status: 'ready'; comparison: LiveSessionComparison; ignored: number; setAside: readonly LiveSessionSetAside[] };
