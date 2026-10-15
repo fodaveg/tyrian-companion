@@ -62,4 +62,32 @@ describe('hebra-styles.css in a plugin API 2.x surface', () => {
 		const style = win.getComputedStyle(root as never);
 		expect({ top: style.marginTop, bottom: style.marginBottom }).toEqual({ top: '0px', bottom: '0px' });
 	});
+
+	it('paints the surface background itself: --panel for settings/view/modal, --paper for the main screen and the code block', () => {
+		// Hebra leaves the frame `background: transparent` (SPEC §5.5.2); with no rule WebKitGTK showed its #1e1e1e canvas.
+		const resolved = (kind: string): string => {
+			const { win, root } = surface();
+			root.className = `tyrian-hebra-surface--${kind}`;
+			const doc = root.ownerDocument;
+			const tokens = doc.createElement('style');
+			tokens.textContent = 'html { --panel: rgb(11, 12, 13); --paper: rgb(21, 22, 23); }';
+			doc.head.append(tokens);
+			return win.getComputedStyle(doc.documentElement as never).backgroundColor;
+		};
+		expect({
+			settings: resolved('settings'), view: resolved('view'), modal: resolved('modal'),
+			main: resolved('main'), codeBlock: resolved('code-block'),
+		}).toEqual({
+			settings: 'rgb(11, 12, 13)', view: 'rgb(11, 12, 13)', modal: 'rgb(11, 12, 13)',
+			main: 'rgb(21, 22, 23)', codeBlock: 'rgb(21, 22, 23)',
+		});
+	});
+
+	it('drops the native select control (WebKitGTK paints it #343434) and keeps Hebra\'s paper as its colour', () => {
+		const { win, root } = surface();
+		const select = root.appendChild(root.ownerDocument.createElement('select'));
+		const style = win.getComputedStyle(select as never);
+		expect(style.appearance).toBe('none');
+		expect(style.backgroundImage).toContain('currentColor');
+	});
 });

@@ -37,6 +37,18 @@
 
 /* ---- 0. Lo que daba el documento de Hebra (su `app.css`) ------------------------ */
 
+/* Fondo de la superficie. Con la API 2.x Hebra deja el marco en `background: transparent` y el
+   fondo es del plugin; sin regla sale el lienzo del WebKitGTK (#1e1e1e) en vez del tema. Los
+   tokens llegan al `<html>` (Hebra los pone ahí y los repone al cambiar de tema). Ajustes,
+   columna, diálogo y modal van sobre `--panel`; la pantalla principal y el bloque de código,
+   sobre la hoja (`--paper`). Las clases de tipo están en la raíz, no en el `<html>`: `:has`. */
+html[data-hebra-surface] {
+  background: var(--panel);
+}
+html[data-hebra-surface]:has(.tyrian-hebra-surface--main, .tyrian-hebra-surface--code-block) {
+  background: var(--paper);
+}
+
 /* Tipografía y texto: los de `:root` de Hebra, al tamaño de interfaz por defecto
    (`--type-ui-md`, el que la 1.x daba al panel de Ajustes; el cuerpo de Hebra son 17 px). */
 [id='hebra-surface-root'] {
@@ -274,6 +286,18 @@
   background: var(--paper);
   color: var(--ink);
   font-size: var(--type-ui-sm);
+}
+
+/* El desplegable sin el control nativo: WebKitGTK lo pinta #343434 y no `--paper`. La flecha
+   son dos degradados con `currentColor`, sin assets; el foco visible es el de la regla de arriba. */
+:where([id='hebra-surface-root']) select {
+  appearance: none;
+  padding-inline-end: var(--space-6, 28px);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 
 /* `h2` y `header p` de la cabecera de una categoría de ajustes de Tyrian
