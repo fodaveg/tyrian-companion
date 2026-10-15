@@ -1,5 +1,22 @@
 # Estado
 
+## Candidato 0.7.2: el registro de la sesión sale de la nota a un fichero `.json` (15 oct 2026)
+
+**Candidato; sin publicar.** Rama `fix/session-payload-sidecar` sobre el canal 0.7.1 publicado (`f151403d`). Detalle en
+[CHANGELOG](CHANGELOG.md). Hotfix autorizado por David el 15 oct («arreglalo ya»), excepción a la congelación de Halloween.
+
+- Causa, medida por la sesión de Hebra en el Fedora de David: `renderLiveSessionNote` escribía `canonicalJson(session)`
+  dentro del bloque «Procedencia», sin tope. La nota del 14 oct medía 3.588.165 bytes (3.319.141 de esa línea) y el relé
+  respondía 413 (`record_too_large`).
+- Nota v3 (`tc_payload_version: 3`, `tc_payload_file`): el payload va a `<outputFolder>/sessions/data/<sessionRef>.json`
+  (`src/sessions/live-session-payload-file.ts`), escrito antes que la nota. El lector sigue leyendo v1 y v2 con el JSON
+  dentro. Un fichero que aún no ha llegado da `payload_missing`, que no reescribe ni retira nada.
+- Migración v1/v2 → v3 en `LiveSessionHistoryService.scan` (al abrir «Sesiones anteriores» o al terminar una sesión):
+  solo si el JSON verifica, por compare-and-swap, tocando `tc_payload_version`, `tc_payload_file` y el bloque de
+  procedencia.
+- Sin verificar: el 413 real, que el `.json` sincronice por el relé de Hebra a otros dispositivos y la migración de la nota
+  real de 3,6 MB. Probado con los fakes de Hebra y con una sesión sintética de más de 3 MB.
+
 ## Canal 0.7.1 publicado: el bloque de histórico de precios se ve entero en Hebra 2.x (14 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.1` = `2dabc23f` (atestación; candidato `f7c5d902`).

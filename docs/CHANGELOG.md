@@ -1,5 +1,18 @@
 # Changelog
 
+## Release beta 0.7.2 - Las notas de sesión largas vuelven a sincronizar en Hebra
+
+Se actualiza desde la 0.7.1 publicada. No se ha visto todavía en una app de Hebra real.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- La nota «… · Sesión completa» llevaba dentro el registro entero de la sesión. En una sesión larga pasaba de 3 MB, y el
+  relé de Hebra la rechazaba («Una nota supera el tamaño del relé»): no llegaba a tus otros dispositivos.
+- Ahora ese registro va en un fichero aparte que gestiona el plugin, `sessions/data/<id>.json` dentro de tu carpeta de
+  salida. La nota pesa unos pocos kB.
+- Las notas de sesión que ya tienes se pasan solas al formato nuevo la primera vez que abres «Sesiones anteriores» o
+  terminas una sesión. Tu título y «Mis notas» no se tocan.
+- Una versión anterior del plugin deja aparte las notas nuevas sin tocarlas.
+
 ## Release beta 0.7.1 - El bloque de histórico de precios se ve entero en Hebra
 
 Se actualiza desde la 0.7.0 publicada. No se ha visto todavía en una app de Hebra real.
