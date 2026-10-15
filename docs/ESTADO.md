@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.7.4: el fondo de las superficies de Tyrian sigue el tema de Hebra (15 oct 2026)
+## Canal 0.7.4 publicado: el fondo de las superficies de Tyrian sigue el tema de Hebra (15 oct 2026)
 
-**Candidato, sin publicar.** Sobre la etiqueta `0.7.3` (`d18655ed`). Detalle en [CHANGELOG](CHANGELOG.md). Fallo visto
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.4` = `4ce73add` (atestación; candidato `822eab6a`).
+Gate local verde (check 9/9 con 8008 tests, test 30/30, ZIP `3bb48657…`); CI 38711877101 y Release 38712926664 en verde;
+`hebra.json.minisig` firmado en el Mac; `release:brat-verify` PASS (`assets=9; signature=present; downloaded-bytes=checked`)
+y el ZIP publicado tiene el sha256 del gate. Sobre la etiqueta `0.7.3` (`d18655ed`). Detalle en [CHANGELOG](CHANGELOG.md). Fallo visto
 por David el 15 oct en Hebra del Fedora con el tema Aquelarre («el color es distinto al de hebra»).
 
 - Medido por píxel en sus capturas: cuerpo de la vista y de los ajustes `#1e1e1e`, que no es ningún token de Hebra (el
@@ -16,9 +19,13 @@ por David el 15 oct en Hebra del Fedora con el tema Aquelarre («el color es dis
   flecha con `currentColor`. Tests en `hebra-styles-surface.test.ts`; prueba negativa: sin las reglas, 2 rojos.
 - Sin verificar: el píxel en WebKitGTK real (probado en happy-dom) y `:has` en ese motor.
 
-## Candidato 0.7.3: el plugin acepta el ejecutable de la build 208704 de GW2 (15 oct 2026)
+## Canal 0.7.3 publicado: el plugin acepta el ejecutable de la build 208704 de GW2 (15 oct 2026)
 
-**Candidato, sin publicar.** Sobre el canal 0.7.2 publicado (`976a2686`) más `381c9024` de `main`. Detalle en
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.3` = `d18655ed` (atestación; candidato `2b78e5bb`).
+Gate local verde (check 9/9 con 8006 tests, test 30/30, ZIP `72cfb728…`); CI 38709579311 y Release 38710677792 en verde;
+`hebra.json.minisig` firmado en el Mac; `release:brat-verify` PASS (`assets=9; signature=present; downloaded-bytes=checked`)
+y el ZIP publicado tiene el sha256 del gate. Addon de Nexus 0.8.13 publicado el mismo día (`853e84e`, DLL `cc49a558…`):
+recertificación estática de la build 208704, sin cambios de RVA ni de offsets, solo el hash. Sobre el canal 0.7.2 publicado (`976a2686`) más `381c9024` de `main`. Detalle en
 [CHANGELOG](CHANGELOG.md). Arreglo urgente dentro de la excepción a la congelación de Halloween, tras el fallo que David
 vio en vivo el 15 oct.
 
@@ -28,8 +35,8 @@ vio en vivo el 15 oct.
 - `01957180`: `src/sessions/live-session-model.ts` añade `NEXUS_LIVE_BUILD_208704` a `NEXUS_LIVE_BUILDS` (conjunto
   cerrado; las builds del 6 y del 13 oct siguen valiendo). Test en `live-session-lifecycle.test.ts`; prueba negativa: sin
   la constante, 1 rojo. `docs/SPEC-live-loot.md` §9 lo recoge.
-- **Esta release sola no devuelve las muestras.** Falta la recertificación estática del addon de Nexus para la build
-  208704 (repo `tyrian-companion-nexus`, addon 0.8.13), que solo puede hacerse en el Fedora, donde está el ejecutable.
+- **Esta release sola no devuelve las muestras:** hace falta el addon de Nexus 0.8.13, ya publicado. Sin verificar la
+  lectura en una partida real con las dos piezas.
 - La release lleva `hebra.json.minisig`, que `release:brat-verify` exige desde `67838a60`; se firma en el Mac de David
   (`npm run release:sign -- 0.7.3`) después del run de Release.
 
