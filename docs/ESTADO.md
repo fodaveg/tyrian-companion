@@ -1,9 +1,12 @@
 # Estado
 
-## Candidato 0.7.2: el registro de la sesión sale de la nota a un fichero `.json` (15 oct 2026)
+## Canal 0.7.2 publicado: el registro de la sesión sale de la nota a un fichero `.json` (15 oct 2026)
 
-**Candidato; sin publicar.** Rama `fix/session-payload-sidecar` sobre el canal 0.7.1 publicado (`f151403d`). Detalle en
-[CHANGELOG](CHANGELOG.md). Hotfix autorizado por David el 15 oct («arreglalo ya»), excepción a la congelación de Halloween.
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.2` = `5e826ce1` (atestación; candidato `26d435bb`).
+Gate local verde (check con 8005 tests, test 29/29, BRAT PASS); CI 38673479960 y Release 38674617796 en verde;
+`release:brat-verify` PASS con los 8 assets del contrato (`downloaded-bytes=checked`); el ZIP publicado tiene el sha256 del
+gate (`b74b0203…`). La release lleva además `hebra.json.minisig`, subido desde la cuenta `fodaveg` fuera del workflow, igual
+que en la 0.7.1; el contrato no lo cuenta. Sobre el canal 0.7.1 publicado (`f151403d`). Detalle en [CHANGELOG](CHANGELOG.md). Hotfix autorizado por David el 15 oct («arreglalo ya»), excepción a la congelación de Halloween.
 
 - Causa, medida por la sesión de Hebra en el Fedora de David: `renderLiveSessionNote` escribía `canonicalJson(session)`
   dentro del bloque «Procedencia», sin tope. La nota del 14 oct medía 3.588.165 bytes (3.319.141 de esa línea) y el relé
