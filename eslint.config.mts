@@ -56,6 +56,8 @@ export const defaultProjectFiles = [
 	'scripts/generate-known-achievement-sets.mjs',
 	'scripts/diag-summary.mjs',
 	'scripts/tests/probar-diag-summary.mjs',
+	'scripts/sign-hebra-release.mjs',
+	'scripts/tests/probar-sign-hebra-release.mjs',
 ] as const;
 
 // Raised from 28 to 37 when the gate runner, the source text assertion contract
@@ -68,10 +70,11 @@ export const defaultProjectFiles = [
 // build-host-esm check and its test, and to 56 for DE-17 (48 listed files
 // had left no room for the next script; a `tsconfig.scripts.json` that empties
 // the list is the structural fix, 1 to 2 h), and to 58 for diag:summary and its
-// test (main was red on both files, not found by the project service). The headroom below is
+// test (main was red on both files, not found by the project service), and to 60 for
+// release:sign (the Hebra release signer wrapper) and its test. The headroom below is
 // unchanged on purpose: the point of this bound is that growing it stays a
 // deliberate edit rather than something that drifts.
-export const defaultProjectCapacity = 58;
+export const defaultProjectCapacity = 60;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(
