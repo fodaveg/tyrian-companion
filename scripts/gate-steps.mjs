@@ -38,6 +38,7 @@ export const GATE_STEPS = Object.freeze([
 	step('unit-guardrails', 'Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.guardrails.config.mts'], ['test', 'check:guardrails']),
 	step('release-preflight', 'Preflight de release', ['bash', 'scripts/tests/probar-release-preflight.sh'], ['test', 'check:guardrails']),
 	step('brat-release-contract', 'Suite del contrato BRAT', ['node', 'scripts/tests/probar-brat-release-contract.mjs'], ['test', 'check:guardrails']),
+	step('sign-hebra-release-suite', 'Suite del envoltorio que firma la release de Hebra (sin ejecutar el firmador)', ['node', 'scripts/tests/probar-sign-hebra-release.mjs'], ['test', 'check:guardrails']),
 	step('brat-release-plan', 'Suite del plan de release BRAT (puerta previa a publicar)', ['node', 'scripts/tests/probar-brat-release-plan.mjs'], ['test', 'check:guardrails']),
 	step('release-workflow-contract', 'Contrato del workflow de publicacion', ['node', 'scripts/tests/probar-release-workflow.mjs'], ['test', 'check:guardrails']),
 	step('security-scan-suite', 'Suite del escaner de seguridad', ['node', 'scripts/tests/probar-security-scan.mjs'], ['test', 'check:guardrails']),

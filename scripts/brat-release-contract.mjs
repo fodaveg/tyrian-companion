@@ -6,12 +6,19 @@ import { pathToFileURL } from 'node:url';
 const SEMVER = /^\d+\.\d+\.\d+$/u;
 /** The Hebra files `hebra.json` hashes in its `files` map (the manifest does not hash itself). */
 const HEBRA_HASHED_FILES = Object.freeze(['hebra-main.mjs', 'hebra-styles.css']);
+/**
+ * Minisign signature of the bytes of `hebra.json`. Hebra only installs a plugin whose release carries it.
+ * The author's private key lives only on the author's machine, so it is uploaded locally AFTER the
+ * workflow publishes the release (`npm run release:sign`); the contract accepts it and, with
+ * `--require-signature`, demands it.
+ */
+const HEBRA_SIGNATURE_ASSET = 'hebra.json.minisig';
 
 /**
  * Returns the only asset names accepted for a published release: the three Obsidian files BRAT
  * downloads, the manual-install ZIP and its checksum, and the three files Hebra downloads to install
  * Tyrian as an external plugin (`hebra.json`, `hebra-main.mjs`, `hebra-styles.css`; Hebra's
- * SPEC-PLUGINS-EXTERNOS.md section 3.1). Eight in all.
+ * SPEC-PLUGINS-EXTERNOS.md section 3.1). Eight in all; `hebra.json.minisig` is the one optional ninth.
  */
 export function expectedBratReleaseAssets(manifest) {
 	return [
@@ -27,7 +34,7 @@ export function expectedBratReleaseAssets(manifest) {
 }
 
 /** Validates GitHub's release metadata without making a network request. */
-export function validateBratRelease({ manifest, release }) {
+export function validateBratRelease({ manifest, release, requireSignature = false }) {
 	const findings = [];
 	if (!isRecord(manifest) || !isSafePluginId(manifest.id) || !SEMVER.test(manifest.version ?? '')) {
 		return ['manifest-invalid'];
@@ -45,8 +52,10 @@ export function validateBratRelease({ manifest, release }) {
 	const actualAssets = inspectReleaseAssets(release.assets);
 	if (actualAssets.finding !== null) {
 		findings.push(actualAssets.finding);
-	} else if (!sameStrings(actualAssets.names.sort(), expectedBratReleaseAssets(manifest))) {
-		findings.push('release-asset-set');
+	} else {
+		const withoutSignature = actualAssets.names.filter((name) => name !== HEBRA_SIGNATURE_ASSET).sort();
+		if (!sameStrings(withoutSignature, expectedBratReleaseAssets(manifest))) findings.push('release-asset-set');
+		if (requireSignature && !actualAssets.names.includes(HEBRA_SIGNATURE_ASSET)) findings.push('release-signature-missing');
 	}
 
 	return findings;
@@ -167,12 +176,15 @@ function parseJson(source, category) {
 }
 
 function parseArguments(argv) {
-	const validShape = (argv.length === 2 || argv.length === 4) && argv[0] === '--release-json' && argv[1].trim() !== '';
-	const withAssets = argv.length === 4;
-	if (!validShape || (withAssets && (argv[2] !== '--assets-dir' || argv[3].trim() === ''))) {
+	const args = [...argv];
+	const requireSignature = args[0] === '--require-signature';
+	if (requireSignature) args.shift();
+	const validShape = (args.length === 2 || args.length === 4) && args[0] === '--release-json' && args[1].trim() !== '';
+	const withAssets = args.length === 4;
+	if (!validShape || (withAssets && (args[2] !== '--assets-dir' || args[3].trim() === ''))) {
 		throw new Error('usage');
 	}
-	return { releaseSource: argv[1], assetsDirectory: withAssets ? argv[3] : null };
+	return { releaseSource: args[1], assetsDirectory: withAssets ? args[3] : null, requireSignature };
 }
 
 function readReleaseSource(source) {
@@ -193,10 +205,10 @@ function readManifestSource(root) {
 
 export function runCli({ argv = process.argv.slice(2), root = process.cwd() } = {}) {
 	try {
-		const { releaseSource, assetsDirectory } = parseArguments(argv);
+		const { releaseSource, assetsDirectory, requireSignature } = parseArguments(argv);
 		const manifest = parseJson(readManifestSource(root), 'manifest-json');
 		const release = parseJson(readReleaseSource(releaseSource), 'release-json');
-		const findings = validateBratRelease({ manifest, release });
+		const findings = validateBratRelease({ manifest, release, requireSignature });
 		if (assetsDirectory !== null) {
 			findings.push(...validateDownloadedHebraAssets({ manifest, release, directory: resolve(assetsDirectory) }));
 		}
@@ -204,8 +216,9 @@ export function runCli({ argv = process.argv.slice(2), root = process.cwd() } = 
 			for (const finding of findings) process.stderr.write(`BRAT release contract: ${finding}\n`);
 			return 1;
 		}
+		const signed = release.assets.some((asset) => asset.name === HEBRA_SIGNATURE_ASSET);
 		process.stdout.write(
-			`BRAT release contract: PASS (version=${manifest.version}; assets=${expectedBratReleaseAssets(manifest).length}; downloaded-bytes=${assetsDirectory === null ? 'not-checked' : 'checked'})\n`,
+			`BRAT release contract: PASS (version=${manifest.version}; assets=${release.assets.length}; signature=${signed ? 'present' : 'absent'}; downloaded-bytes=${assetsDirectory === null ? 'not-checked' : 'checked'})\n`,
 		);
 		return 0;
 	} catch (error) {

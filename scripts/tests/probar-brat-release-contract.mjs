@@ -93,6 +93,8 @@ try {
 		'empty release asset',
 	);
 
+	assertSignature(fixtureRoot);
+
 	if (process.env.BRAT_RELEASE_CONTRACT_NEGATIVE_CONTROL !== '1') {
 		const noOp = resolve(testRoot, 'always-green.mjs');
 		writeFileSync(noOp, 'process.exit(0);\n');
@@ -172,7 +174,7 @@ function assertGreen(root, releasePath, label) {
 	const result = runGuardrail(root, releasePath);
 	if (result.error) {
 		fail(`${label} could not execute the guardrail`);
-	} else if (result.status !== 0 || result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8; downloaded-bytes=not-checked)\n') {
+	} else if (result.status !== 0 || result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8; signature=absent; downloaded-bytes=not-checked)\n') {
 		fail(`${label} was rejected`);
 	}
 }
@@ -184,7 +186,7 @@ function assertStdinGreen(root, release) {
 		input: `${JSON.stringify(release)}\n`,
 	});
 	if (result.error || result.status !== 0 ||
-		result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8; downloaded-bytes=not-checked)\n') {
+		result.stdout !== 'BRAT release contract: PASS (version=0.1.19; assets=8; signature=absent; downloaded-bytes=not-checked)\n') {
 		fail('published-release stdin flow was rejected');
 	}
 }
@@ -252,6 +254,31 @@ function assertDownloadedAssets(root) {
 		else if (category !== null && (result.status === 0 || !result.stderr.includes(`BRAT release contract: ${category}\n`))) fail(`${label} did not turn red as ${category}`);
 		else process.stdout.write(`PASS: ${label}${category === null ? '' : ` turned red: ${category}`}\n`);
 	}
+}
+
+/** `hebra.json.minisig`: optional without `--require-signature`, mandatory with it, and judged like any asset. */
+function assertSignature(root) {
+	const signature = { name: 'hebra.json.minisig', state: 'uploaded', size: 100 };
+	const run = (label, release, flags, expectation) => {
+		const path = resolve(testRoot, `signature-${label.replace(/\W+/gu, '-')}.json`);
+		writeFileSync(path, `${JSON.stringify(release)}\n`);
+		const result = spawnSync(process.execPath, [guardrail, ...flags, '--release-json', path], { cwd: root, encoding: 'utf8' });
+		const ok = result.error === undefined && (expectation === null
+			? result.status === 0 && result.stdout.includes(' signature=')
+			: result.status !== 0 && result.stderr.includes(`BRAT release contract: ${expectation}\n`));
+		if (ok) process.stdout.write(`PASS: ${label}\n`);
+		else fail(`${label}: unexpected result (status ${result.status}) ${result.stdout}${result.stderr}`);
+		return result;
+	};
+	const signed = run('nine assets with signature, flag', releaseMetadata({ assets: [...releaseAssets(), signature] }), ['--require-signature'], null);
+	if (!signed.stdout.includes('assets=9; signature=present;')) fail('PASS line did not report 9 assets with signature=present');
+	run('nine assets with signature, no flag', releaseMetadata({ assets: [...releaseAssets(), signature] }), [], null);
+	run('eight assets without signature, no flag', releaseMetadata(), [], null);
+	run('eight assets without signature, flag', releaseMetadata(), ['--require-signature'], 'release-signature-missing');
+	run('empty signature', releaseMetadata({ assets: [...releaseAssets(), { ...signature, size: 0 }] }), ['--require-signature'], 'release-asset-empty');
+	run('signature not uploaded', releaseMetadata({ assets: [...releaseAssets(), { ...signature, state: 'starter' }] }), ['--require-signature'], 'release-asset-incomplete');
+	run('signature plus another extra asset', releaseMetadata({ assets: [...releaseAssets(), signature, { name: 'versions.json', state: 'uploaded', size: 1 }] }), ['--require-signature'], 'release-asset-set');
+	run('duplicated signature', releaseMetadata({ assets: [...releaseAssets(), signature, signature] }), ['--require-signature'], 'release-assets-invalid');
 }
 
 function sha256(bytes) {

@@ -6,7 +6,9 @@ Antes de dar por cerrada una release para BRAT:
 - La release publicada debe pasar `npm run release:brat-verify` sobre la salida real de
   `gh release view`; también debe adjuntar, completamente subidos y no vacíos, exactamente los ocho
   assets documentados en `docs/BETA.md` (los cinco de Obsidian y los tres del plugin de Hebra:
-  `hebra.json`, `hebra-main.mjs` y `hebra-styles.css`).
+  `hebra.json`, `hebra-main.mjs` y `hebra-styles.css`) más `hebra.json.minisig`, que se sube con
+  `npm run release:sign -- <tag>` después de que el workflow publique; Hebra no instala ni actualiza
+  una release sin esa firma.
 - GitHub puede tardar entre 5 y 15 minutos en servir la release a BRAT; ese margen no demuestra un
   fallo ni una instalación correcta.
 - Hasta verificar instalación y carga en el cliente BRAT/Obsidian real, informa únicamente:

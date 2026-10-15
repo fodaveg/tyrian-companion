@@ -106,7 +106,7 @@ function validatePackage(packageJson, findings) {
 	if (scripts['test:release-identity-contract'] !== 'node scripts/tests/probar-release-identity-contract.mjs') {
 		findings.push('package-identity-test-script');
 	}
-	if (scripts['release:brat-verify'] !== 'node scripts/brat-release-contract.mjs') {
+	if (scripts['release:brat-verify'] !== 'node scripts/brat-release-contract.mjs --require-signature') {
 		findings.push('package-brat-release-script');
 	}
 	if (scripts['test:brat-release-contract'] !== 'node scripts/tests/probar-brat-release-contract.mjs') {

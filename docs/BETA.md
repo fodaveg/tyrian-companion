@@ -15,7 +15,7 @@ gh release view "$version" --json tagName,name,isDraft,isPrerelease,assets
 ```
 
 El contrato BRAT (`npm run release:brat-verify`, ver más abajo) debe dar `PASS` con los ocho assets
-exactos contra esa salida. El detalle línea a línea de cada release ya cerrada —tag, commit, SHAs de
+exactos más `hebra.json.minisig` contra esa salida (ver «Firma de la release para Hebra»). El detalle línea a línea de cada release ya cerrada —tag, commit, SHAs de
 los tres ficheros, runs de CI y gate local— vive en el [changelog](CHANGELOG.md) y, para las más
 antiguas, en [`docs/historico/ESTADO-lotes-cerrados.md`](historico/ESTADO-lotes-cerrados.md).
 
@@ -133,7 +133,9 @@ propio `check` y `check:guardrails` (antes de `release:package`; `release-workfl
 porque la publicación no depende del CI del mismo commit), genera el paquete y exige un plan válido de ocho assets antes de crear la release.
 El tag y el título deben coincidir **exactamente** con `manifest.version`, sin prefijo `v`; el cuerpo
 procede de la entrada correspondiente del changelog. Solo ese job tiene `contents: write`.
-Tras subir los assets verifica el contrato contra los metadatos reales de GitHub.
+Tras subir los assets verifica el contrato contra los metadatos reales de GitHub, sin exigir la firma de
+Hebra: la clave privada solo existe en el Mac del autor, así que la firma se añade en local después (siguiente
+apartado).
 
 La sesión de publicación comprueba además los metadatos que sirve GitHub y el conjunto exacto de ocho assets
 (`manifest.json`, `main.js`, `styles.css`, el ZIP, su `.sha256`, `hebra.json`, `hebra-main.mjs` y
@@ -144,7 +146,9 @@ gh release view "<versión>" --json tagName,name,isDraft,isPrerelease,assets \
   | npm run release:brat-verify -- --release-json -
 ```
 
-El verificador rechaza un nombre o tag distinto de `manifest.version`, una release draft o prerelease
+El verificador (con `--require-signature`, que ya incluye el script) exige además `hebra.json.minisig`; sin el
+flag la firma es opcional pero, si está, se juzga como cualquier otro asset. El resto del conjunto exacto sigue
+igual y la línea de `PASS` dice `signature=present` o `signature=absent`. Rechaza un nombre o tag distinto de `manifest.version`, una release draft o prerelease
 (`isPrerelease` debe ser `false`; si el JSON no trae el campo, también falla) y cualquier
 asset ausente, duplicado, extra, no terminado de subir o vacío. Con los assets descargados
 (`gh release download "<versión>" --dir <dir>` y `--release-json - --assets-dir <dir>`) comprueba además que
@@ -156,6 +160,24 @@ salida lo dice: `downloaded-bytes=not-checked`),
 hace tras publicar). GitHub puede tardar entre 5 y 15
 minutos en reflejar una release a BRAT. Hasta comprobar instalación y carga desde BRAT en Obsidian
 real, la formulación correcta es «canal publicado; instalación/runtime pendiente».
+
+### Firma de la release para Hebra
+
+Hebra solo instala o actualiza el plugin si la release lleva `hebra.json.minisig`, la firma minisign de los
+bytes de `hebra.json`. La clave del autor vive solo en el Mac de David
+(`~/.config/hebra-plugin-signing/tyrian-companion.key`) y no puede ir a CI ni a ningún repo, así que la firma es
+un paso local **después** de que `release.yml` publique la release:
+
+```sh
+npm run release:sign -- <versión>                  # firma, comprueba la firma y la sube
+npm run release:sign -- <versión> --sin-subir      # firma y comprueba sin subir nada
+npm run release:sign -- <versión> --reemplazar     # sustituye una firma ya subida
+```
+
+`release:sign` es un envoltorio fino del firmador del repo de Hebra (`$HEBRA_REPO`, por defecto
+`~/code/hebra`; `scripts/firmar-release-plugin.mjs`). La versión solo tiene que ser `x.y.z`: no se compara con
+`manifest.json`, para poder firmar una release anterior. Tras firmar, `release:brat-verify` ya puede dar `PASS`
+con nueve assets. Si las releases pasaran a ser inmutables, habría que firmar en borrador antes de publicar.
 
 Referencias del contrato:
 
