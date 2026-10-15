@@ -861,8 +861,15 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// order and nothing in the load reads it. The load does not wait for it: in Hebra the load is `activate()`, which has
 		// 15 s, and the log reads its active file back one 4 KiB chunk per transaction (measured 15 Oct 2026: 10.1 s on a warm
 		// start with ~150 chunks, past 15 s on a cold one, and the plugin was withdrawn). A settings load failure, the one thing
-		// `start()` rethrows, was already awaited above; this `start()` cannot reject.
-		void runtime.start().catch(() => undefined);
+		// `start()` rethrows, was already awaited above; this `start()` can only reject if the log's own
+		// initialization did, which its `run()` has already recorded on rethrow; the event below notes that the load went on.
+		const diagnostics = this.localDebugActions;
+		void runtime.start().catch((error: unknown) => {
+			diagnostics.event({
+				component: 'plugin', action: 'plugin_load', state: 'runtime_start_detached',
+				level: 'error', phase: 'failure', code: 'unknown_failure', message: error,
+			});
+		});
 	}
 
 	/** Z6-1: `initializeRuntime`, with the start in flight kept so `shutdownRuntime` can wait for it before it disposes. */
