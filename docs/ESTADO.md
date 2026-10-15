@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.7.5: activate() ya no espera al registro de diagnóstico (15 oct 2026)
+## Canal 0.7.5 publicado: activate() ya no espera al registro de diagnóstico (15 oct 2026)
 
-**Candidato, sin publicar.** Sobre la etiqueta `0.7.4` (`4ce73add`) más `51d502a9`. Detalle en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.5` = `71c05ec0` (atestación; candidato `02c2fe98`).
+Gate local verde (check 9/9 con 8009 tests, test 30/30, ZIP `2f0ab4f9…`); CI 38728677151 y Release 38729953125 en verde;
+`hebra.json.minisig` firmado en el Mac; `release:brat-verify` PASS (`assets=9; signature=present; downloaded-bytes=checked`)
+y el ZIP publicado tiene el sha256 del gate. `02c2fe98` registra en el diagnóstico un rechazo del `runtime.start()` suelto
+(evento `plugin_load`/`runtime_start_detached`) y revisa sus dos fronteras en el censo de observabilidad. Sobre la etiqueta `0.7.4` (`4ce73add`) más `51d502a9`. Detalle en [CHANGELOG](CHANGELOG.md).
 Arreglo pedido por David a través de la sesión de Hebra (hebra-0a, «quiero que lo arregles»).
 
 - Medido por hebra-0a (rpm de Hebra 0.2.0-41, Linux): `plugins.activate-stalled {phase:"sin-activated", calls:109,
