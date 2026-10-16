@@ -1,8 +1,12 @@
 # Estado
 
-## Candidato 0.7.6: el plugin acepta cualquier build bien formada; el addon 0.8.14 certifica por contenido (16 oct 2026)
+## Canal 0.7.6 publicado: el plugin acepta cualquier build bien formada; el addon 0.8.14 certifica por contenido (16 oct 2026)
 
-**Candidato, sin publicar.** Sobre la etiqueta `0.7.5` (`71c05ec0`) más `682ae35e` y `c6d96423`. Detalle en [CHANGELOG](CHANGELOG.md).
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.6` = `9a755ddf` (atestación; candidato `6df5472f`).
+Gate local verde (check 9/9 con 8009 tests, test 30/30, ZIP `96dc53be…`); Release 38866990546 en verde;
+`hebra.json.minisig` firmado en el Mac; `release:brat-verify` PASS (`assets=9; signature=present; downloaded-bytes=checked`)
+y el ZIP publicado tiene el sha256 del gate. Addon de Nexus 0.8.14 publicado el mismo día (`19579f2`, DLL `c7eb227c…`).
+Sobre la etiqueta `0.7.5` (`71c05ec0`) más `682ae35e` y `c6d96423`. Detalle en [CHANGELOG](CHANGELOG.md).
 Pedido por David el 16 oct («otro parche ha roto el plugin. hay que buscar una solución más estable»).
 
 - Medido en el Fedora de David: GW2 se parcheó el 16 oct a las 08:59 CEST; `Gw2-64.exe` sha256 `4a220846…a64d`. Sus 37
