@@ -1,8 +1,11 @@
 # Estado
 
-## Candidato 0.7.7: el oro por hora usa el mismo valor de la sesión que se enseña en grande (16 oct 2026)
-
-**Candidato, sin publicar.** Sobre la etiqueta `0.7.6` (`9a755ddf`) más `888e12d1`, `d5d231e0` (documentación) y
+## Canal 0.7.7 publicado: el oro por hora usa el mismo valor de la sesión que se enseña en grande (16 oct 2026)
+**Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.7` = `5a58cade` (atestación; candidato `f65de0bb`).
+Gate local verde (check 9/9 con 8011 tests, test 30/30, ZIP `9a5235d0…`, 194 s); Release 38889649881 en verde;
+`hebra.json.minisig` firmado en el Mac; `release:brat-verify` PASS (`assets=9; signature=present; downloaded-bytes=checked`)
+y el ZIP publicado tiene el sha256 del gate. Addon de Nexus 0.8.15 publicado el mismo día (`ccb02fa`, DLL `fe3141c0…`).
+Sobre la etiqueta `0.7.6` (`9a755ddf`) más `888e12d1`, `d5d231e0` (documentación) y
 `ada56274`. Detalle en [CHANGELOG](CHANGELOG.md).
 Pedido por David el 16 oct («el oro por hora no aparece en la vista en vivo. siempre aparece un guión»; «realmente nunca
 llegó a verse»).
