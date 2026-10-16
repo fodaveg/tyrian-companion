@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.7.6 - Un parche de Guild Wars 2 ya no apaga la sesión en vivo
+
+Se actualiza desde la 0.7.5 publicada. Va con el addon de Nexus 0.8.14. No se ha visto todavía con el juego abierto.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- Cada parche del juego dejaba la sesión en vivo en «juego no compatible» hasta sacar otra versión del plugin y del
+  addon, aunque el parche no tocara nada de lo que lee el addon. Pasó el 13, el 15 y el 16 de octubre.
+- Ahora el plugin acepta la build que le diga el addon, y el addon comprueba por su cuenta, en cada arranque del juego,
+  que el código que lee sigue siendo el mismo. Si lo es, lee; si un parche lo cambia, sigue diciendo «juego no compatible».
+
 ## Release beta 0.7.5 - Tyrian vuelve a arrancar al abrir Hebra
 
 Se actualiza desde la 0.7.4 publicada. No se ha visto todavía en una app de Hebra real.

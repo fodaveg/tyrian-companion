@@ -1,5 +1,25 @@
 # Estado
 
+## Candidato 0.7.6: el plugin acepta cualquier build bien formada; el addon 0.8.14 certifica por contenido (16 oct 2026)
+
+**Candidato, sin publicar.** Sobre la etiqueta `0.7.5` (`71c05ec0`) más `682ae35e` y `c6d96423`. Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 16 oct («otro parche ha roto el plugin. hay que buscar una solución más estable»).
+
+- Medido en el Fedora de David: GW2 se parcheó el 16 oct a las 08:59 CEST; `Gw2-64.exe` sha256 `4a220846…a64d`. Sus 37
+  rangos certificados, 43 slots de vtables, 7 secciones y el índice TLS son idénticos byte a byte a los de la build
+  208704 del 15 oct: solo cambia el hash del fichero, que el plugin (`NEXUS_LIVE_BUILDS`) y el addon (`BUILD_SHA256`)
+  comparaban con una lista fija.
+- `bf1e3c5c`: `src/sessions/live-session-model.ts` sustituye `NEXUS_LIVE_BUILDS`/`isNexusLiveBuild` por
+  `isWellFormedGameBuild` (64 hex en minúscula); lo usan `live-session-lifecycle.ts`, `runtime/alert-runtime.ts` (`open`),
+  `live-session-reducer.ts`, `live-session-validation.ts` y `live-session-note-model.ts`. Quien decide si se lee una build
+  es el addon, que manda `unsupported_build` como siempre. Tests en `live-session-lifecycle.test.ts` (hash nunca visto →
+  `ready`; 63/65 hex, mayúsculas, vacío, número → `unsupported_build`); prueba negativa con la lista vieja: 2 rojos.
+- Addon de Nexus 0.8.14 (`tyrian-companion-nexus`, `4f9addd`): `core/src/certificate.rs` certifica el ejecutable por
+  contenido (cabecera PE, 51 rangos por SHA-256, 43 slots, TLS) mientras lo hashea; `live_open.build` lleva el hash real.
+  Comprobado contra una copia del ejecutable de hoy: certificado; con un byte cambiado en `mf:modifier_sum`: no.
+- Límite: un parche que mueva o cambie ese código sigue necesitando recertificación a mano. Un plugin 0.7.5 o anterior
+  rechaza el `live_open` del addon 0.8.14 con una build que no conoce. Sin verificar: una lectura con el juego abierto.
+
 ## Canal 0.7.5 publicado: activate() ya no espera al registro de diagnóstico (15 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.5` = `71c05ec0` (atestación; candidato `02c2fe98`).
