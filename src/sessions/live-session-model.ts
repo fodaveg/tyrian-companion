@@ -9,16 +9,14 @@ import type { AlertDeliveryReport } from '../alerts/alert-emitter';
 import type { IngameAlertReceipt } from '../alerts/alert-ingame-receipt';
 import type { IngameBridgeClient } from '../alerts/alert-ingame-protocol';
 
-/** `Gw2-64.exe` before the 13 oct 2026 patch (build 208574). Saved sessions and notes carry it, so it stays valid. */
+/** A `Gw2-64.exe` SHA-256 used as the fixture build; the plugin accepts any well-formed one (see `isWellFormedGameBuild`). */
 export const NEXUS_LIVE_BUILD = '27d179bfe6a92fae633b412b8be0c90f697cd08646fa66a2e04b9e794410802c';
-/** `Gw2-64.exe` of build 208574, the one the recertified Nexus addon reads. */
-export const NEXUS_LIVE_BUILD_208574 = 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb';
-/** `Gw2-64.exe` of build 208704 (patch of 15 oct 2026, Nexus LastGameBuild). The two earlier ones stay valid. */
-export const NEXUS_LIVE_BUILD_208704 = '960c3e454847525993eb3266845ee37377511b8039635a7fbad6fd5592cb61ba';
-/** Closed set of executables the plugin accepts: never «any 64-hex hash». */
-export const NEXUS_LIVE_BUILDS: readonly string[] = [NEXUS_LIVE_BUILD, NEXUS_LIVE_BUILD_208574, NEXUS_LIVE_BUILD_208704];
-export function isNexusLiveBuild(build: unknown): build is string {
-	return typeof build === 'string' && NEXUS_LIVE_BUILDS.includes(build);
+/**
+ * Shape check only: exactly 64 lowercase hex characters. The plugin keeps no list of builds; the Nexus addon, which
+ * reads the game memory, certifies the executable by content and answers `unsupported_build` when it does not fit.
+ */
+export function isWellFormedGameBuild(build: unknown): build is string {
+	return typeof build === 'string' && /^[0-9a-f]{64}$/u.test(build);
 }
 export const NEXUS_LIVE_PROFILE = 'owned-bags-v3' as const;
 export const LIVE_SOURCE_STALE_MS = 5_000;

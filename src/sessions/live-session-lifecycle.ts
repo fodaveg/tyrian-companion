@@ -7,7 +7,7 @@ import { sessionAuthorityFromLease } from './session-state-machine';
 import type { SessionRuntimeStore } from './session-runtime-store';
 import { identicalJournal, type LiveSessionPersistence } from './live-session-persistence';
 import { DEFAULT_FARMING_PREPARATION, normalizeFarmingPreparationSettings, type FarmingPreparationSettingsV1 } from './farming-goal-preparation';
-import { LIVE_SOURCE_STALE_MS, isNexusLiveBuild, NEXUS_LIVE_PROFILE,
+import { LIVE_SOURCE_STALE_MS, isWellFormedGameBuild, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveSessionFormat, type LiveSessionRuntimeRecord, type LiveJournalEntryV1,
 	type LiveSessionViewV1, type LiveGapV1, type LiveChartPointV1 } from './live-session-model';
 import { createLiveChart, isEmptySample, LiveChartBuilder, liveChartPoint, liveObservationTotals,liveSampleFingerprint, liveSessionGap, reduceLiveInventorySample, valueLiveTotals, GOLD_CURRENCY_ID } from './live-session-reducer';
@@ -376,7 +376,7 @@ export class LiveSessionLifecycle {
 	async open(source: LiveSessionSourceInput): Promise<'ready' | 'source_conflict' | 'unsupported_build' | 'not_gameplay'> {
 		return await this.enqueue(async () => {
 			if (!this.options.enabled() || this.record?.phase !== 'active' || source.context.state !== 'gameplay') return 'not_gameplay';
-			if (!isNexusLiveBuild(source.build) || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
+			if (!isWellFormedGameBuild(source.build) || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
 			if (this.record.sourceInstance !== null && this.record.sourceInstance !== source.sourceInstance) return this.sourceConflict('other_instance');
 			// `live_ready` has no status for storage: while it is down this answers as before.
 			const ownership = await this.ready();

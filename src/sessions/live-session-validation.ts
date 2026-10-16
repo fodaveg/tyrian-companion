@@ -1,5 +1,5 @@
 import { isDeclaredBuild } from './manual-build-model';
-import { isNexusLiveBuild, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
+import { isWellFormedGameBuild, NEXUS_LIVE_PROFILE, LIVE_GAP_REASONS,
 	type LiveSessionRuntimeRecord, type LiveJournalEntryV1, type LiveObservationV1 } from './live-session-model';
 import { isFarmingGoal } from './farming-goal';
 import { isLiveAlertOutbox } from './live-session-outbox';
@@ -18,7 +18,7 @@ export function isLiveSessionRuntimeRecord(value: unknown): value is LiveSession
 		|| !['active','complete'].includes(value.phase as string) || !date(value.startedAt) || !natural(value.persistedAt)
 		|| value.endedAt !== null && (!date(value.endedAt) || value.endedAt < value.startedAt)
 		|| (value.phase === 'complete') !== (value.endedAt !== null) || !authority(value.authority, value.sessionId)
-		|| value.sourceInstance !== null && !nonce(value.sourceInstance) || value.build !== null && !isNexusLiveBuild(value.build)
+		|| value.sourceInstance !== null && !nonce(value.sourceInstance) || value.build !== null && !isWellFormedGameBuild(value.build)
 		|| value.profile !== null && value.profile !== NEXUS_LIVE_PROFILE || value.epoch !== null && !nonce(value.epoch)
 		|| value.context !== null && !isLiveContext(value.context) || !['connected','disconnected'].includes(value.connection as string)
 		|| !natural(value.lastPresenceAt) || value.lastObservationAt !== null && !date(value.lastObservationAt)

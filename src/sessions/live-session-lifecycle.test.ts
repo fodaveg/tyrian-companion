@@ -162,29 +162,30 @@ describe('passive live session lifecycle', () => {
 		expect(await f.store.readLiveJournal('session')).toHaveLength(2);
 		await f.service.dispose();
 	});
-	it('accepts the build 208574 executable and the previous one, and refuses any other hash', async () => {
-		const f = fixture(); await f.service.start('Test');
-		await expect(f.service.open({ ...f.source, build: 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb' })).resolves.toBe('ready');
-		await f.service.dispose();
-		const g = fixture(); await g.service.start('Test');
-		await expect(g.service.open({ ...g.source, build: 'a'.repeat(64) })).resolves.toBe('unsupported_build');
-		await expect(g.service.open(g.source)).resolves.toBe('ready');
-		await g.service.dispose();
+	it('accepts any well-formed build hash, including one never seen before, and keeps the earlier ones', async () => {
+		for (const build of ['4a220846c8136dac90380ad0545304d6622a84cf6b0d45a46014212125c4a64d', 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb', 'a'.repeat(64)]) {
+			const f = fixture(); await f.service.start('Test');
+			await expect(f.service.open({ ...f.source, build })).resolves.toBe('ready');
+			await f.service.dispose();
+		}
 	});
-	it('accepts the build 208704 executable, keeps the earlier ones, and still refuses an unknown hash', async () => {
-		const f = fixture(); await f.service.start('Test');
-		await expect(f.service.open({ ...f.source, build: '960c3e454847525993eb3266845ee37377511b8039635a7fbad6fd5592cb61ba' })).resolves.toBe('ready');
-		await f.service.dispose();
-		const g = fixture(); await g.service.start('Test');
-		await expect(g.service.open({ ...g.source, build: 'b'.repeat(64) })).resolves.toBe('unsupported_build');
-		await g.service.dispose();
+	it('refuses a build that is not exactly 64 lowercase hex characters', async () => {
+		const bad: unknown[] = ['a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), '', 12345, null, 'g'.repeat(64)];
+		for (const build of bad) {
+			const f = fixture(); await f.service.start('Test');
+			await expect(f.service.open({ ...f.source, build: build as string })).resolves.toBe('unsupported_build');
+			await expect(f.service.open(f.source)).resolves.toBe('ready');
+			await f.service.dispose();
+		}
 	});
-	it('a stored record carrying either accepted build stays valid, an unknown one does not', async () => {
+	it('a stored record with a well-formed build stays valid, a malformed one does not', async () => {
 		const f = fixture(); await f.service.start('Test'); await f.service.open(f.source);
 		const record = f.service.getRuntime()!;
 		expect(isLiveSessionRuntimeRecord(record)).toBe(true);
 		expect(isLiveSessionRuntimeRecord({ ...record, build: 'c9a6caca14393cf3278d6f3f51629e57a39820252e3ceafc140606a593606cfb' })).toBe(true);
-		expect(isLiveSessionRuntimeRecord({ ...record, build: 'a'.repeat(64) })).toBe(false);
+		expect(isLiveSessionRuntimeRecord({ ...record, build: '4a220846c8136dac90380ad0545304d6622a84cf6b0d45a46014212125c4a64d' })).toBe(true);
+		expect(isLiveSessionRuntimeRecord({ ...record, build: 'A'.repeat(64) })).toBe(false);
+		expect(isLiveSessionRuntimeRecord({ ...record, build: 'a'.repeat(63) })).toBe(false);
 		await f.service.dispose();
 	});
 	it('an unsupported_build status with no epoch reaches the view as the reason of the open gap', async () => {

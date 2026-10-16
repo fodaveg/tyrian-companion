@@ -69,7 +69,7 @@ import type { ManualSessionStartService } from '../sessions/manual-session-start
 import type { IngameSessionMarker } from '../sessions/ingame-session-marker';
 import type { LiveSessionLifecycle } from '../sessions/live-session-lifecycle';
 import type { LiveSessionLootTracker } from '../sessions/live-session-loot';
-import { isNexusLiveBuild, NEXUS_LIVE_PROFILE, type LiveAlertOutboxV1 } from '../sessions/live-session-model';
+import { isWellFormedGameBuild, NEXUS_LIVE_PROFILE, type LiveAlertOutboxV1 } from '../sessions/live-session-model';
 import { liveSourceReliefAt, type LiveSourceConnections } from '../sessions/live-source-connections';
 import type { AlertIngameSecretCopyOutcome } from '../ui/settings-panel-actions';
 import type { TyrianHost } from '../host/tyrian-host';
@@ -601,7 +601,7 @@ export class AlertRuntime {
 			open: async (source) => {
 				if (this.ingameSessionMarker?.blocksAutomaticRestart()) return 'source_conflict';
 				if (source.context.state !== 'gameplay') return 'not_gameplay';
-				if (!isNexusLiveBuild(source.build) || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
+				if (!isWellFormedGameBuild(source.build) || source.profile !== NEXUS_LIVE_PROFILE) return 'unsupported_build';
 				const prior = this.liveSessions?.getRuntime();
 				// Another instance takes over only from a producer that is gone: written as disconnected,
 				// or seen disconnecting by this host when storage could not write it (SPEC-live-loot §2).

@@ -1,6 +1,6 @@
 import { sha256CanonicalValue } from '../core/canonical-sha256';
 import { bestSaleNetCopper } from '../economy/gw2-fees';
-import { LIVE_GAP_REASONS, isNexusLiveBuild, NEXUS_LIVE_PROFILE,
+import { LIVE_GAP_REASONS, isWellFormedGameBuild, NEXUS_LIVE_PROFILE,
 	type LiveInventorySampleV1, type LiveJournalEntryV1, type LiveObservationV1,
 	type LiveSessionRuntimeRecord, type LiveGapV1, type LiveTotalV1,
 	type LiveValuationV1, type LivePriceBasis, type LivePriceV1, type LiveChartPointV1 } from './live-session-model';
@@ -302,7 +302,7 @@ export function isLiveInventorySample(value: unknown): value is LiveInventorySam
 	if (!record(value) || !keys(value, ['epoch','cursor','contextSeq','sourceElapsedMs','mode','itemCoverage','currencyCoverage',
 		'unknownPositions','freeSlots','rows','observedAt','sourceInstance','build','profile','context'])) return false;
 	if (!nonce(value.epoch) || !nonce(value.sourceInstance) || !natural(value.cursor) || !natural(value.contextSeq)
-		|| !natural(value.sourceElapsedMs) || !date(value.observedAt) || !isNexusLiveBuild(value.build) || value.profile !== NEXUS_LIVE_PROFILE
+		|| !natural(value.sourceElapsedMs) || !date(value.observedAt) || !isWellFormedGameBuild(value.build) || value.profile !== NEXUS_LIVE_PROFILE
 		|| !['baseline','sample'].includes(value.mode as string) || !['complete','partial','none'].includes(value.itemCoverage as string)
 		|| !['none','listed'].includes(value.currencyCoverage as string) || !bounded(value.unknownPositions, 0, 4096)
 		|| value.freeSlots !== null && !bounded(value.freeSlots, 0, 4096) || !Array.isArray(value.rows) || value.rows.length > 4096
