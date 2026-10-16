@@ -198,8 +198,12 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(labels()).toEqual(['Estimated value', 'Per hour']);
 		expect(h.panel.element.querySelector('.tyrian-live-session__stats')!.textContent).toContain('0g 0s 20c');
 		const unpriced = liveView(); unpriced.valuation.unpricedItemIds = [12147];
-		expect(liveSessionRatePerHour(unpriced)).toBeNull();
+		expect(liveSessionRatePerHour(unpriced)).toBe(liveSessionValue(unpriced) * 3_600_000 / unpriced.observedItemsMs);
 		h.state.view = unpriced; h.panel.refresh();
+		expect(labels()).toEqual(['Estimated value', 'Per hour']);
+		const short = liveView(); short.valuation.unpricedItemIds = [12147]; short.observedItemsMs = 899_999;
+		expect(liveSessionRatePerHour(short), 'unpriced items and under 15 minutes: still null').toBeNull();
+		h.state.view = short; h.panel.refresh();
 		expect(labels()).toEqual(['Estimated value']);
 		const rate = Array.from(h.panel.element.querySelectorAll('.tyrian-live-session__stats > div')).find((row) => row.textContent?.includes('Per hour'))!;
 		expect(rate.hasAttribute('hidden')).toBe(true);
@@ -233,7 +237,7 @@ describe('Session tab: figures, objects and chart', () => {
 		expect(liveSessionRatePerHour(half)).toBe(240);
 		const neverCovered = liveView(); neverCovered.valuation.coinNetCopper = null; neverCovered.valuation.knownNetValueCopper = null;
 		expect(liveSessionRatePerHour(neverCovered)).toBe(20);
-		const hides: Array<(v: LiveSessionViewV1) => void> = [(v) => { v.observedItemsMs = 0; }, (v) => { v.valuation.unpricedItemIds = [12147]; },
+		const hides: Array<(v: LiveSessionViewV1) => void> = [(v) => { v.observedItemsMs = 0; },
 			(v) => { v.observedItemsMs = 899_999; }];
 		for (const hide of hides) {
 			const hidden = liveView(); hidden.valuation.coinNetCopper = 100; hidden.valuation.knownNetValueCopper = 120; hide(hidden);

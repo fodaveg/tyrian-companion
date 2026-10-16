@@ -15,7 +15,7 @@ import { SessionHistoryRuntimeAuthority, SessionHistoryService, type SessionHist
 import { currentLiveSessionCharacter } from './live-session-characters';
 import { isLiveSessionRuntimeRecord } from './live-session-validation';
 import { isLiveSessionSummaryState } from './live-session-summary-state';
-import { liveSessionRatePerHour } from '../ui/live-session-panel';
+import { liveSessionRatePerHour, liveSessionValue } from '../ui/live-session-panel';
 import { projectLiveFarmingIngameState } from '../runtime/farming-runtime-projection';
 import { decideLiveAlert, isLiveAlertOutbox } from './live-session-outbox';
 import { readFarmingDeclaredBuild, type DeclaredBuildV1 } from './manual-build-model';
@@ -423,9 +423,9 @@ describe('passive live session lifecycle', () => {
 			expect(liveSessionRatePerHour(await saved(partial)), 'also in the saved note').not.toBeNull(); expect(liveSessionRatePerHour(await saved(gapped))).not.toBeNull();
 			await partial.service.dispose(); await gapped.service.dispose();
 		});
-		it('an unpriced item still hides «Por hora»', async () => {
+		it('an unpriced item does not hide «Por hora»', async () => {
 			const f = await session(1_200_000, 'complete'); const view = f.service.getView(); view.valuation.unpricedItemIds = [1];
-			expect(liveSessionRatePerHour(view)).toBeNull(); await f.service.dispose();
+			expect(liveSessionRatePerHour(view)).toBe(liveSessionValue(view) * 3_600_000 / view.observedItemsMs); await f.service.dispose();
 		});
 		it('an old saved note whose view carried a rate over 5 minutes is painted without it, rewriting nothing', async () => {
 			const f = await session(300_000, 'complete'); const note = await saved(f);
