@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.7.7 - El oro por hora de la vista en vivo deja de salir siempre como un guion
+
+Se actualiza desde la 0.7.6 publicada. Va con el addon de Nexus 0.8.14 o 0.8.15. No se ha visto todavía con el juego abierto.
+[ESTADO](ESTADO.md) separa lo medido de lo pendiente.
+
+- «Oro por hora» no salía nunca: se ocultaba en cuanto un objeto de la sesión no tenía precio en el bazar (ligados a
+  cuenta, basura de mercader), y casi todas las sesiones tienen alguno.
+- Ahora es el mismo valor que se enseña en grande, que ya cuenta solo los objetos con precio, dividido por el tiempo
+  observado. Sigue oculto durante los primeros 15 minutos observados.
+
 ## Release beta 0.7.6 - Un parche de Guild Wars 2 ya no apaga la sesión en vivo
 
 Se actualiza desde la 0.7.5 publicada. Va con el addon de Nexus 0.8.14. No se ha visto todavía con el juego abierto.

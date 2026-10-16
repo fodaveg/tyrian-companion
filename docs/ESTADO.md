@@ -1,5 +1,22 @@
 # Estado
 
+## Candidato 0.7.7: el oro por hora usa el mismo valor de la sesión que se enseña en grande (16 oct 2026)
+
+**Candidato, sin publicar.** Sobre la etiqueta `0.7.6` (`9a755ddf`) más `888e12d1`, `d5d231e0` (documentación) y
+`ada56274`. Detalle en [CHANGELOG](CHANGELOG.md).
+Pedido por David el 16 oct («el oro por hora no aparece en la vista en vivo. siempre aparece un guión»; «realmente nunca
+llegó a verse»).
+
+- Causa medida en sus notas de sesión: `liveSessionRatePerHour` (`src/ui/live-session-panel.ts`) devolvía null en
+  cuanto `valuation.unpricedItemIds` no estaba vacío; la sesión del 10 oct tenía 43 objetos sin precio y la del 9 oct, 11.
+  El HUD, la nota del panel (`tc_live_rate_c`) y la pestaña «Sesión» leen esa misma función.
+- `ada56274`: la tasa ya no mira los objetos sin precio; es `liveSessionValue` por hora de `observedItemsMs`, con el
+  mínimo de 15 minutos (`LIVE_RATE_MIN_OBSERVED_MS`). `docs/SPEC-live-loot.md` recoge la decisión de David del 16 oct.
+  Tests en `live-session-panel.test.ts` y `live-session-lifecycle.test.ts` (con objetos sin precio y 1 h hay tasa; con
+  menos de 15 min, no).
+- Sin tocar: la nota de sesión sigue listando «Objetos sin precio» y la comparación cuenta `unpricedItemCount`.
+- Sin verificar: una sesión con el juego abierto.
+
 ## Canal 0.7.6 publicado: el plugin acepta cualquier build bien formada; el addon 0.8.14 certifica por contenido (16 oct 2026)
 
 **Canal publicado; instalación/runtime pendiente.** Etiqueta `0.7.6` = `9a755ddf` (atestación; candidato `6df5472f`).
