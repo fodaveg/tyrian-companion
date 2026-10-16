@@ -7,6 +7,9 @@ Gate local verde (check 9/9 con 8009 tests, test 30/30, ZIP `96dc53be…`); Rele
 `hebra.json.minisig` firmado en el Mac; `release:brat-verify` PASS (`assets=9; signature=present; downloaded-bytes=checked`)
 y el ZIP publicado tiene el sha256 del gate. Addon de Nexus 0.8.14 publicado el mismo día (`19579f2`, DLL `c7eb227c…`).
 Sobre la etiqueta `0.7.5` (`71c05ec0`) más `682ae35e` y `c6d96423`. Detalle en [CHANGELOG](CHANGELOG.md).
+**Visto en el Fedora de David, 16 oct 09:45:** addon 0.8.14 (DLL `c7eb227c…`) con el juego de hoy: log `game executable: certified
+by content (code-208704-r1), sha256 4a220846c813, 41.0 MiB, hashed in 139 ms` y `live: waiting -> measuring (stored)`; David
+vio la sesión «midiendo». Sin verificar: Windows nativo y Obsidian (su vault sigue en 0.7.3).
 Pedido por David el 16 oct («otro parche ha roto el plugin. hay que buscar una solución más estable»).
 
 - Medido en el Fedora de David: GW2 se parcheó el 16 oct a las 08:59 CEST; `Gw2-64.exe` sha256 `4a220846…a64d`. Sus 37
