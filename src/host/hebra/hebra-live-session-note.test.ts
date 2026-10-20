@@ -7,6 +7,7 @@ import type { IngamePresenceTracker } from '../../alerts/alert-ingame-presence';
 import type { LiveIngamePort, LiveIngameSample, LiveIngameSource } from '../../alerts/live-loot-protocol';
 import { MANAGED_ASSETS_MANIFEST } from '../../assets/managed-assets-model';
 import { createTyrianRuntime, type TyrianCompanionCore } from '../../runtime/tyrian-companion-core';
+import { renderCollectorStatusNote } from '../../runtime/collector-status';
 import type { IngameSessionMarker } from '../../sessions/ingame-session-marker';
 import type { LiveSessionLifecycle } from '../../sessions/live-session-lifecycle';
 import { NEXUS_LIVE_BUILD, NEXUS_LIVE_PROFILE, type LiveSessionViewV1 } from '../../sessions/live-session-model';
@@ -67,6 +68,24 @@ afterEach(() => {
 });
 
 describe('Tyrian in Hebra: a finished live session saves its note and frees the next session', () => {
+	it('a new Hebra device finds the synced collector footprint and quietly starts in consult', async () => {
+		const test = collectorHebra();
+		const status = renderCollectorStatusNote({
+			instanceId: 'another-collector', platform: 'windows', hostVersion: '1.9.12',
+			pluginVersion: 'test', heartbeatAt: new Date(AT - 86_400_000).toISOString(),
+		}, 'en');
+		test.library.addNote('collector-status', status, { folderId: 'tc', title: 'Collector status' });
+		const listen = vi.spyOn(test.api.tcp, 'listen');
+		const notice = vi.spyOn(test.api.ui, 'notice');
+		const { core, cleanup } = await activate(test, new IDBFactory());
+		expect(core.getCollectorMode()).toBe('consult');
+		expect(listen).not.toHaveBeenCalled();
+		expect(notice).not.toHaveBeenCalled();
+		expect(test.library.notes.get('collector-status')?.body).toBe(status);
+		expect(test.library.writes).toEqual([]);
+		await cleanup();
+	});
+
 	it('a managed-assets manifest whose bytes are not on this device is reported once and the start reaches its end', async () => {
 		const test = collectorHebra();
 		// `activate` itself checks that the runtime became ready and that the boot did not fail.

@@ -72,6 +72,20 @@ Todo ello permanece pendiente. Las matrices históricas de sesiones API y del he
 su evidencia de compatibilidad y sus propios límites; no certifican live1 ni requieren activar H8.
 Las condiciones de paquete, ocho assets y verificación BRAT que siguen no cambian.
 
+## Una instalación nueva con un recolector existente
+
+Cuando este dispositivo aún no tiene modo guardado y los ajustes recibidos por sync proponen
+Recolector, el arranque comprueba `Collector status.md` en la carpeta de salida. Si la huella válida
+pertenece a otra instalación, empieza en **Consulta** y guarda ese modo localmente, sin aviso de
+duplicado. También lo hace si el recolector está apagado y su huella es antigua. El modo que ya
+hubieras guardado en este dispositivo se conserva; puedes elegir Recolector explícitamente en
+Ajustes y seguirás recibiendo el aviso si hay otro recolector activo.
+
+Si no se puede leer el modo o la huella, ese arranque queda en Consulta y vuelve a intentarlo al
+recargar, sin guardar una elección basada en el error. Una lectura que responde tarde aún puede
+aplicar el modo confirmado, salvo que ya hayas elegido otro en Ajustes. La detección necesita que
+la nota haya llegado por sync a esa carpeta; no encuentra recolectores de otra biblioteca o vault.
+
 ## Obsidian y Hebra en el mismo equipo: una app a la vez
 
 Usa Obsidian **o** Hebra como recolector, no los dos a la vez en el mismo equipo. Cada app lleva su

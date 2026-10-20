@@ -30,8 +30,9 @@ import { DEFAULT_SETTINGS, type CollectorMode, type TyrianSettings } from './cor
 import type { TyrianHost, TyrianPriceHistoryStore } from './host/tyrian-host';
 import { HalloweenRuntime } from './halloween/halloween-runtime';
 import type { PriceHistoryRuntimeState } from './economy/price-history-runtime';
-import { loadCollectorMode } from './runtime/collector-instance';
-import { COLLECTOR_HEARTBEAT_INTERVAL_MS, parseCollectorStatusNote } from './runtime/collector-status';
+import { loadCollectorInstanceId, loadCollectorMode } from './runtime/collector-instance';
+import { COLLECTOR_HEARTBEAT_INTERVAL_MS, parseCollectorStatusNote, renderCollectorStatusNote } from './runtime/collector-status';
+import { sha256Text } from './assets/generic-assets';
 import { LiveSessionRuntime } from './runtime/live-session-runtime';
 import type { SessionCommandRuntime } from './runtime/session-command-runtime';
 import { AssistedDetectionService } from './sessions/assisted-detection-service';
@@ -69,6 +70,13 @@ interface CollectorModeHarness {
 }
 
 const STATUS_NOTE = 'Tyrian Companion/Collector status.md';
+
+function otherCollectorStatus(nowMs: number): string {
+	return renderCollectorStatusNote({
+		instanceId: 'other-collector', platform: 'windows', hostVersion: '1.9.12',
+		pluginVersion: 'test', heartbeatAt: new Date(nowMs).toISOString(),
+	}, 'en');
+}
 
 describe('collector and consult mode in the assembled runtime (R1b)', () => {
 	afterEach(() => {
@@ -231,6 +239,117 @@ describe('collector and consult mode in the assembled runtime (R1b)', () => {
 			await world.plugin.shutdownRuntime();
 			vi.unstubAllGlobals();
 		}
+	});
+
+	it.each(['fresh', 'stale'] as const)('a new device quietly stays in consult when a %s footprint records another collector', async (age) => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true });
+		const status = otherCollectorStatus(age === 'fresh' ? Date.now() : 0);
+		world.notes.set(STATUS_NOTE, status);
+		const notice = vi.spyOn(world.plugin.host.ui, 'notice');
+		await world.plugin.initializeRuntime();
+		await settle();
+		expect(world.plugin.collectorMode).toBe('consult');
+		expect(world.plugin.runtimeReady).toBe(true);
+		expect(world.notes.get(STATUS_NOTE)).toBe(status);
+		expect(world.writes).toEqual([]);
+		expect(world.listen).not.toHaveBeenCalled();
+		expect(world.compactAndPrune).not.toHaveBeenCalled();
+		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
+		expect(notice).not.toHaveBeenCalled();
+		await expect(loadCollectorMode(world.factory, world.plugin.vaultId!, () => 'collector')).resolves.toBe('consult');
+		await world.plugin.shutdownRuntime();
+		const reloaded = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { factory: world.factory });
+		await reloaded.plugin.initializeRuntime();
+		expect(reloaded.plugin.collectorMode).toBe('consult');
+		await reloaded.plugin.shutdownRuntime();
+	});
+
+	it('starts no collector service while discovery is still reading the footprint', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main', alertIngameEnabled: true, priceHistoryEnabled: true });
+		world.notes.set(STATUS_NOTE, otherCollectorStatus(Date.now()));
+		let finish!: (text: string) => void;
+		const content = new Promise<string>((resolve) => { finish = resolve; });
+		const read = vi.spyOn(world.plugin.host.vault, 'read').mockReturnValue(content);
+		const boot = world.plugin.initializeRuntime();
+		await vi.waitFor(() => { expect(read).toHaveBeenCalled(); });
+		expect(world.plugin.runtimeReady).toBe(false);
+		expect(world.listen).not.toHaveBeenCalled();
+		expect(world.compactAndPrune).not.toHaveBeenCalled();
+		expect(world.writes).toEqual([]);
+		expect(world.intervals()).not.toContain(COLLECTOR_HEARTBEAT_INTERVAL_MS);
+		finish(otherCollectorStatus(Date.now()));
+		await boot;
+		expect(world.plugin.collectorMode).toBe('consult');
+		await world.plugin.shutdownRuntime();
+	});
+
+	it.each(['collector', 'consult'] as const)('preserves a saved %s choice when another collector is recorded', async (mode) => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' });
+		const vaultId = await sha256Text(world.plugin.host.vault.canonicalIdentity().normalize('NFC'));
+		await loadCollectorMode(world.factory, vaultId, () => mode);
+		world.notes.set(STATUS_NOTE, otherCollectorStatus(Date.now()));
+		const notice = vi.spyOn(world.plugin.host.ui, 'notice');
+		await world.plugin.initializeRuntime();
+		await settle();
+		expect(world.plugin.collectorMode).toBe(mode);
+		if (mode === 'collector') expect(notice).toHaveBeenCalled();
+		else expect(notice).not.toHaveBeenCalled();
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('an explicit switch to collector still warns about a real duplicate', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' });
+		world.notes.set(STATUS_NOTE, otherCollectorStatus(Date.now()));
+		await world.plugin.initializeRuntime();
+		const notice = vi.spyOn(world.plugin.host.ui, 'notice');
+		await expect(world.plugin.updateCollectorMode('collector')).resolves.toMatchObject({ status: 'saved' });
+		await settle();
+		expect(world.plugin.collectorMode).toBe('collector');
+		expect(notice).toHaveBeenCalled();
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('preserves the seed when a footprint belongs to the same installation', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' });
+		const vaultId = await sha256Text(world.plugin.host.vault.canonicalIdentity().normalize('NFC'));
+		const instanceId = await loadCollectorInstanceId(world.factory, vaultId);
+		world.notes.set(STATUS_NOTE, otherCollectorStatus(Date.now()).replace('other-collector', instanceId));
+		await world.plugin.initializeRuntime();
+		expect(world.plugin.collectorMode).toBe('collector');
+		await world.plugin.shutdownRuntime();
+	});
+
+	it('leaves a failed footprint read in consult without storing a guess, and retries on the next load', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main', alertIngameEnabled: true });
+		world.notes.set(STATUS_NOTE, otherCollectorStatus(Date.now()));
+		vi.spyOn(world.plugin.host.vault, 'read').mockRejectedValue(new Error('unavailable'));
+		await world.plugin.initializeRuntime();
+		await settle();
+		expect(world.plugin.collectorMode).toBe('consult');
+		expect(world.listen).not.toHaveBeenCalled();
+		expect(world.writes).toEqual([]);
+		await world.plugin.shutdownRuntime();
+		const reloaded = collectorModePlugin({ apiKeySecret: 'gw2-main' }, { factory: world.factory });
+		await reloaded.plugin.initializeRuntime();
+		expect(reloaded.plugin.collectorMode).toBe('collector');
+		await reloaded.plugin.shutdownRuntime();
+	});
+
+	it('an unrecognized status file is not evidence of another collector and stays untouched', async () => {
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		const world = collectorModePlugin({ apiKeySecret: 'gw2-main' });
+		world.notes.set(STATUS_NOTE, 'My own note');
+		await world.plugin.initializeRuntime();
+		await settle();
+		expect(world.plugin.collectorMode).toBe('collector');
+		expect(world.notes.get(STATUS_NOTE)).toBe('My own note');
+		await world.plugin.shutdownRuntime();
 	});
 
 	it('changing the mode on one device writes the local store only, never data.json', async () => {

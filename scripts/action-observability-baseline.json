@@ -5,7 +5,7 @@
 		"catch_clause": 636,
 		"promise_catch": 68,
 		"void_expression": 150,
-		"callback_registration": 274
+		"callback_registration": 276
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -9206,11 +9206,45 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "b257d428cb368bc5233aa2f4c59cb5799fcb1165",
+					"kind": "callback_registration",
+					"line": 167,
+					"column": 19,
+					"endLine": 167,
+					"endColumn": 88,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "readOrSeed",
+						"justification": "The \"readOrSeed\" \"then\" callback: The asynchronous first-mode seed records either its value or rejection as a tagged result; transaction completion consumes that result and propagates a rejection to the caller instead of leaving an unhandled promise."
+					},
+					"reason": "Allowlisted callback_registration: The \"readOrSeed\" \"then\" callback: The asynchronous first-mode seed records either its value or rejection as a tagged result; transaction completion consumes that result and propagates a rejection to the caller instead of leaving an unhandled promise. Verified registration: \"then\" in \"readOrSeed\"."
+				},
+				{
+					"id": "4a7c0a3a84267d5520324fa5a8354f730f93960c",
+					"kind": "callback_registration",
+					"line": 178,
+					"column": 5,
+					"endLine": 181,
+					"endColumn": 7,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "readOrSeed",
+						"justification": "The \"readOrSeed\" \"then\" callback: After asynchronous discovery the completed transaction rechecks the local mode before seeding. Its resolve or rejection reaches the outer bounded operation and its late handler, so no background error is discarded."
+					},
+					"reason": "Allowlisted callback_registration: The \"readOrSeed\" \"then\" callback: After asynchronous discovery the completed transaction rechecks the local mode before seeding. Its resolve or rejection reaches the outer bounded operation and its late handler, so no background error is discarded. Verified registration: \"then\" in \"readOrSeed\"."
+				},
+				{
 					"id": "e55ee33819faab2c986e7eb17d107c653e5dc888",
 					"kind": "callback_registration",
-					"line": 176,
+					"line": 193,
 					"column": 29,
-					"endLine": 176,
+					"endLine": 193,
 					"endColumn": 78,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10588,11 +10622,11 @@
 					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"requestPersistentStorage\" so the start never waits for the engine; that named operation never rejects, because its own try/catch answers \"unavailable\" and records every outcome through the persistence probe. Verified target: \"requestPersistentStorage\" in \"initializeRuntime\"."
 				},
 				{
-					"id": "c3e4fa40f86b6e8c74c825df57303c4b7f831995",
+					"id": "8fe27d33a2c470bb828d1fbf76c162c9dea3ead3",
 					"kind": "catch_clause",
-					"line": 962,
+					"line": 964,
 					"column": 5,
-					"endLine": 971,
+					"endLine": 973,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {

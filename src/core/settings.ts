@@ -516,8 +516,9 @@ export function alertIngamePortValue(value: unknown): number {
 /**
  * R1b: the mode a device starts with when it has none stored locally yet. Settings that name an
  * API key come from an installation that was collecting (or from a synced `data.json` that did),
- * so it stays the collector and updating changes nothing it does; anything else, a first run
- * included, starts in consult. Read once per device: the local mode wins from then on.
+ * so it proposes collector; anything else, a first run included, proposes consult. Before storing
+ * a first mode, `VaultRuntime.initialCollectorMode` checks for another collector's footprint in
+ * the output folder. Read once per device: the local mode wins from then on.
  */
 export function collectorModeSeed(settings: Pick<TyrianSettings, 'apiKeySecret'>): CollectorMode {
 	return settings.apiKeySecret.trim().length > 0 ? 'collector' : 'consult';

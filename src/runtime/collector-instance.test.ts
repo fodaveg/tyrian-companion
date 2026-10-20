@@ -61,4 +61,57 @@ describe('the collector mode read against an engine that does not answer', () =>
 		await expect(write).resolves.toBeUndefined();
 		await expect(loadCollectorMode(tracked.factory, VAULT, () => 'collector')).resolves.toBe('consult');
 	});
+
+	it('does not run asynchronous discovery when the device already has a mode', async () => {
+		const tracked = trackedIndexedDb(); stubTimers();
+		await saveCollectorMode(tracked.factory, VAULT, 'collector');
+		const seed = vi.fn(async () => 'consult' as const);
+		await expect(loadCollectorMode(tracked.factory, VAULT, seed)).resolves.toBe('collector');
+		expect(seed).not.toHaveBeenCalled();
+	});
+
+	it('a mode explicitly saved during discovery wins over the discovered seed', async () => {
+		const tracked = trackedIndexedDb(); stubTimers();
+		let finish!: (mode: 'collector') => void;
+		const seed = new Promise<'collector'>((resolve) => { finish = resolve; });
+		const read = loadCollectorMode(tracked.factory, VAULT, () => seed);
+		await engineIdle(tracked);
+		await saveCollectorMode(tracked.factory, VAULT, 'consult');
+		finish('collector');
+		await expect(read).resolves.toBe('consult');
+	});
+
+	it('bounds a silent discovery and delivers its eventual decision to the late handler', async () => {
+		const tracked = trackedIndexedDb(); const timers = stubTimers();
+		let finish!: (mode: 'consult') => void;
+		const seed = new Promise<'consult'>((resolve) => { finish = resolve; });
+		const late = vi.fn();
+		const read = loadCollectorMode(tracked.factory, VAULT, () => seed, late).catch((error: Error) => error.message);
+		await engineIdle(tracked);
+		timers.fire();
+		await expect(read).resolves.toBe('Collector instance store did not answer.');
+		expect(late).not.toHaveBeenCalled();
+		finish('consult');
+		await engineIdle(tracked);
+		expect(late).toHaveBeenCalledWith('consult');
+	});
+
+	it('keeps the late answer when the transaction that stores discovery itself answers late', async () => {
+		const tracked = trackedIndexedDb(); const timers = stubTimers();
+		let finish!: (mode: 'consult') => void;
+		const seed = new Promise<'consult'>((resolve) => { finish = resolve; });
+		const late = vi.fn();
+		const read = loadCollectorMode(tracked.factory, VAULT, () => seed, late).catch((error: Error) => error.message);
+		await engineIdle(tracked);
+		const commit = holdNextCommit(tracked, () => true);
+		finish('consult');
+		await engineIdle(tracked);
+		expect(timers.pending).toBe(1);
+		timers.fire();
+		await expect(read).resolves.toBe('Collector instance store did not answer.');
+		expect(late).not.toHaveBeenCalled();
+		commit();
+		await engineIdle(tracked);
+		expect(late).toHaveBeenCalledWith('consult');
+	});
 });

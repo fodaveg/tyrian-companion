@@ -35,6 +35,7 @@ interface RuntimeBootHarness {
 	runtimeReady: boolean;
 	localDebugActions: LocalDebugActionRunner | null;
 	initializeRuntime(): Promise<void>;
+	shutdownRuntime(): Promise<void>;
 	getLiveSessionLoot(): LiveSessionLootState;
 	getLootPresentation(): LootPresentationV1 | null;
 	getSessionSummarySaveState(): 'unknown' | 'saving' | 'saved' | 'failed';
@@ -144,7 +145,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 		const STALL_MS = 4_000;
 
 		/**
-		 * Boots until `initializeRuntime` settles, and then until what it left running has finished. `readyAtMs` is the virtual
+		 * Boots until `initializeRuntime` settles, then lets the engine finish its current work. `readyAtMs` is the virtual
 		 * time at which `runtimeReady` first read true.
 		 *
 		 * Nothing here counts turns. Virtual time only advances when the fake engine has nothing in flight (`engineIdle`): ten
@@ -160,15 +161,13 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			while (!settled) {
 				await engineIdle(tracked);
 				if (bootTiming.readyAtMs === null && plugin.runtimeReady) bootTiming.readyAtMs = timers.elapsedMs;
+				if (settled) break;
 				if (timers.pending > 0) { timers.step(); progressAt = Date.now(); }
 				else if (Date.now() - progressAt > STALL_MS) throw new Error('The boot is stuck: no timer to run, nothing in flight in the engine, and initializeRuntime has not settled.');
 			}
-			// What the boot left running in the background (the waits of the stores nobody awaits) is finished here, so it cannot
-			// arm timers in the NEXT test's clock and move its time.
-			for (let quiet = 0; quiet < 3;) {
-				await engineIdle(tracked);
-				if (timers.pending === 0) quiet += 1; else { quiet = 0; timers.step(); }
-			}
+			// A consult start retries unavailable session storage on future timers. Draining every
+			// future timer until none remain would run that recovery loop forever, not finish boot.
+			await engineIdle(tracked);
 			return settled;
 		}
 
@@ -232,28 +231,30 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				return Object.assign(runtimeBootPlugin(factory), { settingTab: { refreshForSettingsChange: vi.fn() } });
 			}
 
-			async function deviceThatSavedConsult() {
+			async function deviceThatSavedMode(mode: 'collector' | 'consult' = 'consult') {
 				const tracked = trackedIndexedDb();
 				const first = withSettingsTab(tracked.factory);
 				await first.initializeRuntime();
-				await (first as unknown as ModeCore).updateCollectorMode('consult');
-				expect((first as unknown as ModeCore).getCollectorMode()).toBe('consult');
+				await (first as unknown as ModeCore).updateCollectorMode(mode);
+				expect((first as unknown as ModeCore).getCollectorMode()).toBe(mode);
+				await first.shutdownRuntime();
+				await engineIdle(tracked);
 				return tracked;
 			}
 
-			it('starts as the seed says after ten seconds, then applies the saved mode when the read finally answers', async () => {
-				const tracked = await deviceThatSavedConsult();
+			it('starts safely in consult after ten seconds, then applies a saved collector mode when the read finally answers', async () => {
+				const tracked = await deviceThatSavedMode('collector');
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
 				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
 				expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 				expect(plugin.runtimeReady).toBe(true);
-				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
 				expect(bootTiming.readyAtMs).toBe(10_000);
 
 				answer();
 				await engineIdle(tracked);
-				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('consult');
+				expect((plugin as unknown as ModeCore).getCollectorMode()).toBe('collector');
 			});
 
 			/** The core as these tests drive it: the mode changes it applied, in order, and a way to say a session is running. */
@@ -277,12 +278,14 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				};
 			}
 
-			async function bootWithReadHeld() {
-				const tracked = await deviceThatSavedConsult();
+			async function bootWithReadHeld(collecting = false) {
+				const tracked = await deviceThatSavedMode();
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
 				const answer = holdNextCommit(tracked, (name) => name === 'tyrian-companion-collector');
 				expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
+				// The legacy pending-consult guard still protects a runtime that is already collecting.
+				if (collecting) (plugin as unknown as { collectorMode: string }).collectorMode = 'collector';
 				return { tracked, plugin, answer, probe: instrument(plugin) };
 			}
 
@@ -298,7 +301,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			});
 
 			it('keeps a saved consult pending while a session is running, and applies it when the session ends', async () => {
-				const { tracked, plugin, answer, probe } = await bootWithReadHeld();
+				const { tracked, plugin, answer, probe } = await bootWithReadHeld(true);
 				probe.setSessionRunning(true);
 
 				answer();
@@ -316,7 +319,7 @@ describe('deferred runtime startup with persisted terminal state', () => {
 			});
 
 			it('lets a mode chosen by hand win over a saved one still pending behind a running session', async () => {
-				const { tracked, plugin, answer, probe } = await bootWithReadHeld();
+				const { tracked, plugin, answer, probe } = await bootWithReadHeld(true);
 				probe.setSessionRunning(true);
 				answer();
 				await engineIdle(tracked);
@@ -330,17 +333,24 @@ describe('deferred runtime startup with persisted terminal state', () => {
 				await expect(loadCollectorMode(tracked.factory, probe.core.vaultId, () => 'consult')).resolves.toBe('collector');
 			});
 
-			it('does not wait for a read that failed outright: choosing the mode in use answers saved without touching storage', async () => {
+			it('persists an explicit consult choice after a failed read, even though consult is already in use', async () => {
 				const tracked = trackedIndexedDb();
 				tracked.down = true;
 				const plugin = withSettingsTab(tracked.factory);
 				const timers = manualWindowTimers();
 				expect(await bootUntilSettled(plugin, timers, tracked)).toBe(true);
 				expect(plugin.runtimeReady).toBe(true);
+				// Still unavailable: a choice must report the failed write, not pretend it was saved.
+				await expect((plugin as unknown as ModeCore).updateCollectorMode('consult')).rejects.toThrow();
 				tracked.down = false;
 				const attempts = vi.spyOn(tracked.factory, 'open');
-				await expect((plugin as unknown as ModeCore).updateCollectorMode('collector')).resolves.toEqual({ status: 'saved', inventoryAdvisor: 'unchanged' });
-				expect(attempts).not.toHaveBeenCalled();
+				await expect((plugin as unknown as ModeCore).updateCollectorMode('consult')).resolves.toEqual({ status: 'saved', inventoryAdvisor: 'unchanged' });
+				expect(attempts).toHaveBeenCalled();
+				await plugin.shutdownRuntime();
+				const restarted = withSettingsTab(tracked.factory);
+				await restarted.initializeRuntime();
+				expect((restarted as unknown as ModeCore).getCollectorMode()).toBe('consult');
+				await restarted.shutdownRuntime();
 			});
 		});
 
@@ -613,6 +623,7 @@ function runtimeBootPlugin(
 		lootPresentation: LootPresentationCache;
 		runtimeReady: boolean;
 		initializeRuntime(): Promise<void>;
+		shutdownRuntime(): Promise<void>;
 		getLiveSessionLoot(): LiveSessionLootState;
 		getLootPresentation(): LootPresentationV1 | null;
 		getSessionSummarySaveState(): 'unknown' | 'saving' | 'saved' | 'failed';

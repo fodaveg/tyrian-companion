@@ -38,9 +38,9 @@ export async function loadCollectorInstanceId(
 }
 
 /**
- * This device's mode for `vaultId`. The first time there is none, `seed` decides it (the spec's
- * rule, `collectorModeSeed`) and it is stored in the same transaction; from then on the stored
- * mode wins, whatever a synced `data.json` later says. Rejects when IndexedDB is unavailable.
+ * This device's mode for `vaultId`. Only when there is none does `seed` decide it; asynchronous
+ * discovery runs outside the transaction, then a new transaction checks again before storing it.
+ * A mode saved meanwhile wins, whatever a synced `data.json` or discovery later says.
  *
  * The caller does not wait past the storage deadline (the plugin does not start until this settles): it is told the store
  * did not answer. The read itself is NOT abandoned: if it answers later, `onLate` is given the value the store holds, so
@@ -49,7 +49,7 @@ export async function loadCollectorInstanceId(
 export async function loadCollectorMode(
 	factory: IDBFactory,
 	vaultId: string,
-	seed: () => CollectorMode,
+	seed: () => CollectorMode | Promise<CollectorMode>,
 	onLate?: (stored: CollectorMode | null) => void,
 ): Promise<CollectorMode> {
 	return await readOrSeed(factory, `mode:${vaultId}`, vaultId, isCollectorMode, seed, false, onLate);
@@ -124,17 +124,19 @@ function isCollectorMode(value: unknown): value is CollectorMode {
 }
 
 /**
- * Reads `key`; when it is absent or invalid, or `overwrite` is set, writes `create()` in the same
- * transaction. Resolves the value the store holds afterwards.
+ * Reads `key`; when absent or invalid, writes `create()` atomically with the check. An async
+ * seed releases the transaction and rechecks after discovery. Only the outer operation bounds
+ * the wait: a late second transaction must still deliver its committed mode to `onLate`.
  */
 async function readOrSeed<T extends string>(
 	factory: IDBFactory,
 	key: string,
 	vaultId: string,
 	valid: (stored: unknown) => stored is T,
-	create: () => T,
+	create: () => T | Promise<T>,
 	overwrite: boolean,
 	onLate?: (stored: T | null) => void,
+	boundWait = true,
 ): Promise<T> {
 	if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Collector instance vault identity is invalid.');
 	const database = await openIndexedDb({
@@ -146,7 +148,7 @@ async function readOrSeed<T extends string>(
 		toError: () => new Error('Collector instance store could not be opened.'),
 	});
 	// 9 Oct 2026: the plugin does not start until this settles, and a transaction the engine takes and never answers settles
-	// nothing. The wait of a READ ends as a failed read does (the caller falls back to its seed); the transaction stays in
+	// nothing. The wait of a READ ends as a failed read does (the caller stays in consult); the transaction stays in
 	// course, closes the database whenever it ends and hands a late answer (or `null`, if it ends without one) to `onLate`. A WRITE the user asked for (`overwrite`)
 	// has no deadline: failing it while it can still land would show a failure for a mode that changes at the next start.
 	const transaction = new Promise<T>((resolve, reject) => {
@@ -154,23 +156,38 @@ async function readOrSeed<T extends string>(
 		const store = transaction.objectStore(STORE);
 		const request = store.get(key);
 		let value: T | null = null;
+		let pendingSeed: Promise<{ value: T } | { error: unknown }> | null = null;
 		request.onsuccess = () => {
 			const stored = request.result as unknown;
 			if (!overwrite && valid(stored)) { value = stored; return; }
-			value = create();
+			const created = create();
+			if (typeof created !== 'string') {
+				// A first mode may need a vault read. End this transaction before waiting for I/O;
+				// the next transaction checks again so a mode chosen meanwhile always wins.
+				pendingSeed = created.then((value) => ({ value }), (error: unknown) => ({ error }));
+				return;
+			}
+			value = created;
 			// Never store what a later read would reject; the abort rejects below.
 			if (valid(value)) store.put(value, key);
 			else transaction.abort();
 		};
 		transaction.oncomplete = () => {
 			database.close();
+			if (pendingSeed !== null) {
+				pendingSeed.then(async (result) => {
+					if ('error' in result) throw result.error;
+					return await readOrSeed(factory, key, vaultId, valid, () => result.value, false, undefined, false);
+				}).then(resolve, reject);
+				return;
+			}
 			if (value !== null && valid(value)) resolve(value);
 			else reject(new Error('Collector instance value is invalid.'));
 		};
 		transaction.onerror = () => { database.close(); reject(new Error('Collector instance value could not be read.')); };
 		transaction.onabort = () => { database.close(); reject(new Error('Collector instance value read was aborted.')); };
 	});
-	if (overwrite) return await transaction;
+	if (overwrite || !boundWait) return await transaction;
 	return await new StorageDeadline().bounded(() => transaction, () => {
 		// `null`: the read ended without a value, so nothing is left that could still answer.
 		if (onLate !== undefined) transaction.then(onLate, () => { onLate(null); });

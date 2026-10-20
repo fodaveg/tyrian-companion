@@ -35,7 +35,7 @@ import type { TyrianHost } from '../host/tyrian-host';
 import type { SettingsUpdateResult, VaultRelocationResult } from '../ui/settings-panel-actions';
 import type { TyrianCompanionSettingTab } from '../ui/settings-tab';
 import { consulting, fireAndForgetLocal } from './core-actions';
-import { CollectorHeartbeat } from './collector-status';
+import { CollectorHeartbeat, collectorStatusNotePath, parseCollectorStatusNote } from './collector-status';
 import { deleteStoredCollectorMode, loadCollectorInstanceId, readStoredCollectorMode, saveCollectorMode } from './collector-instance';
 import { adoptVaultData, detectVaultRelocation, isVaultMark, rememberedPreviousId, settleVaultRelocation, type VaultIdentityStores, type VaultRelocation } from './vault-relocation';
 import { labelledVault } from './vault-ports';
@@ -65,7 +65,8 @@ export interface VaultRuntimePort {
 	lateCollectorMode: CollectorMode | null;
 	/** Whether the Settings selector wrote the mode in this run. */
 	collectorModeChosen: boolean;
-	readonly collectorModeReadPending: boolean;
+	/** The mode in memory is a fallback that storage has not confirmed. */
+	collectorModeUnconfirmed: boolean;
 	/** Set when the vault path changed and the user has not yet chosen. */
 	vaultRelocation: VaultRelocation | null;
 	/** The answer being applied: a second click gets the same one. */
@@ -113,6 +114,24 @@ export class VaultRuntime {
 	/** @param port What this reads from the core and asks of it; nothing else reaches the core. */
 	constructor(private readonly port: VaultRuntimePort) {}
 
+	/**
+	 * Only for a device without a saved mode: a collector already recorded in the shared output
+	 * folder stays its collector even while offline. This read writes no note and raises no conflict.
+	 * A read failure rejects before a mode is stored, so the next load can try again.
+	 */
+	async initialCollectorMode(seed: CollectorMode): Promise<CollectorMode> {
+		if (seed === 'consult') return seed;
+		const vault = labelledVault(this.host.vault, 'Collector status note');
+		const file = vault.file(collectorStatusNotePath(this.port.configuredNotesRoot()));
+		if (file === null) return seed;
+		const footprint = parseCollectorStatusNote(await vault.read(file));
+		if (footprint === null) return seed;
+		const vaultId = this.vaultId;
+		if (vaultId === null) return 'consult';
+		const instanceId = await loadCollectorInstanceId(this.host.kv.indexedDB, vaultId);
+		return footprint.instanceId === instanceId ? seed : 'consult';
+	}
+
 	// The core's own fields, read through the port under the names the moved code uses.
 	private get settings(): TyrianSettings { return this.port.settings; }
 	private set settings(value: TyrianSettings) { this.port.settings = value; }
@@ -128,7 +147,8 @@ export class VaultRuntime {
 	private set lateCollectorMode(value: CollectorMode | null) { this.port.lateCollectorMode = value; }
 	private get collectorModeChosen(): boolean { return this.port.collectorModeChosen; }
 	private set collectorModeChosen(value: boolean) { this.port.collectorModeChosen = value; }
-	private get collectorModeReadPending(): boolean { return this.port.collectorModeReadPending; }
+	private get collectorModeUnconfirmed(): boolean { return this.port.collectorModeUnconfirmed; }
+	private set collectorModeUnconfirmed(value: boolean) { this.port.collectorModeUnconfirmed = value; }
 	private get vaultRelocation(): VaultRelocation | null { return this.port.vaultRelocation; }
 	private set vaultRelocation(value: VaultRelocation | null) { this.port.vaultRelocation = value; }
 	private get vaultRelocationResolving(): Promise<VaultRelocationResult> | null { return this.port.vaultRelocationResolving; }
@@ -341,7 +361,7 @@ export class VaultRuntime {
 				return { status: 'blocked', reason: 'runtime_starting' };
 			}
 			await this.lateCollectorApplying;
-			if (mode === this.collectorMode && !this.collectorModeReadPending && this.lateCollectorMode === null) return { status: 'saved', inventoryAdvisor: 'unchanged' };
+			if (mode === this.collectorMode && !this.collectorModeUnconfirmed && this.lateCollectorMode === null) return { status: 'saved', inventoryAdvisor: 'unchanged' };
 			if (mode === 'consult' && (this.liveSessions?.getRuntime()?.phase === 'active' || sessionInProgress(this.sessions.getState()))) {
 				this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.consultBlockedBySession'), 'consult_mode');
 				return { status: 'blocked', reason: 'session_in_progress' };
@@ -355,6 +375,7 @@ export class VaultRuntime {
 			try { await saveCollectorMode(this.host.kv.indexedDB, vaultId, mode); }
 			catch (error) { this.collectorModeChosen = before.chosen; this.lateCollectorMode = before.late; throw error; }
 			this.collectorMode = mode;
+			this.collectorModeUnconfirmed = false;
 			await this.port.applyCollectorModeChange(context);
 			return { status: 'saved', inventoryAdvisor: 'unchanged' };
 		};

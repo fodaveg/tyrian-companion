@@ -145,7 +145,7 @@ import { SessionNoteRuntime, type SessionNoteRuntimePort } from './session-note-
 import { SessionCommandRuntime, type SessionCommandRuntimePort } from './session-command-runtime';
 import { CollectorHeartbeat } from './collector-status';
 import { LivePanelRuntime, livePanelSnapshot, type LivePanelSnapshot } from './live-panel-runtime';
-import { CollectorReadUnansweredError, loadCollectorMode } from './collector-instance';
+import { loadCollectorMode } from './collector-instance';
 import type { VaultRelocation } from './vault-relocation';
 import { DEFAULT_VIEW_PLACEMENT, loadViewPlacement, saveViewPlacement, type ViewPlacement } from './view-placement';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
@@ -681,7 +681,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 	private lateCollectorMode: CollectorMode | null = null;
 	/** Whether the Settings selector wrote the mode in this run: a late read of the old value must not undo that. */
 	private collectorModeChosen = false;
-	private collectorModeReadPending = false;
+	/** The current fallback was not confirmed by local storage: an explicit choice must be saved even when equal. */
+	private collectorModeUnconfirmed = false;
 	/** DU-02: set when the vault path changed and the user has not yet chosen what to do with the data kept under the old one. */
 	private vaultRelocation: VaultRelocation | null = null;
 	/** The answer being applied: a second click gets the same one instead of adopting twice. */
@@ -940,8 +941,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		// DU-04: settings a newer release wrote are used as read and never written in this run; the user is told once here.
 		if (this.settingsReadOnly) this.warnSettingsReadOnly();
 		// R1b: this device's mode, read before any service that collects is built. The first time,
-		// the seed (the spec's rule over data.json) is stored locally; after that data.json no longer
-		// decides. Without IndexedDB the seed stands for this run and is not stored.
+		// the seed also checks for a collector in the shared output folder. Saved local modes always
+		// win; an unreadable store or footprint leaves this run in consult without storing a guess.
 		const seed = this.collectorMode ?? collectorModeSeed(this.settings);
 		// DU-02: a path the device has not seen, with data under the previous one, never starts as a collector, whatever the
 		// seed says, until the user answers. Nothing is read or stored for the new id meanwhile.
@@ -954,16 +955,17 @@ export class TyrianCompanionCore implements TyrianRuntime {
 		} else try {
 			// The start does not wait past the storage deadline. A read that answers later hands over what the device saved, and
 			// `adoptLateCollectorMode` applies it by the path the Settings selector uses when it differs from what the start used.
-			this.collectorMode = await loadCollectorMode(indexedDB, vaultId, () => seed, (stored) => {
-				this.collectorModeReadPending = false;
+			this.collectorMode = await loadCollectorMode(indexedDB, vaultId, () => this.vaultRuntime.initialCollectorMode(seed), (stored) => {
+				if (stored !== null) this.collectorModeUnconfirmed = false;
 				this.lateCollectorMode = stored;
 				if (this.runtimeReady) this.adoptLateCollectorMode();
 			});
+			this.collectorModeUnconfirmed = false;
 		} catch (error) {
-			this.collectorMode = seed;
-			// A read that only ran out of time may still answer (see `loadCollectorMode`): until it does, a choice made in Settings is
-			// written even when it equals the mode in use, or the late answer would undo it. Any other failure leaves nothing to wait for.
-			this.collectorModeReadPending = error instanceof CollectorReadUnansweredError;
+			this.collectorMode = 'consult';
+			// A fallback is provisional after any read failure. An explicit Settings choice must be
+			// stored even when equal, so recovery or a late answer cannot undo it at the next start.
+			this.collectorModeUnconfirmed = true;
 			this.localDebugActions?.event({
 				component: 'settings', action: 'settings_load', level: 'warn', phase: 'failure',
 				code: 'storage_failure', state: 'collector_mode', message: error,
@@ -2537,7 +2539,8 @@ export class TyrianCompanionCore implements TyrianRuntime {
 			set lateCollectorMode(value) { core.lateCollectorMode = value; },
 			get collectorModeChosen() { return core.collectorModeChosen; },
 			set collectorModeChosen(value) { core.collectorModeChosen = value; },
-			get collectorModeReadPending() { return core.collectorModeReadPending; },
+			get collectorModeUnconfirmed() { return core.collectorModeUnconfirmed; },
+			set collectorModeUnconfirmed(value) { core.collectorModeUnconfirmed = value; },
 			get vaultRelocation() { return core.vaultRelocation; },
 			set vaultRelocation(value) { core.vaultRelocation = value; },
 			get vaultRelocationResolving() { return core.vaultRelocationResolving; },
