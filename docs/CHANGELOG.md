@@ -1,5 +1,15 @@
 # Changelog
 
+## Release beta 0.7.8 - Las instalaciones nuevas respetan al recolector existente
+
+Se actualiza desde la 0.7.7 publicada. Instalación y carga en los clientes reales pendientes.
+
+- Si una instalación nueva detecta la huella de otro recolector en la carpeta compartida, empieza en Consulta sin
+  avisar de dos recolectores. También respeta al recolector si está apagado y su huella es antigua.
+- Los modos ya guardados se conservan. Si la lectura falla, el arranque queda en Consulta provisional y una elección
+  manual posterior se guarda para los siguientes reinicios.
+- La detección necesita que la huella haya llegado por sincronización a la misma carpeta de salida.
+
 ## Release beta 0.7.7 - El oro por hora de la vista en vivo deja de salir siempre como un guion
 
 Se actualiza desde la 0.7.6 publicada. Va con el addon de Nexus 0.8.14 o 0.8.15. No se ha visto todavía con el juego abierto.
