@@ -107,13 +107,18 @@ describe('deferred runtime startup with persisted terminal state', () => {
 	// GR-09: the waits inside (`engineIdle` caps at 3 s, `STALL_MS` is 4 s) sit under vitest's own 5 s default, so a slow
 	// runner would report "Test timed out" instead of their message ("The boot is stuck…"). 15 s lets those speak first.
 	describe('with a storage engine that takes everything and answers nothing', { timeout: 15_000 }, () => {
+		// Handles are numbered across every clock of this file, never per clock. A store left running by the previous test (its
+		// engine answers late under TYRIAN_TEST_ENGINE_LATENCY_MS) cancels its own timers whenever it finishes, by then through
+		// THIS test's `clearTimeout`; with handles restarting at 1 it would cancel this test's first deadlines and leave the
+		// boot waiting on a timer that no longer exists ("The boot is stuck").
+		let nextHandle = 0;
 		function manualWindowTimers() {
 			// A virtual clock, shared with the stores through `performance.now`. `step` runs ONE timer, the earliest (the first armed
 			// among equals), as a browser runs timers: tasks one at a time, with the microtasks and the engine's own events between.
 			// Running every due timer in one loop would let the caller's deadline always beat the open's own, which a browser never does.
-			const live = new Map<number, { at: number; callback: () => void }>(); let next = 0; let now = 0;
+			const live = new Map<number, { at: number; callback: () => void }>(); let now = 0;
 			const host = window as unknown as { setTimeout: unknown; clearTimeout: unknown };
-			host.setTimeout = (callback: () => void, milliseconds = 0) => { live.set(++next, { at: now + milliseconds, callback }); return next; };
+			host.setTimeout = (callback: () => void, milliseconds = 0) => { const handle = ++nextHandle; live.set(handle, { at: now + milliseconds, callback }); return handle; };
 			host.clearTimeout = (handle: number) => { live.delete(handle); };
 			vi.spyOn(performance, 'now').mockImplementation(() => now);
 			return {
