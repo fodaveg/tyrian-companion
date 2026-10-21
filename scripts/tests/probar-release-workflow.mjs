@@ -111,7 +111,7 @@ function testShellCommentDoesNotSatisfyTheGate() {
 }
 
 function testWriteAccessIsRequiredAndConfined() {
-	const withoutWrite = releaseSource.replace('    permissions:\n      contents: write\n', '');
+	const withoutWrite = releaseSource.replace('    permissions:\n      contents: write\n      checks: read\n', '');
 	assert(withoutWrite !== releaseSource, 'the suite could not strip the job permissions, so it proves nothing');
 	assertFinding('a publishing job without contents: write', withoutWrite, 'release-job-missing-write');
 

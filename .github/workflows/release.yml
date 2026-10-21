@@ -25,9 +25,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      checks: read
     env:
       TAG: ${{ github.ref_name }}
     steps:
+      # Reuse ci.yml: if its `check` job already succeeded on this exact SHA, `npm run check` is not repeated.
+      # Any doubt (no run yet, failed, query error) leaves ok=false and the gate runs as before.
+      - name: Look up the green CI check for this commit
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=check&filter=latest" \
+            --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.started_at) | last | .conclusion // ""' 2>/dev/null) || conclusion=""
+          if [ "$conclusion" = "success" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "ci.yml job 'check' already passed on $GITHUB_SHA: the repeated step is skipped"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "no green 'check' check-run for $GITHUB_SHA (got '${conclusion:-none}'): the gate runs here"
+          fi
+
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
@@ -35,10 +54,27 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # The gate runs inside the publishing job on purpose. A green run of
-      # ci.yml on the same commit is a different workflow with a different
-      # result, and nothing here can depend on it.
+      # Same lookup for the `check-guardrails` job of ci.yml.
+      - name: Look up the green CI check-guardrails for this commit
+        id: ci_guardrails
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=check-guardrails&filter=latest" \
+            --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.started_at) | last | .conclusion // ""' 2>/dev/null) || conclusion=""
+          if [ "$conclusion" = "success" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "ci.yml job 'check-guardrails' already passed on $GITHUB_SHA: the repeated step is skipped"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "no green 'check-guardrails' check-run for $GITHUB_SHA (got '${conclusion:-none}'): the gate runs here"
+          fi
+
+      # The gate runs inside the publishing job on purpose, unless the lookup above saw
+      # ci.yml's `check` job succeed on this exact SHA; then it is not repeated.
       - name: Gate
+        if: steps.ci.outputs.ok != 'true'
         run: npm run check
 
       # `check` leaves out the guardrail suites (the frozen architecture tests,
@@ -47,6 +83,7 @@ jobs:
       # `needs` on it and a tag push does not trigger it, so a release would
       # otherwise publish having proven only the product half.
       - name: Guardrails
+        if: steps.ci_guardrails.outputs.ok != 'true'
         run: npm run check:guardrails
 
       - name: Build the release package

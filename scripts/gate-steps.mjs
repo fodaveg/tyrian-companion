@@ -34,8 +34,8 @@ export const GATE_GROUPS = Object.freeze(['test', 'check', 'check:guardrails']);
 export const GATE_STEPS = Object.freeze([
 	step('lint', 'ESLint sobre todo el arbol, sin cache (reglas de tipos)', ['eslint', '.'], ['check']),
 	step('typecheck', 'tsc --noEmit', ['tsc', '--noEmit', '--skipLibCheck'], ['check']),
-	step('unit', 'Suite unitaria de vitest (sin src/platform ni los tests de texto fuente congelados)', ['vitest', 'run', '--configLoader', 'runner'], ['test', 'check']),
-	step('unit-guardrails', 'Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.guardrails.config.mts'], ['test', 'check:guardrails']),
+	step('unit', 'Suite unitaria de vitest (sin src/platform ni los tests de texto fuente congelados)', ['vitest', 'run', '--maxWorkers=1', '--configLoader', 'runner'], ['test', 'check']),
+	step('unit-guardrails', 'Suite unitaria de vitest sobre src/platform y los tests de texto fuente congelados', ['vitest', 'run', '--maxWorkers=1', '--configLoader', 'runner', '--config', 'vitest.guardrails.config.mts'], ['test', 'check:guardrails']),
 	step('release-preflight', 'Preflight de release', ['bash', 'scripts/tests/probar-release-preflight.sh'], ['test', 'check:guardrails']),
 	step('brat-release-contract', 'Suite del contrato BRAT', ['node', 'scripts/tests/probar-brat-release-contract.mjs'], ['test', 'check:guardrails']),
 	step('sign-hebra-release-suite', 'Suite del envoltorio que firma la release de Hebra (sin ejecutar el firmador)', ['node', 'scripts/tests/probar-sign-hebra-release.mjs'], ['test', 'check:guardrails']),
@@ -71,7 +71,7 @@ export const GATE_STEPS = Object.freeze([
 	// GR-01: the only test that boots the published `hebra-main.mjs`. It cannot run inside `unit`
 	// (the bundle does not exist yet there, and a checkout without it would skip it), so it runs here,
 	// right after `host-esm` built the bundle of the tree being measured, and fails if it is missing.
-	step('hebra-bundle', 'Test que arranca el hebra-main.mjs recien construido (falla si falta)', ['vitest', 'run', '--configLoader', 'runner', '--config', 'vitest.hebra-bundle.config.mts'], ['check']),
+	step('hebra-bundle', 'Test que arranca el hebra-main.mjs recien construido (falla si falta)', ['vitest', 'run', '--maxWorkers=1', '--configLoader', 'runner', '--config', 'vitest.hebra-bundle.config.mts'], ['check']),
 	step('host-esm-suite', 'Suite del guardarrail del bundle ESM para Hebra', ['node', 'scripts/tests/probar-build-host-esm.mjs'], ['test', 'check:guardrails']),
 ]);
 
