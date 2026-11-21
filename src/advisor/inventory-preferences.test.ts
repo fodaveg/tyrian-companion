@@ -287,6 +287,104 @@ describe('inventory preferences persistence', () => {
 	});
 });
 
+// 21 Nov 2026: Hebra's engine, once the host stopped acknowledging a commit for 30 s, aborted every transaction that was
+// not `readonly`, even one that wrote nothing, and the inventory capture was blocked as `preferences_unavailable`.
+describe('inventory preferences read under an engine that only serves readonly transactions', () => {
+	const legacy = () => ({
+		schemaVersion: 0,
+		vaultId: scope.vaultId,
+		accountId: scope.accountId,
+		updatedAt: now(),
+		goals: [validGoal('legacy-goal')],
+		keepExceptions: [validException('legacy-exception')],
+	});
+
+	it('reads an up-to-date record without opening any readwrite transaction', async () => {
+		const engine = readonlyOnlyEngine();
+		const name = databaseName('readonly-only-current');
+		const preferences = service(engine.factory, name);
+		await expect(preferences.upsertGoal(scope, 0, validGoal('goal-one'))).resolves.toMatchObject({ status: 'ok' });
+		engine.modes.length = 0;
+		engine.abortNonReadonly = true;
+		await expect(preferences.list(scope)).resolves.toMatchObject({ status: 'ok', record: { generation: 1, goals: [{ goalId: 'goal-one' }] } });
+		await expect(service(engine.factory, databaseName('readonly-only-empty')).list(scope)).resolves.toEqual({ status: 'ok', record: null });
+		expect(engine.modes).not.toContain('readwrite');
+		expect(engine.modes.length).toBeGreaterThan(0);
+		preferences.dispose();
+	});
+
+	it('migrates an old record on read and leaves it saved in the current schema', async () => {
+		const engine = readonlyOnlyEngine();
+		const name = databaseName('migrate-saved');
+		await putRaw(engine.factory, name, legacy(), scope);
+		const preferences = service(engine.factory, name);
+		await expect(preferences.list(scope)).resolves.toMatchObject({ status: 'ok', record: { schemaVersion: 1, generation: 0 } });
+		await expect(getRaw(engine.factory, name, scope)).resolves.toMatchObject({ schemaVersion: 1, generation: 0 });
+		preferences.dispose();
+	});
+
+	it('still returns the migrated record when saving the migration fails, and tries again on the next read', async () => {
+		const engine = readonlyOnlyEngine();
+		const name = databaseName('migrate-save-fails');
+		await putRaw(engine.factory, name, legacy(), scope);
+		const preferences = service(engine.factory, name);
+		engine.abortNonReadonly = true;
+		await expect(preferences.list(scope)).resolves.toMatchObject({ status: 'ok', record: { schemaVersion: 1, goals: [{ goalId: 'legacy-goal' }] } });
+		await expect(getRaw(engine.factory, name, scope)).resolves.toMatchObject({ schemaVersion: 0 });
+		engine.abortNonReadonly = false;
+		await expect(preferences.list(scope)).resolves.toMatchObject({ status: 'ok', record: { schemaVersion: 1 } });
+		await expect(getRaw(engine.factory, name, scope)).resolves.toMatchObject({ schemaVersion: 1 });
+		preferences.dispose();
+	});
+
+	it('does not overwrite a record the editor saved between the read and the migration', async () => {
+		const engine = readonlyOnlyEngine();
+		const name = databaseName('migrate-concurrent');
+		await putRaw(engine.factory, name, legacy(), scope);
+		const preferences = service(engine.factory, name);
+		const saved = await service(engine.factory, databaseName('migrate-concurrent-source')).upsertGoal(scope, 0, validGoal('edited-goal'));
+		if (saved.status !== 'ok' || saved.record === null) throw new Error('Expected a record.');
+		// The editor's save lands just before the migration's own transaction.
+		engine.beforeReadwrite = (database) => {
+			engine.beforeReadwrite = null;
+			const transaction = database.transaction(INVENTORY_PREFERENCES_STORE_NAME, 'readwrite');
+			transaction.objectStore(INVENTORY_PREFERENCES_STORE_NAME).put(saved.record, storageKey(scope));
+		};
+		await expect(preferences.list(scope)).resolves.toMatchObject({ status: 'ok', record: { goals: [{ goalId: 'legacy-goal' }] } });
+		await expect(getRaw(engine.factory, name, scope)).resolves.toMatchObject({ generation: 1, goals: [{ goalId: 'edited-goal' }] });
+		preferences.dispose();
+	});
+});
+
+/** A fake IndexedDB that records the mode of every transaction and, on demand, aborts each one that is not `readonly`. */
+function readonlyOnlyEngine() {
+	const factory = new IDBFactory();
+	const engine = {
+		factory,
+		modes: [] as string[],
+		abortNonReadonly: false,
+		beforeReadwrite: null as ((database: IDBDatabase) => void) | null,
+	};
+	const open = factory.open.bind(factory);
+	factory.open = (name: string, version?: number) => {
+		const request = open(name, version);
+		request.addEventListener('success', () => {
+			const database = request.result;
+			const start = database.transaction.bind(database);
+			database.transaction = (...parameters: Parameters<IDBDatabase['transaction']>) => {
+				const mode = parameters[1] ?? 'readonly';
+				engine.modes.push(mode);
+				if (mode !== 'readonly') engine.beforeReadwrite?.(database);
+				const transaction = start(...parameters);
+				if (mode !== 'readonly' && engine.abortNonReadonly) queueMicrotask(() => { transaction.abort(); });
+				return transaction;
+			};
+		});
+		return request;
+	};
+	return engine;
+}
+
 function capture(accountId: string): InventoryAdvisorEvidenceCaptureResultV1 {
 	return {
 		status: 'complete',

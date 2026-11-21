@@ -73,21 +73,49 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 			return { status: 'error', code: 'corrupt' };
 		}
 		try {
-			const result: InventoryPreferencesReadResult = await this.transaction<InventoryPreferencesReadResult>(this.readDiagnostics, actionContext, 'readwrite', scope, (store, key, raw) => {
+			// Read-only on purpose: an engine whose host stopped acknowledging commits aborts every transaction that is
+			// not `readonly`, even one that writes nothing, and a plain read must not depend on that.
+			const read = await this.transaction<{ result: InventoryPreferencesReadResult; pendingMigration: unknown }>(this.readDiagnostics, actionContext, 'readonly', scope, (_store, _key, raw) => {
 				const parsed = parseRecord(raw, scope);
-				if (parsed.status === 'error') return parsed;
+				if (parsed.status === 'error') return { result: parsed, pendingMigration: undefined };
 				const copied = parsed.record === null ? null : cloneInventoryPreferences(parsed.record);
-				if (parsed.record !== null && copied === null) return { status: 'error', code: 'corrupt' };
-				if (parsed.migrated && copied !== null) store.put(copied, key);
-				return { status: 'ok', record: copied };
+				if (parsed.record !== null && copied === null) return { result: { status: 'error', code: 'corrupt' }, pendingMigration: undefined };
+				return { result: { status: 'ok', record: copied }, pendingMigration: parsed.migrated && copied !== null ? raw : undefined };
 			});
+			const result = read.result;
 			if (result.status === 'error') attempt.failure(preferenceFailureCode(result.code));
 			else attempt.success();
+			if (read.pendingMigration !== undefined) await this.saveMigration(scope, read.pendingMigration, actionContext);
 			return result;
 		} catch (error) {
 			const code = failure(error);
 			attempt.failure(preferenceFailureCode(code));
 			return { status: 'error', code };
+		}
+	}
+
+	/**
+	 * Stores the current-schema form of a record read in an older one, in a transaction of its own. It writes only if the
+	 * stored value is still the one that was read, so a save made by the editor in between is never overwritten. A failure
+	 * here is not the read's: the caller already has the migrated record, and the next read tries again.
+	 */
+	private async saveMigration(scope: InventoryPreferenceScope, readRaw: unknown, actionContext?: InventoryPreferencesActionContext): Promise<void> {
+		const attempt = this.writeDiagnostics.begin('inventory_preferences', 'write', actionContext);
+		try {
+			const before = JSON.stringify(readRaw);
+			const written = await this.transaction<boolean>(this.writeDiagnostics, actionContext, 'readwrite', scope, (store, key, raw) => {
+				if (JSON.stringify(raw) !== before) return false;
+				const parsed = parseRecord(raw, scope);
+				if (parsed.status === 'error' || parsed.record === null || !parsed.migrated) return false;
+				const copied = cloneInventoryPreferences(parsed.record);
+				if (copied === null) return false;
+				store.put(copied, key);
+				return true;
+			});
+			if (written) attempt.success();
+			else attempt.skip();
+		} catch (error) {
+			attempt.failure(preferenceFailureCode(failure(error)), error);
 		}
 	}
 
