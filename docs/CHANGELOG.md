@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.7.9 - Reintentar vuelve a pedir el histórico de precios
+
+Se actualiza desde la 0.7.8 publicada. Instalación y carga en los clientes reales pendientes.
+
+- Si la carga del histórico de un objeto lanzaba una excepción, Reintentar repetía ese error sin volver a pedir nada
+  hasta recargar el plugin. Ahora hace una petición nueva.
+- Esa excepción queda en el registro de diagnóstico con su motivo.
+- Si la serie ya está en memoria, se muestra el gráfico aunque la última carga haya fallado.
+- Todavía no se conoce la excepción que provocó el aviso de descarga de datawars2, así que esta versión no garantiza
+  que el aviso desaparezca.
+
 ## Release beta 0.7.8 - Las instalaciones nuevas respetan al recolector existente
 
 Se actualiza desde la 0.7.7 publicada. Instalación y carga en los clientes reales pendientes.
