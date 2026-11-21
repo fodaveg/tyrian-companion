@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 636,
+		"catch_clause": 637,
 		"promise_catch": 68,
 		"void_expression": 150,
 		"callback_registration": 276
@@ -5310,11 +5310,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "ed43753ea30298b6997360664e1d97c756ca5470",
+					"id": "1de76feb88a3376b14749dd1f27fe5c6b796e1c3",
 					"kind": "catch_clause",
-					"line": 152,
+					"line": 172,
 					"column": 5,
-					"endLine": 156,
+					"endLine": 175,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5324,11 +5324,25 @@
 					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
 				},
 				{
-					"id": "b0780b43201dcf5830b31208d37c2a99d5b26c33",
+					"id": "3377e54c1a1e809e50e7bc0d58bb79d6d214ca0e",
 					"kind": "catch_clause",
-					"line": 201,
+					"line": 188,
 					"column": 5,
-					"endLine": 209,
+					"endLine": 192,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "4aa026cdc7d662c1540af943edeb9cb1b22f2981",
+					"kind": "catch_clause",
+					"line": 237,
+					"column": 5,
+					"endLine": 245,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5340,9 +5354,9 @@
 				{
 					"id": "1cb02c35a76b166012f850f87ef543b0409a4742",
 					"kind": "catch_clause",
-					"line": 227,
+					"line": 263,
 					"column": 5,
-					"endLine": 229,
+					"endLine": 265,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {

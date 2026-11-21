@@ -129,6 +129,26 @@ describe('PriceHistoryPanelSeedService', () => {
 		expect(requests).toHaveLength(1);
 	});
 
+	it('a load that rejects closes its price_history_load_series span as a failure carrying the error', async () => {
+		const events: Array<{ action: string; phase: string; message?: unknown }> = [];
+		const cause = new Error('queue broke');
+		const service = new PriceHistoryPanelSeedService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }),
+			vaultId: 'vault',
+			transport: { send: async () => ({ status: 200, headers: {}, body: RECORDS }) },
+			now: () => Date.parse('2026-09-03T00:00:00.000Z'),
+			serialize: async () => { throw cause; },
+			diagnostics: {
+				createContext: (context: object) => ({ ...context, actionId: 'a', correlationId: 'c' }),
+				event: (event: { action: string; phase: string; message?: unknown }) => { events.push(event); },
+			} as unknown as ConstructorParameters<typeof PriceHistoryPanelSeedService>[0]['diagnostics'],
+		});
+		await service.ensure(36_038);
+		const closes = events.filter((event) => event.action === 'price_history_load_series' && event.phase !== 'start');
+		expect(closes).toHaveLength(1);
+		expect(closes[0]).toMatchObject({ phase: 'failure', message: cause });
+	});
+
 	it('callers that join a flight that rejects get the failed state instead of an exception', async () => {
 		const run: SerialTaskRunner = async () => { throw new Error('queue broke'); };
 		const service = new PriceHistoryPanelSeedService({

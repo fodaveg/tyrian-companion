@@ -2,6 +2,7 @@ import type { HttpTransport } from '../core/http';
 import {
 	startLocalDebugAction,
 	type LocalDebugActionPort,
+	type LocalDebugActionSpan,
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import type { SerialTaskRunner } from '../core/serial-task-queue';
@@ -120,9 +121,9 @@ export class PriceHistoryPanelSeedService {
 		if (this.disposed || !Number.isSafeInteger(itemId) || itemId <= 0) return this.getState(itemId);
 		const existing = this.inFlight.get(itemId);
 		if (existing !== undefined) { await existing; return this.getState(itemId); }
-		// `ensure` never throws (see `loadPriceHistorySeries`): a load that rejects becomes a failed
-		// state, and the flight is released either way, so the next call asks again.
-		const flight = this.load(itemId, parent).catch(() => { this.recordLoadFailure(itemId); });
+		// `ensure` never throws (see `loadPriceHistorySeries`): `load` turns any rejection into a
+		// failed state, and the flight is released either way, so the next call asks again.
+		const flight = this.load(itemId, parent);
 		this.inFlight.set(itemId, flight);
 		try {
 			await flight;
@@ -155,12 +156,26 @@ export class PriceHistoryPanelSeedService {
 		this.opening = null;
 	}
 
+	/**
+	 * Never rejects. A throw out of the body (the store opening, the shared queue) closes the span as
+	 * a failure, so the cause reaches the diagnostics log, and leaves the item in a failed state.
+	 * A span already closed by the body ignores the second close.
+	 */
 	private async load(itemId: number, parent?: ResolvedLocalDebugActionContext): Promise<void> {
 		const span = startLocalDebugAction(this.options.diagnostics, {
 			component: 'price_history', action: 'price_history_load_series',
 			...(parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } }),
 			details: { seedItemId: itemId },
 		}, this.options.now);
+		try {
+			await this.loadInto(itemId, span);
+		} catch (error) {
+			span.failure(error, 'unknown_failure', 'unavailable');
+			this.recordLoadFailure(itemId);
+		}
+	}
+
+	private async loadInto(itemId: number, span: LocalDebugActionSpan): Promise<void> {
 		const store = await this.ensureStore();
 		if (store === null) {
 			this.states.set(itemId, { ...IDLE_STATE, itemId, status: 'store_unavailable' });

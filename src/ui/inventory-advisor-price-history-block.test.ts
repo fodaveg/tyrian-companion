@@ -217,11 +217,18 @@ describe('the price block of one row', () => {
 		expect(statusRole(harness.block.element)).toBe('alert');
 		expect(harness.ensureSeed).toHaveBeenCalledTimes(1);
 
-		harness.ensureSeed.mockImplementationOnce(() => new Promise<void>(() => undefined));
+		let finish: () => void = () => undefined;
+		harness.ensureSeed.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
 		only(buttons(harness.block.element)).dispatch('click');
 
 		expect(harness.ensureSeed).toHaveBeenCalledTimes(2);
 		expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.loading'));
+
+		harness.seed.current = seeded(30);
+		finish();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__plot')).toHaveLength(1);
 	});
 
 	it('twenty repaints with the same state: one request, the same nodes, none created, the zoom still there', () => {
