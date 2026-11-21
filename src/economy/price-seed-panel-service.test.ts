@@ -105,6 +105,44 @@ describe('PriceHistoryPanelSeedService', () => {
 		expect(service.getState(99).status).toBe('idle');
 	});
 
+	it('a load that rejects does not propagate, is not remembered, and the next ensure asks again', async () => {
+		const requests: HttpRequest[] = [];
+		let turns = 0;
+		const run: SerialTaskRunner = async (task) => {
+			turns += 1;
+			if (turns === 1) throw new Error('queue broke');
+			return await runSerialTaskUnqueued(task);
+		};
+		const service = new PriceHistoryPanelSeedService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }),
+			vaultId: 'vault',
+			transport: { send: async (request) => { requests.push(request); return { status: 200, headers: {}, body: RECORDS }; } },
+			now: () => Date.parse('2026-09-03T00:00:00.000Z'),
+			serialize: run,
+		});
+		const failed = await service.ensure(36_038);
+		expect(failed).toMatchObject({ status: 'no_seed', failureReason: 'unreachable', days: [] });
+		const retried = await service.ensure(36_038);
+		expect(turns).toBe(2);
+		expect(retried.status).toBe('seeded');
+		expect(retried.days).toHaveLength(2);
+		expect(requests).toHaveLength(1);
+	});
+
+	it('callers that join a flight that rejects get the failed state instead of an exception', async () => {
+		const run: SerialTaskRunner = async () => { throw new Error('queue broke'); };
+		const service = new PriceHistoryPanelSeedService({
+			priceHistory: indexedDbPriceHistoryPort({ indexedDB: new IDBFactory() }),
+			vaultId: 'vault',
+			transport: { send: async () => ({ status: 200, headers: {}, body: RECORDS }) },
+			now: () => Date.parse('2026-09-03T00:00:00.000Z'),
+			serialize: run,
+		});
+		const [first, second] = await Promise.all([service.ensure(36_038), service.ensure(36_038)]);
+		expect(first.status).toBe('no_seed');
+		expect(second).toEqual(first);
+	});
+
 	it('keeps serving a stale cached seed when a refresh fails, rather than blanking it', async () => {
 		const { service, requests, factory } = harness();
 		const first = await service.ensure(36_038);

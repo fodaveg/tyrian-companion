@@ -120,11 +120,32 @@ export class PriceHistoryPanelSeedService {
 		if (this.disposed || !Number.isSafeInteger(itemId) || itemId <= 0) return this.getState(itemId);
 		const existing = this.inFlight.get(itemId);
 		if (existing !== undefined) { await existing; return this.getState(itemId); }
-		const flight = this.load(itemId, parent);
+		// `ensure` never throws (see `loadPriceHistorySeries`): a load that rejects becomes a failed
+		// state, and the flight is released either way, so the next call asks again.
+		const flight = this.load(itemId, parent).catch(() => { this.recordLoadFailure(itemId); });
 		this.inFlight.set(itemId, flight);
-		await flight;
-		if (this.inFlight.get(itemId) === flight) this.inFlight.delete(itemId);
+		try {
+			await flight;
+		} finally {
+			if (this.inFlight.get(itemId) === flight) this.inFlight.delete(itemId);
+		}
 		return this.getState(itemId);
+	}
+
+	/**
+	 * A load that threw leaves the state at `loading`, which the panel would show forever. It ends
+	 * as the same failure a refused request is: the series already in memory (if any) stays, flagged
+	 * stale, and an item with none is `no_seed`/`unreachable`, which offers Retry.
+	 */
+	private recordLoadFailure(itemId: number): void {
+		if (this.disposed) return;
+		const current = this.states.get(itemId);
+		if (current !== undefined && current.status !== 'loading') return;
+		if (current !== undefined && current.days.length > 0) {
+			this.states.set(itemId, { ...current, status: 'seeded', failureReason: 'unreachable' });
+		} else {
+			this.states.set(itemId, { status: 'no_seed', itemId, days: [], failureReason: 'unreachable', retrievedAt: null });
+		}
 	}
 
 	dispose(): void {

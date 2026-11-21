@@ -124,7 +124,8 @@ export function mountRowPriceHistoryBlock(options: RowPriceHistoryBlockOptions):
 		}
 		if (!requested) request(source);
 		const seed = source.getSeed(options.itemId);
-		if (failedLocally) return { kind: 'failed', storage: false };
+		// A series already in memory wins over a late local error: the chart is what the reader wants.
+		if (failedLocally && seed.days.length === 0) return { kind: 'failed', storage: false };
 		if (inFlight && seed.days.length === 0) return { kind: 'loading' };
 		if (seed.status === 'store_unavailable') return { kind: 'failed', storage: true };
 		if (seed.days.length > 0) return { kind: 'ready', days: seed.days, stale: seed.failureReason !== null };

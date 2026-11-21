@@ -198,6 +198,32 @@ describe('the price block of one row', () => {
 		expect(statusRole(harness.block.element)).toBe('alert');
 	});
 
+	it('a late rejection does not hide a series that is already in memory', async () => {
+		let fail: (error: Error) => void = () => undefined;
+		const harness = block({ enabled: true, seed: idle(), ensure: () => new Promise<void>((_resolve, reject) => { fail = reject; }) });
+		harness.seed.current = seeded(30);
+		fail(new Error('late'));
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(walk(harness.block.element).filter((element) => element.className === 'tyrian-price-chart__plot')).toHaveLength(1);
+		expect(buttons(harness.block.element).some((button) => button.textContent === translator.t('advisor.priceHistory.retry'))).toBe(false);
+	});
+
+	it('after a thrown ensure, Retry clears the failure and asks again', async () => {
+		const harness = block({ enabled: true, seed: idle(), ensure: () => Promise.reject(new Error('boom')) });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(statusRole(harness.block.element)).toBe('alert');
+		expect(harness.ensureSeed).toHaveBeenCalledTimes(1);
+
+		harness.ensureSeed.mockImplementationOnce(() => new Promise<void>(() => undefined));
+		only(buttons(harness.block.element)).dispatch('click');
+
+		expect(harness.ensureSeed).toHaveBeenCalledTimes(2);
+		expect(texts(harness.block.element)).toContain(translator.t('advisor.priceHistory.loading'));
+	});
+
 	it('twenty repaints with the same state: one request, the same nodes, none created, the zoom still there', () => {
 		const harness = block({ enabled: true, seed: seeded(300) });
 		const chart = chartContainer(harness.block.element);
