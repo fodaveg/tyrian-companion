@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.7.10 - Las preferencias del inventario se leen aunque el guardado esté bloqueado
+
+Se actualiza desde la 0.7.9 publicada. Instalación y carga en los clientes reales pendientes.
+
+- Las preferencias se leen sin abrir una transacción de escritura. En Hebra para Linux, cuando el motor de
+  almacenamiento dejaba de aceptar guardados, esa lectura fallaba y el inventario se bloqueaba con
+  `preferences_unavailable`.
+- Un registro antiguo se migra en un guardado aparte, que no pisa lo que haya guardado el editor. Si ese guardado
+  falla, la lectura funciona igual y lo reintenta la siguiente vez.
+- Esta versión no arregla los guardados que Hebra para Linux deja sin confirmar: ese arreglo va en Hebra.
+
 ## Release beta 0.7.9 - Reintentar vuelve a pedir el histórico de precios
 
 Se actualiza desde la 0.7.8 publicada. Instalación y carga en los clientes reales pendientes.
